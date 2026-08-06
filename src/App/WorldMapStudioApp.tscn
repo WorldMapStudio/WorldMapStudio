@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://btsoxo34qe82"]
+
+[ext_resource type="Script" uid="uid://bdyh35j8gfpdl" path="res://src/App/WorldMapStudioApp.cs" id="1_wms"]
+
+[node name="Node3D" type="Node3D" unique_id=742473594]
+script = ExtResource("1_wms")
