@@ -6,12 +6,26 @@ public partial class WorldMapStudioApp : Node3D
 {
 	public override void _Ready()
 	{
-		var imgui = new GodotImGui();
-		imgui.AddLayout(ImGui.ShowDemoWindow);
-		AddChild(imgui);
+		AddChild(new GodotImGui());
 	}
 
 	public override void _Process(double delta)
 	{
+		bool shouldQuit = false;
+		ImGuiEx.MainMenuBar(() =>
+		{
+			ImGuiEx.Menu("File", () =>
+			{
+				if (ImGui.MenuItem("Exit"))
+				{
+					shouldQuit = true;
+				}
+			});
+		});
+
+		if (shouldQuit)
+		{
+			GetTree().Quit();
+		}
 	}
 }
