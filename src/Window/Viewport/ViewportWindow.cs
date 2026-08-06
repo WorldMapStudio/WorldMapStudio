@@ -30,6 +30,12 @@ public sealed class ViewportWindow : ImGuiWindow
     private readonly Camera3D _camera;
     private readonly MeshInstance3D _grid;
 
+    // Example object the gizmo manipulates: click it to select, then drag the gizmo.
+    private static readonly GVector3 DemoObjectSize = new(2.0f, 2.0f, 2.0f);
+    private readonly Node3D _demoObject;
+    private readonly TransformGizmo _gizmo = new();
+    private bool _selected;
+
     private GVector3 _position = new(8.0f, 6.0f, 8.0f);
     private float _yaw;
     private float _pitch;
@@ -76,18 +82,48 @@ public sealed class ViewportWindow : ImGuiWindow
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         };
 
+        _demoObject = CreateDemoObject();
+
         _viewport.AddChild(_camera);
         _viewport.AddChild(_grid);
+        _viewport.AddChild(_demoObject);
         owner.AddChild(_viewport);
 
         LookAt(GVector3.Zero);
         ApplyCameraTransform();
     }
 
+    // A single lit box resting on the grid. Picking is done analytically (ray vs. box),
+    // so it needs no physics body or collision shape.
+    private static Node3D CreateDemoObject()
+    {
+        var root = new Node3D
+        {
+            Name = "DemoObject",
+            Position = new GVector3(0.0f, 1.0f, 0.0f),
+        };
+
+        root.AddChild(new MeshInstance3D
+        {
+            Name = "Mesh",
+            Mesh = new BoxMesh { Size = DemoObjectSize },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = new Color(0.85f, 0.55f, 0.28f),
+                Metallic = 0.2f,
+                Roughness = 0.55f,
+            },
+        });
+
+        return root;
+    }
+
     protected override ImGuiWindowFlags Flags => ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
 
     protected override void DrawContent()
     {
+        DrawToolbar();
+
         NVector2 region = ImGui.GetContentRegionAvail();
         int width = Math.Max(1, (int)region.X);
         int height = Math.Max(1, (int)region.Y);
@@ -99,12 +135,134 @@ public sealed class ViewportWindow : ImGuiWindow
         IntPtr textureId = (IntPtr)_viewport.GetTexture().GetRid().Id;
         ImGui.Image(textureId, new NVector2(width, height));
 
-        UpdateFlyCamera(ImGui.IsItemHovered());
+        bool hovered = ImGui.IsItemHovered();
+        NVector2 imageMin = ImGui.GetItemRectMin();
+        NVector2 imageSize = new(width, height);
+
+        // The gizmo owns the left mouse button, so the fly camera (right mouse) only
+        // starts when the gizmo isn't in play.
+        UpdateFlyCamera(hovered && !_gizmo.IsUsing && !_gizmo.IsHovered);
 
         ApplyCameraTransform();
 
         // Keep the grid plane centred under the camera so the grid feels endless.
         _grid.GlobalPosition = new GVector3(_position.X, 0.0f, _position.Z);
+
+        UpdateGizmo(hovered, imageMin, imageSize);
+    }
+
+    // Toolbar across the top of the viewport: gizmo mode and coordinate space.
+    private void DrawToolbar()
+    {
+        if (ImGui.RadioButton("Move", _gizmo.Operation == GizmoOperation.Translate))
+        {
+            _gizmo.Operation = GizmoOperation.Translate;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Rotate", _gizmo.Operation == GizmoOperation.Rotate))
+        {
+            _gizmo.Operation = GizmoOperation.Rotate;
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("|");
+        ImGui.SameLine();
+
+        if (ImGui.RadioButton("Local", _gizmo.LocalSpace))
+        {
+            _gizmo.LocalSpace = true;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("World", !_gizmo.LocalSpace))
+        {
+            _gizmo.LocalSpace = false;
+        }
+    }
+
+    private void UpdateGizmo(bool hovered, NVector2 imageMin, NVector2 imageSize)
+    {
+        // W / E toggle between translate and rotate, mirroring the Unreal editor.
+        if (hovered && !_flying)
+        {
+            if (Godot.Input.IsPhysicalKeyPressed(Key.W)) { _gizmo.Operation = GizmoOperation.Translate; }
+            if (Godot.Input.IsPhysicalKeyPressed(Key.E)) { _gizmo.Operation = GizmoOperation.Rotate; }
+        }
+
+        if (_selected)
+        {
+            Transform3D transform = _demoObject.GlobalTransform;
+            _gizmo.Manipulate(_camera, imageMin, imageSize, hovered && !_flying, ref transform);
+            _demoObject.GlobalTransform = transform;
+        }
+
+        // A left click that misses the gizmo (re)runs selection picking.
+        bool clickForSelection = hovered && !_flying && !_gizmo.IsUsing && !_gizmo.IsHovered &&
+                                 ImGui.IsMouseClicked(ImGuiMouseButton.Left);
+        if (clickForSelection)
+        {
+            _selected = PickDemoObject(imageMin, imageSize);
+        }
+    }
+
+    // Cast a ray from the cursor and test it against the demo object's oriented box.
+    private bool PickDemoObject(NVector2 imageMin, NVector2 imageSize)
+    {
+        NVector2 mouse = ImGui.GetMousePos();
+        GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
+        if (local.X < 0.0f || local.Y < 0.0f || local.X > imageSize.X || local.Y > imageSize.Y)
+        {
+            return _selected;
+        }
+
+        GVector3 from = _camera.ProjectRayOrigin(local);
+        GVector3 dir = _camera.ProjectRayNormal(local);
+        return RayIntersectsBox(from, dir, _demoObject.GlobalTransform, DemoObjectSize);
+    }
+
+    // Slab test: transform the ray into the box's local space and clip against its extents.
+    private static bool RayIntersectsBox(GVector3 origin, GVector3 dir, Transform3D boxTransform, GVector3 size)
+    {
+        Transform3D inv = boxTransform.AffineInverse();
+        GVector3 o = inv * origin;
+        GVector3 d = inv.Basis * dir;
+        GVector3 half = size * 0.5f;
+
+        float[] oc = [o.X, o.Y, o.Z];
+        float[] dc = [d.X, d.Y, d.Z];
+        float[] hc = [half.X, half.Y, half.Z];
+
+        float tMin = float.NegativeInfinity;
+        float tMax = float.PositiveInfinity;
+        for (int a = 0; a < 3; a++)
+        {
+            if (Mathf.Abs(dc[a]) < 1e-8f)
+            {
+                if (oc[a] < -hc[a] || oc[a] > hc[a])
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            float t1 = (-hc[a] - oc[a]) / dc[a];
+            float t2 = (hc[a] - oc[a]) / dc[a];
+            if (t1 > t2)
+            {
+                (t1, t2) = (t2, t1);
+            }
+
+            tMin = Mathf.Max(tMin, t1);
+            tMax = Mathf.Min(tMax, t2);
+            if (tMin > tMax)
+            {
+                return false;
+            }
+        }
+
+        return tMax >= 0.0f;
     }
 
     private void UpdateFlyCamera(bool hovered)
