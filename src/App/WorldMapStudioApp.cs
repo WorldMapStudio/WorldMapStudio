@@ -12,6 +12,7 @@ public partial class WorldMapStudioApp : Node3D
 		AddChild(new GodotImGui());
 
 		_windows.Add(new PerformanceWindow());
+		_windows.Add(new ViewportWindow(this));
 	}
 
 	public override void _Process(double delta)
