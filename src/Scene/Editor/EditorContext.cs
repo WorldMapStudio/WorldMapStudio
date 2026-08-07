@@ -23,6 +23,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The scene entities currently loaded into the editor.</summary>
     public SceneEntityRegistry Scene { get; }
 
+    /// <summary>Owns the active editor tool.</summary>
+    public ToolSystem Tools { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -30,6 +33,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Selection = new SelectionSystem();
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
+        Tools = new ToolSystem(this);
         InitializeSubsystems();
     }
 }
