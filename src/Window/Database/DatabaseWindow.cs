@@ -12,17 +12,26 @@ namespace WorldMapStudio;
 public sealed class DatabaseWindow : Window
 {
     private readonly DatabaseSystem _database;
+    private readonly MigrationSystem _migrations;
     private readonly Project _project;
 
     public DatabaseWindow(WindowManager manager)
         : base("Database", startOpen: false, defaultSize: new Vector2(360, 420))
     {
         _database = manager.Context.Database;
+        _migrations = manager.Context.Migrations;
         _project = manager.Context.Project;
     }
 
     protected override void DrawContent()
     {
+        if (ImGui.Button("Check schema"))
+        {
+            _migrations.Check();
+        }
+
+        ImGui.Separator();
+
         bool changed = false;
         foreach (Storage storage in _database.Storages)
         {

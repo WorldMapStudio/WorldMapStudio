@@ -39,6 +39,12 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         context.Database.EnsureCreated();
     }
 
+    public override Schema? ExpectedSchema()
+    {
+        using EditorDbContext context = CreateContext();
+        return ModelSchema.Extract(context);
+    }
+
     public override async Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes)
     {
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);

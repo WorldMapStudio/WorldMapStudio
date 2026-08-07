@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using MySqlConnector;
 
 namespace WorldMapStudio;
 
@@ -32,8 +33,30 @@ public abstract class Storage : ISubsystem
     /// <summary>The scene-entity factories registered into this storage.</summary>
     public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Enumerable.Empty<ISceneEntityFactory>();
 
-    /// <summary>Creates the storage's tables if missing. A placeholder for the Phase 5 migration flow.</summary>
+    /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
+
+    /// <summary>The schema this storage's EF model expects, or null if it has no context to compare.</summary>
+    public virtual Schema? ExpectedSchema() => null;
+
+    /// <summary>Reads the storage database's actual schema.</summary>
+    public Task<Schema> ReadLiveSchemaAsync() =>
+        LiveSchema.ReadAsync(Connection.BuildConnectionString(), Connection.Database);
+
+    /// <summary>Runs the given migration SQL (statements split on ';') under the write lock.</summary>
+    public async Task ApplySqlAsync(string sql)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using var connection = new MySqlConnection(Connection.BuildConnectionString());
+        await connection.OpenAsync().ConfigureAwait(false);
+
+        foreach (string statement in sql.Split(';').Select(s => s.Trim()).Where(s => s.Length > 0))
+        {
+            await using MySqlCommand command = connection.CreateCommand();
+            command.CommandText = statement;
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+    }
 
     /// <summary>Persists the given saves and deletes in a single transaction against this storage.</summary>
     public virtual Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes) => Task.CompletedTask;

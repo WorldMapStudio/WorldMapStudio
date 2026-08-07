@@ -23,8 +23,13 @@ public abstract class Window : ISubsystem
 
     protected virtual ImGuiWindowFlags Flags => ImGuiWindowFlags.None;
 
+    /// <summary>Runs every frame before drawing, even while closed. Lets a window open itself on demand.</summary>
+    protected virtual void OnBeforeDraw() { }
+
     public void Draw()
     {
+        OnBeforeDraw();
+
         if (!IsOpen)
         {
             return;

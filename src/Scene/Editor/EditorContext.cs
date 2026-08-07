@@ -35,6 +35,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
+    /// <summary>Compares each storage's expected schema to the live database and drives migrations.</summary>
+    public MigrationSystem Migrations { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -46,10 +49,14 @@ public sealed partial class EditorContext : ISubsystemHost
         Maps = new MapSystem();
         Database = new DatabaseSystem(this);
         Streaming = new StreamingSystem(this);
+        Migrations = new MigrationSystem(this);
         InitializeSubsystems();
         Database.Startup();
 
         // Persist the project now that storages have seeded their default connections into it.
         ProjectStore.Save(Project);
+
+        // Surface any schema drift between the code and the live database.
+        Migrations.Check();
     }
 }
