@@ -23,9 +23,20 @@ public sealed class ViewportWindow : Window
 {
     private static readonly GVector3 DemoObjectSize = new(2.0f, 2.0f, 2.0f);
 
+    // Dim red/green/blue for the grid's axis lines, indexed by *user* axis (0 = X, 1 = Y, 2 = Z)
+    // so the line for whichever Godot axis a user axis is mapped onto always reads as that color.
+    private static readonly Color[] UserAxisLineColors =
+    [
+        new Color(0.55f, 0.18f, 0.18f), // user X - red
+        new Color(0.18f, 0.5f, 0.18f),  // user Y - green
+        new Color(0.18f, 0.32f, 0.6f),  // user Z - blue
+    ];
+
     private readonly SubViewport _viewport;
     private readonly Camera3D _camera;
     private readonly MeshInstance3D _grid;
+    private readonly MeshInstance3D _upAxisLine;
+    private readonly AxisConvention _axes;
 
     private readonly FlyCamera _flyCamera;
     private readonly ObjectSelection _objectSelection;
@@ -43,11 +54,12 @@ public sealed class ViewportWindow : Window
         Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _objectSelection = new ObjectSelection(DemoObjectSize);
+        _axes = manager.Axes;
 
         // Route the gizmo and modal transform through the project's coordinate system, so the
         // user's X/Y/Z always mean the axes they chose, remapped onto Godot's internal axes.
-        _gizmo.Axes = manager.Axes;
-        _modalTransform.Axes = manager.Axes;
+        _gizmo.Axes = _axes;
+        _modalTransform.Axes = _axes;
 
         _viewport = new SubViewport
         {
@@ -75,17 +87,30 @@ public sealed class ViewportWindow : Window
             Environment = environment,
         };
 
-        var shader = GD.Load<Shader>("res://src/Window/Viewport/InfiniteGrid.gdshader");
+        var gridShader = GD.Load<Shader>("res://src/Window/Viewport/InfiniteGrid.gdshader");
         _grid = new MeshInstance3D
         {
             Name = "Grid",
             Mesh = new PlaneMesh { Size = new GVector2(4000.0f, 4000.0f) },
-            MaterialOverride = new ShaderMaterial { Shader = shader },
+            MaterialOverride = new ShaderMaterial { Shader = gridShader },
+            CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
+        };
+
+        // Completes the grid's X/Z axis lines with a vertical Y line through the origin, drawn
+        // on a quad kept facing the camera each frame (see DrawContent) so it reads as a crisp
+        // line from any angle, mirroring the grid's own axis line rendering.
+        var axisLineShader = GD.Load<Shader>("res://src/Window/Viewport/AxisLine.gdshader");
+        _upAxisLine = new MeshInstance3D
+        {
+            Name = "UpAxisLine",
+            Mesh = new QuadMesh { Size = new GVector2(4000.0f, 4000.0f) },
+            MaterialOverride = new ShaderMaterial { Shader = axisLineShader },
             CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         };
 
         _viewport.AddChild(_camera);
         _viewport.AddChild(_grid);
+        _viewport.AddChild(_upAxisLine);
         CreateDemoScene();
         owner.AddChild(_viewport);
 
@@ -157,7 +182,44 @@ public sealed class ViewportWindow : Window
         // Keep the grid plane centred under the camera so the grid feels endless.
         _grid.GlobalPosition = new GVector3(_flyCamera.Position.X, 0.0f, _flyCamera.Position.Z);
 
+        // The up axis line stays pinned to the true X=0/Z=0 column (that's the line it draws),
+        // only following the camera vertically, and is kept yawed to face the camera so its
+        // screen-space line rendering stays correct from any angle.
+        _upAxisLine.GlobalPosition = new GVector3(0.0f, _flyCamera.Position.Y, 0.0f);
+        GVector3 lookTarget = new(_camera.GlobalPosition.X, _upAxisLine.GlobalPosition.Y, _camera.GlobalPosition.Z);
+        if ((lookTarget - _upAxisLine.GlobalPosition).LengthSquared() > 1e-6f)
+        {
+            _upAxisLine.LookAt(lookTarget, GVector3.Up);
+        }
+
+        UpdateAxisLineColors();
         UpdateSelectionAndGizmo(hovered, imageMin, imageSize);
+    }
+
+    // Colors the grid's two horizontal axis lines and the vertical up line by whichever user
+    // axis maps onto that Godot spatial axis under the project's AxisConvention, so the lines
+    // always read as the user's own X/Y/Z (red/green/blue) no matter how they are remapped.
+    private void UpdateAxisLineColors()
+    {
+        var gridMaterial = (ShaderMaterial)_grid.MaterialOverride;
+        gridMaterial.SetShaderParameter("x_axis_color", ColorForSpatialAxis(0));
+        gridMaterial.SetShaderParameter("z_axis_color", ColorForSpatialAxis(2));
+
+        var upLineMaterial = (ShaderMaterial)_upAxisLine.MaterialOverride;
+        upLineMaterial.SetShaderParameter("axis_color", ColorForSpatialAxis(1));
+    }
+
+    private Color ColorForSpatialAxis(int spatial)
+    {
+        for (int userAxis = 0; userAxis < 3; userAxis++)
+        {
+            if (_axes.Get(userAxis).Spatial() == spatial)
+            {
+                return UserAxisLineColors[userAxis];
+            }
+        }
+
+        return Colors.White; // Unreachable: the convention is always a full permutation.
     }
 
     // Toolbar across the top of the viewport: gizmo mode and coordinate space.
