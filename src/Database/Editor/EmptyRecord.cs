@@ -5,6 +5,8 @@ public sealed class EmptyRecord
 {
     public int Id { get; set; }
 
+    public int MapId { get; set; }
+
     public string Name { get; set; } = "Empty";
 
     public int Shape { get; set; }

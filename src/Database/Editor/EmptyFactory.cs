@@ -71,6 +71,7 @@ public sealed class EmptyFactory : ISceneEntityFactory
             Name = record.Name,
             Shape = (EmptyShape)record.Shape,
             RecordId = record.Id,
+            Map = new MapId(record.MapId),
         };
 
         var rotation = new Quaternion((float)record.RotX, (float)record.RotY, (float)record.RotZ, (float)record.RotW);
@@ -86,6 +87,7 @@ public sealed class EmptyFactory : ISceneEntityFactory
 
         record.Name = empty.Name;
         record.Shape = (int)empty.Shape;
+        record.MapId = empty.Map.Value;
         record.PosX = transform.Origin.X;
         record.PosY = transform.Origin.Y;
         record.PosZ = transform.Origin.Z;
