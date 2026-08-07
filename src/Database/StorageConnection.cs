@@ -5,8 +5,7 @@ namespace WorldMapStudio;
 /// <summary>
 /// How a <see cref="Storage"/> reaches its dolt database. The editor can either launch a
 /// <c>dolt sql-server</c> for the repository itself or connect to an already-running server; this is
-/// configured per storage. Persisted with the project (project persistence is not wired up yet, so
-/// for now these live in memory with their defaults).
+/// configured per storage and persisted with the project.
 /// </summary>
 public sealed class StorageConnection
 {
