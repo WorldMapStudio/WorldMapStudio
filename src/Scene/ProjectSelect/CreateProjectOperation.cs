@@ -8,14 +8,15 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Modal for creating a new project: a name plus its initial coordinate convention. On confirm
-/// it exposes the built <see cref="Project"/> via <see cref="CreatedProject"/>.
+/// Modal for creating a new project: a name, its initial coordinate convention, and its database
+/// connection. On confirm it exposes the built <see cref="Project"/> via <see cref="CreatedProject"/>.
 /// </summary>
 public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Project>>
 {
     private string _name = "";
     private string? _error;
     private readonly AxisConvention _axes = AxisConvention.GodotDefault;
+    private readonly StorageConnection _database = EditorStorage.DefaultConnection();
 
     public Project? CreatedProject { get; private set; }
 
@@ -30,6 +31,11 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
         ImGui.TextDisabled("Coordinate System");
         ImGui.Separator();
         AxisConventionEditor.Draw(_axes);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Database");
+        ImGui.Separator();
+        StorageConnectionEditor.Draw(_database);
 
         if (_error != null)
         {
@@ -83,6 +89,7 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
             Name = name,
             AxisConvention = _axes,
         };
+        CreatedProject.StorageConnections[EditorStorage.StorageName] = _database;
         error = null;
         return true;
     }

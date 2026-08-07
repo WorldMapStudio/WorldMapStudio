@@ -13,20 +13,26 @@ namespace WorldMapStudio;
 [Subsystem(nameof(DatabaseSystem))]
 public sealed partial class EditorStorage : Storage, ISubsystemHost
 {
-    public override string Name => "Editor";
+    public const string StorageName = "Editor";
+
+    public override string Name => StorageName;
 
     public EditorStorage(DatabaseSystem database)
     {
         InitializeSubsystems();
     }
 
-    // Default to an editor-managed dolt instance so a new project works out of the box.
-    public override StorageConnection CreateDefaultConnection() => new()
+    // Default to an editor-managed dolt instance so a new project works out of the box. Exposed
+    // statically so project settings (created before any Storage instance exists) can seed the same
+    // defaults.
+    public static StorageConnection DefaultConnection() => new()
     {
         LaunchServer = true,
         Port = 3312,
         Database = "editor",
     };
+
+    public override StorageConnection CreateDefaultConnection() => DefaultConnection();
 
     public override IEnumerable<ISceneEntityFactory> SceneFactories => Subsystems.OfType<ISceneEntityFactory>();
 
