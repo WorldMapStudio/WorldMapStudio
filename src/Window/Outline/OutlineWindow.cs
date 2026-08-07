@@ -17,8 +17,8 @@ public sealed class OutlineWindow : Window
     public OutlineWindow(WindowManager manager)
         : base("Outline", defaultSize: new Vector2(240, 400))
     {
-        _scene = manager.Scene;
-        _selection = manager.Selection;
+        _scene = manager.Context.Scene;
+        _selection = manager.Context.Selection;
     }
 
     protected override void DrawContent()

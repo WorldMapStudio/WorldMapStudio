@@ -16,7 +16,7 @@ public sealed class EditMenu : IMainMenu
 
     public EditMenu(MenuBarManager manager)
     {
-        _sessions = manager.EditSessions;
+        _sessions = manager.Context.EditSessions;
     }
 
     public void Draw()
