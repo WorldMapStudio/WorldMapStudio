@@ -21,12 +21,16 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>The coordinate system the user works in; every Godot-facing system routes through this.</summary>
     public AxisConvention Axes => Project.AxisConvention;
 
+    /// <summary>Shared selection, forwarded from the context down to the windows.</summary>
+    public SelectionSystem Selection { get; }
+
     public float Priority => 0f;
 
     public MenuBarManager(EditorContext context)
     {
         Root = context.Root;
         Project = context.Project;
+        Selection = context.Selection;
         InitializeSubsystems();
     }
 

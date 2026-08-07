@@ -20,12 +20,16 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     /// <summary>The coordinate system the user works in; windows route Godot-facing values through this.</summary>
     public AxisConvention Axes { get; }
 
+    /// <summary>Shared selection windows bind to (viewport, outline, inspector).</summary>
+    public SelectionSystem Selection { get; }
+
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
 
     public WindowManager(MenuBarManager manager)
     {
         Root = manager.Root;
         Axes = manager.Axes;
+        Selection = manager.Selection;
         InitializeSubsystems();
     }
 

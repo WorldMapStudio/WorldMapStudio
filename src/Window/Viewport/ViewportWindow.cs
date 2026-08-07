@@ -21,8 +21,6 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ViewportWindow : Window
 {
-    private static readonly GVector3 DemoObjectSize = new(2.0f, 2.0f, 2.0f);
-
     // Dim red/green/blue for the grid's axis lines, indexed by *user* axis (0 = X, 1 = Y, 2 = Z)
     // so the line for whichever Godot axis a user axis is mapped onto always reads as that color.
     private static readonly Color[] UserAxisLineColors =
@@ -53,7 +51,7 @@ public sealed class ViewportWindow : Window
     {
         Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
-        _objectSelection = new ObjectSelection(DemoObjectSize);
+        _objectSelection = new ObjectSelection(manager.Selection);
         _axes = manager.Axes;
 
         // Route the gizmo and modal transform through the project's coordinate system, so the
@@ -131,26 +129,9 @@ public sealed class ViewportWindow : Window
 
     private void AddBox(GVector3 position, Color color, float yaw)
     {
-        var box = new Node3D
-        {
-            Name = $"Box{_objectSelection.Objects.Count}",
-            Transform = new Transform3D(new Basis(GVector3.Up, yaw), position),
-        };
-
-        box.AddChild(new MeshInstance3D
-        {
-            Name = "Mesh",
-            Mesh = new BoxMesh { Size = DemoObjectSize },
-            MaterialOverride = new StandardMaterial3D
-            {
-                AlbedoColor = color,
-                Metallic = 0.2f,
-                Roughness = 0.55f,
-            },
-        });
-
-        _viewport.AddChild(box);
+        var box = new DemoBoxEntity(position, color, yaw);
         _objectSelection.Objects.Add(box);
+        box.CreateRepresentation(_viewport);
     }
 
     protected override ImGuiWindowFlags Flags => ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
@@ -308,7 +289,7 @@ public sealed class ViewportWindow : Window
     // selected object. Local space applies only when exactly one object is selected.
     private void DriveGizmo(bool hovered, NVector2 imageMin, NVector2 imageSize)
     {
-        List<Node3D> selection = _objectSelection.Selection;
+        IReadOnlyList<SceneEntity> selection = _objectSelection.Selection;
         if (selection.Count == 0)
         {
             return;
@@ -334,9 +315,9 @@ public sealed class ViewportWindow : Window
             // total delta each frame (drift-free, unlike accumulating per-frame deltas).
             _dragStartPivot = pivotBefore;
             _dragStartTransforms.Clear();
-            foreach (Node3D obj in selection)
+            foreach (SceneEntity obj in selection)
             {
-                _dragStartTransforms.Add(obj.GlobalTransform);
+                _dragStartTransforms.Add(obj.Transform);
             }
         }
 
@@ -345,7 +326,7 @@ public sealed class ViewportWindow : Window
             Transform3D delta = _pivot * _dragStartPivot.AffineInverse();
             for (int i = 0; i < selection.Count; i++)
             {
-                selection[i].GlobalTransform = delta * _dragStartTransforms[i];
+                selection[i].Transform = delta * _dragStartTransforms[i];
             }
         }
     }

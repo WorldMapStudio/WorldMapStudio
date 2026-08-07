@@ -59,9 +59,9 @@ public sealed class ModalTransform
         _startMouse = ImGui.GetMousePos();
         _startPivot = selection.ComputePivot(false);
         _startTransforms.Clear();
-        foreach (Node3D obj in selection.Selection)
+        foreach (SceneEntity obj in selection.Selection)
         {
-            _startTransforms.Add(obj.GlobalTransform);
+            _startTransforms.Add(obj.Transform);
         }
     }
 
@@ -81,7 +81,7 @@ public sealed class ModalTransform
         Transform3D delta = ComputeDelta(camera, ImGui.GetMousePos(), imageMin);
         for (int i = 0; i < selection.Selection.Count; i++)
         {
-            selection.Selection[i].GlobalTransform = delta * _startTransforms[i];
+            selection.Selection[i].Transform = delta * _startTransforms[i];
         }
 
         DrawGuides(camera, imageMin);
@@ -97,7 +97,7 @@ public sealed class ModalTransform
         {
             for (int i = 0; i < selection.Selection.Count; i++)
             {
-                selection.Selection[i].GlobalTransform = _startTransforms[i];
+                selection.Selection[i].Transform = _startTransforms[i];
             }
 
             Mode = ModalTransformMode.None;
