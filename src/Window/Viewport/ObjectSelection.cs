@@ -115,7 +115,7 @@ public sealed class ObjectSelection
 
     private void ApplyClickSelection(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize, bool additive)
     {
-        SceneEntity hit = Pick(mouse, camera, imageMin, imageSize);
+        SceneEntity? hit = Pick(mouse, camera, imageMin, imageSize);
         if (hit != null)
         {
             if (additive)
@@ -159,7 +159,7 @@ public sealed class ObjectSelection
     }
 
     // Nearest entity under the cursor, or null. Uses an analytic ray-vs-box slab test.
-    private SceneEntity Pick(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize)
+    private SceneEntity? Pick(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize)
     {
         GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
         if (local.X < 0.0f || local.Y < 0.0f || local.X > imageSize.X || local.Y > imageSize.Y)
@@ -170,7 +170,7 @@ public sealed class ObjectSelection
         GVector3 from = camera.ProjectRayOrigin(local);
         GVector3 dir = camera.ProjectRayNormal(local);
 
-        SceneEntity best = null;
+        SceneEntity? best = null;
         float bestT = float.PositiveInfinity;
         foreach (SceneEntity obj in Objects)
         {

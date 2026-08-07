@@ -99,7 +99,7 @@ public sealed class ComputeMaterialWindow : Window
         }
     }
 
-    private void DrawParsedShaderDetails(ParsedComputeShader shader)
+    private void DrawParsedShaderDetails(ParsedComputeShader? shader)
     {
         if (shader == null)
         {
@@ -197,7 +197,7 @@ public sealed class ComputeMaterialWindow : Window
 
     private void DrawSelectedMaterial()
     {
-        ComputeMaterial material = SelectedMaterial;
+        ComputeMaterial? material = SelectedMaterial;
         if (material == null)
         {
             ImGui.TextDisabled("Select or create a material.");
@@ -215,7 +215,7 @@ public sealed class ComputeMaterialWindow : Window
 
         foreach (ShaderParameterDefinition definition in material.Shader.Parameters)
         {
-            if (!material.Parameters.TryGetValue(definition.Name, out ComputeMaterialParameter parameter))
+            if (!material.Parameters.TryGetValue(definition.Name, out ComputeMaterialParameter? parameter))
             {
                 parameter = ComputeMaterialParameter.FromDefinition(definition);
                 material.Parameters[definition.Name] = parameter;
@@ -326,7 +326,7 @@ public sealed class ComputeMaterialWindow : Window
 
     private void CreateMaterial()
     {
-        ParsedComputeShader shader = SelectedShader;
+        ParsedComputeShader? shader = SelectedShader;
         if (shader == null)
         {
             return;
@@ -341,7 +341,7 @@ public sealed class ComputeMaterialWindow : Window
         _newMaterialName = NextMaterialName(name);
     }
 
-    private ParsedComputeShader SelectedShader
+    private ParsedComputeShader? SelectedShader
     {
         get
         {
@@ -351,7 +351,7 @@ public sealed class ComputeMaterialWindow : Window
         }
     }
 
-    private ComputeMaterial SelectedMaterial
+    private ComputeMaterial? SelectedMaterial
     {
         get
         {

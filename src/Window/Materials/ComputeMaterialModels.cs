@@ -45,10 +45,10 @@ public sealed class ShaderParameterDefinition
     public required ShaderParameterSource Source { get; init; }
     public int? Set { get; init; }
     public int? Binding { get; init; }
-    public string BlockName { get; init; }
-    public string InstanceName { get; init; }
-    public string DefaultValue { get; init; }
-    public string Hint { get; init; }
+    public string? BlockName { get; init; }
+    public string? InstanceName { get; init; }
+    public string? DefaultValue { get; init; }
+    public string? Hint { get; init; }
 }
 
 public sealed class ParsedComputeShader
@@ -286,7 +286,7 @@ public static partial class ComputeShaderParameterParser
             ReadLayoutInt(layoutArgs, "local_size_z") ?? 1);
     }
 
-    private static ShaderParameterKind MapKind(string typeName, string hint, string parameterName)
+    private static ShaderParameterKind MapKind(string typeName, string? hint, string parameterName)
     {
         string normalized = typeName.Trim();
         string hintText = hint ?? "";
@@ -318,7 +318,7 @@ public static class ShaderDefaultParser
         @"[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?",
         RegexOptions.Compiled);
 
-    public static void ApplyDefaultValue(ComputeMaterialParameter parameter, string defaultValue)
+    public static void ApplyDefaultValue(ComputeMaterialParameter parameter, string? defaultValue)
     {
         if (string.IsNullOrWhiteSpace(defaultValue))
         {
