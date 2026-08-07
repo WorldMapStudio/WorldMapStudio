@@ -17,11 +17,15 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 
     public Node3D Root { get; }
 
+    /// <summary>The coordinate system the user works in; windows route Godot-facing values through this.</summary>
+    public AxisConvention Axes { get; }
+
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
 
     public WindowManager(MenuBarManager manager)
     {
         Root = manager.Root;
+        Axes = manager.Axes;
         InitializeSubsystems();
     }
 

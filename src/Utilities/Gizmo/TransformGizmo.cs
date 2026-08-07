@@ -61,6 +61,12 @@ public sealed class TransformGizmo
     public GizmoOperation Operation { get; set; } = GizmoOperation.Translate;
 
     /// <summary>
+    /// The user's coordinate system. The gizmo's three axes represent the user's X/Y/Z, so this
+    /// maps them onto the Godot directions actually dragged. Defaults to Godot's own axes.
+    /// </summary>
+    public AxisConvention Axes { get; set; } = AxisConvention.GodotDefault;
+
+    /// <summary>
     /// When true the gizmo aligns to the target's own axes (local space); when false it
     /// aligns to world axes. Local space makes rotations visually obvious because the
     /// gizmo rotates together with the object.
@@ -144,15 +150,15 @@ public sealed class TransformGizmo
         return changed;
     }
 
+    // The user's axis `index` in Godot space. In world space that is the convention's mapped
+    // direction; in local space it is that direction carried into the target's own frame, so the
+    // gizmo rotates with the object exactly as before (which reduces to the object's basis column
+    // under the default, identity convention).
     private GVector3 AxisDir(in Transform3D transform, int index)
     {
-        if (LocalSpace)
-        {
-            GVector3 col = index == 0 ? transform.Basis.X : index == 1 ? transform.Basis.Y : transform.Basis.Z;
-            return col.Normalized();
-        }
-
-        return index == 0 ? GVector3.Right : index == 1 ? GVector3.Up : GVector3.Back;
+        GVector3 userAxis = Axes.UserAxis(index);
+        GVector3 dir = LocalSpace ? transform.Basis * userAxis : userAxis;
+        return dir.Normalized();
     }
 
     // ---- Interaction -------------------------------------------------------
