@@ -29,6 +29,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts the data backends (storages) and their entity factories.</summary>
     public DatabaseSystem Database { get; }
 
+    /// <summary>The map currently being viewed and edited.</summary>
+    public MapSystem Maps { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -37,6 +40,7 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Tools = new ToolSystem(this);
+        Maps = new MapSystem();
         Database = new DatabaseSystem(this);
         InitializeSubsystems();
         Database.Startup();

@@ -13,6 +13,9 @@ public abstract class SceneEntity : Entity
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
     protected Node3D? Node { get; private set; }
 
+    /// <summary>The map this entity lives in. Streaming loads and unloads entities per map.</summary>
+    public MapId Map { get; set; } = new(0);
+
     /// <summary>How the entity may rotate about itself; the object tool honours this.</summary>
     public abstract SelfRotation SelfRotation { get; }
 

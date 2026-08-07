@@ -60,7 +60,7 @@ public sealed class SceneMenu : IMainMenu
             return;
         }
 
-        var empty = new EmptyEntity { Name = $"Empty ({shape})", Shape = shape };
+        var empty = new EmptyEntity { Name = $"Empty ({shape})", Shape = shape, Map = _context.Maps.CurrentMap };
         _context.Scene.Add(empty);
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, empty));
     }
