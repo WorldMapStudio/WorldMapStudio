@@ -13,7 +13,7 @@ public sealed class Editor : IScene
 {
     private readonly Node3D _root;
     private readonly Project _project;
-    private MenuBarManager _menuBar = null!;
+    private EditorContext _context = null!;
 
     public Editor(Node3D root, Project project)
     {
@@ -23,14 +23,16 @@ public sealed class Editor : IScene
 
     public void Start()
     {
-        _menuBar = new MenuBarManager(_root, _project);
+        _context = new EditorContext(_root, _project);
     }
 
     public IScene? Update()
     {
+        MenuBarManager menuBar = _context.MenuBarManager;
+
         ImGuiEx.MainMenuBar(() =>
         {
-            _menuBar.Draw();
+            menuBar.Draw();
 
             ImGui.Separator();
             ImGui.TextDisabled(_project.Name);
@@ -38,8 +40,8 @@ public sealed class Editor : IScene
 
         ImGui.DockSpaceOverViewport();
 
-        _menuBar.WindowManager.Draw();
+        menuBar.WindowManager.Draw();
 
-        return _menuBar.FileMenuManager.ExitRequested ? null : this;
+        return menuBar.FileMenuManager.ExitRequested ? null : this;
     }
 }
