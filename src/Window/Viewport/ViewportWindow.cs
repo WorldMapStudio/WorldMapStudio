@@ -27,6 +27,8 @@ public sealed class ViewportWindow : Window
         new Color(0.18f, 0.32f, 0.6f),  // user Z - blue
     ];
 
+    private static readonly GVector3 DefaultCameraPosition = new(8.0f, 6.0f, 8.0f);
+
     private readonly SubViewport _viewport;
     private readonly Camera3D _camera;
     private readonly MeshInstance3D _grid;
@@ -37,16 +39,22 @@ public sealed class ViewportWindow : Window
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
     private readonly StreamingSystem _streaming;
+    private readonly MapSystem _maps;
     private readonly HashSet<SceneEntity> _represented = [];
+    private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
+
+    private MapId _viewMap;
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
         EditorContext context = manager.Context;
         Node owner = context.Root;
-        _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
+        _flyCamera = new FlyCamera(owner, DefaultCameraPosition);
         _scene = context.Scene;
         _tools = context.Tools;
         _streaming = context.Streaming;
+        _maps = context.Maps;
+        _viewMap = _maps.CurrentMap;
         _axes = context.Axes;
 
         _viewport = new SubViewport
@@ -102,6 +110,9 @@ public sealed class ViewportWindow : Window
         CreateDemoScene();
         owner.AddChild(_viewport);
 
+        // The map picker previews each map with a snapshot of this view; only the viewport can take one.
+        _maps.CaptureView = () => _viewport.GetTexture()?.GetImage();
+
         _flyCamera.LookAt(GVector3.Zero);
         _flyCamera.ApplyTo(_camera);
     }
@@ -148,8 +159,33 @@ public sealed class ViewportWindow : Window
 
     protected override ImGuiWindowFlags Flags => ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
 
+    // Each map keeps the camera where the user left it, so switching back and forth doesn't lose your
+    // place; a map entered for the first time starts at the default view over its origin.
+    private void FollowCurrentMap()
+    {
+        MapId map = _maps.CurrentMap;
+        if (map == _viewMap)
+        {
+            return;
+        }
+
+        _cameraByMap[_viewMap] = _flyCamera.Position;
+        _viewMap = map;
+
+        if (_cameraByMap.TryGetValue(map, out GVector3 position))
+        {
+            _flyCamera.MoveTo(position);
+        }
+        else
+        {
+            _flyCamera.MoveTo(DefaultCameraPosition);
+            _flyCamera.LookAt(GVector3.Zero);
+        }
+    }
+
     protected override void DrawContent()
     {
+        FollowCurrentMap();
         _streaming.Update(_flyCamera.Position);
         SyncRepresentations();
 

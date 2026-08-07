@@ -24,6 +24,9 @@ public sealed class Editor : IScene
 
     public void Start()
     {
+        // Read the maps here rather than in EditorContext.Startup: the migration gate runs between the
+        // two, so this is the first point where the maps table is guaranteed to exist.
+        _context.Maps.Load();
     }
 
     public IScene? Update()
@@ -35,12 +38,13 @@ public sealed class Editor : IScene
             menuBar.Draw();
 
             ImGui.Separator();
-            ImGui.TextDisabled(_context.Project.Name);
+            ImGui.TextDisabled($"{_context.Project.Name} — {_context.Maps.Current.DisplayName}");
         });
 
         ImGui.DockSpaceOverViewport();
 
         menuBar.WindowManager.Draw();
+        menuBar.DrawOverlay();
 
         return menuBar.FileMenuManager.ExitRequested ? null : this;
     }

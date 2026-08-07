@@ -11,6 +11,10 @@ namespace WorldMapStudio;
 /// thread reconciles the scene registry: newly in-range entities are added, and streamed entities
 /// that have left the range are removed unless the active edit session still pins them. Runs one scan
 /// at a time and only re-scans once the focus has moved far enough (or the map changed).
+///
+/// Entering another map is just a scan whose results share nothing with the last one, so the previous
+/// map's entities unload — except the pinned ones, which stay loaded (and editable) until the session
+/// is committed or aborted.
 /// </summary>
 public sealed class StreamingSystem
 {
@@ -134,6 +138,9 @@ public sealed class StreamingSystem
                 continue;
             }
 
+            // An entity that leaves the scene must leave the selection with it, or the inspector and
+            // the gizmo keep editing something the viewport no longer shows.
+            _context.Selection.Remove(pair.Value);
             _context.Scene.Remove(pair.Value);
             stale.Add(pair.Key);
         }

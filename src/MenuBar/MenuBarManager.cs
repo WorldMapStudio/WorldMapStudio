@@ -29,4 +29,13 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
             menu.Draw();
         }
     }
+
+    /// <summary>Draws each menu's root-level overlays (its modals). Called outside the menu bar.</summary>
+    public void DrawOverlay()
+    {
+        foreach (IMainMenu menu in Subsystems.Cast<IMainMenu>())
+        {
+            menu.DrawOverlay();
+        }
+    }
 }
