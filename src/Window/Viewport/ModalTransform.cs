@@ -316,9 +316,12 @@ public sealed class ModalTransform
     private void DrawHud(NVector2 imageMin)
     {
         string op = Mode == ModalTransformMode.Translate ? "Move" : "Rotate";
-        string axisLabel = _axisExclude ? "XYZ".Remove(_axis, 1) : "XYZ".Substring(_axis, 1);
-        string axis = _axis < 0 ? string.Empty
-            : $" {(_axisLocal ? "local " : string.Empty)}{axisLabel}";
+        string axis = string.Empty;
+        if (_axis >= 0)
+        {
+            string axisLabel = _axisExclude ? "XYZ".Remove(_axis, 1) : "XYZ".Substring(_axis, 1);
+            axis = $" {(_axisLocal ? "local " : string.Empty)}{axisLabel}";
+        }
         string value = _numeric.Length > 0
             ? $": {_numeric}{(Mode == ModalTransformMode.Rotate ? "°" : string.Empty)}"
             : string.Empty;
