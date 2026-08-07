@@ -26,6 +26,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Owns the active editor tool.</summary>
     public ToolSystem Tools { get; }
 
+    /// <summary>Hosts the data backends (storages) and their entity factories.</summary>
+    public DatabaseSystem Database { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -34,6 +37,7 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Tools = new ToolSystem(this);
+        Database = new DatabaseSystem();
         InitializeSubsystems();
     }
 }
