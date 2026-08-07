@@ -16,6 +16,7 @@ public partial class WorldMapStudioApp : Node3D
 		_windows.Add(new ViewportWindow(this));
 		_windows.Add(new WorkQueueWindow());
 		_windows.Add(new WorkTestWindow());
+		_windows.Add(new TestRunnerWindow(this));
 	}
 
 	public override void _Process(double delta)
