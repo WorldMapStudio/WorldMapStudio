@@ -30,6 +30,9 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>Loaded scene entities, forwarded from the context.</summary>
     public SceneEntityRegistry Scene { get; }
 
+    /// <summary>Active editor tool, forwarded from the context.</summary>
+    public ToolSystem Tools { get; }
+
     public float Priority => 0f;
 
     public MenuBarManager(EditorContext context)
@@ -39,6 +42,7 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
         Selection = context.Selection;
         EditSessions = context.EditSessions;
         Scene = context.Scene;
+        Tools = context.Tools;
         InitializeSubsystems();
     }
 

@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using Godot;
 using ImGuiNET;
 using GVector2 = Godot.Vector2;
@@ -9,14 +8,10 @@ using NVector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// An ImGui window that renders a Godot 3D <see cref="SubViewport"/> containing an
-/// infinite, camera-following grid, similar to an empty Blender scene.
-///
-/// Combines a few independent systems: <see cref="FlyCamera"/> for Unreal-style
-/// navigation, <see cref="ObjectSelection"/> for click/shift-click/marquee picking,
-/// <see cref="TransformGizmo"/> for on-screen dragging, and <see cref="ModalTransform"/>
-/// for Blender-style G/R keyboard transforms. This class just wires them together and
-/// owns the demo scene they operate on.
+/// An ImGui window that renders a Godot 3D <see cref="SubViewport"/> with an infinite,
+/// camera-following grid, similar to an empty Blender scene. It owns the camera, the
+/// <see cref="FlyCamera"/> navigation and the demo scene, and each frame hands viewport
+/// interaction to the active <see cref="ITool"/> from the shared <see cref="ToolSystem"/>.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class ViewportWindow : Window
@@ -38,31 +33,15 @@ public sealed class ViewportWindow : Window
 
     private readonly FlyCamera _flyCamera;
     private readonly SceneEntityRegistry _scene;
-    private readonly ObjectSelection _objectSelection;
-    private readonly EditSessionManager _sessions;
-    private readonly TransformGizmo _gizmo = new();
-    private readonly ModalTransform _modalTransform = new();
-    private bool _localSpacePreferred = true;
-
-    // The gizmo drives this shared pivot; the resulting delta is applied to every selection.
-    private Transform3D _pivot = Transform3D.Identity;
-    private Transform3D _dragStartPivot;
-    private readonly List<Transform3D> _dragStartTransforms = [];
-    private SceneEntity[] _dragEntities = [];
+    private readonly ToolSystem _tools;
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
         Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _scene = manager.Scene;
-        _objectSelection = new ObjectSelection(manager.Selection, _scene);
-        _sessions = manager.EditSessions;
+        _tools = manager.Tools;
         _axes = manager.Axes;
-
-        // Route the gizmo and modal transform through the project's coordinate system, so the
-        // user's X/Y/Z always mean the axes they chose, remapped onto Godot's internal axes.
-        _gizmo.Axes = _axes;
-        _modalTransform.Axes = _axes;
 
         _viewport = new SubViewport
         {
@@ -143,7 +122,8 @@ public sealed class ViewportWindow : Window
 
     protected override void DrawContent()
     {
-        DrawToolbar();
+        ITool? tool = _tools.Active;
+        tool?.DrawToolbar();
 
         NVector2 region = ImGui.GetContentRegionAvail();
         int width = Math.Max(1, (int)region.X);
@@ -160,9 +140,9 @@ public sealed class ViewportWindow : Window
         NVector2 imageMin = ImGui.GetItemRectMin();
         NVector2 imageSize = new(width, height);
 
-        // The gizmo, marquee and modal transform own the mouse buttons, so the fly camera
-        // (right mouse) only starts when none of them is in play.
-        _flyCamera.Update(hovered && !GizmoBusy && !_objectSelection.IsDragging && !_modalTransform.IsActive);
+        // The active tool owns the mouse buttons while interacting, so the fly camera
+        // (right mouse) only starts when the tool isn't capturing.
+        _flyCamera.Update(hovered && !(tool?.CapturesMouse ?? false));
         _flyCamera.ApplyTo(_camera);
 
         // Keep the grid plane centred under the camera so the grid feels endless.
@@ -179,7 +159,7 @@ public sealed class ViewportWindow : Window
         }
 
         UpdateAxisLineColors();
-        UpdateSelectionAndGizmo(hovered, imageMin, imageSize);
+        tool?.UpdateViewport(new ViewportContext(_camera, imageMin, imageSize, hovered, _flyCamera.IsFlying));
     }
 
     // Colors the grid's two horizontal axis lines and the vertical up line by whichever user
@@ -206,176 +186,5 @@ public sealed class ViewportWindow : Window
         }
 
         return Colors.White; // Unreachable: the convention is always a full permutation.
-    }
-
-    // Toolbar across the top of the viewport: gizmo mode and coordinate space.
-    private void DrawToolbar()
-    {
-        if (ImGui.RadioButton("Move", _gizmo.Operation == GizmoOperation.Translate))
-        {
-            _gizmo.Operation = GizmoOperation.Translate;
-        }
-
-        ImGui.SameLine();
-        if (ImGui.RadioButton("Rotate", _gizmo.Operation == GizmoOperation.Rotate))
-        {
-            _gizmo.Operation = GizmoOperation.Rotate;
-        }
-
-        ImGui.SameLine();
-        ImGui.TextDisabled("|");
-        ImGui.SameLine();
-
-        // Local space is only meaningful for a single object; multi-selection forces world.
-        bool localAvailable = _objectSelection.Selection.Count == 1;
-        if (!localAvailable)
-        {
-            ImGui.BeginDisabled();
-        }
-
-        if (ImGui.RadioButton("Local", _localSpacePreferred))
-        {
-            _localSpacePreferred = true;
-        }
-
-        ImGui.SameLine();
-        if (ImGui.RadioButton("World", !_localSpacePreferred))
-        {
-            _localSpacePreferred = false;
-        }
-
-        if (!localAvailable)
-        {
-            ImGui.EndDisabled();
-        }
-
-        ImGui.SameLine();
-        ImGui.TextDisabled("|");
-        ImGui.SameLine();
-        ImGui.TextDisabled($"{_objectSelection.Selection.Count} selected");
-    }
-
-    // The gizmo only claims the mouse when something is selected; guarding on the selection
-    // count keeps stale hover/use state from ever locking out fly and selection input.
-    private bool GizmoBusy => _objectSelection.Selection.Count > 0 && (_gizmo.IsUsing || _gizmo.IsHovered);
-
-    private void UpdateSelectionAndGizmo(bool hovered, NVector2 imageMin, NVector2 imageSize)
-    {
-        // A running modal transform owns all input until it is confirmed or cancelled.
-        if (_modalTransform.IsActive)
-        {
-            _objectSelection.DrawOutlines(_camera, imageMin);
-            _modalTransform.Update(_objectSelection, _camera, _localSpacePreferred, imageMin, imageSize);
-            if (!_modalTransform.IsActive && _modalTransform.Confirmed)
-            {
-                RecordTransformEdit(_objectSelection.Selection, _modalTransform.StartTransforms);
-            }
-
-            return;
-        }
-
-        // W / E toggle between translate and rotate, mirroring the Unreal editor.
-        if (hovered && !_flyCamera.IsFlying)
-        {
-            if (Godot.Input.IsPhysicalKeyPressed(Key.W)) { _gizmo.Operation = GizmoOperation.Translate; }
-            if (Godot.Input.IsPhysicalKeyPressed(Key.E)) { _gizmo.Operation = GizmoOperation.Rotate; }
-        }
-
-        // G / R begin a Blender-style modal grab / rotate on the current selection.
-        if (hovered && !_flyCamera.IsFlying && !GizmoBusy && !_objectSelection.IsDragging && _objectSelection.Selection.Count > 0)
-        {
-            if (ImGui.IsKeyPressed(ImGuiKey.G, false)) { _modalTransform.Begin(ModalTransformMode.Translate, _objectSelection); return; }
-            if (ImGui.IsKeyPressed(ImGuiKey.R, false)) { _modalTransform.Begin(ModalTransformMode.Rotate, _objectSelection); return; }
-        }
-
-        _objectSelection.DrawOutlines(_camera, imageMin);
-        DriveGizmo(hovered, imageMin, imageSize);
-
-        bool canStartClick = hovered && !_flyCamera.IsFlying && !GizmoBusy;
-        _objectSelection.HandleInput(canStartClick, _camera, imageMin, imageSize);
-    }
-
-    // Places the gizmo at the centre of the selection and forwards its motion to every
-    // selected object. Local space applies only when exactly one object is selected.
-    private void DriveGizmo(bool hovered, NVector2 imageMin, NVector2 imageSize)
-    {
-        IReadOnlyList<SceneEntity> selection = _objectSelection.Selection;
-        if (selection.Count == 0)
-        {
-            return;
-        }
-
-        bool useLocal = _localSpacePreferred && selection.Count == 1;
-        _gizmo.LocalSpace = useLocal;
-
-        // While not dragging, keep the pivot pinned to the selection's centre.
-        if (!_gizmo.IsUsing)
-        {
-            _pivot = _objectSelection.ComputePivot(useLocal);
-        }
-
-        bool wasUsing = _gizmo.IsUsing;
-        Transform3D pivotBefore = _pivot;
-        bool interactive = hovered && !_flyCamera.IsFlying && !_objectSelection.IsDragging;
-        _gizmo.Manipulate(_camera, imageMin, imageSize, interactive, ref _pivot);
-
-        if (_gizmo.IsUsing && !wasUsing)
-        {
-            // Drag just started: snapshot the pivot and every object so we can apply the
-            // total delta each frame (drift-free, unlike accumulating per-frame deltas).
-            _dragStartPivot = pivotBefore;
-            _dragEntities = [.. selection];
-            _dragStartTransforms.Clear();
-            foreach (SceneEntity obj in selection)
-            {
-                _dragStartTransforms.Add(obj.Transform);
-            }
-        }
-
-        if (_gizmo.IsUsing)
-        {
-            Transform3D delta = _pivot * _dragStartPivot.AffineInverse();
-            for (int i = 0; i < selection.Count; i++)
-            {
-                selection[i].Transform = delta * _dragStartTransforms[i];
-            }
-        }
-
-        // Drag just ended: record the whole move as one undoable command.
-        if (wasUsing && !_gizmo.IsUsing)
-        {
-            RecordTransformEdit(_dragEntities, _dragStartTransforms);
-        }
-    }
-
-    // Records a finished move/rotate of the given entities from their captured start transforms to
-    // their current ones as a single command, unless nothing actually moved.
-    private void RecordTransformEdit(IReadOnlyList<SceneEntity> entities, IReadOnlyList<Transform3D> before)
-    {
-        int count = entities.Count;
-        if (count == 0 || before.Count != count)
-        {
-            return;
-        }
-
-        var targets = new SceneEntity[count];
-        var start = new Transform3D[count];
-        var end = new Transform3D[count];
-        bool changed = false;
-        for (int i = 0; i < count; i++)
-        {
-            targets[i] = entities[i];
-            start[i] = before[i];
-            end[i] = entities[i].Transform;
-            if (!start[i].IsEqualApprox(end[i]))
-            {
-                changed = true;
-            }
-        }
-
-        if (changed)
-        {
-            _sessions.Record(new TransformEntitiesCommand(targets, start, end));
-        }
     }
 }
