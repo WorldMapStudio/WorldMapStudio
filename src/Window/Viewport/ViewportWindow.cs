@@ -18,7 +18,8 @@ namespace WorldMapStudio;
 /// for Blender-style G/R keyboard transforms. This class just wires them together and
 /// owns the demo scene they operate on.
 /// </summary>
-public sealed class ViewportWindow : ImGuiWindow
+[Subsystem(nameof(WindowManager))]
+public sealed class ViewportWindow : Window
 {
     private static readonly GVector3 DemoObjectSize = new(2.0f, 2.0f, 2.0f);
 
@@ -37,8 +38,9 @@ public sealed class ViewportWindow : ImGuiWindow
     private Transform3D _dragStartPivot;
     private readonly List<Transform3D> _dragStartTransforms = [];
 
-    public ViewportWindow(Node owner) : base("Viewport", defaultSize: new NVector2(720, 480))
+    public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
+        Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _objectSelection = new ObjectSelection(DemoObjectSize);
 

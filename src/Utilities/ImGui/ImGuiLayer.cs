@@ -37,7 +37,7 @@ internal sealed partial class ImGuiLayer : CanvasLayer
 
     public Vector2I UpdateViewport()
     {
-        Vector2I viewportSize = _parentViewport is Window window
+        Vector2I viewportSize = _parentViewport is Godot.Window window
             ? window.Size
             : (_parentViewport as SubViewport)?.Size ?? Vector2I.Zero;
 

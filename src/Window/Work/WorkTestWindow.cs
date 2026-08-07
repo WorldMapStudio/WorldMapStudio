@@ -10,7 +10,8 @@ namespace WorldMapStudio;
 /// background-only, main-only, thread-hopping, long/cancellable, faulting, bursts, and main-thread
 /// hogs that stress the frame budget.
 /// </summary>
-public sealed class WorkTestWindow : ImGuiWindow
+[Subsystem(nameof(WindowManager))]
+public sealed class WorkTestWindow : Window
 {
     private static readonly Random _rng = new();
 
@@ -18,7 +19,7 @@ public sealed class WorkTestWindow : ImGuiWindow
     private int _stepCount = 8;
     private int _stepDelayMs = 150;
 
-    public WorkTestWindow() : base("Work Queue Tester", startOpen: false, defaultSize: new NVector2(420.0f, 460.0f))
+    public WorkTestWindow(WindowManager manager) : base("Work Queue Tester", startOpen: false, defaultSize: new NVector2(420.0f, 460.0f))
     {
     }
 

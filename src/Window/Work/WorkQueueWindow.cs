@@ -5,7 +5,8 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
-public sealed class WorkQueueWindow : ImGuiWindow
+[Subsystem(nameof(WindowManager))]
+public sealed class WorkQueueWindow : Window
 {
     private static readonly NVector4 QueuedColor = new(0.85f, 0.78f, 0.35f, 1.0f);
     private static readonly NVector4 ExecutingColor = new(0.42f, 0.72f, 1.0f, 1.0f);
@@ -15,7 +16,7 @@ public sealed class WorkQueueWindow : ImGuiWindow
 
     private bool _showFinished = true;
 
-    public WorkQueueWindow() : base("Work Queue", defaultSize: new NVector2(760.0f, 520.0f))
+    public WorkQueueWindow(WindowManager manager) : base("Work Queue", defaultSize: new NVector2(760.0f, 520.0f))
     {
     }
 

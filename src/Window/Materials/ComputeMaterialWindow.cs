@@ -9,7 +9,8 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
-public sealed class ComputeMaterialWindow : ImGuiWindow
+[Subsystem(nameof(WindowManager))]
+public sealed class ComputeMaterialWindow : Window
 {
     private const uint ShaderNameMaxLength = 128;
     private const uint MaterialNameMaxLength = 128;
@@ -25,7 +26,7 @@ public sealed class ComputeMaterialWindow : ImGuiWindow
     private int _selectedShaderIndex = -1;
     private int _selectedMaterialIndex = -1;
 
-    public ComputeMaterialWindow() : base("Compute Materials", defaultSize: new NVector2(980.0f, 680.0f))
+    public ComputeMaterialWindow(WindowManager manager) : base("Compute Materials", defaultSize: new NVector2(980.0f, 680.0f))
     {
         ParseShader();
         CreateMaterial();

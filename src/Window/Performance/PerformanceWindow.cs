@@ -3,7 +3,8 @@ using ImGuiNET;
 
 namespace WorldMapStudio;
 
-public sealed class PerformanceWindow() : ImGuiWindow("Performance")
+[Subsystem(nameof(WindowManager))]
+public sealed class PerformanceWindow(WindowManager manager) : Window("Performance")
 {
     protected override void DrawContent()
     {
