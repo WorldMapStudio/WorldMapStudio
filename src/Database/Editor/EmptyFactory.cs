@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -28,24 +29,39 @@ public sealed class EmptyFactory : ISceneEntityFactory
         return rows.Select(ToEntity).ToList();
     }
 
-    public async Task SaveAsync(SceneEntity entity)
+    public Action Stage(DbContext context, SceneEntity entity)
     {
+        var db = (EditorDbContext)context;
         var empty = (EmptyEntity)entity;
-        await using EditorDbContext context = _storage.CreateContext();
 
-        EmptyRecord? existing = empty.RecordId is int id
-            ? await context.Empties.FindAsync(id).ConfigureAwait(false)
-            : null;
-        EmptyRecord record = existing ?? new EmptyRecord();
-
-        WriteRecord(empty, record);
-        if (existing == null)
+        var record = new EmptyRecord();
+        if (empty.RecordId is int id)
         {
-            context.Empties.Add(record);
+            record.Id = id;
         }
 
-        await context.SaveChangesAsync().ConfigureAwait(false);
-        empty.RecordId = record.Id;
+        WriteRecord(empty, record);
+        if (empty.RecordId is null)
+        {
+            db.Empties.Add(record);
+        }
+        else
+        {
+            db.Empties.Update(record);
+        }
+
+        // After SaveChanges, EF has populated the generated key on inserts; copy it back.
+        return () => empty.RecordId = record.Id;
+    }
+
+    public void StageDelete(DbContext context, SceneEntity entity)
+    {
+        var db = (EditorDbContext)context;
+        var empty = (EmptyEntity)entity;
+        if (empty.RecordId is int id)
+        {
+            db.Empties.Remove(new EmptyRecord { Id = id });
+        }
     }
 
     private static EmptyEntity ToEntity(EmptyRecord record)

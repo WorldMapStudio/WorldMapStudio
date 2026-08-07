@@ -1,5 +1,7 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace WorldMapStudio;
 
@@ -35,5 +37,32 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     {
         using EditorDbContext context = CreateContext();
         context.Database.EnsureCreated();
+    }
+
+    public override async Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes)
+    {
+        await using EditorDbContext context = CreateContext();
+
+        var writeBacks = new List<Action>();
+        foreach (SceneEntity entity in saves)
+        {
+            if (FactoryFor(entity) is { } factory)
+            {
+                writeBacks.Add(factory.Stage(context, entity));
+            }
+        }
+
+        foreach (SceneEntity entity in deletes)
+        {
+            FactoryFor(entity)?.StageDelete(context, entity);
+        }
+
+        // A single SaveChanges wraps all staged inserts/updates/deletes in one transaction.
+        await context.SaveChangesAsync().ConfigureAwait(false);
+
+        foreach (Action writeBack in writeBacks)
+        {
+            writeBack();
+        }
     }
 }

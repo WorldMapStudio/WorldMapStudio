@@ -1,3 +1,4 @@
+using System.Linq;
 using ImGuiNET;
 
 namespace WorldMapStudio;
@@ -29,7 +30,27 @@ public sealed class SceneMenu : IMainMenu
                 AddEmptyItem("Sphere", EmptyShape.Sphere);
                 ImGui.EndMenu();
             }
+
+            ImGui.Separator();
+
+            bool hasSelection = _context.Selection.Selected.Count > 0;
+            if (ImGui.MenuItem("Delete Selected", string.Empty, false, hasSelection))
+            {
+                DeleteSelected();
+            }
         });
+    }
+
+    private void DeleteSelected()
+    {
+        EditSession session = _context.EditSessions.Active;
+        foreach (SceneEntity entity in _context.Selection.Selected.OfType<SceneEntity>().ToList())
+        {
+            var command = new DeleteEntityCommand(_context.Scene, entity);
+            command.Apply();
+            session.Record(command);
+            _context.Selection.Remove(entity);
+        }
     }
 
     private void AddEmptyItem(string label, EmptyShape shape)
