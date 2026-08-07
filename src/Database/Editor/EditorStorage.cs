@@ -15,12 +15,16 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public EditorStorage(DatabaseSystem database)
     {
-        // Default to an editor-managed dolt instance so a new project works out of the box.
-        Connection.LaunchServer = true;
-        Connection.Port = 3312;
-        Connection.Database = "editor";
         InitializeSubsystems();
     }
+
+    // Default to an editor-managed dolt instance so a new project works out of the box.
+    public override StorageConnection CreateDefaultConnection() => new()
+    {
+        LaunchServer = true,
+        Port = 3312,
+        Database = "editor",
+    };
 
     public override IEnumerable<ISceneEntityFactory> SceneFactories => Subsystems.OfType<ISceneEntityFactory>();
 

@@ -28,6 +28,18 @@ public sealed partial class DatabaseSystem : ISubsystemHost
     {
         _context = context;
         InitializeSubsystems();
+        BindConnections();
+    }
+
+    // Each storage reads its connection from the project's settings, which are seeded with the
+    // storage's defaults the first time a project uses it.
+    private void BindConnections()
+    {
+        foreach (Storage storage in Storages)
+        {
+            StorageConnection connection = _context.Project.GetOrAddStorageConnection(storage.Name, storage.CreateDefaultConnection());
+            storage.BindConnection(connection);
+        }
     }
 
     /// <summary>Launches managed dolt servers and ensures each storage's database exists.</summary>
