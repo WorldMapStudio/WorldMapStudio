@@ -10,7 +10,8 @@ namespace WorldMapStudio;
 /// constructed automatically by the generated InitializeSubsystems(), so a new top-level menu
 /// (and everything it hosts) can register itself without touching <see cref="Editor"/>.
 /// </summary>
-public sealed partial class MenuBarManager : ISubsystemHost
+[Subsystem(nameof(EditorContext))]
+public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
 {
     public Node3D Root { get; }
 
@@ -20,10 +21,12 @@ public sealed partial class MenuBarManager : ISubsystemHost
     /// <summary>The coordinate system the user works in; every Godot-facing system routes through this.</summary>
     public AxisConvention Axes => Project.AxisConvention;
 
-    public MenuBarManager(Node3D root, Project project)
+    public float Priority => 0f;
+
+    public MenuBarManager(EditorContext context)
     {
-        Root = root;
-        Project = project;
+        Root = context.Root;
+        Project = context.Project;
         InitializeSubsystems();
     }
 
