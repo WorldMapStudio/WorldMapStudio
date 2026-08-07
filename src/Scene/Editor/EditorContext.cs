@@ -37,7 +37,8 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Tools = new ToolSystem(this);
-        Database = new DatabaseSystem();
+        Database = new DatabaseSystem(this);
         InitializeSubsystems();
+        Database.Startup();
     }
 }

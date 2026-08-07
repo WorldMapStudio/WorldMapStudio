@@ -12,6 +12,10 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public EditorStorage(DatabaseSystem database)
     {
+        // Default to an editor-managed dolt instance so a new project works out of the box.
+        Connection.LaunchServer = true;
+        Connection.Port = 3312;
+        Connection.Database = "editor";
         InitializeSubsystems();
     }
 }
