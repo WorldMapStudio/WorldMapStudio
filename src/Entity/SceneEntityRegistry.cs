@@ -15,6 +15,8 @@ public sealed class SceneEntityRegistry
 
     public int Version { get; private set; }
 
+    public bool Contains(SceneEntity entity) => _entities.Contains(entity);
+
     public void Add(SceneEntity entity)
     {
         _entities.Add(entity);

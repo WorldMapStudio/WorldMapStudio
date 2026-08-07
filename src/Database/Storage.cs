@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
@@ -30,6 +31,12 @@ public abstract class Storage : ISubsystem
 
     /// <summary>Creates the storage's tables if missing. A placeholder for the Phase 5 migration flow.</summary>
     public virtual void EnsureSchema() { }
+
+    /// <summary>Persists the given saves and deletes in a single transaction against this storage.</summary>
+    public virtual Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes) => Task.CompletedTask;
+
+    protected ISceneEntityFactory? FactoryFor(SceneEntity entity) =>
+        SceneFactories.FirstOrDefault(factory => factory.Handles(entity));
 
     /// <summary>Builds Pomelo MySQL options for one of this storage's contexts.</summary>
     protected DbContextOptions<TContext> BuildOptions<TContext>() where TContext : DbContext =>

@@ -80,47 +80,40 @@ public sealed partial class DatabaseSystem : ISubsystemHost
         LoadScene();
     }
 
-    /// <summary>Persists every entity touched by the session. One save per entity for now.</summary>
+    /// <summary>
+    /// Persists everything the session touched, grouped per storage into one transaction each. A
+    /// pinned entity still in the scene registry is saved; one that has left it (an undone creation
+    /// or a deletion) is deleted.
+    /// </summary>
     public void Commit(EditSession session)
     {
-        foreach (IEntity entity in session.Pinned)
+        foreach (Storage storage in Storages)
         {
-            if (entity is not SceneEntity scene)
+            var saves = new List<SceneEntity>();
+            var deletes = new List<SceneEntity>();
+
+            foreach (IEntity entity in session.Pinned)
             {
-                continue;
+                if (entity is SceneEntity scene && storage.SceneFactories.Any(factory => factory.Handles(scene)))
+                {
+                    (_context.Scene.Contains(scene) ? saves : deletes).Add(scene);
+                }
             }
 
-            ISceneEntityFactory? factory = FactoryFor(scene);
-            if (factory == null)
+            if (saves.Count == 0 && deletes.Count == 0)
             {
                 continue;
             }
 
             try
             {
-                factory.SaveAsync(scene).GetAwaiter().GetResult();
+                storage.CommitAsync(saves, deletes).GetAwaiter().GetResult();
             }
             catch (Exception e)
             {
-                GD.PushError($"[Database] Failed to save {scene.DisplayName}: {e.Message}");
+                GD.PushError($"[Database] Commit failed for '{storage.Name}': {e.Message}");
             }
         }
-    }
-
-    public ISceneEntityFactory? FactoryFor(SceneEntity entity)
-    {
-        foreach (Storage storage in Storages)
-        {
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                if (factory.Handles(entity))
-                {
-                    return factory;
-                }
-            }
-        }
-
-        return null;
     }
 
     // Loads each factory's persisted entities into the shared scene registry. Runs at startup on the
