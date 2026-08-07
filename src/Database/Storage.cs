@@ -17,7 +17,13 @@ public abstract class Storage : ISubsystem
 
     public virtual float Priority => 0f;
 
-    public StorageConnection Connection { get; } = new();
+    /// <summary>How this storage reaches its database. Bound from project settings at startup.</summary>
+    public StorageConnection Connection { get; private set; } = new();
+
+    /// <summary>The connection a brand-new project gets for this storage, before the user edits it.</summary>
+    public virtual StorageConnection CreateDefaultConnection() => new();
+
+    internal void BindConnection(StorageConnection connection) => Connection = connection;
 
     /// <summary>The scene-entity factories registered into this storage.</summary>
     public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Enumerable.Empty<ISceneEntityFactory>();
