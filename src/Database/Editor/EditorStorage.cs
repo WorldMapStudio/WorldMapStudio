@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace WorldMapStudio;
 
 /// <summary>
@@ -17,5 +20,16 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         Connection.Port = 3312;
         Connection.Database = "editor";
         InitializeSubsystems();
+    }
+
+    public override IEnumerable<ISceneEntityFactory> SceneFactories => Subsystems.OfType<ISceneEntityFactory>();
+
+    /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
+    public EditorDbContext CreateContext() => new(BuildOptions<EditorDbContext>());
+
+    public override void EnsureSchema()
+    {
+        using EditorDbContext context = CreateContext();
+        context.Database.EnsureCreated();
     }
 }

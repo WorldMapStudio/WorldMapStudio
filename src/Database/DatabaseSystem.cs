@@ -54,6 +54,84 @@ public sealed partial class DatabaseSystem : ISubsystemHost
             }
 
             EnsureDatabase(storage);
+
+            try
+            {
+                storage.EnsureSchema();
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"[Database] Storage '{storage.Name}' schema check failed: {e.Message}");
+            }
+        }
+
+        LoadScene();
+    }
+
+    /// <summary>Persists every entity touched by the session. One save per entity for now.</summary>
+    public void Commit(EditSession session)
+    {
+        foreach (IEntity entity in session.Pinned)
+        {
+            if (entity is not SceneEntity scene)
+            {
+                continue;
+            }
+
+            ISceneEntityFactory? factory = FactoryFor(scene);
+            if (factory == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                factory.SaveAsync(scene).GetAwaiter().GetResult();
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"[Database] Failed to save {scene.DisplayName}: {e.Message}");
+            }
+        }
+    }
+
+    public ISceneEntityFactory? FactoryFor(SceneEntity entity)
+    {
+        foreach (Storage storage in Storages)
+        {
+            foreach (ISceneEntityFactory factory in storage.SceneFactories)
+            {
+                if (factory.Handles(entity))
+                {
+                    return factory;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Loads each factory's persisted entities into the shared scene registry. Runs at startup on the
+    // main thread; the entities are plain data (no Godot nodes) until the viewport represents them.
+    private void LoadScene()
+    {
+        foreach (Storage storage in Storages)
+        {
+            foreach (ISceneEntityFactory factory in storage.SceneFactories)
+            {
+                try
+                {
+                    IReadOnlyList<SceneEntity> loaded = factory.LoadAllAsync().GetAwaiter().GetResult();
+                    foreach (SceneEntity entity in loaded)
+                    {
+                        _context.Scene.Add(entity);
+                    }
+                }
+                catch (Exception e)
+                {
+                    GD.PushError($"[Database] Failed to load entities for '{storage.Name}': {e.Message}");
+                }
+            }
         }
     }
 
