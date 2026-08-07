@@ -4,9 +4,10 @@ using System.Linq;
 
 namespace WorldMapStudio;
 
-/// <summary>A column: its name, SQL store type, and nullability. Types are compared for display only
-/// (the migration does not alter column types), so equality is by name.</summary>
-public sealed record SchemaColumn(string Name, string Type, bool Nullable);
+/// <summary>A column: its name, SQL store type, nullability, and whether it auto-increments. Types are
+/// compared for display only (the migration does not alter column types), so equality is by name;
+/// <paramref name="AutoIncrement"/> is used only when generating a CREATE TABLE.</summary>
+public sealed record SchemaColumn(string Name, string Type, bool Nullable, bool AutoIncrement = false);
 
 /// <summary>A non-primary index: name, its ordered columns, and whether it is unique.</summary>
 public sealed record SchemaIndex(string Name, IReadOnlyList<string> Columns, bool Unique);
