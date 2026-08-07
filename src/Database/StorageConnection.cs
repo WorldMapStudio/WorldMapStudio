@@ -1,3 +1,5 @@
+using MySqlConnector;
+
 namespace WorldMapStudio;
 
 /// <summary>
@@ -24,6 +26,29 @@ public sealed class StorageConnection
     /// </summary>
     public bool LaunchServer { get; set; }
 
-    /// <summary>Filesystem path to the dolt repository, used when <see cref="LaunchServer"/> is set.</summary>
+    /// <summary>
+    /// Data directory a launched <c>dolt sql-server</c> serves (each database is a subdirectory).
+    /// Used when <see cref="LaunchServer"/> is set; empty means the database system fills in a
+    /// per-project default.
+    /// </summary>
     public string RepositoryPath { get; set; } = string.Empty;
+
+    /// <summary>Builds a MySQL connection string, optionally without a database (to run CREATE DATABASE).</summary>
+    public string BuildConnectionString(bool includeDatabase = true)
+    {
+        var builder = new MySqlConnectionStringBuilder
+        {
+            Server = Host,
+            Port = (uint)Port,
+            UserID = User,
+            Password = Password,
+        };
+
+        if (includeDatabase && Database.Length > 0)
+        {
+            builder.Database = Database;
+        }
+
+        return builder.ConnectionString;
+    }
 }
