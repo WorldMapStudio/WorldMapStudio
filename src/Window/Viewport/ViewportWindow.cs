@@ -37,6 +37,7 @@ public sealed class ViewportWindow : Window
     private readonly AxisConvention _axes;
 
     private readonly FlyCamera _flyCamera;
+    private readonly SceneEntityRegistry _scene;
     private readonly ObjectSelection _objectSelection;
     private readonly EditSessionManager _sessions;
     private readonly TransformGizmo _gizmo = new();
@@ -53,7 +54,8 @@ public sealed class ViewportWindow : Window
     {
         Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
-        _objectSelection = new ObjectSelection(manager.Selection);
+        _scene = manager.Scene;
+        _objectSelection = new ObjectSelection(manager.Selection, _scene);
         _sessions = manager.EditSessions;
         _axes = manager.Axes;
 
@@ -133,7 +135,7 @@ public sealed class ViewportWindow : Window
     private void AddBox(GVector3 position, Color color, float yaw)
     {
         var box = new DemoBoxEntity(position, color, yaw);
-        _objectSelection.Objects.Add(box);
+        _scene.Add(box);
         box.CreateRepresentation(_viewport);
     }
 

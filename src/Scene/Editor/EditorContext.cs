@@ -20,12 +20,16 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Owns the active edit session and its undo history.</summary>
     public EditSessionManager EditSessions { get; }
 
+    /// <summary>The scene entities currently loaded into the editor.</summary>
+    public SceneEntityRegistry Scene { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
         Project = project;
         Selection = new SelectionSystem();
         EditSessions = new EditSessionManager();
+        Scene = new SceneEntityRegistry();
         InitializeSubsystems();
     }
 }
