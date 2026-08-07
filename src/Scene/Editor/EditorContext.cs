@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace WorldMapStudio;
@@ -51,12 +52,23 @@ public sealed partial class EditorContext : ISubsystemHost
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
         InitializeSubsystems();
+    }
+
+    /// <summary>
+    /// Runs the blocking startup work: launching the dolt servers, ensuring databases and schemas,
+    /// and checking for schema drift. Kept out of the constructor so it can run off the main thread
+    /// (see <see cref="LoadingScreen"/>) rather than freezing the UI while the editor opens.
+    /// </summary>
+    public void Startup(Action<string>? onStep = null)
+    {
+        onStep?.Invoke("Starting database");
         Database.Startup();
 
         // Persist the project now that storages have seeded their default connections into it.
         ProjectStore.Save(Project);
 
         // Surface any schema drift between the code and the live database.
+        onStep?.Invoke("Checking schema");
         Migrations.Check();
     }
 }

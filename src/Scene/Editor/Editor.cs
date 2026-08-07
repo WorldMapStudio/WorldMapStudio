@@ -11,19 +11,19 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class Editor : IScene
 {
-    private readonly Node3D _root;
-    private readonly Project _project;
-    private EditorContext _context = null!;
+    private readonly EditorContext _context;
 
-    public Editor(Node3D root, Project project)
+    /// <summary>
+    /// Takes a context that has already been constructed and started (by <see cref="LoadingScreen"/>),
+    /// so opening the editor is instant rather than blocking on the database.
+    /// </summary>
+    public Editor(EditorContext context)
     {
-        _root = root;
-        _project = project;
+        _context = context;
     }
 
     public void Start()
     {
-        _context = new EditorContext(_root, _project);
     }
 
     public IScene? Update()
@@ -35,7 +35,7 @@ public sealed class Editor : IScene
             menuBar.Draw();
 
             ImGui.Separator();
-            ImGui.TextDisabled(_project.Name);
+            ImGui.TextDisabled(_context.Project.Name);
         });
 
         ImGui.DockSpaceOverViewport();
