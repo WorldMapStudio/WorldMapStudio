@@ -17,7 +17,7 @@ public sealed partial class ToolWindow : Window, ISubsystemHost
     public ToolWindow(WindowManager manager)
         : base("Tools", defaultSize: new Vector2(200, 300))
     {
-        _tools = manager.Tools;
+        _tools = manager.Context.Tools;
         InitializeSubsystems();
 
         foreach (IToolFactory factory in Subsystems.Cast<IToolFactory>())

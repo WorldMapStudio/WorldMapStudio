@@ -33,7 +33,7 @@ public sealed class TestRunnerWindow : Window
     public TestRunnerWindow(WindowManager manager)
         : base("Test Runner", startOpen: false, defaultSize: new NVector2(720.0f, 560.0f))
     {
-        _runner = new TestRunner(manager.Root);
+        _runner = new TestRunner(manager.Context.Root);
     }
 
     protected override void DrawContent()

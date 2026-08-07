@@ -37,11 +37,12 @@ public sealed class ViewportWindow : Window
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
-        Node owner = manager.Root;
+        EditorContext context = manager.Context;
+        Node owner = context.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
-        _scene = manager.Scene;
-        _tools = manager.Tools;
-        _axes = manager.Axes;
+        _scene = context.Scene;
+        _tools = context.Tools;
+        _axes = context.Axes;
 
         _viewport = new SubViewport
         {

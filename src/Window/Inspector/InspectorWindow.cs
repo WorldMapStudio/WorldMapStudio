@@ -19,8 +19,8 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
     public InspectorWindow(WindowManager manager)
         : base("Inspector", defaultSize: new Vector2(300, 400))
     {
-        _selection = manager.Selection;
-        _context = new InspectorContext(manager.EditSessions);
+        _selection = manager.Context.Selection;
+        _context = new InspectorContext(manager.Context.EditSessions);
         InitializeSubsystems();
     }
 
