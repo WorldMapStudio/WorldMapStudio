@@ -14,10 +14,14 @@ public sealed partial class EditorContext : ISubsystemHost
 
     public AxisConvention Axes => Project.AxisConvention;
 
+    /// <summary>Shared selection, constructed before the subsystem tree so windows can capture it.</summary>
+    public SelectionSystem Selection { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
         Project = project;
+        Selection = new SelectionSystem();
         InitializeSubsystems();
     }
 }

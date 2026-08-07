@@ -10,21 +10,22 @@ using NVector4 = System.Numerics.Vector4;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Tracks a viewport's selectable objects and the current selection, and implements
-/// Unreal/Blender-style picking: left-click selects, shift-click adds or removes, and
-/// dragging from empty space marquee-selects everything whose centre falls inside the box.
-/// Selected objects get an outline, and the selection's centre (plus, for a single object,
-/// its orientation) form the pivot that <see cref="TransformGizmo"/> and
-/// <see cref="ModalTransform"/> operate around.
+/// Viewport picking over <see cref="SceneEntity"/>s: left-click selects, shift-click adds or
+/// removes, and dragging from empty space marquee-selects everything whose centre falls inside the
+/// box. Selection lives in the shared <see cref="SelectionSystem"/> so the outline and inspector
+/// stay in sync; each entity is picked and outlined against its own <see cref="SceneEntity.LocalBounds"/>
+/// in its world transform.
 /// </summary>
 public sealed class ObjectSelection
 {
     private const float MarqueeThreshold = 5.0f;
 
-    private readonly GVector3 _objectSize;
+    private readonly SelectionSystem _selection;
 
-    public List<Node3D> Objects { get; } = [];
-    public List<Node3D> Selection { get; } = [];
+    private readonly List<SceneEntity> _selectionCache = [];
+    private int _cachedVersion = -1;
+
+    public List<SceneEntity> Objects { get; } = [];
 
     /// <summary>True while a click or marquee drag is in progress.</summary>
     public bool IsDragging => _mouseDown;
@@ -33,9 +34,32 @@ public sealed class ObjectSelection
     private bool _marquee;
     private NVector2 _marqueeStart;
 
-    public ObjectSelection(GVector3 objectSize)
+    public ObjectSelection(SelectionSystem selection)
     {
-        _objectSize = objectSize;
+        _selection = selection;
+    }
+
+    /// <summary>The selected scene entities, cached until the shared selection next changes.</summary>
+    public IReadOnlyList<SceneEntity> Selection
+    {
+        get
+        {
+            if (_cachedVersion != _selection.Version)
+            {
+                _selectionCache.Clear();
+                foreach (IEntity entity in _selection.Selected)
+                {
+                    if (entity is SceneEntity scene)
+                    {
+                        _selectionCache.Add(scene);
+                    }
+                }
+
+                _cachedVersion = _selection.Version;
+            }
+
+            return _selectionCache;
+        }
     }
 
     // canStartClick should already fold in "hovered, and no other system (fly camera,
@@ -91,25 +115,21 @@ public sealed class ObjectSelection
 
     private void ApplyClickSelection(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize, bool additive)
     {
-        Node3D hit = Pick(mouse, camera, imageMin, imageSize);
+        SceneEntity hit = Pick(mouse, camera, imageMin, imageSize);
         if (hit != null)
         {
             if (additive)
             {
-                if (!Selection.Remove(hit))
-                {
-                    Selection.Add(hit);
-                }
+                _selection.Toggle(hit);
             }
             else
             {
-                Selection.Clear();
-                Selection.Add(hit);
+                _selection.Set(hit);
             }
         }
         else if (!additive)
         {
-            Selection.Clear();
+            _selection.Clear();
         }
     }
 
@@ -119,26 +139,27 @@ public sealed class ObjectSelection
         NVector2 max = NVector2.Max(a, b);
         if (!additive)
         {
-            Selection.Clear();
+            _selection.Clear();
         }
 
-        foreach (Node3D obj in Objects)
+        foreach (SceneEntity obj in Objects)
         {
-            if (!WorldToScreen(camera, obj.GlobalTransform.Origin, imageMin, out NVector2 screen))
+            GVector3 centre = obj.Transform * obj.LocalBounds.GetCenter();
+            if (!WorldToScreen(camera, centre, imageMin, out NVector2 screen))
             {
                 continue;
             }
 
             bool inside = screen.X >= min.X && screen.X <= max.X && screen.Y >= min.Y && screen.Y <= max.Y;
-            if (inside && !Selection.Contains(obj))
+            if (inside)
             {
-                Selection.Add(obj);
+                _selection.Add(obj);
             }
         }
     }
 
-    // Nearest object under the cursor, or null. Uses an analytic ray-vs-box slab test.
-    private Node3D Pick(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize)
+    // Nearest entity under the cursor, or null. Uses an analytic ray-vs-box slab test.
+    private SceneEntity Pick(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize)
     {
         GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
         if (local.X < 0.0f || local.Y < 0.0f || local.X > imageSize.X || local.Y > imageSize.Y)
@@ -149,11 +170,11 @@ public sealed class ObjectSelection
         GVector3 from = camera.ProjectRayOrigin(local);
         GVector3 dir = camera.ProjectRayNormal(local);
 
-        Node3D best = null;
+        SceneEntity best = null;
         float bestT = float.PositiveInfinity;
-        foreach (Node3D obj in Objects)
+        foreach (SceneEntity obj in Objects)
         {
-            if (TryRayBox(from, dir, obj.GlobalTransform, _objectSize, out float t) && t < bestT)
+            if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float t) && t < bestT)
             {
                 bestT = t;
                 best = obj;
@@ -163,7 +184,7 @@ public sealed class ObjectSelection
         return best;
     }
 
-    // Wireframe outline around each selected object, projected from its oriented box.
+    // Wireframe outline around each selected entity, projected from its oriented bounds.
     public void DrawOutlines(Camera3D camera, NVector2 imageMin)
     {
         // 12 edges of a box as index pairs into the 8 corners below.
@@ -176,18 +197,21 @@ public sealed class ObjectSelection
 
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         uint color = ImGui.GetColorU32(new NVector4(1.0f, 0.62f, 0.20f, 0.95f));
-        GVector3 half = _objectSize * 0.5f;
         Span<NVector2> corners = stackalloc NVector2[8];
 
-        foreach (Node3D obj in Selection)
+        foreach (SceneEntity obj in Selection)
         {
-            Transform3D xform = obj.GlobalTransform;
+            Transform3D xform = obj.Transform;
+            Aabb bounds = obj.LocalBounds;
+            GVector3 lo = bounds.Position;
+            GVector3 hi = bounds.End;
+
             bool allVisible = true;
             for (int c = 0; c < 8; c++)
             {
-                GVector3 local = new((c & 1) == 0 ? -half.X : half.X,
-                                     (c & 4) == 0 ? -half.Y : half.Y,
-                                     (c & 2) == 0 ? -half.Z : half.Z);
+                GVector3 local = new((c & 1) == 0 ? lo.X : hi.X,
+                                     (c & 4) == 0 ? lo.Y : hi.Y,
+                                     (c & 2) == 0 ? lo.Z : hi.Z);
                 if (!WorldToScreen(camera, xform * local, imageMin, out corners[c]))
                 {
                     allVisible = false;
@@ -207,18 +231,20 @@ public sealed class ObjectSelection
         }
     }
 
-    // Centre of the selection and, for local space with exactly one object, its orientation.
+    // Centre of the selection and, for local space with exactly one entity, its orientation.
     public Transform3D ComputePivot(bool useLocal)
     {
+        IReadOnlyList<SceneEntity> selection = Selection;
+
         GVector3 centre = GVector3.Zero;
-        foreach (Node3D obj in Selection)
+        foreach (SceneEntity obj in selection)
         {
-            centre += obj.GlobalTransform.Origin;
+            centre += obj.Transform * obj.LocalBounds.GetCenter();
         }
 
-        centre /= Selection.Count;
+        centre /= selection.Count;
 
-        Basis basis = useLocal ? Selection[0].GlobalTransform.Basis.Orthonormalized() : Basis.Identity;
+        Basis basis = useLocal ? selection[0].Transform.Basis.Orthonormalized() : Basis.Identity;
         return new Transform3D(basis, centre);
     }
 
@@ -244,19 +270,21 @@ public sealed class ObjectSelection
         drawList.AddRect(min, max, ImGui.GetColorU32(new NVector4(0.40f, 0.65f, 1.0f, 0.90f)));
     }
 
-    // Slab test: transform the ray into the box's local space and clip against its extents.
+    // Slab test: transform the ray into the box's local space and clip against its bounds.
     // Reports the entry distance so the caller can pick the nearest hit among several boxes.
-    private static bool TryRayBox(GVector3 origin, GVector3 dir, Transform3D boxTransform, GVector3 size, out float tHit)
+    private static bool TryRayBox(GVector3 origin, GVector3 dir, Transform3D boxTransform, Aabb bounds, out float tHit)
     {
         tHit = 0.0f;
         Transform3D inv = boxTransform.AffineInverse();
         GVector3 o = inv * origin;
         GVector3 d = inv.Basis * dir;
-        GVector3 half = size * 0.5f;
+        GVector3 lo = bounds.Position;
+        GVector3 hi = bounds.End;
 
         float[] oc = [o.X, o.Y, o.Z];
         float[] dc = [d.X, d.Y, d.Z];
-        float[] hc = [half.X, half.Y, half.Z];
+        float[] loc = [lo.X, lo.Y, lo.Z];
+        float[] hic = [hi.X, hi.Y, hi.Z];
 
         float tMin = float.NegativeInfinity;
         float tMax = float.PositiveInfinity;
@@ -264,7 +292,7 @@ public sealed class ObjectSelection
         {
             if (Mathf.Abs(dc[a]) < 1e-8f)
             {
-                if (oc[a] < -hc[a] || oc[a] > hc[a])
+                if (oc[a] < loc[a] || oc[a] > hic[a])
                 {
                     return false;
                 }
@@ -272,8 +300,8 @@ public sealed class ObjectSelection
                 continue;
             }
 
-            float t1 = (-hc[a] - oc[a]) / dc[a];
-            float t2 = (hc[a] - oc[a]) / dc[a];
+            float t1 = (loc[a] - oc[a]) / dc[a];
+            float t2 = (hic[a] - oc[a]) / dc[a];
             if (t1 > t2)
             {
                 (t1, t2) = (t2, t1);

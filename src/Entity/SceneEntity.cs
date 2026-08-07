@@ -36,7 +36,7 @@ public abstract class SceneEntity : Entity
         }
     }
 
-    public void CreateRepresentation(Node3D parent)
+    public void CreateRepresentation(Node parent)
     {
         if (Node != null)
         {
@@ -44,8 +44,8 @@ public abstract class SceneEntity : Entity
         }
 
         Node = BuildNode();
-        Node.GlobalTransform = _transform;
         parent.AddChild(Node);
+        Node.GlobalTransform = _transform;
     }
 
     public void DestroyRepresentation()
