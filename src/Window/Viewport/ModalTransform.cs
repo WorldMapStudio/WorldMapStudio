@@ -37,6 +37,7 @@ public sealed class ModalTransform
 
     private int _axis = -1; // -1 = free, 0/1/2 = X/Y/Z
     private bool _axisLocal;
+    private bool _axisExclude; // true = constrained to the plane of the OTHER two axes (Blender's Shift+axis)
     private string _numeric = string.Empty;
     private NVector2 _startMouse;
     private Transform3D _startPivot;
@@ -47,6 +48,7 @@ public sealed class ModalTransform
         Mode = mode;
         _axis = -1;
         _axisLocal = false;
+        _axisExclude = false;
         _numeric = string.Empty;
         _startMouse = ImGui.GetMousePos();
         _startPivot = selection.ComputePivot(false);
@@ -102,6 +104,8 @@ public sealed class ModalTransform
 
     // X/Y/Z pick an axis; pressing the same one again cycles to the other space, then to
     // free. The first press honours the toolbar's Local/World choice (local needs one object).
+    // Holding Shift while pressing (translate only) constrains to the plane of the OTHER two
+    // axes instead -- e.g. Shift+X moves freely in Y/Z -- exactly like Blender's grab tool.
     private void HandleAxisKey(ImGuiKey key, int axis, ObjectSelection selection, bool localSpacePreferred)
     {
         if (!ImGui.IsKeyPressed(key, false))
@@ -111,16 +115,20 @@ public sealed class ModalTransform
 
         bool canLocal = selection.Selection.Count == 1;
         bool preferLocal = localSpacePreferred && canLocal;
+        bool exclude = Mode == ModalTransformMode.Translate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
 
-        if (_axis != axis)
+        if (_axis != axis || _axisExclude != exclude)
         {
+            // A different axis, or switching between "along this axis" and "excluding this
+            // axis", starts a fresh cycle at the preferred space.
             _axis = axis;
+            _axisExclude = exclude;
             _axisLocal = preferLocal;
         }
         else if (preferLocal)
         {
             if (_axisLocal) { _axisLocal = false; }   // local -> global
-            else { _axis = -1; }                      // global -> free
+            else { _axis = -1; _axisExclude = false; } // global -> free
         }
         else if (!_axisLocal && canLocal)
         {
@@ -130,6 +138,7 @@ public sealed class ModalTransform
         {
             _axis = -1;                               // -> free
             _axisLocal = false;
+            _axisExclude = false;
         }
     }
 
@@ -211,6 +220,12 @@ public sealed class ModalTransform
                 GVector3 normal = -camera.GlobalTransform.Basis.Z;
                 move = RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _startMouse, imageMin, pivot, normal);
             }
+            else if (_axisExclude)
+            {
+                // Shift+axis: free movement in the plane the excluded axis is normal to.
+                GVector3 normal = AxisVec(_axis);
+                move = RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _startMouse, imageMin, pivot, normal);
+            }
             else
             {
                 GVector3 axis = AxisVec(_axis);
@@ -256,23 +271,16 @@ public sealed class ModalTransform
 
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
 
-        if (_axis >= 0)
+        if (_axis >= 0 && _axisExclude)
         {
-            GVector3 axis = AxisVec(_axis);
-            // Screen direction of the axis, from the pivot toward a point one unit along it.
-            bool ok = ObjectSelection.WorldToScreen(camera, _startPivot.Origin + axis, imageMin, out NVector2 ahead) ||
-                      ObjectSelection.WorldToScreen(camera, _startPivot.Origin - axis, imageMin, out ahead);
-            if (ok)
-            {
-                NVector2 dir = ahead - centre;
-                float len = dir.Length();
-                if (len > 1e-3f)
-                {
-                    dir /= len;
-                    uint col = ImGui.GetColorU32(AxisColors[_axis]);
-                    drawList.AddLine(centre - dir * 4000.0f, centre + dir * 4000.0f, col, 1.5f);
-                }
-            }
+            // Shift+axis: draw both of the OTHER two axes through the pivot, so the excluded
+            // one reads clearly as "not this axis" -- the plane they span is what moves.
+            DrawAxisLine(drawList, camera, imageMin, centre, (_axis + 1) % 3);
+            DrawAxisLine(drawList, camera, imageMin, centre, (_axis + 2) % 3);
+        }
+        else if (_axis >= 0)
+        {
+            DrawAxisLine(drawList, camera, imageMin, centre, _axis);
         }
         else if (Mode == ModalTransformMode.Rotate)
         {
@@ -280,15 +288,41 @@ public sealed class ModalTransform
         }
     }
 
+    // Draws one constrained axis as a colored line through the pivot, extended far enough
+    // off-screen in both directions to read as infinite.
+    private void DrawAxisLine(ImDrawListPtr drawList, Camera3D camera, NVector2 imageMin, NVector2 centre, int axisIndex)
+    {
+        GVector3 axis = AxisVec(axisIndex);
+        // Screen direction of the axis, from the pivot toward a point one unit along it.
+        bool ok = ObjectSelection.WorldToScreen(camera, _startPivot.Origin + axis, imageMin, out NVector2 ahead) ||
+                  ObjectSelection.WorldToScreen(camera, _startPivot.Origin - axis, imageMin, out ahead);
+        if (!ok)
+        {
+            return;
+        }
+
+        NVector2 dir = ahead - centre;
+        float len = dir.Length();
+        if (len <= 1e-3f)
+        {
+            return;
+        }
+
+        dir /= len;
+        uint col = ImGui.GetColorU32(AxisColors[axisIndex]);
+        drawList.AddLine(centre - dir * 4000.0f, centre + dir * 4000.0f, col, 1.5f);
+    }
+
     private void DrawHud(NVector2 imageMin)
     {
         string op = Mode == ModalTransformMode.Translate ? "Move" : "Rotate";
+        string axisLabel = _axisExclude ? "XYZ".Remove(_axis, 1) : "XYZ".Substring(_axis, 1);
         string axis = _axis < 0 ? string.Empty
-            : $" {(_axisLocal ? "local " : string.Empty)}{"XYZ"[_axis]}";
+            : $" {(_axisLocal ? "local " : string.Empty)}{axisLabel}";
         string value = _numeric.Length > 0
             ? $": {_numeric}{(Mode == ModalTransformMode.Rotate ? "°" : string.Empty)}"
             : string.Empty;
-        string hint = "   (LMB/Enter confirm, RMB/Esc cancel, X/Y/Z axis, type a value)";
+        string hint = "   (LMB/Enter confirm, RMB/Esc cancel, X/Y/Z axis, Shift+axis to exclude, type a value)";
 
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         drawList.AddText(imageMin + new NVector2(8.0f, 6.0f),
