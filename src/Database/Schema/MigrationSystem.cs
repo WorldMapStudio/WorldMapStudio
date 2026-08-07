@@ -35,13 +35,12 @@ public sealed class StorageMigration
 
 /// <summary>
 /// Compares each storage's EF model schema to its live database on startup (and on demand), and holds
-/// the resulting differences plus generated SQL for the <see cref="MigrationWindow"/> to review and
+/// the resulting differences plus generated SQL for the <see cref="Migration"/> scene to review and
 /// apply. Additive changes, drops, and primary-key/index changes are detected; type changes are not.
 /// </summary>
 public sealed class MigrationSystem
 {
     private readonly EditorContext _context;
-    private bool _openRequested;
 
     public MigrationSystem(EditorContext context)
     {
@@ -52,7 +51,7 @@ public sealed class MigrationSystem
 
     public bool HasPending => Migrations.Any(migration => migration.HasChanges);
 
-    /// <summary>Recomputes the diff for every storage. Opens the window if anything needs migrating.</summary>
+    /// <summary>Recomputes the diff for every storage.</summary>
     public void Check()
     {
         Migrations.Clear();
@@ -77,8 +76,6 @@ public sealed class MigrationSystem
 
             Migrations.Add(migration);
         }
-
-        _openRequested = HasPending;
     }
 
     /// <summary>Applies a migration's (possibly user-edited) SQL, then re-checks that storage.</summary>
@@ -107,14 +104,6 @@ public sealed class MigrationSystem
         {
             migration.Error = e.Message;
         }
-    }
-
-    /// <summary>True once after a check that found pending changes, so the window can open itself.</summary>
-    public bool ConsumeOpenRequest()
-    {
-        bool requested = _openRequested;
-        _openRequested = false;
-        return requested;
     }
 
     // Blocking DB work must run off the Godot main thread's synchronization context (see the deadlock
