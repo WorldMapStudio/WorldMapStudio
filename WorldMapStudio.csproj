@@ -9,4 +9,8 @@
   <ItemGroup>
     <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="analyzer\WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Remove="analyzer\**" />
+  </ItemGroup>
 </Project>
