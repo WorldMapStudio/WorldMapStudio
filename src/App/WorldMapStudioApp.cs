@@ -1,58 +1,37 @@
-using System.Collections.Generic;
+#nullable enable
 using WorldMapStudio;
 using Godot;
-using ImGuiNET;
 
+/// <summary>
+/// Application root node. Owns the ImGui layer and the shared work queue, and drives the active
+/// <see cref="IScene"/>: it starts at the <see cref="MainMenu"/>, then each frame asks the current
+/// scene what to run next (stay, transition, or quit).
+/// </summary>
 public partial class WorldMapStudioApp : Node3D
 {
-	private readonly List<ImGuiWindow> _windows = [];
+	private IScene _currentScene = null!;
 
 	public override void _Ready()
 	{
 		AddChild(new GodotImGui());
 
-		_windows.Add(new PerformanceWindow());
-		_windows.Add(new ComputeMaterialWindow());
-		_windows.Add(new ViewportWindow(this));
-		_windows.Add(new WorkQueueWindow());
-		_windows.Add(new WorkTestWindow());
-		_windows.Add(new TestRunnerWindow(this));
+		_currentScene = new MainMenu(this);
+		_currentScene.Start();
 	}
 
 	public override void _Process(double delta)
 	{
 		WorkQueue.PumpMainThread();
 
-		bool shouldQuit = false;
-		ImGuiEx.MainMenuBar(() =>
-		{
-			ImGuiEx.Menu("File", () =>
-			{
-				if (ImGui.MenuItem("Exit"))
-				{
-					shouldQuit = true;
-				}
-			});
-
-			ImGuiEx.Menu("Window", () =>
-			{
-				foreach (ImGuiWindow window in _windows)
-				{
-					window.DrawMenuItem();
-				}
-			});
-		});
-
-		ImGui.DockSpaceOverViewport();
-
-		foreach (ImGuiWindow window in _windows)
-		{
-			window.Draw();
-		}
-
-		if (shouldQuit)
+		IScene? nextScene = _currentScene.Update();
+		if (nextScene == null)
 		{
 			GetTree().Quit();
+		}
+		else if (nextScene != _currentScene)
+		{
+			_currentScene = nextScene;
+			_currentScene.Start();
 		}
 	}
 
