@@ -24,6 +24,9 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>Shared selection, forwarded from the context down to the windows.</summary>
     public SelectionSystem Selection { get; }
 
+    /// <summary>Active edit session and undo history, forwarded from the context.</summary>
+    public EditSessionManager EditSessions { get; }
+
     public float Priority => 0f;
 
     public MenuBarManager(EditorContext context)
@@ -31,6 +34,7 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
         Root = context.Root;
         Project = context.Project;
         Selection = context.Selection;
+        EditSessions = context.EditSessions;
         InitializeSubsystems();
     }
 

@@ -23,6 +23,9 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     /// <summary>Shared selection windows bind to (viewport, outline, inspector).</summary>
     public SelectionSystem Selection { get; }
 
+    /// <summary>Active edit session windows record edits into.</summary>
+    public EditSessionManager EditSessions { get; }
+
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
 
     public WindowManager(MenuBarManager manager)
@@ -30,6 +33,7 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         Root = manager.Root;
         Axes = manager.Axes;
         Selection = manager.Selection;
+        EditSessions = manager.EditSessions;
         InitializeSubsystems();
     }
 
