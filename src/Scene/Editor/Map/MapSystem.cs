@@ -65,6 +65,7 @@ public sealed class MapSystem
                     // First source to claim an id wins; ids are what entities store, so they can't collide.
                     if (_maps.All(existing => existing.Id != map.Id))
                     {
+                        map.Source = source;
                         _maps.Add(map);
                     }
                 }
@@ -99,14 +100,14 @@ public sealed class MapSystem
             return null;
         }
 
-        if (Sources.FirstOrDefault(source => source.CanCreate) is not { } source)
+        if (Sources.FirstOrDefault(source => source.CanEdit) is not { } source)
         {
             error = "No storage accepts new maps.";
             return null;
         }
 
         string trimmed = name.Trim();
-        var created = new Map(new MapId(id), trimmed.Length == 0 ? $"Map {id}" : trimmed);
+        var created = new Map(new MapId(id), trimmed.Length == 0 ? $"Map {id}" : trimmed) { Source = source };
 
         try
         {
@@ -124,6 +125,108 @@ public sealed class MapSystem
         Version++;
         error = null;
         return created;
+    }
+
+    /// <summary>
+    /// Renames a map, returning an error or null. Safe at any time: entities reference a map by
+    /// <see cref="Map.Id"/>, so the name is nothing but a label.
+    /// </summary>
+    public string? Rename(Map map, string name)
+    {
+        IMapSource? source = map.Source;
+        if (source is not { CanEdit: true })
+        {
+            return "This map comes from a read-only source.";
+        }
+
+        string trimmed = name.Trim();
+        if (trimmed.Length == 0)
+        {
+            return "A map needs a name.";
+        }
+
+        if (trimmed == map.Name)
+        {
+            return null;
+        }
+
+        string previous = map.Name;
+        map.Name = trimmed;
+
+        try
+        {
+            Run(() => source.RenameAsync(map));
+        }
+        catch (Exception e)
+        {
+            map.Name = previous;
+            GD.PushError($"[Map] Failed to rename map {map.Id.Value}: {e.Message}");
+            return e.Message;
+        }
+
+        Version++;
+        return null;
+    }
+
+    /// <summary>
+    /// Why <paramref name="map"/> can't be deleted right now, or null when it can. Deleting is barred
+    /// while an edit session is open: the session pins entities that may live in the map (and holds
+    /// undo commands that would revert into it), so removing it underneath them invites nonsense.
+    /// </summary>
+    public string? DeleteBlocker(Map map)
+    {
+        if (map.Source is not { CanEdit: true })
+        {
+            return "This map comes from a read-only source.";
+        }
+
+        if (_maps.Count <= 1)
+        {
+            return "The project must keep at least one map.";
+        }
+
+        if (_context.EditSessions.Active.IsDirty)
+        {
+            return "Commit or abort the edit session first.";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Deletes a map, returning an error or null. Only the map itself goes: entities placed in it keep
+    /// their rows (and their map id), so nothing is silently destroyed and re-creating the id restores
+    /// them. Leaves the map the user is standing in only by moving them to another one.
+    /// </summary>
+    public string? Delete(Map map)
+    {
+        if (DeleteBlocker(map) is { } blocker)
+        {
+            return blocker;
+        }
+
+        IMapSource source = map.Source!;
+
+        try
+        {
+            Run(() => source.DeleteAsync(map));
+        }
+        catch (Exception e)
+        {
+            GD.PushError($"[Map] Failed to delete map {map.Id.Value}: {e.Message}");
+            return e.Message;
+        }
+
+        _maps.Remove(map);
+        Thumbnails.Remove(map.Id);
+
+        if (Current.Id == map.Id)
+        {
+            Current = _maps[0];
+        }
+
+        Version++;
+        return null;
     }
 
     /// <summary>Opens a map: streaming swaps to its entities and new entities land in it.</summary>

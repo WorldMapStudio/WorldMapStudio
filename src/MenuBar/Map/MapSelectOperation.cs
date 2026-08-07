@@ -10,8 +10,9 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// The map picker: a filterable grid of cards (preview thumbnail + name + id) where clicking a card
-/// enters that map. Creating a map swaps the same grid for a small inline form, so adding a map and
-/// opening it are one dialog rather than two — a freshly created map is entered straight away.
+/// enters that map and right-clicking one renames or deletes it. Creating a map swaps the same grid
+/// for a small inline form, so adding a map and opening it are one dialog rather than two — a freshly
+/// created map is entered straight away.
 /// </summary>
 public sealed class MapSelectOperation : IModalOperation<MapSystem>
 {
@@ -28,6 +29,12 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
     private int _newId;
     private string _newName = string.Empty;
     private string? _createError;
+
+    // Card context-menu state. Only one card's menu is open at a time, so one set of fields does.
+    private string _renameBuffer = string.Empty;
+    private MapId? _confirmDelete;
+    private Map? _pendingDelete;
+    private string? _cardError;
 
     /// <summary>The map the user picked, once the modal reports <see cref="ModalOperationState.Confirmed"/>.</summary>
     public Map? Selected { get; private set; }
@@ -55,6 +62,11 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         if (maps.Error != null)
         {
             ImGui.TextColored(ErrorColor, maps.Error);
+        }
+
+        if (_cardError != null)
+        {
+            ImGui.TextColored(ErrorColor, _cardError);
         }
 
         Map? clicked = null;
@@ -85,10 +97,20 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             }
         });
 
+        // Deferred out of the loop above: deleting mutates the map list the grid is walking.
+        if (_pendingDelete != null)
+        {
+            _cardError = maps.Delete(_pendingDelete);
+            _pendingDelete = null;
+        }
+
         if (ImGui.Button("Close", new Vector2(120, 0)))
         {
             return ModalOperationState.Cancelled;
         }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("Right-click a map to rename or delete it.");
 
         if (clicked == null)
         {
@@ -157,8 +179,9 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         || map.Id.Value.ToString(CultureInfo.InvariantCulture).Contains(_filter, StringComparison.Ordinal);
 
     // Cards are drawn by hand: an invisible button takes the click and reserves the layout slot, then
-    // the draw list paints the frame, the preview and the labels into that rectangle.
-    private static bool DrawCard(MapSystem maps, Map map)
+    // the draw list paints the frame, the preview and the labels into that rectangle. The context menu
+    // has to come straight after the button, since that is the item it attaches itself to.
+    private bool DrawCard(MapSystem maps, Map map)
     {
         var size = new Vector2(CardWidth, ThumbnailHeight + LabelHeight + Padding * 2.0f);
         Vector2 origin = ImGui.GetCursorScreenPos();
@@ -166,7 +189,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         ImGui.PushID(map.Id.Value);
         bool clicked = ImGui.InvisibleButton("##card", size);
         bool hovered = ImGui.IsItemHovered();
-        ImGui.PopID();
+        bool menuOpen = DrawCardMenu(maps, map);
 
         bool current = map.Id == maps.CurrentMap;
         ImDrawListPtr draw = ImGui.GetWindowDrawList();
@@ -205,11 +228,91 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             current ? $"id {map.Id.Value} · current" : $"id {map.Id.Value}");
         draw.PopClipRect();
 
-        if (hovered)
+        if (hovered && !menuOpen)
         {
             ImGui.SetTooltip($"{map.DisplayName} (id {map.Id.Value})");
         }
 
+        ImGui.PopID();
         return clicked;
+    }
+
+    // Right-click actions on a card. Renaming is always on offer — entities reference a map by id, so
+    // the name is only a label — while deleting takes a confirmation and is refused outright while an
+    // edit session is open.
+    private bool DrawCardMenu(MapSystem maps, Map map)
+    {
+        if (!ImGui.BeginPopupContextItem("##actions"))
+        {
+            return false;
+        }
+
+        if (ImGui.IsWindowAppearing())
+        {
+            _renameBuffer = map.Name;
+            _confirmDelete = null;
+            _cardError = null;
+            ImGui.SetKeyboardFocusHere();
+        }
+
+        ImGui.SetNextItemWidth(220.0f);
+        bool committed = ImGui.InputText("##rename", ref _renameBuffer, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+
+        ImGui.SameLine();
+
+        if (ImGui.Button("Rename") || committed)
+        {
+            _cardError = maps.Rename(map, _renameBuffer);
+            if (_cardError == null)
+            {
+                ImGui.CloseCurrentPopup();
+            }
+        }
+
+        ImGui.Separator();
+
+        if (_confirmDelete == map.Id)
+        {
+            ImGui.TextUnformatted($"Delete '{map.DisplayName}'?");
+            ImGui.TextDisabled("Entities placed in it keep their rows and their map id.");
+
+            if (ImGui.Button("Delete", new Vector2(100, 0)))
+            {
+                _pendingDelete = map;
+                ImGui.CloseCurrentPopup();
+            }
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("Cancel", new Vector2(100, 0)))
+            {
+                _confirmDelete = null;
+            }
+        }
+        else
+        {
+            string? blocker = maps.DeleteBlocker(map);
+
+            ImGui.BeginDisabled(blocker != null);
+            if (ImGui.Button("Delete map", new Vector2(206, 0)))
+            {
+                _confirmDelete = map.Id;
+            }
+
+            ImGui.EndDisabled();
+
+            if (blocker != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            {
+                ImGui.SetTooltip(blocker);
+            }
+        }
+
+        if (_cardError != null)
+        {
+            ImGui.TextColored(ErrorColor, _cardError);
+        }
+
+        ImGui.EndPopup();
+        return true;
     }
 }
