@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
@@ -16,7 +17,7 @@ public static class ModelSchema
         foreach (ITable table in relational.Tables)
         {
             var columns = table.Columns
-                .Select(column => new SchemaColumn(column.Name, column.StoreType, column.IsNullable))
+                .Select(column => new SchemaColumn(column.Name, column.StoreType, column.IsNullable, IsAutoIncrement(column)))
                 .ToList();
 
             var primaryKey = table.PrimaryKey?.Columns.Select(column => column.Name).ToList() ?? [];
@@ -33,4 +34,9 @@ public static class ModelSchema
 
         return new Schema(tables);
     }
+
+    // An integer column whose value EF generates on insert is an AUTO_INCREMENT identity column.
+    private static bool IsAutoIncrement(IColumn column) =>
+        column.StoreType.Contains("int", StringComparison.OrdinalIgnoreCase)
+        && column.PropertyMappings.Any(mapping => mapping.Property.ValueGenerated == ValueGenerated.OnAdd);
 }

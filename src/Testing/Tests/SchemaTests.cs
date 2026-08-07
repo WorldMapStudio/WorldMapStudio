@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,6 +23,33 @@ public static class SchemaTests
         SchemaTable empties = schema.Tables["empties"];
         Assert.IsNotNull(empties.Column("MapId"));
         Assert.IsTrue(empties.PrimaryKey.Contains("Id"));
+        Assert.IsTrue(empties.Column("Id")!.AutoIncrement, "Id should be detected as auto-increment");
+    }
+
+    [EditorTest(Category = "Schema")]
+    public static void Migration_sql_covers_common_changes()
+    {
+        var changes = new List<SchemaChange>
+        {
+            new(SchemaChangeKind.CreateTable, "things")
+            {
+                Definition = new SchemaTable("things",
+                    [new SchemaColumn("Id", "int", false, true), new SchemaColumn("Name", "varchar(64)", true)],
+                    ["Id"], []),
+            },
+            new(SchemaChangeKind.AddColumn, "a") { Column = new SchemaColumn("MapId", "int", false) },
+            new(SchemaChangeKind.DropColumn, "a") { Column = new SchemaColumn("old", "int", true) },
+            new(SchemaChangeKind.DropTable, "stray"),
+        };
+
+        string sql = MigrationSql.Generate(changes);
+
+        Assert.IsTrue(sql.Contains("CREATE TABLE `things`"));
+        Assert.IsTrue(sql.Contains("`Id` int NOT NULL AUTO_INCREMENT"));
+        Assert.IsTrue(sql.Contains("PRIMARY KEY (`Id`)"));
+        Assert.IsTrue(sql.Contains("ALTER TABLE `a` ADD COLUMN `MapId` int NOT NULL"));
+        Assert.IsTrue(sql.Contains("ALTER TABLE `a` DROP COLUMN `old`"));
+        Assert.IsTrue(sql.Contains("DROP TABLE `stray`"));
     }
 
     [EditorTest(Category = "Schema")]
