@@ -14,10 +14,14 @@ public partial class WorldMapStudioApp : Node3D
 		_windows.Add(new PerformanceWindow());
 		_windows.Add(new ComputeMaterialWindow());
 		_windows.Add(new ViewportWindow(this));
+		_windows.Add(new WorkQueueWindow());
+		_windows.Add(new WorkTestWindow());
 	}
 
 	public override void _Process(double delta)
 	{
+		WorkQueue.PumpMainThread();
+
 		bool shouldQuit = false;
 		ImGuiEx.MainMenuBar(() =>
 		{
@@ -49,5 +53,10 @@ public partial class WorldMapStudioApp : Node3D
 		{
 			GetTree().Quit();
 		}
+	}
+
+	public override void _ExitTree()
+	{
+		WorkQueue.Shutdown();
 	}
 }
