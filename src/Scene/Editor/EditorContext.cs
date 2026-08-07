@@ -48,5 +48,8 @@ public sealed partial class EditorContext : ISubsystemHost
         Streaming = new StreamingSystem(this);
         InitializeSubsystems();
         Database.Startup();
+
+        // Persist the project now that storages have seeded their default connections into it.
+        ProjectStore.Save(Project);
     }
 }

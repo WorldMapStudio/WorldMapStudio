@@ -8,9 +8,9 @@ using Vector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Lists the in-memory projects and lets the user create one (name + coordinate convention),
-/// edit an existing project's settings, open one into the <see cref="Editor"/>, or remove it
-/// (behind a confirmation). There is no persistence yet, so the list starts empty each run.
+/// Lists the saved projects and lets the user create one (name + coordinate convention), edit an
+/// existing project's settings, open one into the <see cref="Editor"/>, or remove it (behind a
+/// confirmation). Projects are persisted by <see cref="ProjectStore"/>, so the list survives runs.
 /// </summary>
 public sealed class ProjectSelect : IScene
 {
@@ -34,6 +34,8 @@ public sealed class ProjectSelect : IScene
 
     public void Start()
     {
+        _projects.Clear();
+        _projects.AddRange(ProjectStore.LoadAll());
     }
 
     public IScene? Update()
@@ -79,9 +81,9 @@ public sealed class ProjectSelect : IScene
                     {
                         _pendingDelete = project;
                         _deleteConfirm = new ModalConfirm(
-                            "Remove Project",
-                            $"Remove '{project.Name}' from the project list?",
-                            "Remove",
+                            "Delete Project",
+                            $"Delete '{project.Name}' and all its data? This cannot be undone.",
+                            "Delete",
                             "Cancel");
                         _deleteConfirm.Show();
                     }
@@ -120,6 +122,7 @@ public sealed class ProjectSelect : IScene
             if (created != null && _projects.All(p => p.Name != created.Name))
             {
                 _projects.Add(created);
+                ProjectStore.Save(created);
             }
         }
     }
@@ -134,6 +137,7 @@ public sealed class ProjectSelect : IScene
         var state = _settingsModal.Draw(_settingsProject, true, ImGuiWindowFlags.None);
         if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
         {
+            ProjectStore.Save(_settingsProject);
             _settingsProject = null;
         }
     }
@@ -148,6 +152,7 @@ public sealed class ProjectSelect : IScene
         var state = _deleteConfirm.Draw(true);
         if (state == ModalOperationState.Confirmed && _pendingDelete != null)
         {
+            ProjectStore.Delete(_pendingDelete);
             _projects.Remove(_pendingDelete);
         }
 

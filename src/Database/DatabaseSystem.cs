@@ -151,19 +151,6 @@ public sealed partial class DatabaseSystem : ISubsystemHost
         }
     }
 
-    private string DefaultDataDirectory()
-    {
-        string baseDir = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
-        return Path.Combine(baseDir, "WorldMapStudio", Sanitize(_context.Project.Name), "dolt");
-    }
-
-    private static string Sanitize(string name)
-    {
-        foreach (char invalid in Path.GetInvalidFileNameChars())
-        {
-            name = name.Replace(invalid, '_');
-        }
-
-        return name.Length == 0 ? "project" : name;
-    }
+    private string DefaultDataDirectory() =>
+        Path.Combine(ProjectStore.ProjectFolder(_context.Project.Name), "dolt");
 }
