@@ -32,6 +32,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The map currently being viewed and edited.</summary>
     public MapSystem Maps { get; }
 
+    /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
+    public StreamingSystem Streaming { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -42,6 +45,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Tools = new ToolSystem(this);
         Maps = new MapSystem();
         Database = new DatabaseSystem(this);
+        Streaming = new StreamingSystem(this);
         InitializeSubsystems();
         Database.Startup();
     }

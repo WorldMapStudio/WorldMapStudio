@@ -41,6 +41,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override async Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes)
     {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
         var writeBacks = new List<Action>();

@@ -22,10 +22,21 @@ public sealed class EmptyFactory : ISceneEntityFactory
 
     public bool Handles(SceneEntity entity) => entity is EmptyEntity;
 
-    public async Task<IReadOnlyList<SceneEntity>> LoadAllAsync()
+    public long? PersistentKey(SceneEntity entity) => ((EmptyEntity)entity).RecordId;
+
+    public async Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
     {
+        Vector3 min = region.Position;
+        Vector3 max = region.End;
+
         await using EditorDbContext context = _storage.CreateContext();
-        List<EmptyRecord> rows = await context.Empties.AsNoTracking().ToListAsync().ConfigureAwait(false);
+        List<EmptyRecord> rows = await context.Empties.AsNoTracking()
+            .Where(record => record.MapId == map.Value
+                && record.PosX >= min.X && record.PosX <= max.X
+                && record.PosY >= min.Y && record.PosY <= max.Y
+                && record.PosZ >= min.Z && record.PosZ <= max.Z)
+            .ToListAsync()
+            .ConfigureAwait(false);
         return rows.Select(ToEntity).ToList();
     }
 
