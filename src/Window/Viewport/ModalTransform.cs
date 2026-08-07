@@ -1,0 +1,329 @@
+using System.Collections.Generic;
+using System.Globalization;
+using Godot;
+using ImGuiNET;
+using GVector2 = Godot.Vector2;
+using GVector3 = Godot.Vector3;
+using NVector2 = System.Numerics.Vector2;
+using NVector4 = System.Numerics.Vector4;
+
+namespace WorldMapStudio;
+
+public enum ModalTransformMode
+{
+    None,
+    Translate,
+    Rotate,
+}
+
+/// <summary>
+/// Blender-style modal transform: press G to grab or R to rotate the current selection,
+/// then optionally constrain to an axis (X/Y/Z; pressing the same one again cycles
+/// global/local/free) and/or type an exact numeric value. Confirm with left-click or
+/// Enter, cancel with right-click or Escape. Operates on a shared pivot, so a
+/// multi-object selection moves or rotates together, exactly like <see cref="TransformGizmo"/>.
+/// </summary>
+public sealed class ModalTransform
+{
+    private static readonly NVector4[] AxisColors =
+    [
+        new(0.91f, 0.24f, 0.28f, 1.0f), // X
+        new(0.49f, 0.78f, 0.16f, 1.0f), // Y
+        new(0.22f, 0.49f, 0.93f, 1.0f), // Z
+    ];
+
+    public ModalTransformMode Mode { get; private set; } = ModalTransformMode.None;
+    public bool IsActive => Mode != ModalTransformMode.None;
+
+    private int _axis = -1; // -1 = free, 0/1/2 = X/Y/Z
+    private bool _axisLocal;
+    private string _numeric = string.Empty;
+    private NVector2 _startMouse;
+    private Transform3D _startPivot;
+    private readonly List<Transform3D> _startTransforms = [];
+
+    public void Begin(ModalTransformMode mode, ObjectSelection selection)
+    {
+        Mode = mode;
+        _axis = -1;
+        _axisLocal = false;
+        _numeric = string.Empty;
+        _startMouse = ImGui.GetMousePos();
+        _startPivot = selection.ComputePivot(false);
+        _startTransforms.Clear();
+        foreach (Node3D obj in selection.Selection)
+        {
+            _startTransforms.Add(obj.GlobalTransform);
+        }
+    }
+
+    /// <summary>
+    /// Advance the modal by one frame: reads axis/number keys, applies the live preview to
+    /// every selected object, and draws guides plus the HUD. On confirm or cancel, restores
+    /// (if cancelled) and sets <see cref="Mode"/> back to <see cref="ModalTransformMode.None"/>.
+    /// </summary>
+    public void Update(ObjectSelection selection, Camera3D camera, bool localSpacePreferred, NVector2 imageMin, NVector2 imageSize)
+    {
+        HandleAxisKey(ImGuiKey.X, 0, selection, localSpacePreferred);
+        HandleAxisKey(ImGuiKey.Y, 1, selection, localSpacePreferred);
+        HandleAxisKey(ImGuiKey.Z, 2, selection, localSpacePreferred);
+        HandleNumericKeys();
+
+        // Live preview: apply the current delta to every selected object.
+        Transform3D delta = ComputeDelta(camera, ImGui.GetMousePos(), imageMin);
+        for (int i = 0; i < selection.Selection.Count; i++)
+        {
+            selection.Selection[i].GlobalTransform = delta * _startTransforms[i];
+        }
+
+        DrawGuides(camera, imageMin);
+        DrawHud(imageMin);
+
+        bool confirm = ImGui.IsKeyPressed(ImGuiKey.Enter, false) ||
+                       ImGui.IsKeyPressed(ImGuiKey.KeypadEnter, false) ||
+                       ImGui.IsMouseClicked(ImGuiMouseButton.Left);
+        bool cancel = ImGui.IsKeyPressed(ImGuiKey.Escape, false) ||
+                      ImGui.IsMouseClicked(ImGuiMouseButton.Right);
+
+        if (cancel)
+        {
+            for (int i = 0; i < selection.Selection.Count; i++)
+            {
+                selection.Selection[i].GlobalTransform = _startTransforms[i];
+            }
+
+            Mode = ModalTransformMode.None;
+        }
+        else if (confirm)
+        {
+            Mode = ModalTransformMode.None;
+        }
+    }
+
+    // X/Y/Z pick an axis; pressing the same one again cycles to the other space, then to
+    // free. The first press honours the toolbar's Local/World choice (local needs one object).
+    private void HandleAxisKey(ImGuiKey key, int axis, ObjectSelection selection, bool localSpacePreferred)
+    {
+        if (!ImGui.IsKeyPressed(key, false))
+        {
+            return;
+        }
+
+        bool canLocal = selection.Selection.Count == 1;
+        bool preferLocal = localSpacePreferred && canLocal;
+
+        if (_axis != axis)
+        {
+            _axis = axis;
+            _axisLocal = preferLocal;
+        }
+        else if (preferLocal)
+        {
+            if (_axisLocal) { _axisLocal = false; }   // local -> global
+            else { _axis = -1; }                      // global -> free
+        }
+        else if (!_axisLocal && canLocal)
+        {
+            _axisLocal = true;                        // global -> local
+        }
+        else
+        {
+            _axis = -1;                               // -> free
+            _axisLocal = false;
+        }
+    }
+
+    private void HandleNumericKeys()
+    {
+        for (int d = 0; d <= 9; d++)
+        {
+            if (ImGui.IsKeyPressed(ImGuiKey._0 + d, false) || ImGui.IsKeyPressed(ImGuiKey.Keypad0 + d, false))
+            {
+                _numeric += (char)('0' + d);
+            }
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Period, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadDecimal, false))
+        {
+            if (!_numeric.Contains('.'))
+            {
+                _numeric += _numeric.Length == 0 ? "0." : ".";
+            }
+        }
+
+        // Minus toggles the sign, like Blender.
+        if (ImGui.IsKeyPressed(ImGuiKey.Minus, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadSubtract, false))
+        {
+            _numeric = _numeric.StartsWith('-') ? _numeric[1..] : "-" + _numeric;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Backspace, false) && _numeric.Length > 0)
+        {
+            _numeric = _numeric[..^1];
+        }
+    }
+
+    private bool TryNumeric(out float value)
+    {
+        // Treat a bare sign or dot as "typing in progress" worth 0, so the preview reacts.
+        if (_numeric.Length == 0 || _numeric == "-")
+        {
+            value = 0.0f;
+            return _numeric.Length > 0;
+        }
+
+        return float.TryParse(_numeric, NumberStyles.Float, CultureInfo.InvariantCulture, out value) || SetZero(out value);
+
+        static bool SetZero(out float v)
+        {
+            v = 0.0f;
+            return true;
+        }
+    }
+
+    private GVector3 AxisVec(int axis)
+    {
+        if (_axisLocal && _startTransforms.Count == 1)
+        {
+            Basis b = _startTransforms[0].Basis;
+            GVector3 col = axis == 0 ? b.X : axis == 1 ? b.Y : b.Z;
+            return col.Normalized();
+        }
+
+        return axis == 0 ? GVector3.Right : axis == 1 ? GVector3.Up : GVector3.Back;
+    }
+
+    private Transform3D ComputeDelta(Camera3D camera, NVector2 mouse, NVector2 imageMin)
+    {
+        GVector3 pivot = _startPivot.Origin;
+        bool numeric = TryNumeric(out float number);
+
+        if (Mode == ModalTransformMode.Translate)
+        {
+            GVector3 move;
+            if (numeric)
+            {
+                move = AxisVec(_axis < 0 ? 0 : _axis) * number;
+            }
+            else if (_axis < 0)
+            {
+                // Free move: slide across a plane facing the camera through the pivot.
+                GVector3 normal = -camera.GlobalTransform.Basis.Z;
+                move = RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _startMouse, imageMin, pivot, normal);
+            }
+            else
+            {
+                GVector3 axis = AxisVec(_axis);
+                GVector3 normal = AxisDragPlaneNormal(axis, pivot, camera);
+                float now = (RayToPlane(camera, mouse, imageMin, pivot, normal) - pivot).Dot(axis);
+                float start = (RayToPlane(camera, _startMouse, imageMin, pivot, normal) - pivot).Dot(axis);
+                move = axis * (now - start);
+            }
+
+            return new Transform3D(Basis.Identity, move);
+        }
+
+        // Rotate.
+        GVector3 rotAxis = _axis < 0 ? (camera.GlobalPosition - pivot).Normalized() : AxisVec(_axis);
+        float angle;
+        if (numeric)
+        {
+            angle = Mathf.DegToRad(number);
+        }
+        else
+        {
+            // Angle the mouse sweeps around the pivot on screen; flip so the object turns the
+            // same way the cursor does regardless of which side of the axis faces the camera.
+            ObjectSelection.WorldToScreen(camera, pivot, imageMin, out NVector2 centre);
+            float now = Mathf.Atan2(mouse.Y - centre.Y, mouse.X - centre.X);
+            float start = Mathf.Atan2(_startMouse.Y - centre.Y, _startMouse.X - centre.X);
+            float facing = rotAxis.Dot(camera.GlobalPosition - pivot);
+            angle = -(now - start) * (facing >= 0.0f ? 1.0f : -1.0f);
+        }
+
+        Basis rotation = new(rotAxis, angle);
+        return new Transform3D(rotation, pivot - rotation * pivot);
+    }
+
+    // Draws the constrained axis as a colored line through the pivot, or a ring at the pivot
+    // for a free (view-axis) rotation, so it's clear what the transform acts on.
+    private void DrawGuides(Camera3D camera, NVector2 imageMin)
+    {
+        if (!ObjectSelection.WorldToScreen(camera, _startPivot.Origin, imageMin, out NVector2 centre))
+        {
+            return;
+        }
+
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+
+        if (_axis >= 0)
+        {
+            GVector3 axis = AxisVec(_axis);
+            // Screen direction of the axis, from the pivot toward a point one unit along it.
+            bool ok = ObjectSelection.WorldToScreen(camera, _startPivot.Origin + axis, imageMin, out NVector2 ahead) ||
+                      ObjectSelection.WorldToScreen(camera, _startPivot.Origin - axis, imageMin, out ahead);
+            if (ok)
+            {
+                NVector2 dir = ahead - centre;
+                float len = dir.Length();
+                if (len > 1e-3f)
+                {
+                    dir /= len;
+                    uint col = ImGui.GetColorU32(AxisColors[_axis]);
+                    drawList.AddLine(centre - dir * 4000.0f, centre + dir * 4000.0f, col, 1.5f);
+                }
+            }
+        }
+        else if (Mode == ModalTransformMode.Rotate)
+        {
+            drawList.AddCircle(centre, 64.0f, ImGui.GetColorU32(new NVector4(0.9f, 0.9f, 0.9f, 0.5f)), 48, 1.5f);
+        }
+    }
+
+    private void DrawHud(NVector2 imageMin)
+    {
+        string op = Mode == ModalTransformMode.Translate ? "Move" : "Rotate";
+        string axis = _axis < 0 ? string.Empty
+            : $" {(_axisLocal ? "local " : string.Empty)}{"XYZ"[_axis]}";
+        string value = _numeric.Length > 0
+            ? $": {_numeric}{(Mode == ModalTransformMode.Rotate ? "°" : string.Empty)}"
+            : string.Empty;
+        string hint = "   (LMB/Enter confirm, RMB/Esc cancel, X/Y/Z axis, type a value)";
+
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        drawList.AddText(imageMin + new NVector2(8.0f, 6.0f),
+            ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 1.0f)), $"{op}{axis}{value}{hint}");
+    }
+
+    // Intersect the cursor ray with a plane, in the viewport's local pixel space.
+    private static GVector3 RayToPlane(Camera3D camera, NVector2 mouse, NVector2 imageMin, GVector3 planePoint, GVector3 planeNormal)
+    {
+        GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
+        GVector3 origin = camera.ProjectRayOrigin(local);
+        GVector3 dir = camera.ProjectRayNormal(local);
+        float denom = dir.Dot(planeNormal);
+        if (Mathf.Abs(denom) < 1e-6f)
+        {
+            return planePoint;
+        }
+
+        return origin + dir * ((planePoint - origin).Dot(planeNormal) / denom);
+    }
+
+    // Plane containing the axis and facing the camera (mirrors the gizmo's stable axis drag).
+    private static GVector3 AxisDragPlaneNormal(GVector3 axisDir, GVector3 origin, Camera3D camera)
+    {
+        GVector3 viewDir = (origin - camera.GlobalPosition).Normalized();
+        GVector3 normal = viewDir - axisDir * viewDir.Dot(axisDir);
+        if (normal.LengthSquared() < 1e-8f)
+        {
+            normal = axisDir.Cross(camera.GlobalTransform.Basis.Y);
+            if (normal.LengthSquared() < 1e-8f)
+            {
+                normal = axisDir.Cross(camera.GlobalTransform.Basis.X);
+            }
+        }
+
+        return normal.Normalized();
+    }
+}
