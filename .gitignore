@@ -2,5 +2,8 @@
 .godot/
 /android/
 
+obj
+bin
+
 *.uid
 !src/App/WorldMapStudio.cs.uid
