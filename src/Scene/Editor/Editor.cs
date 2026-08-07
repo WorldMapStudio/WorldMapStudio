@@ -23,7 +23,7 @@ public sealed class Editor : IScene
 
     public void Start()
     {
-        _menuBar = new MenuBarManager(_root);
+        _menuBar = new MenuBarManager(_root, _project);
     }
 
     public IScene? Update()

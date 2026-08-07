@@ -14,9 +14,16 @@ public sealed partial class MenuBarManager : ISubsystemHost
 {
     public Node3D Root { get; }
 
-    public MenuBarManager(Node3D root)
+    /// <summary>The project being edited; carries the settings (like the axis convention) shared across the editor.</summary>
+    public Project Project { get; }
+
+    /// <summary>The coordinate system the user works in; every Godot-facing system routes through this.</summary>
+    public AxisConvention Axes => Project.AxisConvention;
+
+    public MenuBarManager(Node3D root, Project project)
     {
         Root = root;
+        Project = project;
         InitializeSubsystems();
     }
 

@@ -44,6 +44,11 @@ public sealed class ViewportWindow : Window
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _objectSelection = new ObjectSelection(DemoObjectSize);
 
+        // Route the gizmo and modal transform through the project's coordinate system, so the
+        // user's X/Y/Z always mean the axes they chose, remapped onto Godot's internal axes.
+        _gizmo.Axes = manager.Axes;
+        _modalTransform.Axes = manager.Axes;
+
         _viewport = new SubViewport
         {
             Name = "ViewportWindowSubViewport",

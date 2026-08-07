@@ -35,6 +35,12 @@ public sealed class ModalTransform
     public ModalTransformMode Mode { get; private set; } = ModalTransformMode.None;
     public bool IsActive => Mode != ModalTransformMode.None;
 
+    /// <summary>
+    /// The user's coordinate system. The X/Y/Z axis constraints and typed values are all in user
+    /// space; this maps them onto the Godot directions actually moved. Defaults to Godot's axes.
+    /// </summary>
+    public AxisConvention Axes { get; set; } = AxisConvention.GodotDefault;
+
     private int _axis = -1; // -1 = free, 0/1/2 = X/Y/Z
     private bool _axisLocal;
     private bool _axisExclude; // true = constrained to the plane of the OTHER two axes (Blender's Shift+axis)
@@ -190,16 +196,18 @@ public sealed class ModalTransform
         }
     }
 
+    // The user's constraint axis in Godot space: the convention's mapped direction, carried into
+    // the target's own frame for a local-space constraint (matching the gizmo, and reducing to the
+    // object's basis column under the default identity convention).
     private GVector3 AxisVec(int axis)
     {
+        GVector3 userAxis = Axes.UserAxis(axis);
         if (_axisLocal && _startTransforms.Count == 1)
         {
-            Basis b = _startTransforms[0].Basis;
-            GVector3 col = axis == 0 ? b.X : axis == 1 ? b.Y : b.Z;
-            return col.Normalized();
+            return (_startTransforms[0].Basis * userAxis).Normalized();
         }
 
-        return axis == 0 ? GVector3.Right : axis == 1 ? GVector3.Up : GVector3.Back;
+        return userAxis;
     }
 
     private Transform3D ComputeDelta(Camera3D camera, NVector2 mouse, NVector2 imageMin)
