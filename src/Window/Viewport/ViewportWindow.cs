@@ -38,6 +38,7 @@ public sealed class ViewportWindow : Window
 
     private readonly FlyCamera _flyCamera;
     private readonly ObjectSelection _objectSelection;
+    private readonly EditSessionManager _sessions;
     private readonly TransformGizmo _gizmo = new();
     private readonly ModalTransform _modalTransform = new();
     private bool _localSpacePreferred = true;
@@ -46,12 +47,14 @@ public sealed class ViewportWindow : Window
     private Transform3D _pivot = Transform3D.Identity;
     private Transform3D _dragStartPivot;
     private readonly List<Transform3D> _dragStartTransforms = [];
+    private SceneEntity[] _dragEntities = [];
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
         Node owner = manager.Root;
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _objectSelection = new ObjectSelection(manager.Selection);
+        _sessions = manager.EditSessions;
         _axes = manager.Axes;
 
         // Route the gizmo and modal transform through the project's coordinate system, so the
@@ -261,6 +264,11 @@ public sealed class ViewportWindow : Window
         {
             _objectSelection.DrawOutlines(_camera, imageMin);
             _modalTransform.Update(_objectSelection, _camera, _localSpacePreferred, imageMin, imageSize);
+            if (!_modalTransform.IsActive && _modalTransform.Confirmed)
+            {
+                RecordTransformEdit(_objectSelection.Selection, _modalTransform.StartTransforms);
+            }
+
             return;
         }
 
@@ -314,6 +322,7 @@ public sealed class ViewportWindow : Window
             // Drag just started: snapshot the pivot and every object so we can apply the
             // total delta each frame (drift-free, unlike accumulating per-frame deltas).
             _dragStartPivot = pivotBefore;
+            _dragEntities = [.. selection];
             _dragStartTransforms.Clear();
             foreach (SceneEntity obj in selection)
             {
@@ -328,6 +337,43 @@ public sealed class ViewportWindow : Window
             {
                 selection[i].Transform = delta * _dragStartTransforms[i];
             }
+        }
+
+        // Drag just ended: record the whole move as one undoable command.
+        if (wasUsing && !_gizmo.IsUsing)
+        {
+            RecordTransformEdit(_dragEntities, _dragStartTransforms);
+        }
+    }
+
+    // Records a finished move/rotate of the given entities from their captured start transforms to
+    // their current ones as a single command, unless nothing actually moved.
+    private void RecordTransformEdit(IReadOnlyList<SceneEntity> entities, IReadOnlyList<Transform3D> before)
+    {
+        int count = entities.Count;
+        if (count == 0 || before.Count != count)
+        {
+            return;
+        }
+
+        var targets = new SceneEntity[count];
+        var start = new Transform3D[count];
+        var end = new Transform3D[count];
+        bool changed = false;
+        for (int i = 0; i < count; i++)
+        {
+            targets[i] = entities[i];
+            start[i] = before[i];
+            end[i] = entities[i].Transform;
+            if (!start[i].IsEqualApprox(end[i]))
+            {
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            _sessions.Record(new TransformEntitiesCommand(targets, start, end));
         }
     }
 }

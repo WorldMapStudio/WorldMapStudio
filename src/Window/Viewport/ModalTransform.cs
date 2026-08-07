@@ -35,6 +35,12 @@ public sealed class ModalTransform
     public ModalTransformMode Mode { get; private set; } = ModalTransformMode.None;
     public bool IsActive => Mode != ModalTransformMode.None;
 
+    /// <summary>Whether the last completed transform was confirmed (true) or cancelled (false).</summary>
+    public bool Confirmed { get; private set; }
+
+    /// <summary>The selection's transforms captured at <see cref="Begin"/>, aligned with the selection order.</summary>
+    public IReadOnlyList<Transform3D> StartTransforms => _startTransforms;
+
     /// <summary>
     /// The user's coordinate system. The X/Y/Z axis constraints and typed values are all in user
     /// space; this maps them onto the Godot directions actually moved. Defaults to Godot's axes.
@@ -52,6 +58,7 @@ public sealed class ModalTransform
     public void Begin(ModalTransformMode mode, ObjectSelection selection)
     {
         Mode = mode;
+        Confirmed = false;
         _axis = -1;
         _axisLocal = false;
         _axisExclude = false;
@@ -100,10 +107,12 @@ public sealed class ModalTransform
                 selection.Selection[i].Transform = _startTransforms[i];
             }
 
+            Confirmed = false;
             Mode = ModalTransformMode.None;
         }
         else if (confirm)
         {
+            Confirmed = true;
             Mode = ModalTransformMode.None;
         }
     }
