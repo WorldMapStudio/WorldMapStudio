@@ -3,15 +3,17 @@ using ImGuiNET;
 
 namespace WorldMapStudio;
 
-public abstract class ImGuiWindow
+public abstract class Window : ISubsystem
 {
     public string Title { get; }
     public bool IsOpen { get; set; }
 
+    public virtual float Priority => 0f;
+
     private readonly Vector2? _defaultSize;
     private readonly Vector2? _defaultPosition;
 
-    protected ImGuiWindow(string title, bool startOpen = true, Vector2? defaultSize = null, Vector2? defaultPosition = null)
+    protected Window(string title, bool startOpen = true, Vector2? defaultSize = null, Vector2? defaultPosition = null)
     {
         Title = title;
         IsOpen = startOpen;

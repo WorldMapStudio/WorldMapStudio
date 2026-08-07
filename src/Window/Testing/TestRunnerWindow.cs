@@ -12,7 +12,8 @@ namespace WorldMapStudio;
 /// Runs in-editor <see cref="EditorTestAttribute"/> tests and shows their results grouped by category
 /// with colour-coded outcomes, per-test timing, and expandable failure details (message, stack, logs).
 /// </summary>
-public sealed class TestRunnerWindow : ImGuiWindow
+[Subsystem(nameof(WindowManager))]
+public sealed class TestRunnerWindow : Window
 {
     private static readonly NVector4 PassedColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 FailedColor = new(1.0f, 0.45f, 0.40f, 1.0f);
@@ -29,10 +30,10 @@ public sealed class TestRunnerWindow : ImGuiWindow
     private bool _showSkipped = true;
     private bool _onlyFailures;
 
-    public TestRunnerWindow(Node? editorRoot)
+    public TestRunnerWindow(WindowManager manager)
         : base("Test Runner", startOpen: false, defaultSize: new NVector2(720.0f, 560.0f))
     {
-        _runner = new TestRunner(editorRoot);
+        _runner = new TestRunner(manager.Root);
     }
 
     protected override void DrawContent()

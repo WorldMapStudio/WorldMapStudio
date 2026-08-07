@@ -1,5 +1,4 @@
 #nullable enable
-using System.Collections.Generic;
 using Godot;
 using ImGuiNET;
 
@@ -14,7 +13,7 @@ public sealed class Editor : IScene
 {
     private readonly Node3D _root;
     private readonly Project _project;
-    private readonly List<ImGuiWindow> _windows = [];
+    private WindowManager _windowManager = null!;
 
     public Editor(Node3D root, Project project)
     {
@@ -24,12 +23,7 @@ public sealed class Editor : IScene
 
     public void Start()
     {
-        _windows.Add(new PerformanceWindow());
-        _windows.Add(new ComputeMaterialWindow());
-        _windows.Add(new ViewportWindow(_root));
-        _windows.Add(new WorkQueueWindow());
-        _windows.Add(new WorkTestWindow());
-        _windows.Add(new TestRunnerWindow(_root));
+        _windowManager = new WindowManager(_root);
     }
 
     public IScene? Update()
@@ -46,13 +40,7 @@ public sealed class Editor : IScene
                 }
             });
 
-            ImGuiEx.Menu("Window", () =>
-            {
-                foreach (ImGuiWindow window in _windows)
-                {
-                    window.DrawMenuItem();
-                }
-            });
+            ImGuiEx.Menu("Window", () => _windowManager.DrawMenuItems());
 
             ImGui.Separator();
             ImGui.TextDisabled(_project.Name);
@@ -60,10 +48,7 @@ public sealed class Editor : IScene
 
         ImGui.DockSpaceOverViewport();
 
-        foreach (ImGuiWindow window in _windows)
-        {
-            window.Draw();
-        }
+        _windowManager.Draw();
 
         return scene;
     }
