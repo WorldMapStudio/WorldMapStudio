@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 using MySqlConnector;
 
@@ -105,7 +106,10 @@ public sealed partial class DatabaseSystem : ISubsystemHost
 
             try
             {
-                storage.CommitAsync(saves, deletes).GetAwaiter().GetResult();
+                // Run on the thread pool, not the Godot main thread: blocking on an async DB call from
+                // a thread that carries a SynchronizationContext deadlocks when a continuation tries to
+                // resume on the (blocked) main thread. Task.Run keeps the whole chain off that context.
+                Task.Run(() => storage.CommitAsync(saves, deletes)).GetAwaiter().GetResult();
             }
             catch (Exception e)
             {
