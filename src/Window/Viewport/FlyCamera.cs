@@ -35,6 +35,12 @@ public sealed class FlyCamera
         Position = initialPosition;
     }
 
+    /// <summary>Teleports the camera, keeping its current orientation.</summary>
+    public void MoveTo(GVector3 position)
+    {
+        Position = position;
+    }
+
     public void LookAt(GVector3 target)
     {
         GVector3 direction = (target - Position).Normalized();

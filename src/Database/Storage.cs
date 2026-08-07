@@ -33,6 +33,9 @@ public abstract class Storage : ISubsystem
     /// <summary>The scene-entity factories registered into this storage.</summary>
     public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Enumerable.Empty<ISceneEntityFactory>();
 
+    /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
+    public virtual IEnumerable<IMapSource> MapSources => Enumerable.Empty<IMapSource>();
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 

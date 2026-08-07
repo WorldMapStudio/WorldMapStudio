@@ -30,7 +30,7 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts the data backends (storages) and their entity factories.</summary>
     public DatabaseSystem Database { get; }
 
-    /// <summary>The map currently being viewed and edited.</summary>
+    /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
@@ -47,7 +47,7 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Tools = new ToolSystem(this);
-        Maps = new MapSystem();
+        Maps = new MapSystem(this);
         Database = new DatabaseSystem(this);
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
