@@ -26,6 +26,9 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     /// <summary>Active edit session windows record edits into.</summary>
     public EditSessionManager EditSessions { get; }
 
+    /// <summary>Loaded scene entities the viewport and outline bind to.</summary>
+    public SceneEntityRegistry Scene { get; }
+
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
 
     public WindowManager(MenuBarManager manager)
@@ -34,6 +37,7 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         Axes = manager.Axes;
         Selection = manager.Selection;
         EditSessions = manager.EditSessions;
+        Scene = manager.Scene;
         InitializeSubsystems();
     }
 

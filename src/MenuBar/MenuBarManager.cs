@@ -27,6 +27,9 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>Active edit session and undo history, forwarded from the context.</summary>
     public EditSessionManager EditSessions { get; }
 
+    /// <summary>Loaded scene entities, forwarded from the context.</summary>
+    public SceneEntityRegistry Scene { get; }
+
     public float Priority => 0f;
 
     public MenuBarManager(EditorContext context)
@@ -35,6 +38,7 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
         Project = context.Project;
         Selection = context.Selection;
         EditSessions = context.EditSessions;
+        Scene = context.Scene;
         InitializeSubsystems();
     }
 

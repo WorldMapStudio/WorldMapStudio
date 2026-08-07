@@ -21,11 +21,10 @@ public sealed class ObjectSelection
     private const float MarqueeThreshold = 5.0f;
 
     private readonly SelectionSystem _selection;
+    private readonly SceneEntityRegistry _scene;
 
     private readonly List<SceneEntity> _selectionCache = [];
     private int _cachedVersion = -1;
-
-    public List<SceneEntity> Objects { get; } = [];
 
     /// <summary>True while a click or marquee drag is in progress.</summary>
     public bool IsDragging => _mouseDown;
@@ -34,9 +33,10 @@ public sealed class ObjectSelection
     private bool _marquee;
     private NVector2 _marqueeStart;
 
-    public ObjectSelection(SelectionSystem selection)
+    public ObjectSelection(SelectionSystem selection, SceneEntityRegistry scene)
     {
         _selection = selection;
+        _scene = scene;
     }
 
     /// <summary>The selected scene entities, cached until the shared selection next changes.</summary>
@@ -142,7 +142,7 @@ public sealed class ObjectSelection
             _selection.Clear();
         }
 
-        foreach (SceneEntity obj in Objects)
+        foreach (SceneEntity obj in _scene.Entities)
         {
             GVector3 centre = obj.Transform * obj.LocalBounds.GetCenter();
             if (!WorldToScreen(camera, centre, imageMin, out NVector2 screen))
@@ -172,7 +172,7 @@ public sealed class ObjectSelection
 
         SceneEntity? best = null;
         float bestT = float.PositiveInfinity;
-        foreach (SceneEntity obj in Objects)
+        foreach (SceneEntity obj in _scene.Entities)
         {
             if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float t) && t < bestT)
             {
