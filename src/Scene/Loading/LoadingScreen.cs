@@ -9,7 +9,8 @@ namespace WorldMapStudio;
 /// <summary>
 /// Bridges project selection and the editor: it builds the <see cref="EditorContext"/> and runs its
 /// blocking startup (launching dolt, ensuring schemas, checking migrations) on a background task while
-/// showing a centered progress bar, so the app never freezes. On success it transitions into the
+/// showing a centered progress bar, so the app never freezes. On success it transitions to
+/// <see cref="Migration"/> if the schema check found drift, otherwise straight into the
 /// <see cref="Editor"/> with the ready context; on failure it shows the error and returns to
 /// <see cref="ProjectSelect"/>.
 /// </summary>
@@ -54,7 +55,7 @@ public sealed class LoadingScreen : IScene
     {
         if (_ready)
         {
-            return new Editor(_context);
+            return _context.Migrations.HasPending ? new Migration(_root, _context) : new Editor(_context);
         }
 
         IScene? scene = this;
