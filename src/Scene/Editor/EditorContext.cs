@@ -17,11 +17,15 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Shared selection, constructed before the subsystem tree so windows can capture it.</summary>
     public SelectionSystem Selection { get; }
 
+    /// <summary>Owns the active edit session and its undo history.</summary>
+    public EditSessionManager EditSessions { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
         Project = project;
         Selection = new SelectionSystem();
+        EditSessions = new EditSessionManager();
         InitializeSubsystems();
     }
 }
