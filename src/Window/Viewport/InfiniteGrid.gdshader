@@ -5,11 +5,16 @@ render_mode blend_mix, cull_disabled, unshaded;
 // space, so the plane it is drawn on can freely follow the camera without the
 // lines appearing to slide. The whole thing fades out radially around the
 // camera, so the fade always stays centred on wherever you are looking from.
+//
+// The two axis line colors are set at runtime by ViewportWindow from the project's
+// AxisConvention, so they always read as the user's own axes (red = user X, green = user Y,
+// blue = user Z) no matter how those are mapped onto Godot's X/Y/Z. The defaults below match
+// Godot's own axes (the identity convention): world X = user X (red), world Z = user Z (blue).
 
 uniform vec3 line_color : source_color = vec3(0.36, 0.36, 0.36);
 uniform vec3 major_line_color : source_color = vec3(0.46, 0.46, 0.46);
-uniform vec3 x_axis_color : source_color = vec3(0.6, 0.25, 0.25);
-uniform vec3 z_axis_color : source_color = vec3(0.5, 0.55, 0.25);
+uniform vec3 x_axis_color : source_color = vec3(0.55, 0.18, 0.18);
+uniform vec3 z_axis_color : source_color = vec3(0.18, 0.32, 0.6);
 uniform float cell_size = 1.0;
 uniform float major_every = 10.0;
 uniform float fade_start = 18.0;
