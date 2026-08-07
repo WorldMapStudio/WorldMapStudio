@@ -58,6 +58,21 @@ public sealed class MapThumbnails
         }
     }
 
+    /// <summary>Drops a deleted map's preview, so re-using the id later doesn't inherit its picture.</summary>
+    public void Remove(MapId map)
+    {
+        _cache.Remove(map);
+
+        try
+        {
+            File.Delete(PathFor(map));
+        }
+        catch (Exception e)
+        {
+            GD.PushWarning($"[Map] Failed to delete thumbnail for {map}: {e.Message}");
+        }
+    }
+
     private ImageTexture? Load(MapId map)
     {
         string path = PathFor(map);

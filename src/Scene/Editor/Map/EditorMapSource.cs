@@ -17,7 +17,7 @@ public sealed class EditorMapSource : IMapSource
 
     public float Priority => 0f;
 
-    public bool CanCreate => true;
+    public bool CanEdit => true;
 
     public EditorMapSource(EditorStorage storage)
     {
@@ -40,6 +40,22 @@ public sealed class EditorMapSource : IMapSource
         using var write = await _storage.Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = _storage.CreateContext();
         context.Maps.Add(new MapRecord { Id = map.Id.Value, Name = map.Name });
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    public async Task RenameAsync(Map map)
+    {
+        using var write = await _storage.Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = _storage.CreateContext();
+        context.Maps.Update(new MapRecord { Id = map.Id.Value, Name = map.Name });
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    public async Task DeleteAsync(Map map)
+    {
+        using var write = await _storage.Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = _storage.CreateContext();
+        context.Maps.Remove(new MapRecord { Id = map.Id.Value });
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 }
