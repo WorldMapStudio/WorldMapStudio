@@ -30,6 +30,17 @@ public sealed class AxisConvention
     /// <summary>A convention identical to Godot's own axes (the default: no remapping).</summary>
     public static AxisConvention GodotDefault => new();
 
+    /// <summary>Builds a convention from an explicit signed-axis assignment (used when loading a project).</summary>
+    public static AxisConvention Create(SignedAxis x, SignedAxis y, SignedAxis z)
+    {
+        var convention = new AxisConvention();
+        convention._x = x;
+        convention._y = y;
+        convention._z = z;
+        convention.Rebuild();
+        return convention;
+    }
+
     /// <summary>The Godot direction the user's X axis points along.</summary>
     public SignedAxis X => _x;
 
