@@ -14,6 +14,7 @@ public sealed class Editor : IScene
     private readonly Node3D _root;
     private readonly Project _project;
     private WindowManager _windowManager = null!;
+    private FileMenuManager _menuManager = null!;
 
     public Editor(Node3D root, Project project)
     {
@@ -24,22 +25,14 @@ public sealed class Editor : IScene
     public void Start()
     {
         _windowManager = new WindowManager(_root);
+        _menuManager = new FileMenuManager();
     }
 
     public IScene? Update()
     {
-        IScene? scene = this;
-
         ImGuiEx.MainMenuBar(() =>
         {
-            ImGuiEx.Menu("File", () =>
-            {
-                if (ImGui.MenuItem("Exit"))
-                {
-                    scene = null;
-                }
-            });
-
+            _menuManager.Draw();
             ImGuiEx.Menu("Window", () => _windowManager.DrawMenuItems());
 
             ImGui.Separator();
@@ -50,6 +43,6 @@ public sealed class Editor : IScene
 
         _windowManager.Draw();
 
-        return scene;
+        return _menuManager.ExitRequested ? null : this;
     }
 }
