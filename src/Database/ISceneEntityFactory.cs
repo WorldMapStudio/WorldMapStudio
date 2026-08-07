@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Godot;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
@@ -18,8 +19,12 @@ public interface ISceneEntityFactory : ISubsystem
     /// <summary>Whether this factory owns the given entity.</summary>
     bool Handles(SceneEntity entity);
 
-    /// <summary>Loads all of this factory's entities from the database.</summary>
-    Task<IReadOnlyList<SceneEntity>> LoadAllAsync();
+    /// <summary>A stable key for the entity's persisted row, or null if it was never saved. Used to
+    /// deduplicate streaming so a re-scan doesn't reload an entity that is already in the scene.</summary>
+    long? PersistentKey(SceneEntity entity);
+
+    /// <summary>Loads this factory's entities for the given map whose position falls in the region.</summary>
+    Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region);
 
     /// <summary>
     /// Stages an insert or update of the entity into the storage's context, returning a callback to

@@ -21,6 +21,9 @@ public abstract class Storage : ISubsystem
     /// <summary>How this storage reaches its database. Bound from project settings at startup.</summary>
     public StorageConnection Connection { get; private set; } = new();
 
+    /// <summary>Guards this storage's database: concurrent scans (readers), exclusive commit (writer).</summary>
+    public AsyncReaderWriterLock Lock { get; } = new();
+
     /// <summary>The connection a brand-new project gets for this storage, before the user edits it.</summary>
     public virtual StorageConnection CreateDefaultConnection() => new();
 

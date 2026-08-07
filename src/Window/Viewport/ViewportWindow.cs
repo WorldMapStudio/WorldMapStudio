@@ -36,6 +36,7 @@ public sealed class ViewportWindow : Window
     private readonly FlyCamera _flyCamera;
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
+    private readonly StreamingSystem _streaming;
     private readonly HashSet<SceneEntity> _represented = [];
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
@@ -45,6 +46,7 @@ public sealed class ViewportWindow : Window
         _flyCamera = new FlyCamera(owner, new GVector3(8.0f, 6.0f, 8.0f));
         _scene = context.Scene;
         _tools = context.Tools;
+        _streaming = context.Streaming;
         _axes = context.Axes;
 
         _viewport = new SubViewport
@@ -148,6 +150,7 @@ public sealed class ViewportWindow : Window
 
     protected override void DrawContent()
     {
+        _streaming.Update(_flyCamera.Position);
         SyncRepresentations();
 
         ITool? tool = _tools.Active;

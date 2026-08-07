@@ -76,8 +76,6 @@ public sealed partial class DatabaseSystem : ISubsystemHost
                 GD.PushError($"[Database] Storage '{storage.Name}' schema check failed: {e.Message}");
             }
         }
-
-        LoadScene();
     }
 
     /// <summary>
@@ -112,30 +110,6 @@ public sealed partial class DatabaseSystem : ISubsystemHost
             catch (Exception e)
             {
                 GD.PushError($"[Database] Commit failed for '{storage.Name}': {e.Message}");
-            }
-        }
-    }
-
-    // Loads each factory's persisted entities into the shared scene registry. Runs at startup on the
-    // main thread; the entities are plain data (no Godot nodes) until the viewport represents them.
-    private void LoadScene()
-    {
-        foreach (Storage storage in Storages)
-        {
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                try
-                {
-                    IReadOnlyList<SceneEntity> loaded = factory.LoadAllAsync().GetAwaiter().GetResult();
-                    foreach (SceneEntity entity in loaded)
-                    {
-                        _context.Scene.Add(entity);
-                    }
-                }
-                catch (Exception e)
-                {
-                    GD.PushError($"[Database] Failed to load entities for '{storage.Name}': {e.Message}");
-                }
             }
         }
     }
