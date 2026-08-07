@@ -10,6 +10,7 @@
   <ItemGroup>
     <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
     <PackageReference Include="MySqlConnector" Version="2.3.5" />
+    <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="8.0.3" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="analyzer\WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />

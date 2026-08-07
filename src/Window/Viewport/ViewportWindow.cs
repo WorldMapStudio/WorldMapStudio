@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using ImGuiNET;
 using GVector2 = Godot.Vector2;
@@ -34,6 +36,7 @@ public sealed class ViewportWindow : Window
     private readonly FlyCamera _flyCamera;
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
+    private readonly HashSet<SceneEntity> _represented = [];
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
@@ -114,15 +117,39 @@ public sealed class ViewportWindow : Window
 
     private void AddBox(GVector3 position, Color color, float yaw)
     {
-        var box = new DemoBoxEntity(position, color, yaw);
-        _scene.Add(box);
-        box.CreateRepresentation(_viewport);
+        _scene.Add(new DemoBoxEntity(position, color, yaw));
+    }
+
+    // Creates a viewport representation for every loaded entity that lacks one, and tears down the
+    // representation of any entity that has left the registry (e.g. an undone creation).
+    private void SyncRepresentations()
+    {
+        foreach (SceneEntity entity in _scene.Entities)
+        {
+            if (_represented.Add(entity))
+            {
+                entity.CreateRepresentation(_viewport);
+            }
+        }
+
+        _represented.RemoveWhere(entity =>
+        {
+            if (_scene.Entities.Contains(entity))
+            {
+                return false;
+            }
+
+            entity.DestroyRepresentation();
+            return true;
+        });
     }
 
     protected override ImGuiWindowFlags Flags => ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;
 
     protected override void DrawContent()
     {
+        SyncRepresentations();
+
         ITool? tool = _tools.Active;
         tool?.DrawToolbar();
 
