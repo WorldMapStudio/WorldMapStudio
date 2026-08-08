@@ -8,6 +8,8 @@ public sealed class DeleteEntityCommand(SceneEntityRegistry scene, SceneEntity e
 {
     public IReadOnlyList<IEntity> Targets { get; } = new IEntity[] { entity };
 
+    public string Description => $"Delete {entity.DisplayName}";
+
     public void Apply() => scene.Remove(entity);
 
     public void Revert() => scene.Add(entity);

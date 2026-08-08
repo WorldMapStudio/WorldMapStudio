@@ -19,6 +19,10 @@ public sealed class TransformEntitiesCommand : IEditCommand
 
     public IReadOnlyList<IEntity> Targets => _entities;
 
+    public string Description => _entities.Length == 1
+        ? $"Transform {_entities[0].DisplayName}"
+        : $"Transform {_entities.Length} entities";
+
     public void Apply()
     {
         for (int i = 0; i < _entities.Length; i++)

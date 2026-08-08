@@ -7,6 +7,8 @@ public sealed class CreateEntityCommand(SceneEntityRegistry scene, SceneEntity e
 {
     public IReadOnlyList<IEntity> Targets { get; } = new IEntity[] { entity };
 
+    public string Description => $"Create {entity.DisplayName}";
+
     public void Apply() => scene.Add(entity);
 
     public void Revert() => scene.Remove(entity);
