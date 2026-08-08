@@ -17,6 +17,8 @@ public static class EditSessionTests
     {
         public IReadOnlyList<IEntity> Targets { get; } = new IEntity[] { entity };
 
+        public string Description => $"Set {before} -> {after}";
+
         public void Apply() => entity.Value = after;
 
         public void Revert() => entity.Value = before;

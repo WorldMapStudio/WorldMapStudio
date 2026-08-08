@@ -16,6 +16,12 @@ public sealed class UndoHistory
 
     public bool CanRedo => _redo.Count > 0;
 
+    /// <summary>Applied commands, oldest first; the last entry is the current position.</summary>
+    public IReadOnlyList<IEditCommand> UndoStack => _undo;
+
+    /// <summary>Reverted commands available to redo, most-recently-undone last.</summary>
+    public IReadOnlyList<IEditCommand> RedoStack => _redo;
+
     public void Record(IEditCommand command)
     {
         _undo.Add(command);

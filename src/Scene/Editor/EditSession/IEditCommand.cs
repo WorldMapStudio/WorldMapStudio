@@ -12,6 +12,9 @@ public interface IEditCommand
     /// <summary>Entities this command touches, so the edit session can pin them in memory.</summary>
     IReadOnlyList<IEntity> Targets { get; }
 
+    /// <summary>Short label shown in the undo history window, e.g. "Create Empty 3".</summary>
+    string Description { get; }
+
     void Apply();
 
     void Revert();
