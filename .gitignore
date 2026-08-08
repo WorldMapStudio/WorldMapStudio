@@ -7,3 +7,6 @@ bin
 
 *.uid
 !src/App/WorldMapStudio.cs.uid
+
+# VS Code
+.vscode/settings.json
