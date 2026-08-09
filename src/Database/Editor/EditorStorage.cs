@@ -40,6 +40,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override IEnumerable<IMapSource> MapSources => Subsystems.OfType<IMapSource>();
 
+    public override IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Subsystems.OfType<ILandscapeSettingsSource>();
+
     /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
     public EditorDbContext CreateContext() => new(BuildOptions<EditorDbContext>());
 

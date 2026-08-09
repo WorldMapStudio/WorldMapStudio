@@ -36,6 +36,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
+    /// <summary>The open map's landscape settings and the catalog chunks resolve against.</summary>
+    public LandscapeSystem Landscape { get; }
+
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
@@ -53,6 +56,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
         Database = new DatabaseSystem(this);
+        Landscape = new LandscapeSystem(this);
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
         InitializeSubsystems();

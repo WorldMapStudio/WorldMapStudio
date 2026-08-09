@@ -42,6 +42,9 @@ public abstract class Storage : ISubsystem
     /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
     public virtual IEnumerable<IMapSource> MapSources => Enumerable.Empty<IMapSource>();
 
+    /// <summary>The landscape settings sources registered into this storage.</summary>
+    public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Enumerable.Empty<ILandscapeSettingsSource>();
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 
