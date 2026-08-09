@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WorldMapStudio;
@@ -18,9 +19,26 @@ public sealed class EditSession
 
     public bool IsDirty => _pinned.Count > 0;
 
-    /// <summary>Records an already-applied command into the history and pins its targets.</summary>
+    /// <summary>
+    /// Records an already-applied command into the history and pins its targets.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// A target is an <see cref="IDerivedEntity"/>. Derived entities are computed from other
+    /// entities, so editing one directly has nothing to save and no meaning — the fix is to edit
+    /// whatever produced it. Loud on purpose: silently dropping the pin would leave a command in the
+    /// history that undoes into a value the next rebuild discards.
+    /// </exception>
     public void Record(IEditCommand command)
     {
+        foreach (IEntity target in command.Targets)
+        {
+            if (target is IDerivedEntity)
+            {
+                throw new InvalidOperationException(
+                    $"'{command.Description}' targets derived entity {target.Id}, which cannot be edited directly.");
+            }
+        }
+
         foreach (IEntity target in command.Targets)
         {
             _pinned.Add(target);

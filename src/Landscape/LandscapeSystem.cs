@@ -36,6 +36,26 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     /// <summary>The alpha and height functions materials can bind, discovered by reflection.</summary>
     public LandscapeFunctions Functions { get; } = new();
 
+    /// <summary>Streams this map's chunks. Registered into <see cref="StreamingSystem"/> by the context.</summary>
+    public LandscapeChunkLoader ChunkLoader => _chunkLoader ??= new LandscapeChunkLoader(this);
+
+    private LandscapeChunkLoader? _chunkLoader;
+    private (int Landscape, int Catalog) _fallbackKey = (-1, -1);
+
+    /// <summary>The grid of the open map, or null when it has no landscape.</summary>
+    public LandscapeGrid? Grid => Settings == null ? null : new LandscapeGrid(Settings);
+
+    /// <summary>
+    /// The material a chunk falls back to when nothing claims a base, resolved on the main thread so
+    /// background chunk building reads a plain reference instead of walking the catalog.
+    /// </summary>
+    public LandscapeTextureMaterial? FallbackMaterial { get; private set; }
+
+    private void RefreshFallback() =>
+        FallbackMaterial = Settings?.FallbackMaterialId is { } id
+            ? Catalog.Materials.FirstOrDefault(material => material.RecordId == id)
+            : null;
+
     /// <summary>Settings of the open map, or null when it has no landscape.</summary>
     public LandscapeSettings? Settings { get; private set; }
 
@@ -108,6 +128,14 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     /// <summary>Notices a map change and swaps to that map's settings. Cheap to call every frame.</summary>
     public void Update()
     {
+        // Resolve the fallback here, on the main thread, whenever the settings or the catalog moved —
+        // background chunk building must not walk the catalog while the user is editing it.
+        if (_fallbackKey != (Version, _context.Catalog.Version))
+        {
+            _fallbackKey = (Version, _context.Catalog.Version);
+            RefreshFallback();
+        }
+
         MapId map = _context.Maps.CurrentMap;
         if (!map.Equals(_loadedMap))
         {

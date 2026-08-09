@@ -19,10 +19,14 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
     public InspectorWindow(WindowManager manager)
         : base("Inspector", defaultSize: new Vector2(300, 400))
     {
+        Context = manager.Context;
         _selection = manager.Context.Selection;
         _context = new InspectorContext(manager.Context.EditSessions);
         InitializeSubsystems();
     }
+
+    /// <summary>The editor context, so a registered inspector can reach shared systems.</summary>
+    public EditorContext Context { get; }
 
     private IEnumerable<IEntityInspector> Inspectors => Subsystems.Cast<IEntityInspector>();
 
