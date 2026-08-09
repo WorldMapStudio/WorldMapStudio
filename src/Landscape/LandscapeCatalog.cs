@@ -29,11 +29,13 @@ public sealed class LandscapeCatalog
     public LandscapeCatalog(
         IReadOnlyList<LandscapeChannel> channels,
         IReadOnlyList<LandscapeLayer> layers,
-        IReadOnlyList<LandscapeTextureMaterial> materials)
+        IReadOnlyList<LandscapeTextureMaterial> materials,
+        LandscapeFunctions? functions = null)
     {
         Channels = channels;
         Layers = layers;
         Materials = materials;
+        Functions = functions;
     }
 
     public IReadOnlyList<LandscapeChannel> Channels { get; }
@@ -41,6 +43,49 @@ public sealed class LandscapeCatalog
     public IReadOnlyList<LandscapeLayer> Layers { get; }
 
     public IReadOnlyList<LandscapeTextureMaterial> Materials { get; }
+
+    /// <summary>The function registry material bindings resolve against, or null to skip those checks.</summary>
+    public LandscapeFunctions? Functions { get; }
+
+    /// <summary>
+    /// The largest distance any bound function samples outside its chunk. This is what sizes the
+    /// builder's halo and bounds the dirty set when an entity changes.
+    /// </summary>
+    public float MaxSampleRadius
+    {
+        get
+        {
+            float radius = 0.0f;
+            foreach (LandscapeTextureMaterial material in Materials)
+            {
+                foreach (ILandscapeFunction function in BoundFunctions(material))
+                {
+                    radius = System.Math.Max(radius, function.MaxSampleRadius);
+                }
+            }
+
+            return radius;
+        }
+    }
+
+    /// <summary>The functions a material binds, skipping ids nothing currently provides.</summary>
+    public IEnumerable<ILandscapeFunction> BoundFunctions(LandscapeTextureMaterial material)
+    {
+        if (Functions == null)
+        {
+            yield break;
+        }
+
+        if (Functions.Find(material.AlphaFunction) is { } alpha)
+        {
+            yield return alpha;
+        }
+
+        if (Functions.Find(material.HeightFunction) is { } height)
+        {
+            yield return height;
+        }
+    }
 
     /// <summary>Texture layers in the order they composite, base first.</summary>
     public IEnumerable<LandscapeLayer> TextureLayersInOrder =>
@@ -131,6 +176,48 @@ public sealed class LandscapeCatalog
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
                     $"Material '{material.Name}' has no texture assigned."));
+            }
+
+            ValidateBinding(issues, material, material.AlphaFunction, material.AlphaParameters, "alpha");
+            ValidateBinding(issues, material, material.HeightFunction, material.HeightParameters, "height");
+        }
+    }
+
+    // A material names its functions by id and its channels by name, so both can dangle: a function
+    // whose plugin is not loaded, or a channel that was renamed or deleted out from under it.
+    private void ValidateBinding(
+        List<LandscapeIssue> issues,
+        LandscapeTextureMaterial material,
+        string functionId,
+        string serializedValues,
+        string role)
+    {
+        if (Functions == null || functionId.Length == 0)
+        {
+            return;
+        }
+
+        ILandscapeFunction? function = Functions.Find(functionId);
+        if (function == null)
+        {
+            issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                $"Material '{material.Name}' binds {role} function '{functionId}', which nothing provides."));
+            return;
+        }
+
+        LandscapeParameterValues values = LandscapeParameterValues.Parse(serializedValues);
+        foreach (LandscapeParameter parameter in function.Parameters.Where(p => p.Kind == LandscapeParameterKind.Channel))
+        {
+            string channel = values.GetChannel(parameter);
+            if (channel.Length == 0)
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                    $"Material '{material.Name}' leaves {role} channel '{parameter.DisplayName}' unbound."));
+            }
+            else if (Channels.All(existing => existing.Name != channel))
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                    $"Material '{material.Name}' binds {role} channel '{parameter.DisplayName}' to '{channel}', which does not exist."));
             }
         }
     }
