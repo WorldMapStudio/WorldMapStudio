@@ -23,7 +23,7 @@ public readonly struct LandscapeClaimContext
     public LandscapeLayer? Layer(int? recordId) =>
         recordId is { } id ? Find(Catalog.Layers, layer => layer.RecordId == id) : null;
 
-    public LandscapeTextureMaterial? Material(int? recordId) =>
+    public LandscapeMaterial? Material(int? recordId) =>
         recordId is { } id ? Find(Catalog.Materials, material => material.RecordId == id) : null;
 
     private static T? Find<T>(IReadOnlyList<T> items, System.Func<T, bool> match) where T : class

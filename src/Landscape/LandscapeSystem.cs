@@ -50,7 +50,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     /// The material a chunk falls back to when nothing claims a base, resolved on the main thread so
     /// background chunk building reads a plain reference instead of walking the catalog.
     /// </summary>
-    public LandscapeTextureMaterial? FallbackMaterial { get; private set; }
+    public LandscapeMaterial? FallbackMaterial { get; private set; }
 
     private void RefreshFallback() =>
         FallbackMaterial = Settings?.FallbackMaterialId is { } id
@@ -139,7 +139,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             _catalog = new LandscapeCatalog(
                 _context.Catalog.OfType<LandscapeChannel>().ToList(),
                 _context.Catalog.OfType<LandscapeLayer>().ToList(),
-                _context.Catalog.OfType<LandscapeTextureMaterial>().ToList(),
+                _context.Catalog.OfType<LandscapeMaterial>().ToList(),
                 Functions);
             return _catalog;
         }
@@ -166,7 +166,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     {
         _context.Database.LoadCatalog<LandscapeChannel>();
         _context.Database.LoadCatalog<LandscapeLayer>();
-        _context.Database.LoadCatalog<LandscapeTextureMaterial>();
+        _context.Database.LoadCatalog<LandscapeMaterial>();
         Version++;
     }
 

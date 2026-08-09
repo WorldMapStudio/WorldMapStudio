@@ -8,15 +8,22 @@ namespace WorldMapStudio;
 /// </summary>
 public static class CatalogRegistryTests
 {
-    private sealed class Recipe : CatalogEntity
+    private sealed class Recipe : CatalogEntity, IKeyedCatalogEntity
     {
         public string Title = "Recipe";
 
         public override string DisplayName => Title;
+
+        public int? RecordId { get; set; }
+
+        public bool IsSaved { get; set; }
     }
 
-    private sealed class Quest : CatalogEntity
+    private sealed class Quest : CatalogEntity, IKeyedCatalogEntity
     {
+        public int? RecordId { get; set; }
+
+        public bool IsSaved { get; set; }
     }
 
     [EditorTest(Category = "Catalog", Thread = TestThread.Background)]
@@ -73,5 +80,50 @@ public static class CatalogRegistryTests
 
         registry.Remove(recipe);
         Assert.Greater(registry.Version, afterAdd);
+    }
+
+    [EditorTest(Category = "Catalog", Thread = TestThread.Background)]
+    public static void A_new_entity_is_identified_before_it_is_saved()
+    {
+        // The whole point: something created in the same session can reference it straight away,
+        // instead of binding to null until a commit happens.
+        var registry = new CatalogEntityRegistry();
+
+        var first = new Recipe();
+        registry.AssignId(first);
+        registry.Add(first);
+        Assert.IsNotNull(first.RecordId);
+        Assert.IsFalse(first.IsSaved, "an id is not a row");
+
+        var second = new Recipe();
+        registry.AssignId(second);
+        registry.Add(second);
+        Assert.AreNotEqual(first.RecordId, second.RecordId);
+    }
+
+    [EditorTest(Category = "Catalog", Thread = TestThread.Background)]
+    public static void Ids_continue_past_what_is_already_loaded()
+    {
+        var registry = new CatalogEntityRegistry();
+        registry.Add(new Recipe { RecordId = 4, IsSaved = true });
+        registry.Add(new Recipe { RecordId = 9, IsSaved = true });
+
+        var created = new Recipe();
+        registry.AssignId(created);
+
+        Assert.AreEqual(10, created.RecordId, "reusing 5 would collide with the saved row 9 on commit");
+    }
+
+    [EditorTest(Category = "Catalog", Thread = TestThread.Background)]
+    public static void Each_catalog_type_numbers_itself()
+    {
+        // Ids are row ids, and each catalog is its own table.
+        var registry = new CatalogEntityRegistry();
+        registry.Add(new Recipe { RecordId = 7, IsSaved = true });
+
+        var quest = new Quest();
+        registry.AssignId(quest);
+
+        Assert.AreEqual(1, quest.RecordId);
     }
 }

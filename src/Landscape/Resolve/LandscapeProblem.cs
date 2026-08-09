@@ -28,6 +28,9 @@ public enum LandscapeProblemKind
     /// deforms. Silent otherwise: the claim resolves fine and simply does nothing.</summary>
     MissingHeightFunction,
 
+    /// <summary>A texture slot's material binds no alpha function, so nothing decides where it shows.</summary>
+    MissingAlphaFunction,
+
     /// <summary>Even dropping every droppable group left more slots in use than the limit allows.</summary>
     Unsatisfiable,
 }

@@ -156,7 +156,7 @@ public static class LandscapeChunkMesh
         return new Vector3(left - right, 2.0f * step, back - front).Normalized();
     }
 
-    private static Image LoadAlbedo(LandscapeTextureMaterial? material, int slot)
+    private static Image LoadAlbedo(LandscapeMaterial? material, int slot)
     {
         if (material is { TexturePath.Length: > 0 } && ResourceLoader.Exists(material.TexturePath) &&
             ResourceLoader.Load<Texture2D>(material.TexturePath) is { } texture)

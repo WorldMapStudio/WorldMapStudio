@@ -28,7 +28,7 @@ public sealed class LandscapeLayerRecord : IKeyedRecord
     public int DrawOrder { get; set; }
 }
 
-/// <summary>EF Core row backing a <see cref="LandscapeTextureMaterial"/> in the Editor storage.</summary>
+/// <summary>EF Core row backing a <see cref="LandscapeMaterial"/> in the Editor storage.</summary>
 public sealed class LandscapeMaterialRecord : IKeyedRecord
 {
     public int Id { get; set; }

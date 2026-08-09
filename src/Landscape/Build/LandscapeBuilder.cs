@@ -187,6 +187,14 @@ public sealed class LandscapeBuilder
         var layers = new List<LandscapeChunkLayer>();
         foreach (LandscapeSlot slot in resolution.Slots)
         {
+            if (!slot.IsBase && !slot.Material.PaintsTexture)
+            {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingAlphaFunction,
+                    $"Layer '{slot.Layers[0].Name}' uses material '{slot.Material.Name}', which has no alpha " +
+                    "function, so nothing decides where it shows.")));
+            }
+
             layers.Add(new LandscapeChunkLayer
             {
                 Material = slot.Material,

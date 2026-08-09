@@ -16,13 +16,13 @@ public static class LandscapeResolverTests
     private static LandscapeLayer HeightLayer(string name, int order) =>
         new() { Name = name, DrawOrder = order, Kind = LandscapeLayerKind.Height };
 
-    private static LandscapeTextureMaterial Material(string name, int id) =>
+    private static LandscapeMaterial Material(string name, int id) =>
         new() { Name = name, RecordId = id, TexturePath = $"res://{name}.png", AlphaFunction = "test" };
 
     private static LandscapeClaimGroup Group(
         string key,
         int priority,
-        params (LandscapeLayer Layer, LandscapeTextureMaterial? Material)[] claims) =>
+        params (LandscapeLayer Layer, LandscapeMaterial? Material)[] claims) =>
         new()
         {
             Key = key,
@@ -34,7 +34,7 @@ public static class LandscapeResolverTests
     private static LandscapeResolution Resolve(
         IEnumerable<LandscapeClaimGroup> groups,
         int textureLimit,
-        IEnumerable<LandscapeTextureMaterial>? materials = null,
+        IEnumerable<LandscapeMaterial>? materials = null,
         int? fallbackId = null)
     {
         var settings = new LandscapeSettings { TextureLimit = textureLimit, FallbackMaterialId = fallbackId };
@@ -50,8 +50,8 @@ public static class LandscapeResolverTests
     {
         LandscapeLayer ground = Layer("ground", 0, isBase: true);
         LandscapeLayer road = Layer("road", 1);
-        LandscapeTextureMaterial grass = Material("grass", 1);
-        LandscapeTextureMaterial dirt = Material("dirt", 2);
+        LandscapeMaterial grass = Material("grass", 1);
+        LandscapeMaterial dirt = Material("dirt", 2);
 
         LandscapeResolution resolution = Resolve(
             [Group("terrain", 0, (ground, grass)), Group("road", 10, (road, dirt))],
@@ -69,8 +69,8 @@ public static class LandscapeResolverTests
     public static void One_layer_two_materials_is_a_conflict_the_priority_settles()
     {
         LandscapeLayer highlight = Layer("highlight", 1);
-        LandscapeTextureMaterial grassA = Material("grass_a", 1);
-        LandscapeTextureMaterial grassB = Material("grass_b", 2);
+        LandscapeMaterial grassA = Material("grass_a", 1);
+        LandscapeMaterial grassB = Material("grass_b", 2);
 
         LandscapeResolution resolution = Resolve(
             [Group("patch_a", 5, (highlight, grassA)), Group("patch_b", 9, (highlight, grassB))],
@@ -88,7 +88,7 @@ public static class LandscapeResolverTests
         // is exactly the mitigation that buys a slot back without changing the picture.
         LandscapeLayer roadDirt = Layer("road_dirt", 2);
         LandscapeLayer groundDirt = Layer("ground_dirt", 3);
-        LandscapeTextureMaterial dirt = Material("dirt", 1);
+        LandscapeMaterial dirt = Material("dirt", 1);
 
         LandscapeResolution resolution = Resolve(
             [Group("road", 0, (roadDirt, dirt)), Group("ground", 0, (groundDirt, dirt))],
@@ -106,8 +106,8 @@ public static class LandscapeResolverTests
         LandscapeLayer low = Layer("low", 1);
         LandscapeLayer middle = Layer("middle", 2);
         LandscapeLayer high = Layer("high", 3);
-        LandscapeTextureMaterial dirt = Material("dirt", 1);
-        LandscapeTextureMaterial stone = Material("stone", 2);
+        LandscapeMaterial dirt = Material("dirt", 1);
+        LandscapeMaterial stone = Material("stone", 2);
 
         LandscapeResolution resolution = Resolve(
             [Group("a", 0, (low, dirt)), Group("b", 0, (middle, stone)), Group("c", 0, (high, dirt))],
@@ -127,9 +127,9 @@ public static class LandscapeResolverTests
         LandscapeLayer lowDirt = Layer("low_dirt", 1);
         LandscapeLayer stoneLayer = Layer("stone", 2);
         LandscapeLayer highDirt = Layer("high_dirt", 3);
-        LandscapeTextureMaterial grass = Material("grass", 1);
-        LandscapeTextureMaterial dirt = Material("dirt", 2);
-        LandscapeTextureMaterial stone = Material("stone", 3);
+        LandscapeMaterial grass = Material("grass", 1);
+        LandscapeMaterial dirt = Material("dirt", 2);
+        LandscapeMaterial stone = Material("stone", 3);
 
         LandscapeResolution resolution = Resolve(
         [
@@ -156,7 +156,7 @@ public static class LandscapeResolverTests
         // picture even when the material matches.
         LandscapeLayer ground = Layer("ground", 0, isBase: true);
         LandscapeLayer patch = Layer("patch", 1);
-        LandscapeTextureMaterial dirt = Material("dirt", 1);
+        LandscapeMaterial dirt = Material("dirt", 1);
 
         LandscapeResolution resolution = Resolve(
             [Group("terrain", 0, (ground, dirt)), Group("patch", 0, (patch, dirt))],
@@ -170,8 +170,8 @@ public static class LandscapeResolverTests
     public static void An_unclaimed_base_falls_back_so_the_chunk_is_not_a_hole()
     {
         LandscapeLayer road = Layer("road", 1);
-        LandscapeTextureMaterial dirt = Material("dirt", 2);
-        LandscapeTextureMaterial fallback = Material("fallback_grass", 7);
+        LandscapeMaterial dirt = Material("dirt", 2);
+        LandscapeMaterial fallback = Material("fallback_grass", 7);
 
         LandscapeResolution resolution = Resolve(
             [Group("road", 0, (road, dirt))],
@@ -218,9 +218,9 @@ public static class LandscapeResolverTests
         // higher-priority claim must not leave a shoulder painted across the map on its own.
         LandscapeLayer centre = Layer("road_centre", 1);
         LandscapeLayer shoulder = Layer("road_shoulder", 2);
-        LandscapeTextureMaterial asphalt = Material("asphalt", 1);
-        LandscapeTextureMaterial gravel = Material("gravel", 2);
-        LandscapeTextureMaterial cobble = Material("cobble", 3);
+        LandscapeMaterial asphalt = Material("asphalt", 1);
+        LandscapeMaterial gravel = Material("gravel", 2);
+        LandscapeMaterial cobble = Material("cobble", 3);
 
         LandscapeResolution resolution = Resolve(
         [
@@ -299,7 +299,7 @@ public static class LandscapeResolverTests
     public static void A_limit_that_cannot_be_met_is_reported_rather_than_looping()
     {
         LandscapeLayer ground = Layer("ground", 0, isBase: true);
-        LandscapeTextureMaterial fallback = Material("fallback", 9);
+        LandscapeMaterial fallback = Material("fallback", 9);
 
         // Nothing is droppable once the base comes from the map's fallback rather than a claim.
         LandscapeResolution resolution = Resolve(
@@ -320,7 +320,7 @@ public static class LandscapeResolverTests
         LandscapeLayer a = Layer("a", 1);
         LandscapeLayer b = Layer("b", 2);
         LandscapeLayer c = Layer("c", 3);
-        LandscapeTextureMaterial dirt = Material("dirt", 1);
+        LandscapeMaterial dirt = Material("dirt", 1);
 
         List<LandscapeClaimGroup> groups =
         [

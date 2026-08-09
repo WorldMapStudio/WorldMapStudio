@@ -156,7 +156,7 @@ public static class LandscapeFunctionTests
     [EditorTest(Category = "LandscapeFunctions", Thread = TestThread.Background)]
     public static void A_dangling_function_id_is_reported_but_the_binding_is_kept()
     {
-        var material = new LandscapeTextureMaterial
+        var material = new LandscapeMaterial
         {
             Name = "dirt",
             TexturePath = "res://dirt.png",
@@ -176,7 +176,7 @@ public static class LandscapeFunctionTests
 
         var values = new LandscapeParameterValues();
         values.Set(Fake.Mask, "missing_channel");
-        var material = new LandscapeTextureMaterial
+        var material = new LandscapeMaterial
         {
             Name = "dirt",
             TexturePath = "res://dirt.png",
@@ -197,7 +197,7 @@ public static class LandscapeFunctionTests
     [EditorTest(Category = "LandscapeFunctions", Thread = TestThread.Background)]
     public static void An_unbound_channel_parameter_is_an_error()
     {
-        var material = new LandscapeTextureMaterial
+        var material = new LandscapeMaterial
         {
             Name = "dirt",
             TexturePath = "res://dirt.png",
@@ -219,7 +219,7 @@ public static class LandscapeFunctionTests
         var unbound = new LandscapeCatalog([], [], [], functions);
         Assert.AreApproximatelyEqual(0.0, unbound.MaxSampleRadius, 1e-5, "nothing bound means no halo is needed");
 
-        var material = new LandscapeTextureMaterial { Name = "dirt", AlphaFunction = "test.fake" };
+        var material = new LandscapeMaterial { Name = "dirt", AlphaFunction = "test.fake" };
         var bound = new LandscapeCatalog([], [], [material], functions);
         Assert.AreApproximatelyEqual(12.0, bound.MaxSampleRadius, 1e-5);
     }

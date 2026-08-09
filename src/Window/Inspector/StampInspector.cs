@@ -113,15 +113,7 @@ public sealed class StampInspector : EntityInspector<StampEntity>
 
             foreach (LandscapeLayer layer in catalog.Layers.Where(filter))
             {
-                if (layer.RecordId is not { } recordId)
-                {
-                    // Bindings are stored by row id, so a layer has to be committed once before
-                    // anything can point at it. Listed rather than hidden: an empty dropdown next to a
-                    // layer you just created reads as a bug.
-                    ImGui.TextDisabled($"{layer.Name} — commit to use");
-                    continue;
-                }
-
+                int? recordId = layer.RecordId;
                 if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == current))
                 {
                     Record(context, stamp, label, current, recordId, set);
@@ -139,7 +131,7 @@ public sealed class StampInspector : EntityInspector<StampEntity>
 
     private void DrawMaterial(InspectorContext context, StampEntity stamp, LandscapeCatalog catalog)
     {
-        LandscapeTextureMaterial? bound = stamp.MaterialId is { } boundId
+        LandscapeMaterial? bound = stamp.MaterialId is { } boundId
             ? catalog.Materials.FirstOrDefault(m => m.RecordId == boundId)
             : null;
 
@@ -150,14 +142,9 @@ public sealed class StampInspector : EntityInspector<StampEntity>
                 Record(context, stamp, "material", stamp.MaterialId, null, value => stamp.MaterialId = value);
             }
 
-            foreach (LandscapeTextureMaterial material in catalog.Materials)
+            foreach (LandscapeMaterial material in catalog.Materials)
             {
-                if (material.RecordId is not { } recordId)
-                {
-                    ImGui.TextDisabled($"{material.Name} — commit to use");
-                    continue;
-                }
-
+                int? recordId = material.RecordId;
                 if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == stamp.MaterialId))
                 {
                     Record(context, stamp, "material", stamp.MaterialId, recordId, value => stamp.MaterialId = value);

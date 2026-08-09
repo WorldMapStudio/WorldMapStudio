@@ -19,7 +19,7 @@ public enum LandscapeLayerKind
 /// Layers are global to the project; entities reference them through instance parameters rather than
 /// hardcoding them, because which layers exist is the user's decision, not source code.
 /// </summary>
-public sealed class LandscapeLayer : CatalogEntity
+public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
 {
     public string Name { get; set; } = "Layer";
 
@@ -41,8 +41,11 @@ public sealed class LandscapeLayer : CatalogEntity
     /// </summary>
     public int DrawOrder { get; set; }
 
-    /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
+    /// <inheritdoc />
     public int? RecordId { get; set; }
+
+    /// <inheritdoc />
+    public bool IsSaved { get; set; }
 
     public override string DisplayName => Name;
 

@@ -23,7 +23,7 @@ public static class LandscapeBuilderTests
         public required float Radius { get; init; }
         public required LandscapeLayer TextureLayer { get; init; }
         public LandscapeLayer? HeightLayer { get; init; }
-        public required LandscapeTextureMaterial Material { get; init; }
+        public required LandscapeMaterial Material { get; init; }
         public int ClaimPriority { get; init; }
 
         public string DeformerKey => Key;
@@ -76,7 +76,7 @@ public static class LandscapeBuilderTests
         public required LandscapeLayer Base { get; init; }
         public required LandscapeLayer Texture { get; init; }
         public required LandscapeLayer Height { get; init; }
-        public required LandscapeTextureMaterial Material { get; init; }
+        public required LandscapeMaterial Material { get; init; }
 
         public LandscapeBuilder Builder() => new(Settings, Catalog, Functions);
     }
@@ -95,7 +95,7 @@ public static class LandscapeBuilderTests
         heightValues.Set(ChannelHeightOffset.Mask, MaskChannel);
         heightValues.Set(ChannelHeightOffset.Amount, heightAmount);
 
-        var material = new LandscapeTextureMaterial
+        var material = new LandscapeMaterial
         {
             Name = "dirt",
             RecordId = 1,
@@ -249,7 +249,7 @@ public static class LandscapeBuilderTests
     {
         // Two discs wanting one layer with different materials, in a chunk they both reach.
         Fixture fixture = Build();
-        var rival = new LandscapeTextureMaterial
+        var rival = new LandscapeMaterial
         {
             Name = "stone",
             RecordId = 2,

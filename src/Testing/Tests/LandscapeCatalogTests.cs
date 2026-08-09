@@ -12,7 +12,7 @@ public static class LandscapeCatalogTests
     private static LandscapeCatalog Catalog(
         IEnumerable<LandscapeLayer>? layers = null,
         IEnumerable<LandscapeChannel>? channels = null,
-        IEnumerable<LandscapeTextureMaterial>? materials = null) =>
+        IEnumerable<LandscapeMaterial>? materials = null) =>
         new(
             (channels ?? []).ToList(),
             (layers ?? []).ToList(),
@@ -30,7 +30,7 @@ public static class LandscapeCatalogTests
         LandscapeCatalog catalog = Catalog(
             layers: [Layer("ground", 0, isBase: true), Layer("road", 1)],
             channels: [new LandscapeChannel { Name = "road_mask" }],
-            materials: [new LandscapeTextureMaterial { Name = "dirt", AlphaFunction = "fn.mask", TexturePath = "res://dirt.png" }]);
+            materials: [new LandscapeMaterial { Name = "dirt", AlphaFunction = "fn.mask", TexturePath = "res://dirt.png" }]);
 
         Assert.AreEqual(0, catalog.Validate().Count(issue => issue.Severity == LandscapeIssueSeverity.Error));
     }
@@ -77,13 +77,25 @@ public static class LandscapeCatalogTests
     }
 
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
-    public static void A_material_without_an_alpha_function_is_an_error()
+    public static void A_height_only_material_is_valid()
+    {
+        // Nothing here knows whether this material will be bound to a texture layer or a height one,
+        // so demanding an alpha function would forbid the entirely reasonable height-only case.
+        LandscapeCatalog catalog = Catalog(
+            layers: [Layer("ground", 0, isBase: true)],
+            materials: [new LandscapeMaterial { Name = "flatten", HeightFunction = "test.height" }]);
+
+        Assert.AreEqual(0, catalog.Validate().Count(issue => issue.Severity == LandscapeIssueSeverity.Error));
+    }
+
+    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
+    public static void A_material_that_does_nothing_at_all_is_flagged()
     {
         LandscapeCatalog catalog = Catalog(
             layers: [Layer("ground", 0, isBase: true)],
-            materials: [new LandscapeTextureMaterial { Name = "dirt", TexturePath = "res://dirt.png" }]);
+            materials: [new LandscapeMaterial { Name = "empty", TexturePath = "res://dirt.png" }]);
 
-        Assert.IsTrue(HasError(catalog.Validate(), "no alpha function"));
+        Assert.IsTrue(catalog.Validate().Any(issue => issue.Message.Contains("does nothing")));
     }
 
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]

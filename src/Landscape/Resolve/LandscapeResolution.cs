@@ -12,7 +12,7 @@ public sealed class LandscapeSlot
 {
     public required int Index { get; init; }
 
-    public required LandscapeTextureMaterial Material { get; init; }
+    public required LandscapeMaterial Material { get; init; }
 
     public required bool IsBase { get; init; }
 
