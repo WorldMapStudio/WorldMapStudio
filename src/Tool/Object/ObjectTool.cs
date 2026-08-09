@@ -95,7 +95,7 @@ public sealed class ObjectTool : ITool
             _modalTransform.Update(_objectSelection, ctx.Camera, _localSpacePreferred, ctx.ImageMin, ctx.ImageSize);
             if (!_modalTransform.IsActive && _modalTransform.Confirmed)
             {
-                RecordTransformEdit(_objectSelection.Selection, _modalTransform.StartTransforms);
+                RecordTransformEdit(_modalTransform.Targets, _modalTransform.StartTransforms);
             }
 
             return;
@@ -109,7 +109,7 @@ public sealed class ObjectTool : ITool
         }
 
         // G / R begin a Blender-style modal grab / rotate on the current selection.
-        if (ctx.Hovered && !ctx.CameraFlying && !GizmoBusy && !_objectSelection.IsDragging && _objectSelection.Selection.Count > 0)
+        if (ctx.Hovered && !ctx.CameraFlying && !GizmoBusy && !_objectSelection.IsDragging && _objectSelection.Movable.Count > 0)
         {
             if (ImGui.IsKeyPressed(ImGuiKey.G, false)) { _modalTransform.Begin(ModalTransformMode.Translate, _objectSelection); return; }
             if (ImGui.IsKeyPressed(ImGuiKey.R, false)) { _modalTransform.Begin(ModalTransformMode.Rotate, _objectSelection); return; }
@@ -126,7 +126,8 @@ public sealed class ObjectTool : ITool
     // selected object. Local space applies only when exactly one object is selected.
     private void DriveGizmo(in ViewportContext ctx)
     {
-        IReadOnlyList<SceneEntity> selection = _objectSelection.Selection;
+        // Movable, not Selection: a chunk can be selected for its inspector but never dragged.
+        IReadOnlyList<SceneEntity> selection = _objectSelection.Movable;
         if (selection.Count == 0)
         {
             return;

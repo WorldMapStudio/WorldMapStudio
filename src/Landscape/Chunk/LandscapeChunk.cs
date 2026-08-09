@@ -57,6 +57,15 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
         node.AddChild(BuildSurface());
     }
 
+    /// <summary>Toggles the chunk border overlay on this chunk's existing material.</summary>
+    public void SetChunkEdgesVisible(bool visible)
+    {
+        if (Node?.GetChildOrNull<MeshInstance3D>(0) is { MaterialOverride: ShaderMaterial material })
+        {
+            material.SetShaderParameter("show_chunk_edges", visible);
+        }
+    }
+
     protected override Node3D BuildNode()
     {
         var node = new Node3D { Name = $"Chunk{Coord.X}_{Coord.Y}" };
