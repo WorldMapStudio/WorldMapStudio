@@ -39,9 +39,12 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     /// <summary>Streams this map's chunks. Registered into <see cref="StreamingSystem"/> by the context.</summary>
     public LandscapeChunkLoader ChunkLoader => _chunkLoader ??= new LandscapeChunkLoader(this);
 
+    /// <summary>Rebuilds loaded chunks when the entities or catalog that shape them change.</summary>
+    public LandscapeRebuilder Rebuilder => _rebuilder ??= new LandscapeRebuilder(_context);
+
     private LandscapeChunkLoader? _chunkLoader;
+    private LandscapeRebuilder? _rebuilder;
     private (int Landscape, int Catalog) _fallbackKey = (-1, -1);
-    private (int Landscape, int Catalog, int History) _inputs = (-1, -1, -1);
 
     /// <summary>The grid of the open map, or null when it has no landscape.</summary>
     public LandscapeGrid? Grid => Settings == null ? null : new LandscapeGrid(Settings);
@@ -83,8 +86,11 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         return new BuildSnapshot(settings.Clone(), Catalog, Functions, deformers);
     }
 
-    /// <summary>Where the viewport is looking, so the debug window can pick the chunk under it.</summary>
-    public Vector3 DebugFocus { get; set; }
+    /// <summary>
+    /// Where the viewport is looking. Rebuilds are ordered by distance from it, so what the user is
+    /// looking at lands first; the debug window uses it to pick the chunk under the camera.
+    /// </summary>
+    public Vector3 Focus { get; set; }
 
     /// <summary>The problems the last build reported, newest first, for the debug window.</summary>
     public IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> Problems => _problems;
@@ -185,34 +191,14 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         if (!map.Equals(_loadedMap))
         {
             LoadSettings(map);
+
+            // The chunks about to stream in belong to another map; nothing loaded is comparable.
+            Rebuilder.Reset();
         }
 
-        InvalidateIfInputsChanged();
+        Rebuilder.Update(Focus);
     }
 
-    /// <summary>
-    /// Chunks are a function of the settings, the catalog and the deformers, but streaming only
-    /// re-scans when the camera has travelled far enough. Without this, creating a landscape shows no
-    /// terrain and dragging a stamp deforms nothing until you happen to fly far enough for a re-scan.
-    ///
-    /// The edit history is the signal for entity changes: every deformer edit — create, delete, gizmo
-    /// drag, inspector field, undo, redo — lands as a command, so one revision counter covers all of
-    /// them without each edit site knowing the landscape exists. It also means a rebuild happens when
-    /// a drag <em>ends</em> rather than every frame during it.
-    ///
-    /// A crude whole-region re-scan, deliberately: Phase 7 replaces it with a real dirty set.
-    /// </summary>
-    private void InvalidateIfInputsChanged()
-    {
-        var inputs = (Version, _context.Catalog.Version, _context.EditSessions.Active.History.Revision);
-        if (_inputs == inputs)
-        {
-            return;
-        }
-
-        _inputs = inputs;
-        _context.Streaming.Invalidate();
-    }
 
     /// <summary>
     /// Gives the open map a landscape built from a profile, and saves it. Does nothing if the map

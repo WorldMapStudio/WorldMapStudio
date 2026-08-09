@@ -94,6 +94,16 @@ public interface ILandscapeDeformer
     /// <summary>World bounds this deformer influences, used to find the chunks it touches.</summary>
     Aabb InfluenceBounds { get; }
 
+    /// <summary>
+    /// Changes whenever anything that alters this deformer's output changes — its shape, its
+    /// bindings, its parameters. Incremental rebuilding watches this to know which chunks went stale,
+    /// so a field left out of it is a field whose edits do not show up until something else forces a
+    /// rebuild.
+    ///
+    /// Position and size need not be included: <see cref="InfluenceBounds"/> is compared separately.
+    /// </summary>
+    int ContentVersion { get; }
+
     /// <summary>What this deformer wants in the chunk. Pure: no rasterization, no channel writes.</summary>
     IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context);
 

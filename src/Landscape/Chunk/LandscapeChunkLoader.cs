@@ -51,28 +51,31 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
         return true;
     }
 
-    public Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
+    public async Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
     {
         if (_snapshot is not { } snapshot)
         {
-            return Task.FromResult<IReadOnlyList<SceneEntity>>([]);
+            return [];
         }
 
         var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
         List<ChunkCoord> coords = builder.Grid.Overlapping(region).ToList();
         if (coords.Count == 0)
         {
-            return Task.FromResult<IReadOnlyList<SceneEntity>>([]);
+            return [];
         }
 
-        LandscapeBuildResult result = builder.Build(coords, snapshot.Deformers);
+        // Explicitly off the main thread. A scan continuation only *usually* resumes on a worker —
+        // an uncontended reader lock can complete synchronously and leave the whole build on the
+        // thread that started it, which is a visible stall every time the camera moves far enough.
+        LandscapeBuildResult result = await Task.Run(() => builder.Build(coords, snapshot.Deformers))
+            .ConfigureAwait(false);
+
         _landscape.ReportProblems(result.Problems);
 
-        List<SceneEntity> chunks = coords
+        return coords
             .Where(coord => result.Chunks.ContainsKey(coord))
             .Select(coord => (SceneEntity)new LandscapeChunk(result.Chunks[coord], builder.Grid, map))
             .ToList();
-
-        return Task.FromResult<IReadOnlyList<SceneEntity>>(chunks);
     }
 }

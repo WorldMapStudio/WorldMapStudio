@@ -60,6 +60,13 @@ public sealed class StampEntity : SceneEntity, ILandscapeDeformer
 
     public Aabb InfluenceBounds => WorldBounds;
 
+    /// <summary>
+    /// Everything that shapes this stamp's contribution. Bounds cover the transform and radius, so
+    /// what is left is the falloff curve and the bindings.
+    /// </summary>
+    public int ContentVersion =>
+        System.HashCode.Combine(Falloff, Strength, Channel, LayerId, MaterialId, Priority);
+
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
     {
         if (context.Layer(LayerId) is not { } layer)

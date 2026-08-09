@@ -27,6 +27,8 @@ public static class LandscapeBuilderTests
 
         public string DeformerKey => Key;
 
+        public int ContentVersion => 0;
+
         public Aabb InfluenceBounds => new(
             Centre - new Vector3(Radius, Radius, Radius),
             new Vector3(Radius * 2.0f, Radius * 2.0f, Radius * 2.0f));
