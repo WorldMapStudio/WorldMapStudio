@@ -20,6 +20,9 @@ public sealed partial class ScriptingSystem : ISubsystemHost
     /// <summary>The running engine, or null until <see cref="Startup"/> has run.</summary>
     public ScriptEngineHost? Engine { get; private set; }
 
+    /// <summary>The local HTTP endpoint fronting <see cref="Engine"/>, or null until <see cref="Startup"/> has run.</summary>
+    public ScriptHttpServer? Http { get; private set; }
+
     private EventsScriptApi? _events;
 
     public ScriptingSystem(EditorContext context)
@@ -29,16 +32,19 @@ public sealed partial class ScriptingSystem : ISubsystemHost
     }
 
     /// <summary>
-    /// Builds the JS engine's bindings and (re)writes the type declarations. Deferred out of the
-    /// constructor — like <see cref="DatabaseSystem.Startup"/> — so every module has already been
-    /// constructed first, and so it runs alongside the rest of <c>Editor.Start()</c>'s startup work
-    /// rather than the subsystem-construction phase.
+    /// Builds the JS engine's bindings, (re)writes the type declarations, and starts the local HTTP
+    /// endpoint. Deferred out of the constructor — like <see cref="DatabaseSystem.Startup"/> — so
+    /// every module has already been constructed first, and so it runs alongside the rest of
+    /// <c>Editor.Start()</c>'s startup work rather than the subsystem-construction phase.
     /// </summary>
     public void Startup()
     {
         Engine = new ScriptEngineHost(Modules);
         _events = Modules.OfType<EventsScriptApi>().FirstOrDefault();
         ScriptTypeDeclarationWriter.Write(Modules);
+
+        Http = new ScriptHttpServer(Engine);
+        Http.Start();
     }
 
     /// <summary>
