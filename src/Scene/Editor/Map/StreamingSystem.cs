@@ -7,8 +7,8 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Streams scene entities in and out as the editor's focus moves. Each update it scans the current
-/// map's storages for entities within a box around the focus on a background thread, then on the main
-/// thread reconciles the scene registry: newly in-range entities are added, and streamed entities
+/// map's storages for entities whose bounds overlap a box around the focus on a background thread,
+/// then on the main thread reconciles the scene registry: newly in-range entities are added, and streamed entities
 /// that have left the range are removed unless the active edit session still pins them. Runs one scan
 /// at a time and only re-scans once the focus has moved far enough (or the map changed).
 ///

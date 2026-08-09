@@ -36,6 +36,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override IEnumerable<ISceneEntityFactory> SceneFactories => Subsystems.OfType<ISceneEntityFactory>();
 
+    public override IEnumerable<ICatalogEntityFactory> CatalogFactories => Subsystems.OfType<ICatalogEntityFactory>();
+
     public override IEnumerable<IMapSource> MapSources => Subsystems.OfType<IMapSource>();
 
     /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
@@ -53,13 +55,13 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return ModelSchema.Extract(context);
     }
 
-    public override async Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes)
+    public override async Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes)
     {
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
         var writeBacks = new List<Action>();
-        foreach (SceneEntity entity in saves)
+        foreach (IEntity entity in saves)
         {
             if (FactoryFor(entity) is { } factory)
             {
@@ -67,7 +69,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             }
         }
 
-        foreach (SceneEntity entity in deletes)
+        foreach (IEntity entity in deletes)
         {
             FactoryFor(entity)?.StageDelete(context, entity);
         }

@@ -24,6 +24,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The scene entities currently loaded into the editor.</summary>
     public SceneEntityRegistry Scene { get; }
 
+    /// <summary>The catalog entities currently loaded into the editor.</summary>
+    public CatalogEntityRegistry Catalog { get; }
+
     /// <summary>Owns the active editor tool.</summary>
     public ToolSystem Tools { get; }
 
@@ -46,6 +49,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Selection = new SelectionSystem();
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
+        Catalog = new CatalogEntityRegistry();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
         Database = new DatabaseSystem(this);

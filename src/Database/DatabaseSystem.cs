@@ -80,22 +80,67 @@ public sealed partial class DatabaseSystem : ISubsystemHost
     }
 
     /// <summary>
-    /// Persists everything the session touched, grouped per storage into one transaction each. A
-    /// pinned entity still in the scene registry is saved; one that has left it (an undone creation
-    /// or a deletion) is deleted.
+    /// Loads a catalog whole into <see cref="EditorContext.Catalog"/>, replacing anything of that type
+    /// already loaded, and returns it. Catalog lifetime belongs to whichever system owns the catalog —
+    /// nothing streams these — so it calls this when it needs the set and
+    /// <see cref="UnloadCatalog{TEntity}"/> when it is done.
+    /// </summary>
+    public IReadOnlyList<TEntity> LoadCatalog<TEntity>() where TEntity : CatalogEntity
+    {
+        _context.Catalog.RemoveAll<TEntity>();
+
+        var loaded = new List<TEntity>();
+        foreach (Storage storage in Storages)
+        {
+            foreach (ICatalogEntityFactory factory in storage.CatalogFactories)
+            {
+                if (!typeof(TEntity).IsAssignableFrom(factory.EntityType))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    foreach (CatalogEntity entity in Read(storage, factory.LoadAllAsync))
+                    {
+                        if (entity is TEntity typed)
+                        {
+                            _context.Catalog.Add(typed);
+                            loaded.Add(typed);
+                        }
+                    }
+                }
+                catch (Exception e)
+                {
+                    GD.PushError($"[Database] Loading catalog {typeof(TEntity).Name} from '{storage.Name}' failed: {e.Message}");
+                }
+            }
+        }
+
+        return loaded;
+    }
+
+    /// <summary>Drops a loaded catalog. Entities the edit session pinned stay alive until it ends.</summary>
+    public void UnloadCatalog<TEntity>() where TEntity : CatalogEntity => _context.Catalog.RemoveAll<TEntity>();
+
+    /// <summary>
+    /// Persists everything the session touched, grouped per storage into one transaction each — scene
+    /// and catalog entities together, so a session that edited both commits atomically. A pinned entity
+    /// still registered (in the scene or the catalog) is saved; one that has left (an undone creation or
+    /// a deletion) is deleted.
     /// </summary>
     public void Commit(EditSession session)
     {
         foreach (Storage storage in Storages)
         {
-            var saves = new List<SceneEntity>();
-            var deletes = new List<SceneEntity>();
+            var saves = new List<IEntity>();
+            var deletes = new List<IEntity>();
 
             foreach (IEntity entity in session.Pinned)
             {
-                if (entity is SceneEntity scene && storage.SceneFactories.Any(factory => factory.Handles(scene)))
+                if (storage.EntityFactories.Any(factory => factory.Handles(entity)))
                 {
-                    (_context.Scene.Contains(scene) ? saves : deletes).Add(scene);
+                    (IsLoaded(entity) ? saves : deletes).Add(entity);
                 }
             }
 
@@ -127,6 +172,23 @@ public sealed partial class DatabaseSystem : ISubsystemHost
 
         _servers.Clear();
     }
+
+    // Whether the entity is still loaded, which is what separates a save from a delete. System
+    // entities are always loaded, so they are always a save.
+    private bool IsLoaded(IEntity entity) => entity switch
+    {
+        SceneEntity scene => _context.Scene.Contains(scene),
+        CatalogEntity catalog => _context.Catalog.Contains(catalog),
+        _ => true,
+    };
+
+    // Reads under the storage's reader lock, off the Godot main thread (see the Commit note below).
+    private static IReadOnlyList<T> Read<T>(Storage storage, Func<Task<IReadOnlyList<T>>> read) =>
+        Task.Run(async () =>
+        {
+            using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
+            return await read().ConfigureAwait(false);
+        }).GetAwaiter().GetResult();
 
     private static void EnsureDatabase(Storage storage)
     {
