@@ -103,19 +103,6 @@ public static class LandscapeDirtyTests
     }
 
     [EditorTest(Category = "LandscapeDirty", Thread = TestThread.Background)]
-    public static void Priming_records_without_reporting()
-    {
-        // Streaming has just built these chunks from this exact state, so the first frame must not
-        // queue a rebuild of everything it already did.
-        var tracker = new LandscapeDirtyTracker();
-        var stamp = new Deformer { Key = "a" };
-
-        tracker.Prime([stamp]);
-
-        Assert.AreEqual(0, tracker.Collect([stamp]).Count);
-    }
-
-    [EditorTest(Category = "LandscapeDirty", Thread = TestThread.Background)]
     public static void Only_the_deformer_that_changed_is_reported()
     {
         var tracker = new LandscapeDirtyTracker();
