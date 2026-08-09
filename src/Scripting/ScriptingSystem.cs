@@ -20,6 +20,8 @@ public sealed partial class ScriptingSystem : ISubsystemHost
     /// <summary>The running engine, or null until <see cref="Startup"/> has run.</summary>
     public ScriptEngineHost? Engine { get; private set; }
 
+    private EventsScriptApi? _events;
+
     public ScriptingSystem(EditorContext context)
     {
         Context = context;
@@ -35,6 +37,17 @@ public sealed partial class ScriptingSystem : ISubsystemHost
     public void Startup()
     {
         Engine = new ScriptEngineHost(Modules);
+        _events = Modules.OfType<EventsScriptApi>().FirstOrDefault();
         ScriptTypeDeclarationWriter.Write(Modules);
+    }
+
+    /// <summary>
+    /// Drains pending async script work and checks for event changes. Call once per frame from the
+    /// main thread (see <c>Editor.Update</c>) — never before <see cref="Startup"/> has run.
+    /// </summary>
+    public void Update()
+    {
+        Engine?.Update();
+        _events?.Update();
     }
 }

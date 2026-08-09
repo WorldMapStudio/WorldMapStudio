@@ -44,8 +44,9 @@ public sealed class Editor : IScene
         _context.Landscape.Update();
 
         // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
-        // since last frame — never blocks, mirrors WorkQueue's own per-frame main-thread pump.
-        _context.Scripting.Engine?.Update();
+        // since last frame (never blocks, mirrors WorkQueue's own per-frame main-thread pump), and
+        // fires any registered wms.events handlers for what changed since last frame.
+        _context.Scripting.Update();
 
         ImGuiEx.MainMenuBar(() =>
         {

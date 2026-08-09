@@ -129,6 +129,8 @@ public sealed class ViewportWindow : Window
 
         // Anything that can point at a place in the world — the Problems window, say — asks here.
         context.Focus.Handler = LookAt;
+        context.Focus.PositionGetter = () => _flyCamera.Position;
+        context.Focus.PositionSetter = _flyCamera.MoveTo;
 
         _flyCamera.LookAt(GVector3.Zero);
         _flyCamera.ApplyTo(_camera);
