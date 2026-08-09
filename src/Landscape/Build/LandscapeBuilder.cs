@@ -30,7 +30,12 @@ public sealed class LandscapeBuildResult
 /// writes them</b>. That is what makes stage 3 order-independent and lets stage 4 sample across chunk
 /// borders knowing nothing is half-built.
 ///
-/// Pure with respect to the editor: no Godot nodes, no database, no main thread.
+/// Runs off the main thread, and touches no Godot node and no database while it does — but it is not
+/// yet pure. The deformers it is handed are the live scene entities, not copies, so an inspector edit
+/// landing mid-build can be read half-applied; the chunk that results is corrected by the rebuild that
+/// same edit triggers. Snapshotting deformers at capture time (where <see cref="LandscapeSystem.TakeSnapshot"/>
+/// already clones the settings) is what would close that, and would retire
+/// <see cref="ILandscapeDeformer.ContentVersion"/>'s hash fingerprint with it.
 /// </summary>
 public sealed class LandscapeBuilder
 {
