@@ -48,15 +48,26 @@ public interface ILandscapeFunction
 /// <summary>Produces one texture layer's alpha for a chunk from the channels a material points it at.</summary>
 public interface ILandscapeAlphaFunction : ILandscapeFunction
 {
+    /// <summary>
+    /// Writes coverage in 0..1 into <paramref name="alpha"/>, which is
+    /// <see cref="LandscapeEvalContext.Resolution"/> squared and row-major. Runs during output
+    /// evaluation, so channels — including neighbouring chunks' — are final and may be sampled freely.
+    /// </summary>
+    void Evaluate(in LandscapeEvalContext context, float[] alpha);
 }
 
 /// <summary>
 /// Transforms a chunk's accumulated height. Not restricted to adding: a function receives the height
-/// built so far and returns the new height, so flatten, max and blend are ordinary implementations.
-/// Order is the layer's draw order, never entity scan order.
+/// built so far and rewrites it, so flatten, max and blend are ordinary implementations. Order is the
+/// layer's draw order, never entity scan order.
 /// </summary>
 public interface ILandscapeHeightFunction : ILandscapeFunction
 {
+    /// <summary>
+    /// Rewrites <paramref name="heights"/> in place — world units, row-major,
+    /// <see cref="LandscapeEvalContext.Resolution"/> squared, holding what earlier layers built.
+    /// </summary>
+    void Evaluate(in LandscapeEvalContext context, float[] heights);
 }
 
 /// <summary>Shared helpers over a function's declared parameters.</summary>

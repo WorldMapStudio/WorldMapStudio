@@ -6,12 +6,17 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Streams landscape chunks around the viewport focus. Chunks are generated from the grid rather than
-/// read from a table, so this is an <see cref="ISceneEntityLoader"/> rather than a storage factory —
-/// there is nothing to query and no lock to take.
+/// Streams landscape chunks around the viewport focus, building them from the deformers that reach
+/// them. Chunks are computed rather than read from a table, so this is an
+/// <see cref="ISceneEntityLoader"/> rather than a storage factory — there is nothing to query and no
+/// lock to take.
 ///
-/// Phase 5 hands back flat placeholder output; the builder replaces <see cref="Build"/> in Phase 6
-/// without the streaming side changing.
+/// Deformers come from the <b>scene registry</b>, not from storage, so a stamp being dragged deforms
+/// the terrain immediately rather than only after a commit. That is sound for chunks in the streaming
+/// box: streaming loads entities whose bounds overlap that box, and any deformer reaching a chunk
+/// inside the box necessarily overlaps the box too. It is <em>not</em> sound for halo chunks outside
+/// it, which matters only once a function declares a non-zero sample radius. Phase 7's dirty tracking
+/// is where this becomes a real query.
 /// </summary>
 public sealed class LandscapeChunkLoader : ISceneEntityLoader
 {
@@ -32,23 +37,24 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
 
     public Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
     {
-        // Read once: this runs on a scan continuation, off the main thread, while the user may be
-        // editing. Both are reference reads of immutable-enough state; the builder in Phase 6 takes
-        // a proper snapshot when it moves onto the work queue.
-        LandscapeSettings? settings = _landscape.Settings;
-        LandscapeTextureMaterial? fallback = _landscape.FallbackMaterial;
-
-        if (settings == null)
+        if (_landscape.TakeSnapshot() is not { } snapshot)
         {
             return Task.FromResult<IReadOnlyList<SceneEntity>>([]);
         }
 
-        // Generating chunks is cheap and synchronous today. It becomes real work in Phase 6, which is
-        // when it moves onto the work queue rather than blocking the scan.
-        var grid = new LandscapeGrid(settings);
-        List<SceneEntity> chunks = grid.Overlapping(region)
-            .Select(coord => (SceneEntity)new LandscapeChunk(
-                LandscapeChunkOutput.Flat(coord, settings, fallback), grid, map))
+        var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
+        List<ChunkCoord> coords = builder.Grid.Overlapping(region).ToList();
+        if (coords.Count == 0)
+        {
+            return Task.FromResult<IReadOnlyList<SceneEntity>>([]);
+        }
+
+        LandscapeBuildResult result = builder.Build(coords, snapshot.Deformers);
+        _landscape.ReportProblems(result.Problems);
+
+        List<SceneEntity> chunks = coords
+            .Where(coord => result.Chunks.ContainsKey(coord))
+            .Select(coord => (SceneEntity)new LandscapeChunk(result.Chunks[coord], builder.Grid, map))
             .ToList();
 
         return Task.FromResult<IReadOnlyList<SceneEntity>>(chunks);

@@ -31,6 +31,11 @@ public sealed class SceneMenu : IMainMenu
                 ImGui.EndMenu();
             }
 
+            if (ImGui.MenuItem("Add Landscape Stamp", string.Empty, false, _context.Landscape.IsEnabled))
+            {
+                AddStamp();
+            }
+
             ImGui.Separator();
 
             bool hasSelection = _context.Selection.Selected.Count > 0;
@@ -51,6 +56,25 @@ public sealed class SceneMenu : IMainMenu
             session.Record(command);
             _context.Selection.Remove(entity);
         }
+    }
+
+    // Seeded from the catalog so a fresh stamp does something visible instead of needing four fields
+    // filled in before it shows up at all.
+    private void AddStamp()
+    {
+        LandscapeCatalog catalog = _context.Landscape.Catalog;
+        var stamp = new StampEntity
+        {
+            Name = "Stamp",
+            Map = _context.Maps.CurrentMap,
+            Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
+            TextureLayerId = catalog.Layers.FirstOrDefault(layer => layer.UsesTextureSlot && !layer.IsBase)?.RecordId,
+            HeightLayerId = catalog.Layers.FirstOrDefault(layer => !layer.UsesTextureSlot)?.RecordId,
+            MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
+        };
+
+        _context.Scene.Add(stamp);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, stamp));
     }
 
     private void AddEmptyItem(string label, EmptyShape shape)

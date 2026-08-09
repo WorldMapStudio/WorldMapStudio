@@ -17,6 +17,8 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
     public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
 
+    public DbSet<StampRecord> LandscapeStamps => Set<StampRecord>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<EmptyRecord>(entity =>
@@ -49,6 +51,12 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
         model.Entity<LandscapeMaterialRecord>(entity =>
         {
             entity.ToTable("landscape_materials");
+            entity.HasKey(record => record.Id);
+        });
+
+        model.Entity<StampRecord>(entity =>
+        {
+            entity.ToTable("landscape_stamps");
             entity.HasKey(record => record.Id);
         });
 

@@ -39,6 +39,7 @@ public sealed class ViewportWindow : Window
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
     private readonly StreamingSystem _streaming;
+    private readonly LandscapeSystem _landscape;
     private readonly MapSystem _maps;
     private readonly HashSet<SceneEntity> _represented = [];
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
@@ -53,6 +54,7 @@ public sealed class ViewportWindow : Window
         _scene = context.Scene;
         _tools = context.Tools;
         _streaming = context.Streaming;
+        _landscape = context.Landscape;
         _maps = context.Maps;
         _viewMap = _maps.CurrentMap;
         _axes = context.Axes;
@@ -186,6 +188,7 @@ public sealed class ViewportWindow : Window
     protected override void DrawContent()
     {
         FollowCurrentMap();
+        _landscape.DebugFocus = _flyCamera.Position;
         _streaming.Update(_flyCamera.Position);
         SyncRepresentations();
 
