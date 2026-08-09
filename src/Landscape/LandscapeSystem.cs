@@ -24,10 +24,17 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     {
         _context = context;
         InitializeSubsystems();
+
+        // Discovered here rather than in Load(): the registry is code, not project data, so it does
+        // not wait on the database or the migration gate.
+        Functions.Discover();
     }
 
     /// <summary>The export-target profiles available when setting up a map's landscape.</summary>
     public IEnumerable<ILandscapeProfile> Profiles => Subsystems.OfType<ILandscapeProfile>();
+
+    /// <summary>The alpha and height functions materials can bind, discovered by reflection.</summary>
+    public LandscapeFunctions Functions { get; } = new();
 
     /// <summary>Settings of the open map, or null when it has no landscape.</summary>
     public LandscapeSettings? Settings { get; private set; }
@@ -46,6 +53,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
     private LandscapeCatalog? _catalog;
     private int _catalogVersion = -1;
+    private int _functionVersion = -1;
 
     /// <summary>
     /// The loaded catalog, as the resolver sees it. Rebuilt only when entities are added or removed —
@@ -56,16 +64,18 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     {
         get
         {
-            if (_catalog != null && _catalogVersion == _context.Catalog.Version)
+            if (_catalog != null && _catalogVersion == _context.Catalog.Version && _functionVersion == Functions.Version)
             {
                 return _catalog;
             }
 
             _catalogVersion = _context.Catalog.Version;
+            _functionVersion = Functions.Version;
             _catalog = new LandscapeCatalog(
                 _context.Catalog.OfType<LandscapeChannel>().ToList(),
                 _context.Catalog.OfType<LandscapeLayer>().ToList(),
-                _context.Catalog.OfType<LandscapeTextureMaterial>().ToList());
+                _context.Catalog.OfType<LandscapeTextureMaterial>().ToList(),
+                Functions);
             return _catalog;
         }
     }

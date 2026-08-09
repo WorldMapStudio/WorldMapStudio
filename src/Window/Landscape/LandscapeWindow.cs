@@ -25,6 +25,7 @@ public sealed class LandscapeWindow : Window
     private LandscapeSettings? _draft;
     private string? _status;
     private int _profileIndex;
+    private string? _parameterBefore;
 
     public LandscapeWindow(WindowManager manager)
         : base("Landscape", startOpen: false, defaultSize: new Vector2(720.0f, 560.0f))
@@ -48,6 +49,7 @@ public sealed class LandscapeWindow : Window
             DrawTab("Channels", DrawChannels);
             DrawTab("Layers", DrawLayers);
             DrawTab("Materials", DrawMaterials);
+            DrawTab("Functions", DrawFunctions);
             DrawTab("Problems", DrawProblems);
             ImGui.EndTabBar();
         }
@@ -367,22 +369,245 @@ public sealed class LandscapeWindow : Window
                 if (ImGui.InputText("Texture", ref texture, PathMaxLength)) { material.TexturePath = texture; }
                 _tracker.Track(_context.EditSessions, material, "texture", material.TexturePath, v => material.TexturePath = v);
 
-                // Functions are discovered at startup from Phase 3 onward; until then these are free
-                // text so a material authored now keeps its binding when the registry arrives.
-                string alpha = material.AlphaFunction;
-                if (ImGui.InputText("Alpha function", ref alpha, NameMaxLength)) { material.AlphaFunction = alpha; }
-                _tracker.Track(_context.EditSessions, material, "alpha function", material.AlphaFunction, v => material.AlphaFunction = v);
+                Heading("Alpha");
+                DrawFunctionBinding(
+                    material, "alpha", Landscape.Functions.Alpha,
+                    material.AlphaFunction, value => material.AlphaFunction = value,
+                    material.AlphaParameters, value => material.AlphaParameters = value,
+                    optional: false);
 
-                string heightFunction = material.HeightFunction;
-                if (ImGui.InputText("Height function", ref heightFunction, NameMaxLength)) { material.HeightFunction = heightFunction; }
-                _tracker.Track(_context.EditSessions, material, "height function", material.HeightFunction, v => material.HeightFunction = v);
-                ImGui.SameLine();
-                ImGui.TextDisabled("(optional)");
+                Heading("Height");
+                DrawFunctionBinding(
+                    material, "height", Landscape.Functions.Height,
+                    material.HeightFunction, value => material.HeightFunction = value,
+                    material.HeightParameters, value => material.HeightParameters = value,
+                    optional: true);
 
                 DrawDelete(material);
             }
 
             ImGui.PopID();
+        }
+    }
+
+    // Draws one function slot on a material: which function, then editors generated from whatever
+    // that function declares. Parameter values live in a serialized bag, so an edit rewrites the bag
+    // as a single undoable field change on the material.
+    private void DrawFunctionBinding(
+        LandscapeTextureMaterial material,
+        string role,
+        IEnumerable<ILandscapeFunction> available,
+        string boundId,
+        System.Action<string> setFunction,
+        string serialized,
+        System.Action<string> setParameters,
+        bool optional)
+    {
+        ImGui.PushID(role);
+
+        ILandscapeFunction? bound = Landscape.Functions.Find(boundId);
+        string label = bound?.DisplayName ?? (boundId.Length == 0 ? "(none)" : $"{boundId} (missing)");
+
+        if (ImGui.BeginCombo("Function", label))
+        {
+            if (optional && ImGui.Selectable("(none)", boundId.Length == 0))
+            {
+                RecordNow(material, $"{role} function", boundId, "", setFunction);
+            }
+
+            foreach (ILandscapeFunction function in available)
+            {
+                if (ImGui.Selectable($"{function.DisplayName}##{function.Id}", function.Id == boundId))
+                {
+                    RecordNow(material, $"{role} function", boundId, function.Id, setFunction);
+                }
+
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip(function.Description);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (bound == null)
+        {
+            if (boundId.Length > 0)
+            {
+                // The binding is kept, not cleared: the plugin providing it may simply not be loaded.
+                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded function provides '{boundId}'.");
+            }
+
+            ImGui.PopID();
+            return;
+        }
+
+        ImGui.TextDisabled($"v{bound.Version} · reach {bound.MaxSampleRadius:0.##} units");
+        DrawParameters(material, bound, serialized, setParameters);
+        ImGui.PopID();
+    }
+
+    private void DrawParameters(
+        LandscapeTextureMaterial material,
+        ILandscapeFunction function,
+        string serialized,
+        System.Action<string> setParameters)
+    {
+        LandscapeParameterValues values = LandscapeParameterValues.Parse(serialized);
+
+        foreach (LandscapeParameter parameter in function.Parameters)
+        {
+            ImGui.PushID(parameter.Name);
+
+            switch (parameter.Kind)
+            {
+                case LandscapeParameterKind.Float:
+                {
+                    float value = values.GetFloat(parameter);
+                    if (ImGui.DragFloat(parameter.DisplayName, ref value, 0.01f, parameter.Min, parameter.Max))
+                    {
+                        values.Set(parameter, value);
+                    }
+
+                    TrackParameter(material, function, values, serialized, setParameters);
+                    break;
+                }
+
+                case LandscapeParameterKind.Int:
+                {
+                    int value = values.GetInt(parameter);
+                    if (ImGui.DragInt(parameter.DisplayName, ref value, 1.0f, (int)parameter.Min, (int)parameter.Max))
+                    {
+                        values.Set(parameter, value);
+                    }
+
+                    TrackParameter(material, function, values, serialized, setParameters);
+                    break;
+                }
+
+                case LandscapeParameterKind.Bool:
+                {
+                    bool value = values.GetBool(parameter);
+                    if (ImGui.Checkbox(parameter.DisplayName, ref value))
+                    {
+                        values.Set(parameter, value);
+                        RecordNow(material, parameter.DisplayName, serialized, values.Serialize(), setParameters);
+                    }
+
+                    break;
+                }
+
+                case LandscapeParameterKind.Channel:
+                {
+                    DrawChannelParameter(material, parameter, values, serialized, setParameters);
+                    break;
+                }
+            }
+
+            if (parameter.Description.Length > 0 && ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(parameter.Description);
+            }
+
+            ImGui.PopID();
+        }
+    }
+
+    private void DrawChannelParameter(
+        LandscapeTextureMaterial material,
+        LandscapeParameter parameter,
+        LandscapeParameterValues values,
+        string serialized,
+        System.Action<string> setParameters)
+    {
+        string bound = values.GetChannel(parameter);
+        string access = parameter.Access == LandscapeChannelAccess.Write ? "writes" : "reads";
+        string label = bound.Length == 0 ? "(unbound)" : bound;
+
+        if (ImGui.BeginCombo($"{parameter.DisplayName} ({access})", label))
+        {
+            foreach (LandscapeChannel channel in Landscape.Catalog.Channels)
+            {
+                if (ImGui.Selectable(channel.Name, channel.Name == bound))
+                {
+                    values.Set(parameter, channel.Name);
+                    RecordNow(material, parameter.DisplayName, serialized, values.Serialize(), setParameters);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (bound.Length > 0 && Landscape.Catalog.Channels.All(channel => channel.Name != bound))
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"Channel '{bound}' does not exist.");
+        }
+    }
+
+    // Numeric parameters are dragged, so the whole drag is one undo step like every other field here.
+    private void TrackParameter(
+        LandscapeTextureMaterial material,
+        ILandscapeFunction function,
+        LandscapeParameterValues values,
+        string serialized,
+        System.Action<string> setParameters)
+    {
+        if (ImGui.IsItemActivated())
+        {
+            _parameterBefore = serialized;
+        }
+
+        if (!ImGui.IsItemDeactivatedAfterEdit() || _parameterBefore == null)
+        {
+            return;
+        }
+
+        string before = _parameterBefore;
+        _parameterBefore = null;
+
+        string after = values.Serialize();
+        if (before != after)
+        {
+            RecordNow(material, $"{function.DisplayName} parameters", before, after, setParameters);
+        }
+    }
+
+    private void DrawFunctions()
+    {
+        LandscapeFunctions functions = Landscape.Functions;
+
+        ImGui.TextDisabled($"{functions.All.Count} discovered · max reach {Landscape.Catalog.MaxSampleRadius:0.##} units in use");
+        if (ImGui.Button("Rescan"))
+        {
+            functions.Discover();
+        }
+
+        foreach (string warning in functions.Warnings)
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.72f, 0.22f, 1.0f), warning);
+        }
+
+        ImGui.Separator();
+
+        foreach (ILandscapeFunction function in functions.All)
+        {
+            string kind = function is ILandscapeAlphaFunction ? "alpha" : "height";
+            if (!ImGui.CollapsingHeader($"{function.DisplayName} ({kind})##{function.Id}"))
+            {
+                continue;
+            }
+
+            ImGui.TextWrapped(function.Description);
+            ImGui.TextDisabled($"{function.Id} · v{function.Version} · reach {function.MaxSampleRadius:0.##} units");
+
+            foreach (LandscapeParameter parameter in function.Parameters)
+            {
+                string detail = parameter.Kind == LandscapeParameterKind.Channel
+                    ? $"channel, {parameter.Access.ToString().ToLowerInvariant()}"
+                    : parameter.Kind.ToString().ToLowerInvariant();
+                ImGui.BulletText($"{parameter.DisplayName} — {detail}");
+            }
         }
     }
 

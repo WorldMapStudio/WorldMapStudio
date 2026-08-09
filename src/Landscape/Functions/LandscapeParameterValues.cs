@@ -1,0 +1,94 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Text.Json;
+
+namespace WorldMapStudio;
+
+/// <summary>
+/// The values a material supplies for one function's parameters, keyed by
+/// <see cref="LandscapeParameter.Name"/>.
+///
+/// Values are held as strings and parsed on read, for one reason that matters: a value whose
+/// parameter the function no longer declares is <em>kept</em> rather than dropped. Editing a material
+/// against a newer version of a function, or against a function whose plugin is not loaded right now,
+/// does not silently destroy what was authored.
+/// </summary>
+public sealed class LandscapeParameterValues
+{
+    private readonly Dictionary<string, string> _values;
+
+    public LandscapeParameterValues()
+    {
+        _values = new Dictionary<string, string>(StringComparer.Ordinal);
+    }
+
+    private LandscapeParameterValues(Dictionary<string, string> values)
+    {
+        _values = values;
+    }
+
+    public IReadOnlyDictionary<string, string> Raw => _values;
+
+    /// <summary>Reads the raw string for a parameter, falling back to its declared default.</summary>
+    public string GetRaw(LandscapeParameter parameter) =>
+        _values.TryGetValue(parameter.Name, out string? value) ? value : parameter.Default;
+
+    public float GetFloat(LandscapeParameter parameter) =>
+        float.TryParse(GetRaw(parameter), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ? value : 0.0f;
+
+    public int GetInt(LandscapeParameter parameter) =>
+        int.TryParse(GetRaw(parameter), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : 0;
+
+    public bool GetBool(LandscapeParameter parameter) =>
+        GetRaw(parameter).Equals("true", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>The channel name bound to a channel parameter, or empty when unbound.</summary>
+    public string GetChannel(LandscapeParameter parameter) => GetRaw(parameter);
+
+    public void Set(LandscapeParameter parameter, float value) =>
+        _values[parameter.Name] = value.ToString(CultureInfo.InvariantCulture);
+
+    public void Set(LandscapeParameter parameter, int value) =>
+        _values[parameter.Name] = value.ToString(CultureInfo.InvariantCulture);
+
+    public void Set(LandscapeParameter parameter, bool value) =>
+        _values[parameter.Name] = value ? "true" : "false";
+
+    public void Set(LandscapeParameter parameter, string value) =>
+        _values[parameter.Name] = value;
+
+    /// <summary>Serializes to the string a material stores. Stable ordering, so commits stay diffable.</summary>
+    public string Serialize()
+    {
+        if (_values.Count == 0)
+        {
+            return "";
+        }
+
+        var ordered = new SortedDictionary<string, string>(_values, StringComparer.Ordinal);
+        return JsonSerializer.Serialize(ordered);
+    }
+
+    /// <summary>Reads back what <see cref="Serialize"/> wrote. Unreadable input yields empty values.</summary>
+    public static LandscapeParameterValues Parse(string serialized)
+    {
+        if (string.IsNullOrWhiteSpace(serialized))
+        {
+            return new LandscapeParameterValues();
+        }
+
+        try
+        {
+            Dictionary<string, string>? parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(serialized);
+            return parsed == null
+                ? new LandscapeParameterValues()
+                : new LandscapeParameterValues(new Dictionary<string, string>(parsed, StringComparer.Ordinal));
+        }
+        catch (JsonException)
+        {
+            // Hand-edited or written by an older format: better an empty bag than a crash while drawing.
+            return new LandscapeParameterValues();
+        }
+    }
+}
