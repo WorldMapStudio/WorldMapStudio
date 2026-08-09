@@ -1,5 +1,6 @@
 #nullable enable
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using ImGuiNET;
 using NVector2 = System.Numerics.Vector2;
 
@@ -10,12 +11,29 @@ namespace WorldMapStudio;
 /// exercise the scripting API surface while it's being built out. Secondary to the eventual HTTP
 /// endpoint (see ScriptingPlan.md's Phase 12): this is for developing/debugging the API, not the
 /// primary way scripts get run.
+///
+/// Submits through <see cref="ScriptEngineHost.EvaluateAsync"/> rather than the synchronous
+/// <see cref="ScriptEngineHost.Evaluate"/>, so a script that uses <c>await</c> shows the value it
+/// settled on instead of <c>[object Promise]</c>. The cost is that every result lands a frame or more
+/// later, which is what the pending placeholder is for.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class ScriptConsoleWindow : Window
 {
+    private sealed class Entry(string input, Task<ScriptResult> pending)
+    {
+        public string Input { get; } = input;
+
+        public Task<ScriptResult> Pending { get; } = pending;
+
+        /// <summary>What to show: the settled result, or a placeholder while it is still running.</summary>
+        public string Output => Pending.IsCompletedSuccessfully
+            ? Pending.Result.Success ? Pending.Result.Output : $"Error: {Pending.Result.Output}"
+            : "…";
+    }
+
     private readonly ScriptingSystem _scripting;
-    private readonly List<(string Input, string Output)> _history = [];
+    private readonly List<Entry> _history = [];
 
     private string _input = "";
     private bool _scrollToBottom;
@@ -45,7 +63,7 @@ public sealed class ScriptConsoleWindow : Window
 
         if (submitted && _input.Length > 0)
         {
-            _history.Add((_input, engine.Evaluate(_input)));
+            _history.Add(new Entry(_input, engine.EvaluateAsync(_input)));
             _input = "";
             _scrollToBottom = true;
             ImGui.SetKeyboardFocusHere(-1);
@@ -55,10 +73,10 @@ public sealed class ScriptConsoleWindow : Window
     private void DrawHistory()
     {
         ImGui.BeginChild("##ScriptHistory", new NVector2(0, -32), true);
-        foreach ((string input, string output) in _history)
+        foreach (Entry entry in _history)
         {
-            ImGui.TextColored(new System.Numerics.Vector4(0.55f, 0.75f, 1.0f, 1.0f), $"> {input}");
-            ImGui.TextWrapped(output);
+            ImGui.TextColored(new System.Numerics.Vector4(0.55f, 0.75f, 1.0f, 1.0f), $"> {entry.Input}");
+            ImGui.TextWrapped(entry.Output);
         }
 
         if (_scrollToBottom)
