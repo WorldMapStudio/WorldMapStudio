@@ -23,6 +23,7 @@ public sealed class StreamingSystem
 
     private readonly EditorContext _context;
     private readonly Dictionary<(Type Type, long Key), SceneEntity> _streamed = new();
+    private readonly List<ISceneEntityLoader> _loaders = [];
 
     private Task<List<SceneEntity>>? _pendingScan;
     private MapId _scanMap;
@@ -33,6 +34,12 @@ public sealed class StreamingSystem
     {
         _context = context;
     }
+
+    /// <summary>
+    /// Registers a source of scene entities that has no storage behind it. Used by the landscape to
+    /// stream chunks, which are generated from the grid rather than read from a table.
+    /// </summary>
+    public void AddLoader(ISceneEntityLoader loader) => _loaders.Add(loader);
 
     /// <summary>Called each frame with the viewport focus (camera position, in Godot space).</summary>
     public void Update(Vector3 focus)
@@ -92,6 +99,12 @@ public sealed class StreamingSystem
             }
         }
 
+        // Storage-free sources (landscape chunks) take no lock: there is no database behind them.
+        foreach (ISceneEntityLoader loader in _loaders)
+        {
+            result.AddRange(await loader.ScanAsync(map, region).ConfigureAwait(false));
+        }
+
         return result;
     }
 
@@ -102,7 +115,7 @@ public sealed class StreamingSystem
         var loaded = new Dictionary<(Type, long), SceneEntity>();
         foreach (SceneEntity entity in _context.Scene.Entities)
         {
-            if (FactoryFor(entity)?.PersistentKey(entity) is long key)
+            if (KeyOf(entity) is long key)
             {
                 loaded[(entity.GetType(), key)] = entity;
             }
@@ -111,7 +124,7 @@ public sealed class StreamingSystem
         var present = new HashSet<(Type, long)>();
         foreach (SceneEntity entity in scanned)
         {
-            if (FactoryFor(entity)?.PersistentKey(entity) is not long key)
+            if (KeyOf(entity) is not long key)
             {
                 continue;
             }
@@ -164,15 +177,24 @@ public sealed class StreamingSystem
         return false;
     }
 
-    private ISceneEntityFactory? FactoryFor(SceneEntity entity)
+    // The stable identity a re-scan deduplicates on, from whichever source owns the entity.
+    private long? KeyOf(SceneEntity entity)
     {
+        foreach (ISceneEntityLoader loader in _loaders)
+        {
+            if (loader.Handles(entity))
+            {
+                return loader.KeyOf(entity);
+            }
+        }
+
         foreach (Storage storage in _context.Database.Storages)
         {
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
                 if (factory.Handles(entity))
                 {
-                    return factory;
+                    return factory.PersistentKey(entity);
                 }
             }
         }

@@ -59,6 +59,11 @@ public sealed partial class EditorContext : ISubsystemHost
         Landscape = new LandscapeSystem(this);
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
+
+        // Chunks stream like any other scene entity, but they are generated rather than stored, so
+        // the landscape hands streaming a loader instead of a storage factory.
+        Streaming.AddLoader(Landscape.ChunkLoader);
+
         InitializeSubsystems();
     }
 

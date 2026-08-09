@@ -138,6 +138,14 @@ public sealed partial class DatabaseSystem : ISubsystemHost
 
             foreach (IEntity entity in session.Pinned)
             {
+                // Derived entities are computed, never stored. The session already refuses to pin
+                // one, so this is the second lock on the door that actually matters: whatever else
+                // goes wrong, a computed result must not reach the database.
+                if (entity is IDerivedEntity)
+                {
+                    continue;
+                }
+
                 if (storage.EntityFactories.Any(factory => factory.Handles(entity)))
                 {
                     (IsLoaded(entity) ? saves : deletes).Add(entity);
