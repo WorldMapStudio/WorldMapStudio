@@ -30,7 +30,7 @@ public sealed class LandscapeRebuilder
     private int _settingsVersion = -1;
     private int _catalogVersion = -1;
     private int _historyRevision = -1;
-    private bool _primed;
+    private int _sceneVersion = -1;
 
     public LandscapeRebuilder(EditorContext context)
     {
@@ -65,7 +65,9 @@ public sealed class LandscapeRebuilder
     {
         _dirty.Clear();
         _tracker.Clear();
-        _primed = false;
+
+        // Forget what the loaded set was, so the entities of the map being entered read as new.
+        _sceneVersion = -1;
     }
 
     private void NoticeChanges(LandscapeSystem landscape)
@@ -77,21 +79,9 @@ public sealed class LandscapeRebuilder
             _settingsVersion = landscape.Version;
             _catalogVersion = _context.Catalog.Version;
             _historyRevision = _context.EditSessions.Active.History.Revision;
+            _sceneVersion = _context.Scene.Version;
             Reset();
             _context.Streaming.Invalidate();
-            return;
-        }
-
-        List<ILandscapeDeformer> deformers = _context.Scene.Entities.OfType<ILandscapeDeformer>().ToList();
-
-        if (!_primed)
-        {
-            // Streaming has just built these chunks from exactly this state; recording it without
-            // reporting anything stops the first frame queueing a pointless rebuild of everything.
-            _primed = true;
-            _tracker.Prime(deformers);
-            _catalogVersion = _context.Catalog.Version;
-            _historyRevision = _context.EditSessions.Active.History.Revision;
             return;
         }
 
@@ -103,12 +93,24 @@ public sealed class LandscapeRebuilder
             MarkAll();
         }
 
-        if (_historyRevision == _context.EditSessions.Active.History.Revision)
+        // Two things change the deformer set. An edit is the obvious one. The other is streaming:
+        // a chunk is built from a snapshot taken when its scan *started*, so entities that same scan
+        // loads were not there yet. In steady flight the load margin covers it — a deformer enters
+        // the margin a scan before its chunk enters view — but on a cold start nothing is loaded at
+        // all, and the first chunks come out empty until something notices.
+        bool edited = _historyRevision != _context.EditSessions.Active.History.Revision;
+        bool loadedSetChanged = _sceneVersion != _context.Scene.Version;
+        if (!edited && !loadedSetChanged)
         {
             return;
         }
 
         _historyRevision = _context.EditSessions.Active.History.Revision;
+        _sceneVersion = _context.Scene.Version;
+
+        // Rebuilding a chunk replaces its content in place and never touches the registry, so
+        // reacting to the scene version cannot feed itself.
+        List<ILandscapeDeformer> deformers = _context.Scene.Entities.OfType<ILandscapeDeformer>().ToList();
         foreach (Aabb region in _tracker.Collect(deformers))
         {
             MarkRegion(landscape, region);

@@ -20,8 +20,8 @@ public sealed class LandscapeDirtyTracker
     public int Count => _known.Count;
 
     /// <summary>
-    /// Records the current state and returns the regions that changed since the last call. The first
-    /// call after <see cref="Prime"/> reports nothing, because nothing has moved yet.
+    /// Records the current state and returns the regions that changed since the last call. On the
+    /// first call every deformer is new, which is correct: nothing has been built from them yet.
     /// </summary>
     public IReadOnlyList<Aabb> Collect(IReadOnlyList<ILandscapeDeformer> deformers)
     {
@@ -57,12 +57,6 @@ public sealed class LandscapeDirtyTracker
         return regions;
     }
 
-    /// <summary>Records the current state without reporting anything, e.g. after a full rebuild.</summary>
-    public void Prime(IReadOnlyList<ILandscapeDeformer> deformers)
-    {
-        _known.Clear();
-        Collect(deformers);
-    }
 
     public void Clear() => _known.Clear();
 }
