@@ -22,6 +22,22 @@ public static class DrawingTargetTests
     }
 
     [EditorTest(Category = "DrawingTarget", Thread = TestThread.Background)]
+    public static void Drawing_targets_ignore_authored_height_and_tilt()
+    {
+        var target = new DrawingTargetEntity
+        {
+            Transform = new Transform3D(
+                Basis.FromEuler(new Vector3(0.35f, 0.7f, -0.2f)),
+                new Vector3(12.0f, 99.0f, 24.0f)),
+        };
+
+        Assert.AreApproximatelyEqual(0.0, target.Transform.Origin.Y, 1e-5);
+        Assert.AreApproximatelyEqual(0.0, target.Transform.Basis.X.Y, 1e-5);
+        Assert.AreApproximatelyEqual(1.0, target.Transform.Basis.Y.Y, 1e-5);
+        Assert.AreApproximatelyEqual(0.0, target.Transform.Basis.Z.Y, 1e-5);
+    }
+
+    [EditorTest(Category = "DrawingTarget", Thread = TestThread.Background)]
     public static void Rasterizing_a_drawing_target_feeds_the_landscape_channel()
     {
         var functions = new LandscapeFunctions();
