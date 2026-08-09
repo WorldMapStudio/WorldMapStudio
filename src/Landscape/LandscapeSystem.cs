@@ -44,6 +44,8 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
     private LandscapeChunkLoader? _chunkLoader;
     private LandscapeRebuilder? _rebuilder;
+    private int _reportedCatalog = -1;
+    private int _reportedScene = -1;
     private (int Landscape, int Catalog) _fallbackKey = (-1, -1);
 
     /// <summary>The grid of the open map, or null when it has no landscape.</summary>
@@ -92,20 +94,10 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     /// </summary>
     public Vector3 Focus { get; set; }
 
-    /// <summary>The problems the last build reported, newest first, for the debug window.</summary>
-    public IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> Problems => _problems;
+    /// <summary>Publishes what the builder finds into the editor's problem list.</summary>
+    public LandscapeProblemReporter Reporter => _reporter ??= new LandscapeProblemReporter(_context.Problems);
 
-    private readonly List<(ChunkCoord Coord, LandscapeProblem Problem)> _problems = [];
-
-    /// <summary>Records the problems a build produced, replacing what the previous build reported.</summary>
-    public void ReportProblems(IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> problems)
-    {
-        lock (_problems)
-        {
-            _problems.Clear();
-            _problems.AddRange(problems);
-        }
-    }
+    private LandscapeProblemReporter? _reporter;
 
     /// <summary>Settings of the open map, or null when it has no landscape.</summary>
     public LandscapeSettings? Settings { get; private set; }
@@ -194,6 +186,22 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
             // The chunks about to stream in belong to another map; nothing loaded is comparable.
             Rebuilder.Reset();
+            Reporter.ClearAll();
+            _reportedCatalog = -1;
+        }
+
+        if (IsEnabled && _reportedCatalog != _context.Catalog.Version)
+        {
+            _reportedCatalog = _context.Catalog.Version;
+            Reporter.ReportCatalog(Catalog.Validate());
+        }
+
+        // Problems belong to chunks; a chunk that streamed out has nothing left to be wrong with.
+        // Only worth checking when chunks actually came or went.
+        if (_reportedScene != _context.Scene.Version)
+        {
+            _reportedScene = _context.Scene.Version;
+            Reporter.KeepOnly(_context.Scene.Entities.OfType<LandscapeChunk>().Select(chunk => chunk.Coord).ToList());
         }
 
         Rebuilder.Update(Focus);

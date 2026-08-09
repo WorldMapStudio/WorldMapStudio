@@ -173,7 +173,7 @@ public sealed class LandscapeRebuilder
             ctx.Step("Applying");
             await ApplyAsync(ctx, result);
 
-            landscape.ReportProblems(result.Problems);
+            landscape.Reporter.Report(result, grid, snapshot.Deformers);
         });
     }
 

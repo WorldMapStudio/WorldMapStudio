@@ -29,6 +29,9 @@ public sealed class ViewportWindow : Window
 
     private static readonly GVector3 DefaultCameraPosition = new(8.0f, 6.0f, 8.0f);
 
+    /// <summary>How far back the camera sits when asked to look at something.</summary>
+    private const float FocusDistance = 40.0f;
+
     private readonly SubViewport _viewport;
     private readonly Camera3D _camera;
     private readonly MeshInstance3D _grid;
@@ -117,8 +120,21 @@ public sealed class ViewportWindow : Window
         // The map picker previews each map with a snapshot of this view; only the viewport can take one.
         _maps.CaptureView = () => _viewport.GetTexture()?.GetImage();
 
+        // Anything that can point at a place in the world — the Problems window, say — asks here.
+        context.Focus.Handler = LookAt;
+
         _flyCamera.LookAt(GVector3.Zero);
         _flyCamera.ApplyTo(_camera);
+    }
+
+    // Backs off along the current view direction so the target is framed rather than sat inside.
+    private void LookAt(GVector3 target)
+    {
+        GVector3 back = (_flyCamera.Position - target);
+        GVector3 direction = back.LengthSquared() > 0.001f ? back.Normalized() : new GVector3(0.0f, 0.5f, 1.0f).Normalized();
+
+        _flyCamera.MoveTo(target + (direction * FocusDistance));
+        _flyCamera.LookAt(target);
     }
 
     // A handful of lit boxes scattered on the grid, some rotated so local vs. world space
