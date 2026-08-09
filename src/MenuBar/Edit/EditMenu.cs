@@ -10,15 +10,13 @@ namespace WorldMapStudio;
 [Subsystem(nameof(MenuBarManager))]
 public sealed class EditMenu : IMainMenu
 {
-    private readonly EditorContext _context;
     private readonly EditSessionManager _sessions;
 
     public float Priority => 0.5f;
 
     public EditMenu(MenuBarManager manager)
     {
-        _context = manager.Context;
-        _sessions = _context.EditSessions;
+        _sessions = manager.Context.EditSessions;
     }
 
     public void Draw()
@@ -44,7 +42,6 @@ public sealed class EditMenu : IMainMenu
 
             if (ImGui.MenuItem("Commit Session", string.Empty, false, session.IsDirty))
             {
-                _context.Database.Commit(session);
                 _sessions.Commit();
             }
 
