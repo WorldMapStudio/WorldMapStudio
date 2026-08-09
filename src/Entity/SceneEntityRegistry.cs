@@ -64,4 +64,16 @@ public sealed class SceneEntityRegistry
         Version++;
         return true;
     }
+
+    /// <summary>
+    /// Signals that an already-loaded entity changed in place. View and terrain systems use the
+    /// registry version as a cheap "something about the loaded scene moved" tick.
+    /// </summary>
+    public void Touch(SceneEntity entity)
+    {
+        if (_entities.Contains(entity))
+        {
+            Version++;
+        }
+    }
 }

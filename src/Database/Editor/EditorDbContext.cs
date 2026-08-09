@@ -19,6 +19,8 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
     public DbSet<StampRecord> LandscapeStamps => Set<StampRecord>();
 
+    public DbSet<DrawingTargetRecord> LandscapeDrawingTargets => Set<DrawingTargetRecord>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<EmptyRecord>(entity =>
@@ -66,6 +68,12 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
         model.Entity<StampRecord>(entity =>
         {
             entity.ToTable("landscape_stamps");
+            entity.HasKey(record => record.Id);
+        });
+
+        model.Entity<DrawingTargetRecord>(entity =>
+        {
+            entity.ToTable("landscape_drawing_targets");
             entity.HasKey(record => record.Id);
         });
 

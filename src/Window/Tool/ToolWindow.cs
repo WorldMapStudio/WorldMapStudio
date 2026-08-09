@@ -17,6 +17,7 @@ public sealed partial class ToolWindow : Window, ISubsystemHost
     public ToolWindow(WindowManager manager)
         : base("Tools", defaultSize: new Vector2(200, 300))
     {
+        Context = manager.Context;
         _tools = manager.Context.Tools;
         InitializeSubsystems();
 
@@ -27,6 +28,8 @@ public sealed partial class ToolWindow : Window, ISubsystemHost
 
         _tools.EnsureActive();
     }
+
+    public EditorContext Context { get; }
 
     protected override void DrawContent()
     {

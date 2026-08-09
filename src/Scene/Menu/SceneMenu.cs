@@ -36,6 +36,11 @@ public sealed class SceneMenu : IMainMenu
                 AddStamp();
             }
 
+            if (ImGui.MenuItem("Add Drawing Target", string.Empty, false, _context.Landscape.IsEnabled))
+            {
+                AddDrawingTarget();
+            }
+
             ImGui.Separator();
 
             bool hasSelection = _context.Selection.Selected.Count > 0;
@@ -74,6 +79,23 @@ public sealed class SceneMenu : IMainMenu
 
         _context.Scene.Add(stamp);
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, stamp));
+    }
+
+    private void AddDrawingTarget()
+    {
+        LandscapeCatalog catalog = _context.Landscape.Catalog;
+        var target = new DrawingTargetEntity
+        {
+            Name = "Drawing Target",
+            Map = _context.Maps.CurrentMap,
+            Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
+            LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
+            MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
+        };
+
+        _context.Scene.Add(target);
+        _context.Selection.Set(target);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, target));
     }
 
     private void AddEmptyItem(string label, EmptyShape shape)
