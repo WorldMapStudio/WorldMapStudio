@@ -1,4 +1,6 @@
+using System;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 
 namespace WorldMapStudio;
@@ -59,6 +61,27 @@ public static class ScriptingTests
 
         [ScriptFunction]
         public ScriptEntityHandle Get() => new(scene, catalog, sessions, entity);
+    }
+
+    private sealed class AsyncFixtureModule : IScriptModule
+    {
+        public string Name => "asyncFixture";
+
+        public float Priority => 0f;
+
+        [ScriptFunction]
+        public async Task<string> LoadAsync()
+        {
+            await Task.Delay(50).ConfigureAwait(false);
+            return "loaded";
+        }
+
+        [ScriptFunction]
+        public async Task FailAsync()
+        {
+            await Task.Delay(20).ConfigureAwait(false);
+            throw new InvalidOperationException("boom");
+        }
     }
 
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
@@ -224,5 +247,87 @@ public static class ScriptingTests
 
         Assert.IsTrue(host.Evaluate("wms.handles.Get().DisplayName = 'Nope'").StartsWith("Error:"),
             "DisplayName has no Mutable = true, so assignment from JS must fail, not silently no-op");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Engine_resolves_an_awaited_task_without_blocking()
+    {
+        var host = new ScriptEngineHost([new AsyncFixtureModule()]);
+        host.Evaluate("""
+            var outcome = 'pending';
+            (async function () {
+                outcome = await wms.asyncFixture.LoadAsync();
+            })();
+            """);
+
+        // host.Update() is the only thing driving progress here — if this loop ever needed to block
+        // on the underlying Task instead of polling Update(), that would be exactly the main-thread
+        // deadlock this bridge exists to avoid (see [[godot-main-thread-async-deadlock]]).
+        for (int i = 0; i < 40 && host.Evaluate("outcome") == "pending"; i++)
+        {
+            host.Update();
+            await Task.Delay(25);
+        }
+
+        Assert.AreEqual("loaded", host.Evaluate("outcome"));
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Engine_rejects_the_promise_when_the_task_faults()
+    {
+        var host = new ScriptEngineHost([new AsyncFixtureModule()]);
+        host.Evaluate("""
+            var outcome = 'pending';
+            (async function () {
+                try {
+                    await wms.asyncFixture.FailAsync();
+                    outcome = 'should not resolve';
+                } catch (e) {
+                    outcome = 'caught';
+                }
+            })();
+            """);
+
+        for (int i = 0; i < 40 && host.Evaluate("outcome") == "pending"; i++)
+        {
+            host.Update();
+            await Task.Delay(25);
+        }
+
+        Assert.AreEqual("caught", host.Evaluate("outcome"), "a faulted Task must reject the JS Promise, not hang forever");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Time_wait_resolves_after_the_engine_is_pumped()
+    {
+        var host = new ScriptEngineHost([new TimeFixtureModule()]);
+        host.Evaluate("""
+            var outcome = 'pending';
+            (async function () {
+                await wms.time.Wait(30);
+                outcome = 'done';
+            })();
+            """);
+
+        for (int i = 0; i < 40 && host.Evaluate("outcome") == "pending"; i++)
+        {
+            host.Update();
+            await Task.Delay(15);
+        }
+
+        Assert.AreEqual("done", host.Evaluate("outcome"));
+    }
+
+    // TimeScriptApi's real constructor takes ScriptingSystem, which needs a live EditorContext to
+    // build — this local double has the identical [ScriptFunction] surface without that dependency,
+    // matching how ScriptEntityHandle's own tests avoid constructing EditorContext for the same reason.
+    private sealed class TimeFixtureModule : IScriptModule
+    {
+        public string Name => "time";
+
+        public float Priority => 0f;
+
+        [ScriptFunction]
+        public Task Wait(int milliseconds) => Task.Delay(milliseconds);
     }
 }

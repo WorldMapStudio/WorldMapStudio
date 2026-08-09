@@ -43,6 +43,10 @@ public sealed class Editor : IScene
         // Entering another map swaps to that map's landscape settings.
         _context.Landscape.Update();
 
+        // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
+        // since last frame — never blocks, mirrors WorkQueue's own per-frame main-thread pump.
+        _context.Scripting.Engine?.Update();
+
         ImGuiEx.MainMenuBar(() =>
         {
             menuBar.Draw();
