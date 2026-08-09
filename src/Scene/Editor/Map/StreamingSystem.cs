@@ -41,6 +41,13 @@ public sealed class StreamingSystem
     /// </summary>
     public void AddLoader(ISceneEntityLoader loader) => _loaders.Add(loader);
 
+    /// <summary>
+    /// Forces the next update to re-scan, regardless of how far the focus has moved. What a loader
+    /// returns can depend on more than position — landscape chunks are rebuilt from the entities that
+    /// shape them — so an edit has to be able to say "what you have is stale".
+    /// </summary>
+    public void Invalidate() => _scanned = false;
+
     /// <summary>Called each frame with the viewport focus (camera position, in Godot space).</summary>
     public void Update(Vector3 focus)
     {
@@ -61,6 +68,12 @@ public sealed class StreamingSystem
         _scanned = true;
         _scanMap = map;
         _lastFocus = focus;
+
+        // Loaders capture live editor state here, on the main thread, before the scan can hop off it.
+        foreach (ISceneEntityLoader loader in _loaders)
+        {
+            loader.Prepare();
+        }
 
         var extent = new Vector3(Range, Range, Range);
         var region = new Aabb(focus - extent, extent * 2.0f);
@@ -134,6 +147,9 @@ public sealed class StreamingSystem
 
             if (loaded.TryGetValue(id, out SceneEntity? existing))
             {
+                // A re-scan of derived content is a rebuild, so its result replaces what is loaded
+                // rather than being thrown away as a duplicate.
+                Refresh(existing, entity);
                 _streamed.TryAdd(id, existing);
             }
             else if (_streamed.TryAdd(id, entity))
@@ -175,6 +191,17 @@ public sealed class StreamingSystem
         }
 
         return false;
+    }
+
+    private void Refresh(SceneEntity loaded, SceneEntity rescanned)
+    {
+        foreach (ISceneEntityLoader loader in _loaders)
+        {
+            if (loader.Handles(loaded) && loader.TryRefresh(loaded, rescanned))
+            {
+                return;
+            }
+        }
     }
 
     // The stable identity a re-scan deduplicates on, from whichever source owns the entity.

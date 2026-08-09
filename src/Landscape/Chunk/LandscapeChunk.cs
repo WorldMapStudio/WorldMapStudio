@@ -41,15 +41,20 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
     public void Rebuild(LandscapeChunkOutput output)
     {
         Output = output;
-        if (Node is { } node)
+        if (Node is not { } node)
         {
-            foreach (Node child in node.GetChildren())
-            {
-                child.QueueFree();
-            }
-
-            node.AddChild(BuildSurface());
+            return;
         }
+
+        // Detached before the replacement goes in: QueueFree only takes effect at the end of the
+        // frame, so leaving the old surface attached would z-fight with the new one for a frame.
+        foreach (Node child in node.GetChildren())
+        {
+            node.RemoveChild(child);
+            child.QueueFree();
+        }
+
+        node.AddChild(BuildSurface());
     }
 
     protected override Node3D BuildNode()

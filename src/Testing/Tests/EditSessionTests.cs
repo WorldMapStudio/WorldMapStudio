@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace WorldMapStudio;
@@ -101,5 +102,53 @@ public static class EditSessionTests
         Assert.AreEqual(0, entity.Value);
         Assert.IsFalse(session.IsDirty);
         Assert.IsFalse(session.History.CanUndo);
+    }
+
+    private sealed class DerivedEntity : IDerivedEntity
+    {
+        public EntityId Id { get; } = EntityId.Next();
+    }
+
+    private sealed class TouchDerivedCommand(DerivedEntity entity) : IEditCommand
+    {
+        public IReadOnlyList<IEntity> Targets { get; } = new IEntity[] { entity };
+
+        public string Description => "Touch derived";
+
+        public void Apply() { }
+
+        public void Revert() { }
+    }
+
+    [EditorTest(Category = "EditSession")]
+    public static void The_history_revision_moves_on_every_change()
+    {
+        // Systems that derive something from the edited entities watch this to know an edit landed,
+        // so it has to move for undo and redo too, not only for recording.
+        var entity = new FakeEntity();
+        var history = new UndoHistory();
+        int start = history.Revision;
+
+        history.Record(new SetValueCommand(entity, 0, 1));
+        int recorded = history.Revision;
+        Assert.AreNotEqual(start, recorded);
+
+        history.Undo();
+        int undone = history.Revision;
+        Assert.AreNotEqual(recorded, undone);
+
+        history.Redo();
+        Assert.AreNotEqual(undone, history.Revision);
+    }
+
+    [EditorTest(Category = "EditSession")]
+    public static void A_derived_entity_cannot_be_edited()
+    {
+        // Derived entities are computed from other entities, so a command targeting one would undo
+        // into a value the next rebuild discards. Loud rather than silently dropped.
+        var session = new EditSession();
+
+        Assert.Throws<InvalidOperationException>(() => session.Record(new TouchDerivedCommand(new DerivedEntity())));
+        Assert.IsFalse(session.IsDirty, "nothing should have been pinned");
     }
 }

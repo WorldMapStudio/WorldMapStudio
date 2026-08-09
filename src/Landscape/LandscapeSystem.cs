@@ -41,6 +41,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
     private LandscapeChunkLoader? _chunkLoader;
     private (int Landscape, int Catalog) _fallbackKey = (-1, -1);
+    private (int Landscape, int Catalog, int History) _inputs = (-1, -1, -1);
 
     /// <summary>The grid of the open map, or null when it has no landscape.</summary>
     public LandscapeGrid? Grid => Settings == null ? null : new LandscapeGrid(Settings);
@@ -185,6 +186,32 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         {
             LoadSettings(map);
         }
+
+        InvalidateIfInputsChanged();
+    }
+
+    /// <summary>
+    /// Chunks are a function of the settings, the catalog and the deformers, but streaming only
+    /// re-scans when the camera has travelled far enough. Without this, creating a landscape shows no
+    /// terrain and dragging a stamp deforms nothing until you happen to fly far enough for a re-scan.
+    ///
+    /// The edit history is the signal for entity changes: every deformer edit — create, delete, gizmo
+    /// drag, inspector field, undo, redo — lands as a command, so one revision counter covers all of
+    /// them without each edit site knowing the landscape exists. It also means a rebuild happens when
+    /// a drag <em>ends</em> rather than every frame during it.
+    ///
+    /// A crude whole-region re-scan, deliberately: Phase 7 replaces it with a real dirty set.
+    /// </summary>
+    private void InvalidateIfInputsChanged()
+    {
+        var inputs = (Version, _context.Catalog.Version, _context.EditSessions.Active.History.Revision);
+        if (_inputs == inputs)
+        {
+            return;
+        }
+
+        _inputs = inputs;
+        _context.Streaming.Invalidate();
     }
 
     /// <summary>

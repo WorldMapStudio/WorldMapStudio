@@ -16,6 +16,13 @@ public sealed class UndoHistory
 
     public bool CanRedo => _redo.Count > 0;
 
+    /// <summary>
+    /// Bumps on every change to the history. Systems that derive something from the edited entities —
+    /// the landscape rebuilding its chunks — watch this to know an edit landed, without each edit site
+    /// having to know who cares.
+    /// </summary>
+    public int Revision { get; private set; }
+
     /// <summary>Applied commands, oldest first; the last entry is the current position.</summary>
     public IReadOnlyList<IEditCommand> UndoStack => _undo;
 
@@ -26,6 +33,7 @@ public sealed class UndoHistory
     {
         _undo.Add(command);
         _redo.Clear();
+        Revision++;
     }
 
     public void Undo()
@@ -39,6 +47,7 @@ public sealed class UndoHistory
         _undo.RemoveAt(_undo.Count - 1);
         command.Revert();
         _redo.Add(command);
+        Revision++;
     }
 
     public void Redo()
@@ -52,11 +61,13 @@ public sealed class UndoHistory
         _redo.RemoveAt(_redo.Count - 1);
         command.Apply();
         _undo.Add(command);
+        Revision++;
     }
 
     public void Clear()
     {
         _undo.Clear();
         _redo.Clear();
+        Revision++;
     }
 }

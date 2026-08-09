@@ -35,9 +35,25 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
         return chunk.Coord.KeyFor(chunk.Map);
     }
 
+    /// <summary>
+    /// Captures the build inputs on the main thread. The catalog memoizes into fields and streaming
+    /// mutates the scene registry, so reading either from the scan thread is a race — and one that
+    /// fails the whole scan, taking every other entity type down with it.
+    /// </summary>
+    public void Prepare() => _snapshot = _landscape.TakeSnapshot();
+
+    private LandscapeSystem.BuildSnapshot? _snapshot;
+
+    public bool TryRefresh(SceneEntity loaded, SceneEntity rescanned)
+    {
+        // The rebuilt output is the new truth; the loaded chunk keeps its identity and selection.
+        ((LandscapeChunk)loaded).Rebuild(((LandscapeChunk)rescanned).Output);
+        return true;
+    }
+
     public Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
     {
-        if (_landscape.TakeSnapshot() is not { } snapshot)
+        if (_snapshot is not { } snapshot)
         {
             return Task.FromResult<IReadOnlyList<SceneEntity>>([]);
         }
