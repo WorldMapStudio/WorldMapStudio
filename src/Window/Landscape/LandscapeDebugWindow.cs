@@ -99,18 +99,18 @@ public sealed class LandscapeDebugWindow : Window
 
     private void DrawProblems()
     {
-        IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> problems = _context.Landscape.Problems;
-        if (problems.Count == 0)
+        int errors = _context.Problems.CountOf(ProblemSeverity.Error);
+        int warnings = _context.Problems.CountOf(ProblemSeverity.Warning);
+
+        if (errors == 0 && warnings == 0)
         {
-            ImGui.TextColored(new NVector4(0.42f, 0.85f, 0.46f, 1.0f), "The last build was clean.");
+            ImGui.TextColored(new NVector4(0.42f, 0.85f, 0.46f, 1.0f), "No problems.");
             return;
         }
 
-        ImGui.Text($"{problems.Count} problems in the last build");
-        foreach ((ChunkCoord coord, LandscapeProblem problem) in problems.Take(20))
-        {
-            ImGui.TextWrapped($"[{coord}] {problem.Kind}: {problem.Message}");
-        }
+        ImGui.TextColored(
+            errors > 0 ? new NVector4(1.0f, 0.45f, 0.4f, 1.0f) : new NVector4(1.0f, 0.72f, 0.22f, 1.0f),
+            $"{errors} errors, {warnings} warnings — see the Problems window.");
     }
 
     // Rebuilds the preview textures. Called only when the chunk or the scene changed, since this

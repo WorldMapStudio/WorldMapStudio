@@ -71,7 +71,7 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
         LandscapeBuildResult result = await Task.Run(() => builder.Build(coords, snapshot.Deformers))
             .ConfigureAwait(false);
 
-        _landscape.ReportProblems(result.Problems);
+        _landscape.Reporter.Report(result, builder.Grid, snapshot.Deformers);
 
         return coords
             .Where(coord => result.Chunks.ContainsKey(coord))

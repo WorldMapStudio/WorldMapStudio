@@ -30,6 +30,12 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The catalog entities currently loaded into the editor.</summary>
     public CatalogEntityRegistry Catalog { get; }
 
+    /// <summary>Everything the editor wants to tell the user about, from any system.</summary>
+    public ProblemSystem Problems { get; }
+
+    /// <summary>Lets any window ask the viewport to look somewhere.</summary>
+    public ViewportFocus Focus { get; }
+
     /// <summary>Owns the active editor tool.</summary>
     public ToolSystem Tools { get; }
 
@@ -57,6 +63,8 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Catalog = new CatalogEntityRegistry();
+        Problems = new ProblemSystem();
+        Focus = new ViewportFocus();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
         Database = new DatabaseSystem(this);
