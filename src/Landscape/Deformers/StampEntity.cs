@@ -27,13 +27,13 @@ public sealed class StampEntity : SceneEntity, ILandscapeDeformer
     /// <summary>Channel this stamp paints into, by name. Empty means it paints nothing.</summary>
     public string Channel { get; set; } = "";
 
-    /// <summary>Texture layer claimed, by record id. Null claims no texture slot.</summary>
-    public int? TextureLayerId { get; set; }
+    /// <summary>The layer claimed, by record id. Null claims nothing.</summary>
+    public int? LayerId { get; set; }
 
-    /// <summary>Height layer claimed, by record id. Null contributes no height.</summary>
-    public int? HeightLayerId { get; set; }
-
-    /// <summary>Material bound to both claims, by record id.</summary>
+    /// <summary>
+    /// Material bound to the claim, by record id. What it paints and what it deforms is the
+    /// material's business — one that carries both halves does both from this single claim.
+    /// </summary>
     public int? MaterialId { get; set; }
 
     /// <summary>How important this stamp is when a chunk runs out of texture slots.</summary>
@@ -62,26 +62,11 @@ public sealed class StampEntity : SceneEntity, ILandscapeDeformer
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
     {
-        LandscapeMaterial? material = context.Material(MaterialId);
-        var claims = new List<LandscapeClaim>();
-
-        if (context.Layer(TextureLayerId) is { } texture)
-        {
-            claims.Add(new LandscapeClaim { Layer = texture, Material = material });
-        }
-
-        if (context.Layer(HeightLayerId) is { } height)
-        {
-            claims.Add(new LandscapeClaim { Layer = height, Material = material });
-        }
-
-        if (claims.Count == 0)
+        if (context.Layer(LayerId) is not { } layer)
         {
             return [];
         }
 
-        // One group: a stamp that wins its texture but loses its height (or the reverse) would be a
-        // stamp doing half its job, which is what grouping exists to prevent.
         return
         [
             new LandscapeClaimGroup
@@ -89,7 +74,7 @@ public sealed class StampEntity : SceneEntity, ILandscapeDeformer
                 Key = DeformerKey,
                 Label = Name,
                 Priority = Priority,
-                Claims = claims,
+                Claims = [new LandscapeClaim { Layer = layer, Material = context.Material(MaterialId) }],
                 Source = Id,
             },
         ];

@@ -40,7 +40,6 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
     {
         RecordId = record.Id,
         Name = record.Name,
-        Kind = (LandscapeLayerKind)record.Kind,
         IsBase = record.IsBase,
         Priority = record.Priority,
         DrawOrder = record.DrawOrder,
@@ -49,7 +48,6 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
     protected override void WriteRecord(LandscapeLayer entity, LandscapeLayerRecord record)
     {
         record.Name = entity.Name;
-        record.Kind = (int)entity.Kind;
         record.IsBase = entity.IsBase;
         record.Priority = entity.Priority;
         record.DrawOrder = entity.DrawOrder;

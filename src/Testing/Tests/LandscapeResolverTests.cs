@@ -13,11 +13,12 @@ public static class LandscapeResolverTests
     private static LandscapeLayer Layer(string name, int order, bool isBase = false) =>
         new() { Name = name, DrawOrder = order, IsBase = isBase };
 
-    private static LandscapeLayer HeightLayer(string name, int order) =>
-        new() { Name = name, DrawOrder = order, Kind = LandscapeLayerKind.Height };
-
     private static LandscapeMaterial Material(string name, int id) =>
         new() { Name = name, RecordId = id, TexturePath = $"res://{name}.png", AlphaFunction = "test" };
+
+    /// <summary>A material that only deforms — no texture, no alpha function, so it costs no slot.</summary>
+    private static LandscapeMaterial HeightMaterial(string name, int id) =>
+        new() { Name = name, RecordId = id, HeightFunction = "test.height" };
 
     private static LandscapeClaimGroup Group(
         string key,
@@ -235,26 +236,90 @@ public static class LandscapeResolverTests
     }
 
     [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
-    public static void Height_layers_take_no_slot_and_run_in_draw_order()
+    public static void A_height_only_material_costs_no_slot_and_runs_in_draw_order()
     {
+        // What a claim costs is the material's business: these two bind no texture, so they escape
+        // the budget entirely even though nothing about their layers says so.
         LandscapeLayer ground = Layer("ground", 0, isBase: true);
-        LandscapeLayer raise = HeightLayer("raise", 1);
-        LandscapeLayer flatten = HeightLayer("flatten", 2);
+        LandscapeLayer raise = Layer("raise", 1);
+        LandscapeLayer flatten = Layer("flatten", 2);
 
         LandscapeResolution resolution = Resolve(
         [
             Group("terrain", 0, (ground, Material("grass", 1))),
-            Group("road_bed", 0, (flatten, Material("road", 3))),
-            Group("hill", 0, (raise, Material("hill", 2))),
+            Group("road_bed", 0, (flatten, HeightMaterial("road", 3))),
+            Group("hill", 0, (raise, HeightMaterial("hill", 2))),
         ],
             textureLimit: 1);
 
-        Assert.IsTrue(resolution.IsClean, "height layers are not subject to the texture budget");
+        Assert.IsTrue(resolution.IsClean, "height-only claims are not subject to the texture budget");
         Assert.AreEqual(1, resolution.UsedSlots);
 
         // Flatten must be able to run after raise, or the hill bumps through the road bed.
         Assert.AreEqual("raise", resolution.HeightClaims[0].Layer.Name);
         Assert.AreEqual("flatten", resolution.HeightClaims[1].Layer.Name);
+    }
+
+    [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
+    public static void One_claim_can_paint_and_deform_at_once()
+    {
+        // The point of dropping the layer kind: a road that paints gravel and cuts its bed is one
+        // material on one layer, not a pair that has to be kept in step.
+        var both = new LandscapeMaterial
+        {
+            Name = "road",
+            RecordId = 2,
+            TexturePath = "res://road.png",
+            AlphaFunction = "test",
+            HeightFunction = "test.height",
+        };
+
+        LandscapeLayer ground = Layer("ground", 0, isBase: true);
+        LandscapeLayer road = Layer("road", 1);
+
+        LandscapeResolution resolution = Resolve(
+            [Group("terrain", 0, (ground, Material("grass", 1))), Group("road", 0, (road, both))],
+            textureLimit: 4);
+
+        Assert.IsTrue(resolution.IsClean);
+        Assert.AreEqual(2, resolution.UsedSlots, "it takes a slot because it paints");
+        Assert.AreEqual(1, resolution.HeightClaims.Count, "and deforms from the same claim");
+    }
+
+    [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
+    public static void Conflicts_are_caught_on_layers_that_only_deform()
+    {
+        // A layer is a responsibility whatever its material does, so two entities disagreeing about
+        // how the ground is shaped is the same mistake as disagreeing about its texture.
+        LandscapeLayer bed = Layer("road_bed", 1);
+
+        LandscapeResolution resolution = Resolve(
+        [
+            Group("road_a", 1, (bed, HeightMaterial("flat_low", 5))),
+            Group("road_b", 9, (bed, HeightMaterial("flat_high", 6))),
+        ],
+            textureLimit: 4,
+            materials: [Material("fallback", 1)],
+            fallbackId: 1);
+
+        Assert.IsTrue(Has(resolution, LandscapeProblemKind.LayerConflict));
+        Assert.IsTrue(resolution.IsDropped("road_a"));
+        Assert.AreEqual("flat_high", resolution.HeightClaims.Single().Material!.Name);
+    }
+
+    [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
+    public static void A_layer_painting_below_the_base_is_reported()
+    {
+        // Which layers composite depends on their materials, so this cannot be settled in the
+        // catalog — only here, once the bindings are known.
+        LandscapeLayer detail = Layer("detail", 0);
+        LandscapeLayer ground = Layer("ground", 1, isBase: true);
+
+        LandscapeResolution resolution = Resolve(
+            [Group("detail", 0, (detail, Material("moss", 2))), Group("terrain", 0, (ground, Material("grass", 1)))],
+            textureLimit: 4);
+
+        Assert.IsTrue(Has(resolution, LandscapeProblemKind.BelowBase));
     }
 
     [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]

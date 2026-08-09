@@ -87,9 +87,9 @@ public sealed class LandscapeCatalog
         }
     }
 
-    /// <summary>Texture layers in the order they composite, base first.</summary>
-    public IEnumerable<LandscapeLayer> TextureLayersInOrder =>
-        Layers.Where(layer => layer.UsesTextureSlot).OrderBy(layer => layer.DrawOrder);
+    /// <summary>Layers in draw order — compositing order for whatever paints, evaluation order for
+    /// whatever deforms.</summary>
+    public IEnumerable<LandscapeLayer> LayersInOrder => Layers.OrderBy(layer => layer.DrawOrder);
 
     /// <summary>Everything wrong with the catalog, worst first. Empty means it is usable.</summary>
     public IReadOnlyList<LandscapeIssue> Validate()
@@ -135,25 +135,9 @@ public sealed class LandscapeCatalog
                 $"Draw order {group.Key} is used by {string.Join(", ", group.Select(layer => $"'{layer.Name}'"))}; orders must be unique."));
         }
 
-        foreach (LandscapeLayer layer in Layers.Where(layer => layer.IsBase && !layer.UsesTextureSlot))
-        {
-            issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
-                $"Layer '{layer.Name}' is a height layer flagged as base; only texture layers can be a base."));
-        }
-
-        // A base layer is the opaque bottom of the chunk, so anything compositing below one would be
-        // painted over and silently lost.
-        List<LandscapeLayer> textureLayers = TextureLayersInOrder.ToList();
-        int lastBase = textureLayers.FindLastIndex(layer => layer.IsBase);
-        if (lastBase >= 0)
-        {
-            foreach (LandscapeLayer covered in textureLayers.Take(lastBase).Where(layer => !layer.IsBase))
-            {
-                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
-                    $"Layer '{covered.Name}' draws below the base layer '{textureLayers[lastBase].Name}' and would never be visible."));
-            }
-        }
-        else if (textureLayers.Count > 0)
+        // Whether a layer composites at all depends on the material bound to it, per entity and per
+        // chunk, so "sorts below the base" is a build-time problem rather than a catalog rule.
+        if (Layers.Count > 0 && Layers.All(layer => !layer.IsBase))
         {
             issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
                 "No layer is marked as a base, so every chunk depends on the map having a fallback material."));

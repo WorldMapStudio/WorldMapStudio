@@ -46,37 +46,6 @@ public static class LandscapeCatalogTests
     }
 
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
-    public static void Nothing_may_draw_below_the_base_layer()
-    {
-        // The base is opaque, so a layer ordered under it would be painted over and silently lost.
-        LandscapeCatalog catalog = Catalog(layers: [Layer("detail", 0), Layer("ground", 1, isBase: true)]);
-
-        Assert.IsTrue(HasError(catalog.Validate(), "draws below the base layer"));
-    }
-
-    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
-    public static void A_height_layer_cannot_be_a_base()
-    {
-        LandscapeCatalog catalog = Catalog(layers:
-        [
-            new LandscapeLayer { Name = "flatten", DrawOrder = 0, Kind = LandscapeLayerKind.Height, IsBase = true },
-        ]);
-
-        Assert.IsTrue(HasError(catalog.Validate(), "only texture layers"));
-    }
-
-    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
-    public static void Height_layers_are_ordered_with_texture_layers_but_take_no_slot()
-    {
-        var height = new LandscapeLayer { Name = "flatten", DrawOrder = 1, Kind = LandscapeLayerKind.Height };
-        LandscapeCatalog catalog = Catalog(layers: [Layer("ground", 0, isBase: true), height, Layer("road", 2)]);
-
-        Assert.IsFalse(height.UsesTextureSlot, "a height layer never consumes a texture slot");
-        Assert.AreEqual(2, catalog.TextureLayersInOrder.Count());
-        Assert.AreEqual(0, catalog.Validate().Count(issue => issue.Severity == LandscapeIssueSeverity.Error));
-    }
-
-    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
     public static void A_height_only_material_is_valid()
     {
         // Nothing here knows whether this material will be bound to a texture layer or a height one,
@@ -91,9 +60,10 @@ public static class LandscapeCatalogTests
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
     public static void A_material_that_does_nothing_at_all_is_flagged()
     {
+        // A texture alone is enough to fill a base slot, so "does nothing" means neither half.
         LandscapeCatalog catalog = Catalog(
             layers: [Layer("ground", 0, isBase: true)],
-            materials: [new LandscapeMaterial { Name = "empty", TexturePath = "res://dirt.png" }]);
+            materials: [new LandscapeMaterial { Name = "empty" }]);
 
         Assert.IsTrue(catalog.Validate().Any(issue => issue.Message.Contains("does nothing")));
     }

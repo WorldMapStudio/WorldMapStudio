@@ -1,20 +1,15 @@
 namespace WorldMapStudio;
 
-/// <summary>What a layer contributes to a chunk.</summary>
-public enum LandscapeLayerKind
-{
-    /// <summary>Occupies one of the chunk's texture slots.</summary>
-    Texture,
-
-    /// <summary>Contributes only to height, so it is never subject to the texture budget.</summary>
-    Height,
-}
-
 /// <summary>
-/// A per-chunk slot, and — more importantly — a <em>responsibility domain</em>. A layer is what lets
-/// the system say "grass_highlight_1 and grass_highlight_2 are the same job, you cannot have both
-/// here": two entities binding different materials to one layer in one chunk is a conflict, and the
-/// higher priority wins.
+/// A <em>responsibility domain</em>, and the ordering of one. A layer is what lets the system say
+/// "grass_highlight_1 and grass_highlight_2 are the same job, you cannot have both here": two
+/// entities binding different materials to one layer in one chunk is a conflict, and the higher
+/// priority wins.
+///
+/// A layer deliberately does <b>not</b> say whether it carries texture or height. That is decided by
+/// the material bound to it, per entity and per chunk — a layer bound to a material with both halves
+/// paints and deforms at once. Declaring it here as well would be the same fact in two places, free
+/// to disagree.
 ///
 /// Layers are global to the project; entities reference them through instance parameters rather than
 /// hardcoding them, because which layers exist is the user's decision, not source code.
@@ -23,11 +18,9 @@ public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
 {
     public string Name { get; set; } = "Layer";
 
-    public LandscapeLayerKind Kind { get; set; } = LandscapeLayerKind.Texture;
-
     /// <summary>
     /// Whether this layer is the opaque bottom of a chunk. A base layer writes no alpha, so at most
-    /// one may be bound per chunk, and it must sort below every other texture layer.
+    /// one may be bound per chunk, and everything that composites must sort above it.
     /// </summary>
     public bool IsBase { get; set; }
 
@@ -35,9 +28,10 @@ public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
     public int Priority { get; set; }
 
     /// <summary>
-    /// Compositing order for texture layers, evaluation order for height layers — one number serving
-    /// both, because a road that flattens must be able to run after a hill that raises. Unique across
-    /// the project, so two layers are never ambiguously ordered.
+    /// Compositing order for whatever texture this layer carries, evaluation order for whatever
+    /// height it carries — one number serving both, because a road that flattens must be able to run
+    /// after a hill that raises. Unique across the project, so two layers are never ambiguously
+    /// ordered.
     /// </summary>
     public int DrawOrder { get; set; }
 
@@ -48,7 +42,4 @@ public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
     public bool IsSaved { get; set; }
 
     public override string DisplayName => Name;
-
-    /// <summary>Whether this layer consumes one of the chunk's texture slots.</summary>
-    public bool UsesTextureSlot => Kind == LandscapeLayerKind.Texture;
 }

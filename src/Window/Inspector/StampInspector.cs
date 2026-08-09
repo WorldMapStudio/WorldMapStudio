@@ -61,11 +61,9 @@ public sealed class StampInspector : EntityInspector<StampEntity>
         ImGui.Separator();
 
         DrawChannel(context, stamp, catalog);
-        DrawLayer(context, stamp, catalog, "Texture layer", stamp.TextureLayerId,
-            layer => layer.UsesTextureSlot, value => stamp.TextureLayerId = value);
-        DrawLayer(context, stamp, catalog, "Height layer", stamp.HeightLayerId,
-            layer => !layer.UsesTextureSlot, value => stamp.HeightLayerId = value);
+        DrawLayer(context, stamp, catalog);
         DrawMaterial(context, stamp, catalog);
+        ImGui.TextDisabled("The material decides whether this paints, deforms, or both.");
     }
 
     private void DrawChannel(InspectorContext context, StampEntity stamp, LandscapeCatalog catalog)
@@ -89,15 +87,12 @@ public sealed class StampInspector : EntityInspector<StampEntity>
         }
     }
 
-    private void DrawLayer(
-        InspectorContext context,
-        StampEntity stamp,
-        LandscapeCatalog catalog,
-        string label,
-        int? current,
-        System.Func<LandscapeLayer, bool> filter,
-        System.Action<int?> set)
+    private void DrawLayer(InspectorContext context, StampEntity stamp, LandscapeCatalog catalog)
     {
+        const string label = "Layer";
+        int? current = stamp.LayerId;
+        void set(int? value) => stamp.LayerId = value;
+
         // Only look up a real id: matching on a null id would find the first *uncommitted* layer and
         // show its name as though it were bound, when nothing is.
         LandscapeLayer? bound = current is { } boundId
@@ -111,7 +106,7 @@ public sealed class StampInspector : EntityInspector<StampEntity>
                 Record(context, stamp, label, current, null, set);
             }
 
-            foreach (LandscapeLayer layer in catalog.Layers.Where(filter))
+            foreach (LandscapeLayer layer in catalog.LayersInOrder)
             {
                 int? recordId = layer.RecordId;
                 if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == current))
