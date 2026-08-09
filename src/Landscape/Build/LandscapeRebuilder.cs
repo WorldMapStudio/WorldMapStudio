@@ -28,7 +28,11 @@ public sealed class LandscapeRebuilder
 
     private WorkHandle? _running;
     private int _settingsVersion = -1;
-    private int _catalogVersion = -1;
+
+    // Registry membership and catalog content are compared as a pair rather than folded into one
+    // hash: a collision here, or a real hash landing on the "nothing yet" sentinel, is terrain that
+    // silently never rebuilds — the hardest possible bug to find, bought for nothing.
+    private (int Registry, int Content) _catalogVersion = (-1, -1);
     private int _historyRevision = -1;
     private int _sceneVersion = -1;
 
@@ -77,7 +81,7 @@ public sealed class LandscapeRebuilder
         if (_settingsVersion != landscape.Version)
         {
             _settingsVersion = landscape.Version;
-            _catalogVersion = System.HashCode.Combine(_context.Catalog.Version, landscape.Catalog.ContentVersion);
+            _catalogVersion = (_context.Catalog.Version, landscape.Catalog.ContentVersion);
             _historyRevision = _context.EditSessions.Active.History.Revision;
             _sceneVersion = _context.Scene.Version;
             Reset();
@@ -88,7 +92,7 @@ public sealed class LandscapeRebuilder
         // A catalog edit — a material's height amount, a layer's draw order — can change any chunk
         // that binds it, and nothing cheap narrows that down. Membership and content both count: an
         // edit mutates a catalog entity in place, which the registry's version never sees.
-        int catalog = System.HashCode.Combine(_context.Catalog.Version, landscape.Catalog.ContentVersion);
+        (int, int) catalog = (_context.Catalog.Version, landscape.Catalog.ContentVersion);
         if (_catalogVersion != catalog)
         {
             _catalogVersion = catalog;

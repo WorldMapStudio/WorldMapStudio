@@ -44,7 +44,11 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
     private LandscapeChunkLoader? _chunkLoader;
     private LandscapeRebuilder? _rebuilder;
-    private int _reportedCatalog = -1;
+
+    // Compared as a pair, never hashed into one int. Two counters fit in a tuple exactly, so folding
+    // them into a hash buys nothing and costs a class of bug that cannot be debugged: a collision, or
+    // a real hash landing on the -1 "nothing yet" sentinel, is a silently skipped report or rebuild.
+    private (int Registry, int Content) _reportedCatalog = (-1, -1);
     private int _reportedScene = -1;
     private (int Landscape, int Catalog) _fallbackKey = (-1, -1);
 
@@ -187,12 +191,12 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             // The chunks about to stream in belong to another map; nothing loaded is comparable.
             Rebuilder.Reset();
             Reporter.ClearAll();
-            _reportedCatalog = -1;
+            _reportedCatalog = (-1, -1);
         }
 
         if (IsEnabled)
         {
-            int catalog = System.HashCode.Combine(_context.Catalog.Version, Catalog.ContentVersion);
+            (int, int) catalog = (_context.Catalog.Version, Catalog.ContentVersion);
             if (_reportedCatalog != catalog)
             {
                 _reportedCatalog = catalog;
