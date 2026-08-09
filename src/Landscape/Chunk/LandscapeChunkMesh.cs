@@ -44,7 +44,36 @@ public static class LandscapeChunkMesh
             }
         }
 
-        var indices = new List<int>(quads * quads * 6);
+        int[] indices = BuildIndices(resolution);
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.TexUV] = uvs;
+        arrays[(int)Mesh.ArrayType.Index] = indices;
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        return mesh;
+    }
+
+    /// <summary>
+    /// The triangle indices of a chunk grid, wound so the surface faces up.
+    ///
+    /// <b>Godot's front face is the one whose vertices are clockwise as seen from the front</b>, the
+    /// opposite of the OpenGL habit. Getting this backwards produces a mesh that builds, reports
+    /// upward normals, and is invisible from above because every triangle is culled — so the winding
+    /// is pulled out here where a test can pin it.
+    ///
+    /// Separated from <see cref="BuildMesh"/> so it can be checked without a live engine.
+    /// </summary>
+    public static int[] BuildIndices(int resolution)
+    {
+        int quads = resolution - 1;
+        var indices = new int[quads * quads * 6];
+        int next = 0;
+
         for (int y = 0; y < quads; y++)
         {
             for (int x = 0; x < quads; x++)
@@ -54,27 +83,17 @@ public static class LandscapeChunkMesh
                 int bottomLeft = topLeft + resolution;
                 int bottomRight = bottomLeft + 1;
 
-                // Counter-clockwise seen from above, so the surface faces up.
-                indices.Add(topLeft);
-                indices.Add(bottomLeft);
-                indices.Add(topRight);
+                indices[next++] = topLeft;
+                indices[next++] = topRight;
+                indices[next++] = bottomLeft;
 
-                indices.Add(topRight);
-                indices.Add(bottomLeft);
-                indices.Add(bottomRight);
+                indices[next++] = topRight;
+                indices[next++] = bottomRight;
+                indices[next++] = bottomLeft;
             }
         }
 
-        var arrays = new Godot.Collections.Array();
-        arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
-        arrays[(int)Mesh.ArrayType.Normal] = normals;
-        arrays[(int)Mesh.ArrayType.TexUV] = uvs;
-        arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
-
-        var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-        return mesh;
+        return indices;
     }
 
     /// <summary>Builds the splatting material for a chunk's slots.</summary>
