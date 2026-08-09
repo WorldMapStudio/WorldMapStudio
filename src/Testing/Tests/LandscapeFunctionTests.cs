@@ -22,6 +22,8 @@ public static class LandscapeFunctionTests
         public int Version => 1;
         public float MaxSampleRadius => 12.0f;
         public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(Mask);
+        public void Evaluate(in LandscapeEvalContext context, float[] output) { }
+
     }
 
     private sealed class DuplicateId : ILandscapeAlphaFunction
@@ -32,6 +34,8 @@ public static class LandscapeFunctionTests
         public int Version => 1;
         public float MaxSampleRadius => 0.0f;
         public IReadOnlyList<LandscapeParameter> Parameters { get; } = [];
+        public void Evaluate(in LandscapeEvalContext context, float[] output) { }
+
     }
 
     private sealed class NeedsAnArgument : ILandscapeHeightFunction
@@ -44,6 +48,8 @@ public static class LandscapeFunctionTests
         public int Version => 1;
         public float MaxSampleRadius => 0.0f;
         public IReadOnlyList<LandscapeParameter> Parameters { get; } = [];
+        public void Evaluate(in LandscapeEvalContext context, float[] output) { }
+
     }
 
     private sealed class RepeatedParameter : ILandscapeAlphaFunction
@@ -57,6 +63,8 @@ public static class LandscapeFunctionTests
         public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(
             LandscapeParameter.Float("amount", "Amount", 0.0f, 0.0f, 1.0f),
             LandscapeParameter.Float("amount", "Amount again", 0.0f, 0.0f, 1.0f));
+        public void Evaluate(in LandscapeEvalContext context, float[] output) { }
+
     }
 
     private static LandscapeFunctions Registry(params Type[] types)

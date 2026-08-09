@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -33,4 +34,29 @@ public sealed class ChannelMaskAlpha : ILandscapeAlphaFunction
 
     public IReadOnlyList<LandscapeParameter> Parameters { get; } =
         LandscapeParameter.List(Mask, Threshold, Softness, Invert);
+
+    public void Evaluate(in LandscapeEvalContext context, float[] alpha)
+    {
+        float threshold = context.Float(Threshold);
+        float softness = context.Float(Softness);
+        bool invert = context.Bool(Invert);
+        int resolution = context.Resolution;
+
+        // A zero-width fade would divide by zero; treat it as the hard edge the user asked for.
+        float low = threshold - (softness * 0.5f);
+        float high = threshold + (softness * 0.5f);
+
+        for (int y = 0; y < resolution; y++)
+        {
+            for (int x = 0; x < resolution; x++)
+            {
+                float mask = context.SampleChannel(Mask, context.WorldAt(x, y, vertices: false));
+                float coverage = softness <= 0.0f
+                    ? (mask >= threshold ? 1.0f : 0.0f)
+                    : Mathf.Clamp((mask - low) / (high - low), 0.0f, 1.0f);
+
+                alpha[(y * resolution) + x] = invert ? 1.0f - coverage : coverage;
+            }
+        }
+    }
 }

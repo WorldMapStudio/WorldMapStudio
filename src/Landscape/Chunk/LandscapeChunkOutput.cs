@@ -1,4 +1,4 @@
-using System;
+
 using System.Collections.Generic;
 
 namespace WorldMapStudio;
@@ -21,9 +21,6 @@ public sealed class LandscapeChunkLayer
 /// What a chunk resolved and evaluated to: a heightmap and the texture slots over it. This is the
 /// whole of what rendering needs, and — when a persistent cache eventually lands — the whole of what
 /// an exporter would read.
-///
-/// Phase 5 fills these with flat, single-slot placeholders so the mesh, shader and streaming can be
-/// proven before the builder exists.
 /// </summary>
 public sealed class LandscapeChunkOutput
 {
@@ -42,18 +39,4 @@ public sealed class LandscapeChunkOutput
     public required IReadOnlyList<LandscapeChunkLayer> Layers { get; init; }
 
     public float HeightAt(int x, int y) => Heights[(y * HeightResolution) + x];
-
-    /// <summary>A flat, single-slot chunk. The placeholder Phase 5 renders before the builder exists.</summary>
-    public static LandscapeChunkOutput Flat(ChunkCoord coord, LandscapeSettings settings, LandscapeTextureMaterial? material)
-    {
-        int resolution = Math.Max(2, settings.ChunkHeightResolution);
-        return new LandscapeChunkOutput
-        {
-            Coord = coord,
-            HeightResolution = resolution,
-            Heights = new float[resolution * resolution],
-            AlphaResolution = Math.Max(1, settings.ChunkAlphaResolution),
-            Layers = [new LandscapeChunkLayer { Material = material, Alpha = null }],
-        };
-    }
 }

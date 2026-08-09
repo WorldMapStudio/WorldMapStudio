@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -25,6 +26,21 @@ public sealed class ChannelHeightOffset : ILandscapeHeightFunction
     public float MaxSampleRadius => 0.0f;
 
     public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(Mask, Amount);
+
+    public void Evaluate(in LandscapeEvalContext context, float[] heights)
+    {
+        float amount = context.Float(Amount);
+        int resolution = context.Resolution;
+
+        for (int y = 0; y < resolution; y++)
+        {
+            for (int x = 0; x < resolution; x++)
+            {
+                Vector3 world = context.WorldAt(x, y, vertices: true);
+                heights[(y * resolution) + x] += context.SampleChannel(Mask, world) * amount;
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -54,4 +70,26 @@ public sealed class ChannelHeightFlatten : ILandscapeHeightFunction
     public float MaxSampleRadius => 0.0f;
 
     public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(Mask, Target, Strength);
+
+    public void Evaluate(in LandscapeEvalContext context, float[] heights)
+    {
+        float target = context.Float(Target);
+        float strength = Mathf.Clamp(context.Float(Strength), 0.0f, 1.0f);
+        int resolution = context.Resolution;
+
+        for (int y = 0; y < resolution; y++)
+        {
+            for (int x = 0; x < resolution; x++)
+            {
+                int index = (y * resolution) + x;
+                Vector3 world = context.WorldAt(x, y, vertices: true);
+                float mask = context.SampleChannel(Mask, world);
+
+                // Reads what earlier layers built and pulls it toward the target. Running this after
+                // a raise gives a flat bed cut into the hill; running it before would let the hill
+                // bump straight back through.
+                heights[index] = Mathf.Lerp(heights[index], target, mask * strength);
+            }
+        }
+    }
 }

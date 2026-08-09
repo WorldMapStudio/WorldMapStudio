@@ -56,6 +56,50 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             ? Catalog.Materials.FirstOrDefault(material => material.RecordId == id)
             : null;
 
+    /// <summary>Everything a background chunk build needs, captured at one instant.</summary>
+    public sealed record BuildSnapshot(
+        LandscapeSettings Settings,
+        LandscapeCatalog Catalog,
+        LandscapeFunctions Functions,
+        IReadOnlyList<ILandscapeDeformer> Deformers);
+
+    /// <summary>
+    /// Captures the inputs of a build. Called on the main thread before the work leaves it: the
+    /// catalog memoizes into fields and the scene registry is mutated by streaming, so a builder must
+    /// not read either while the user is editing.
+    /// </summary>
+    public BuildSnapshot? TakeSnapshot()
+    {
+        if (Settings is not { } settings)
+        {
+            return null;
+        }
+
+        List<ILandscapeDeformer> deformers = _context.Scene.Entities
+            .OfType<ILandscapeDeformer>()
+            .ToList();
+
+        return new BuildSnapshot(settings.Clone(), Catalog, Functions, deformers);
+    }
+
+    /// <summary>Where the viewport is looking, so the debug window can pick the chunk under it.</summary>
+    public Vector3 DebugFocus { get; set; }
+
+    /// <summary>The problems the last build reported, newest first, for the debug window.</summary>
+    public IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> Problems => _problems;
+
+    private readonly List<(ChunkCoord Coord, LandscapeProblem Problem)> _problems = [];
+
+    /// <summary>Records the problems a build produced, replacing what the previous build reported.</summary>
+    public void ReportProblems(IReadOnlyList<(ChunkCoord Coord, LandscapeProblem Problem)> problems)
+    {
+        lock (_problems)
+        {
+            _problems.Clear();
+            _problems.AddRange(problems);
+        }
+    }
+
     /// <summary>Settings of the open map, or null when it has no landscape.</summary>
     public LandscapeSettings? Settings { get; private set; }
 
