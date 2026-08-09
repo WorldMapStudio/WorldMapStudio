@@ -31,6 +31,9 @@ public enum LandscapeProblemKind
     /// <summary>A texture slot's material binds no alpha function, so nothing decides where it shows.</summary>
     MissingAlphaFunction,
 
+    /// <summary>A layer that paints sorts below the chunk's base, which is opaque, so it is never seen.</summary>
+    BelowBase,
+
     /// <summary>Even dropping every droppable group left more slots in use than the limit allows.</summary>
     Unsatisfiable,
 }

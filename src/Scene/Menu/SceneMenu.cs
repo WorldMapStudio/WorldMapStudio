@@ -68,8 +68,7 @@ public sealed class SceneMenu : IMainMenu
             Name = "Stamp",
             Map = _context.Maps.CurrentMap,
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-            TextureLayerId = catalog.Layers.FirstOrDefault(layer => layer.UsesTextureSlot && !layer.IsBase)?.RecordId,
-            HeightLayerId = catalog.Layers.FirstOrDefault(layer => !layer.UsesTextureSlot)?.RecordId,
+            LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
             MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
         };
 

@@ -42,9 +42,7 @@ public sealed class StampRecord
 
     public string Channel { get; set; } = "";
 
-    public int? TextureLayerId { get; set; }
-
-    public int? HeightLayerId { get; set; }
+    public int? LayerId { get; set; }
 
     public int? MaterialId { get; set; }
 
@@ -129,8 +127,7 @@ public sealed class StampFactory : ISceneEntityFactory
             Falloff = (float)record.Falloff,
             Strength = (float)record.Strength,
             Channel = record.Channel,
-            TextureLayerId = record.TextureLayerId,
-            HeightLayerId = record.HeightLayerId,
+            LayerId = record.LayerId,
             MaterialId = record.MaterialId,
             Priority = record.Priority,
         };
@@ -161,8 +158,7 @@ public sealed class StampFactory : ISceneEntityFactory
         record.Falloff = stamp.Falloff;
         record.Strength = stamp.Strength;
         record.Channel = stamp.Channel;
-        record.TextureLayerId = stamp.TextureLayerId;
-        record.HeightLayerId = stamp.HeightLayerId;
+        record.LayerId = stamp.LayerId;
         record.MaterialId = stamp.MaterialId;
         record.Priority = stamp.Priority;
     }

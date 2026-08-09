@@ -21,8 +21,7 @@ public static class LandscapeBuilderTests
         public required string Key { get; init; }
         public required Vector3 Centre { get; init; }
         public required float Radius { get; init; }
-        public required LandscapeLayer TextureLayer { get; init; }
-        public LandscapeLayer? HeightLayer { get; init; }
+        public required LandscapeLayer Layer { get; init; }
         public required LandscapeMaterial Material { get; init; }
         public int ClaimPriority { get; init; }
 
@@ -32,16 +31,16 @@ public static class LandscapeBuilderTests
             Centre - new Vector3(Radius, Radius, Radius),
             new Vector3(Radius * 2.0f, Radius * 2.0f, Radius * 2.0f));
 
-        public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
-        {
-            var claims = new List<LandscapeClaim> { new() { Layer = TextureLayer, Material = Material } };
-            if (HeightLayer != null)
+        public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) =>
+        [
+            new LandscapeClaimGroup
             {
-                claims.Add(new LandscapeClaim { Layer = HeightLayer, Material = Material });
-            }
-
-            return [new LandscapeClaimGroup { Key = Key, Label = Key, Priority = ClaimPriority, Claims = claims }];
-        }
+                Key = Key,
+                Label = Key,
+                Priority = ClaimPriority,
+                Claims = [new LandscapeClaim { Layer = Layer, Material = Material }],
+            },
+        ];
 
         public void Rasterize(in LandscapeRasterContext context)
         {
@@ -74,8 +73,7 @@ public static class LandscapeBuilderTests
         public required LandscapeCatalog Catalog { get; init; }
         public required LandscapeFunctions Functions { get; init; }
         public required LandscapeLayer Base { get; init; }
-        public required LandscapeLayer Texture { get; init; }
-        public required LandscapeLayer Height { get; init; }
+        public required LandscapeLayer Detail { get; init; }
         public required LandscapeMaterial Material { get; init; }
 
         public LandscapeBuilder Builder() => new(Settings, Catalog, Functions);
@@ -107,11 +105,7 @@ public static class LandscapeBuilderTests
         };
 
         var baseLayer = new LandscapeLayer { Name = "ground", RecordId = 1, DrawOrder = 0, IsBase = true };
-        var texture = new LandscapeLayer { Name = "detail", RecordId = 2, DrawOrder = 1 };
-        var height = new LandscapeLayer
-        {
-            Name = "raise", RecordId = 3, DrawOrder = 2, Kind = LandscapeLayerKind.Height,
-        };
+        var detail = new LandscapeLayer { Name = "detail", RecordId = 2, DrawOrder = 1 };
         var channel = new LandscapeChannel { Name = MaskChannel, RecordId = 1, Resolution = 32 };
 
         var settings = new LandscapeSettings
@@ -126,23 +120,22 @@ public static class LandscapeBuilderTests
         return new Fixture
         {
             Settings = settings,
-            Catalog = new LandscapeCatalog([channel], [baseLayer, texture, height], [material], functions),
+            Catalog = new LandscapeCatalog([channel], [baseLayer, detail], [material], functions),
             Functions = functions,
             Base = baseLayer,
-            Texture = texture,
-            Height = height,
+            Detail = detail,
             Material = material,
         };
     }
 
-    private static Disc DiscAt(Fixture fixture, string key, Vector3 centre, float radius, bool deformsHeight = true) =>
+    // The fixture's material carries both halves, so one claim paints and deforms.
+    private static Disc DiscAt(Fixture fixture, string key, Vector3 centre, float radius) =>
         new()
         {
             Key = key,
             Centre = centre,
             Radius = radius,
-            TextureLayer = fixture.Texture,
-            HeightLayer = deformsHeight ? fixture.Height : null,
+            Layer = fixture.Detail,
             Material = fixture.Material,
         };
 
@@ -264,7 +257,7 @@ public static class LandscapeBuilderTests
             Key = "b",
             Centre = new Vector3(32.0f, 0.0f, 32.0f),
             Radius = 20.0f,
-            TextureLayer = fixture.Texture,
+            Layer = fixture.Detail,
             Material = rival,
             ClaimPriority = 10,
         };

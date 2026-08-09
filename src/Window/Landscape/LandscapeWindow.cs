@@ -300,12 +300,14 @@ public sealed class LandscapeWindow : Window
             {
                 Name = UniqueName("Layer", existing.Select(l => l.Name)),
                 DrawOrder = existing.Count == 0 ? 0 : existing.Max(l => l.DrawOrder) + 1,
+                IsBase = existing.Count == 0,
             });
         }
 
+        ImGui.TextDisabled("What a layer carries is decided by the material bound to it.");
         ImGui.Separator();
 
-        foreach (LandscapeLayer layer in Landscape.Catalog.Layers.OrderBy(l => l.DrawOrder))
+        foreach (LandscapeLayer layer in Landscape.Catalog.LayersInOrder)
         {
             ImGui.PushID(layer.Id.Value.GetHashCode());
             string label = layer.IsBase ? $"{layer.Name} (base)##header" : $"{layer.Name}##header";
@@ -313,30 +315,14 @@ public sealed class LandscapeWindow : Window
             {
                 DrawName(layer, layer.Name, value => layer.Name = value);
 
-                if (ImGui.BeginCombo("Kind", layer.Kind.ToString()))
+                bool isBase = layer.IsBase;
+                if (ImGui.Checkbox("Base layer", ref isBase))
                 {
-                    foreach (LandscapeLayerKind kind in new[] { LandscapeLayerKind.Texture, LandscapeLayerKind.Height })
-                    {
-                        if (ImGui.Selectable(kind.ToString(), layer.Kind == kind))
-                        {
-                            RecordNow(layer, "kind", layer.Kind, kind, v => layer.Kind = v);
-                        }
-                    }
-
-                    ImGui.EndCombo();
+                    RecordNow(layer, "base", layer.IsBase, isBase, v => layer.IsBase = v);
                 }
 
-                if (layer.UsesTextureSlot)
-                {
-                    bool isBase = layer.IsBase;
-                    if (ImGui.Checkbox("Base layer", ref isBase))
-                    {
-                        RecordNow(layer, "base", layer.IsBase, isBase, v => layer.IsBase = v);
-                    }
-
-                    ImGui.SameLine();
-                    ImGui.TextDisabled("(opaque, writes no alpha)");
-                }
+                ImGui.SameLine();
+                ImGui.TextDisabled("(opaque, writes no alpha)");
 
                 int order = layer.DrawOrder;
                 if (ImGui.DragInt("Draw order", ref order)) { layer.DrawOrder = order; }

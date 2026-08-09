@@ -19,8 +19,6 @@ public sealed class LandscapeLayerRecord : IKeyedRecord
 
     public string Name { get; set; } = "Layer";
 
-    public int Kind { get; set; }
-
     public bool IsBase { get; set; }
 
     public int Priority { get; set; }

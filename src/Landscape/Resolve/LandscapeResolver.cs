@@ -8,6 +8,10 @@ namespace WorldMapStudio;
 /// Turns a chunk's claims into a slot assignment that fits the map's texture limit, reporting
 /// everything it had to give up doing so.
 ///
+/// What a claim costs is a property of the <em>material</em> bound to it, not of the layer: a claim
+/// occupies a texture slot when its material paints one, and contributes height when its material
+/// deforms. A layer says only who is responsible and in what order, so one claim can do both.
+///
 /// Deliberately <b>greedy and deterministic</b>, not optimal. A cleverer search could sometimes keep
 /// one more layer, but it would also pick different survivors in adjacent chunks — which is exactly
 /// how you manufacture visible seams. Predictable beats optimal here, so ordering is by explicit keys
@@ -69,16 +73,14 @@ public static class LandscapeResolver
         }
     }
 
-    // A texture claim with no material has nothing to put in a slot. Reported once, then ignored —
-    // the group survives, since its other claims may be fine.
+    // A claim with no material asked for a layer and supplied nothing to put in it. Reported once,
+    // then ignored — the group survives, since its other claims may be fine.
     private static void RejectMaterialless(List<LandscapeClaimGroup> live, List<LandscapeProblem> problems)
     {
         for (int i = 0; i < live.Count; i++)
         {
             LandscapeClaimGroup group = live[i];
-            List<LandscapeClaim> usable = group.Claims
-                .Where(claim => claim.Material != null || !claim.Layer.UsesTextureSlot)
-                .ToList();
+            List<LandscapeClaim> usable = group.Claims.Where(claim => claim.Material != null).ToList();
 
             if (usable.Count == group.Claims.Count)
             {
@@ -89,7 +91,7 @@ public static class LandscapeResolver
             {
                 problems.Add(LandscapeProblem.Create(
                     LandscapeProblemKind.MissingMaterial,
-                    $"'{group.Label}' claimed texture layer '{rejected.Layer.Name}' without a material.",
+                    $"'{group.Label}' claimed layer '{rejected.Layer.Name}' without a material.",
                     group.Key));
             }
 
@@ -97,23 +99,27 @@ public static class LandscapeResolver
         }
     }
 
-    // Two groups binding different materials to one layer is the conflict a layer exists to catch:
-    // the layer is one responsibility, so there is no meaningful way to honour both.
+    /// <summary>
+    /// Two groups binding different materials to one layer is the conflict a layer exists to catch:
+    /// the layer is one responsibility, so there is no meaningful way to honour both. Applies to every
+    /// claim, including ones that only contribute height — two entities disagreeing about how the
+    /// ground under a road is shaped is the same kind of mistake as disagreeing about its texture.
+    /// </summary>
     private static List<LandscapeClaimGroup> ConflictLosers(
         List<LandscapeClaimGroup> live,
         List<LandscapeProblem> problems)
     {
         var losers = new List<LandscapeClaimGroup>();
 
-        foreach (IGrouping<LandscapeLayer, (LandscapeClaimGroup Group, LandscapeClaim Claim)> byLayer in TextureClaims(live))
+        foreach (IGrouping<LandscapeLayer, Entry> byLayer in Entries(live).GroupBy(entry => entry.Claim.Layer))
         {
-            List<(LandscapeClaimGroup Group, LandscapeClaim Claim)> contenders = byLayer.ToList();
+            List<Entry> contenders = byLayer.ToList();
             if (contenders.Select(entry => entry.Claim.Material).Distinct().Count() <= 1)
             {
                 continue;
             }
 
-            (LandscapeClaimGroup Group, LandscapeClaim Claim) winner = contenders.OrderBy(Rank).Last();
+            Entry winner = contenders.OrderBy(Rank).Last();
             List<LandscapeClaimGroup> beaten = contenders
                 .Where(entry => entry.Group != winner.Group)
                 .Select(entry => entry.Group)
@@ -137,17 +143,14 @@ public static class LandscapeResolver
         List<LandscapeClaimGroup> live,
         List<LandscapeProblem> problems)
     {
-        List<(LandscapeClaimGroup Group, LandscapeClaim Claim)> bases = TextureClaims(live)
-            .Where(byLayer => byLayer.Key.IsBase)
-            .SelectMany(byLayer => byLayer)
-            .ToList();
+        List<Entry> bases = Entries(live).Where(entry => entry.Claim.Layer.IsBase).ToList();
 
         if (bases.Select(entry => entry.Claim.Layer).Distinct().Count() <= 1)
         {
             return [];
         }
 
-        (LandscapeClaimGroup Group, LandscapeClaim Claim) winner = bases.OrderBy(Rank).Last();
+        Entry winner = bases.OrderBy(Rank).Last();
         List<LandscapeClaimGroup> beaten = bases
             .Where(entry => entry.Group != winner.Group)
             .Select(entry => entry.Group)
@@ -169,17 +172,28 @@ public static class LandscapeResolver
         List<string> dropped,
         List<LandscapeProblem> problems)
     {
-        List<(LandscapeClaimGroup Group, LandscapeClaim Claim)> texture = TextureClaims(live)
-            .SelectMany(byLayer => byLayer)
-            .OrderBy(entry => entry.Claim.Layer.DrawOrder)
+        List<LandscapeClaim> ordered = Entries(live)
+            .Select(entry => entry.Claim)
+            .OrderBy(claim => claim.Layer.DrawOrder)
             .ToList();
 
-        LandscapeSlot? baseSlot = BuildBase(texture, settings, catalog, problems);
+        // A claim costs a slot when its material paints one — the layer has no say in it.
+        List<LandscapeClaim> painting = ordered.Where(claim => claim.Material!.PaintsTexture).ToList();
+
+        LandscapeSlot? baseSlot = BuildBase(painting, settings, catalog, problems);
         int nextIndex = baseSlot == null ? 0 : 1;
 
         var alphaSlots = new List<LandscapeSlot>();
-        foreach (LandscapeClaim claim in texture.Where(entry => !entry.Claim.Layer.IsBase).Select(entry => entry.Claim))
+        foreach (LandscapeClaim claim in painting.Where(claim => !claim.Layer.IsBase))
         {
+            if (baseSlot is { Layers.Count: > 0 } && claim.Layer.DrawOrder < baseSlot.Layers[0].DrawOrder)
+            {
+                AddOnce(problems, LandscapeProblem.Create(
+                    LandscapeProblemKind.BelowBase,
+                    $"Layer '{claim.Layer.Name}' sorts below the base layer '{baseSlot.Layers[0].Name}', " +
+                    "so it would be painted over and never seen."));
+            }
+
             // Merge only into the slot immediately below: adjacency is what makes a merge exact,
             // and it is adjacency in the *surviving* order, which is why this runs after every drop.
             LandscapeSlot? previous = alphaSlots.Count > 0 ? alphaSlots[^1] : null;
@@ -204,11 +218,9 @@ public static class LandscapeResolver
             });
         }
 
-        List<LandscapeClaim> heights = live
-            .SelectMany(group => group.Claims)
-            .Where(claim => !claim.Layer.UsesTextureSlot)
-            .OrderBy(claim => claim.Layer.DrawOrder)
-            .ToList();
+        // Height is independent of the slot budget, so a claim can contribute height whether or not it
+        // also won a texture slot.
+        List<LandscapeClaim> heights = ordered.Where(claim => claim.Material!.DeformsHeight).ToList();
 
         return new LandscapeResolution
         {
@@ -221,12 +233,12 @@ public static class LandscapeResolver
     }
 
     private static LandscapeSlot? BuildBase(
-        List<(LandscapeClaimGroup Group, LandscapeClaim Claim)> texture,
+        List<LandscapeClaim> painting,
         LandscapeSettings settings,
         LandscapeCatalog catalog,
         List<LandscapeProblem> problems)
     {
-        if (texture.FirstOrDefault(entry => entry.Claim.Layer.IsBase).Claim is { } claimed)
+        if (painting.FirstOrDefault(claim => claim.Layer.IsBase) is { } claimed)
         {
             return new LandscapeSlot
             {
@@ -262,7 +274,7 @@ public static class LandscapeResolver
     /// <summary>The group to sacrifice next: lowest priority among those actually holding a texture
     /// slot, since dropping a height-only group frees nothing and only destroys work.</summary>
     private static LandscapeClaimGroup? LowestPriorityHolder(List<LandscapeClaimGroup> live) =>
-        live.Where(group => group.Claims.Any(claim => claim.Layer.UsesTextureSlot))
+        live.Where(group => group.Claims.Any(claim => claim.Material is { PaintsTexture: true }))
             .OrderBy(group => group.Priority)
             .ThenBy(group => group.Key, StringComparer.Ordinal)
             .FirstOrDefault();
@@ -290,15 +302,13 @@ public static class LandscapeResolver
         return true;
     }
 
-    private static IEnumerable<IGrouping<LandscapeLayer, (LandscapeClaimGroup Group, LandscapeClaim Claim)>> TextureClaims(
-        List<LandscapeClaimGroup> live) =>
-        live.SelectMany(group => group.Claims.Select(claim => (Group: group, Claim: claim)))
-            .Where(entry => entry.Claim.Layer.UsesTextureSlot)
-            .GroupBy(entry => entry.Claim.Layer);
+    private readonly record struct Entry(LandscapeClaimGroup Group, LandscapeClaim Claim);
+
+    private static IEnumerable<Entry> Entries(List<LandscapeClaimGroup> live) =>
+        live.SelectMany(group => group.Claims.Select(claim => new Entry(group, claim)));
 
     // Higher priority wins; the key breaks ties so the outcome never depends on scan order.
-    private static (int, string) Rank((LandscapeClaimGroup Group, LandscapeClaim Claim) entry) =>
-        (entry.Group.Priority, entry.Group.Key);
+    private static (int, string) Rank(Entry entry) => (entry.Group.Priority, entry.Group.Key);
 
     private static LandscapeClaimGroup Without(LandscapeClaimGroup group, IReadOnlyList<LandscapeClaim> claims) =>
         new()

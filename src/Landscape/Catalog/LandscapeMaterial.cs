@@ -48,8 +48,12 @@ public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
 
     public override string DisplayName => Name;
 
-    /// <summary>Whether this material can fill a texture slot.</summary>
-    public bool PaintsTexture => AlphaFunction.Length > 0;
+    /// <summary>
+    /// Whether this material fills a texture slot — it has an image to put there, or a function
+    /// deciding where to put it. Either counts: a base layer needs only the image, since it is opaque
+    /// and writes no alpha.
+    /// </summary>
+    public bool PaintsTexture => TexturePath.Length > 0 || AlphaFunction.Length > 0;
 
     /// <summary>Whether this material can deform a height layer.</summary>
     public bool DeformsHeight => HeightFunction.Length > 0;
