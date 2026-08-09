@@ -13,6 +13,7 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class StampEntity : SceneEntity, ILandscapeDeformer
 {
+    [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Stamp";
 
     /// <summary>Radius of influence in world units.</summary>

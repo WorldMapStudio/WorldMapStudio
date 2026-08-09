@@ -18,6 +18,7 @@ public sealed class EmptyEntity : SceneEntity
 {
     private static readonly Vector3 MarkerSize = new(1.0f, 1.0f, 1.0f);
 
+    [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Empty";
 
     public EmptyShape Shape { get; set; } = EmptyShape.Plain;

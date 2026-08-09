@@ -54,6 +54,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Compares each storage's expected schema to the live database and drives migrations.</summary>
     public MigrationSystem Migrations { get; }
 
+    /// <summary>Hosts the JS-scriptable surface (console, and later the HTTP/MCP endpoint).</summary>
+    public ScriptingSystem Scripting { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -71,6 +74,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Landscape = new LandscapeSystem(this);
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
+        Scripting = new ScriptingSystem(this);
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.
