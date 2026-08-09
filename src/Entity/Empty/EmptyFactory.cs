@@ -20,7 +20,7 @@ public sealed class EmptyFactory : ISceneEntityFactory
         _storage = storage;
     }
 
-    public bool Handles(SceneEntity entity) => entity is EmptyEntity;
+    public bool Handles(IEntity entity) => entity is EmptyEntity;
 
     public long? PersistentKey(SceneEntity entity) => ((EmptyEntity)entity).RecordId;
 
@@ -30,17 +30,20 @@ public sealed class EmptyFactory : ISceneEntityFactory
         Vector3 max = region.End;
 
         await using EditorDbContext context = _storage.CreateContext();
+
+        // Overlap, not containment: two boxes intersect unless one is entirely past the other on some
+        // axis. Kept as a Where so it stays a SQL predicate rather than pulling the table into memory.
         List<EmptyRecord> rows = await context.Empties.AsNoTracking()
             .Where(record => record.MapId == map.Value
-                && record.PosX >= min.X && record.PosX <= max.X
-                && record.PosY >= min.Y && record.PosY <= max.Y
-                && record.PosZ >= min.Z && record.PosZ <= max.Z)
+                && record.MinX <= max.X && record.MaxX >= min.X
+                && record.MinY <= max.Y && record.MaxY >= min.Y
+                && record.MinZ <= max.Z && record.MaxZ >= min.Z)
             .ToListAsync()
             .ConfigureAwait(false);
         return rows.Select(ToEntity).ToList();
     }
 
-    public Action Stage(DbContext context, SceneEntity entity)
+    public Action Stage(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
         var empty = (EmptyEntity)entity;
@@ -65,7 +68,7 @@ public sealed class EmptyFactory : ISceneEntityFactory
         return () => empty.RecordId = record.Id;
     }
 
-    public void StageDelete(DbContext context, SceneEntity entity)
+    public void StageDelete(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
         var empty = (EmptyEntity)entity;
@@ -95,6 +98,7 @@ public sealed class EmptyFactory : ISceneEntityFactory
     {
         Transform3D transform = empty.Transform;
         Quaternion rotation = transform.Basis.GetRotationQuaternion();
+        Aabb bounds = empty.WorldBounds;
 
         record.Name = empty.Name;
         record.Shape = (int)empty.Shape;
@@ -106,5 +110,11 @@ public sealed class EmptyFactory : ISceneEntityFactory
         record.RotY = rotation.Y;
         record.RotZ = rotation.Z;
         record.RotW = rotation.W;
+        record.MinX = bounds.Position.X;
+        record.MinY = bounds.Position.Y;
+        record.MinZ = bounds.Position.Z;
+        record.MaxX = bounds.End.X;
+        record.MaxY = bounds.End.Y;
+        record.MaxZ = bounds.End.Z;
     }
 }

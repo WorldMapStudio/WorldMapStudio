@@ -33,6 +33,12 @@ public abstract class Storage : ISubsystem
     /// <summary>The scene-entity factories registered into this storage.</summary>
     public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Enumerable.Empty<ISceneEntityFactory>();
 
+    /// <summary>The catalog-entity factories registered into this storage.</summary>
+    public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => Enumerable.Empty<ICatalogEntityFactory>();
+
+    /// <summary>Every factory in this storage, whatever kind of entity it persists.</summary>
+    public IEnumerable<IEntityFactory> EntityFactories => SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories);
+
     /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
     public virtual IEnumerable<IMapSource> MapSources => Enumerable.Empty<IMapSource>();
 
@@ -61,11 +67,15 @@ public abstract class Storage : ISubsystem
         }
     }
 
-    /// <summary>Persists the given saves and deletes in a single transaction against this storage.</summary>
-    public virtual Task CommitAsync(IReadOnlyList<SceneEntity> saves, IReadOnlyList<SceneEntity> deletes) => Task.CompletedTask;
+    /// <summary>
+    /// Persists the given saves and deletes in a single transaction against this storage. Entities of
+    /// any kind may be mixed: a session that edited a material and moved a building commits both or
+    /// neither.
+    /// </summary>
+    public virtual Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) => Task.CompletedTask;
 
-    protected ISceneEntityFactory? FactoryFor(SceneEntity entity) =>
-        SceneFactories.FirstOrDefault(factory => factory.Handles(entity));
+    protected IEntityFactory? FactoryFor(IEntity entity) =>
+        EntityFactories.FirstOrDefault(factory => factory.Handles(entity));
 
     /// <summary>Builds Pomelo MySQL options for one of this storage's contexts.</summary>
     protected DbContextOptions<TContext> BuildOptions<TContext>() where TContext : DbContext =>

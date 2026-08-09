@@ -22,6 +22,14 @@ public abstract class SceneEntity : Entity
     /// <summary>Selection bounds in the entity's local space (picking, outlines, marquee).</summary>
     public abstract Aabb LocalBounds { get; }
 
+    /// <summary>
+    /// <see cref="LocalBounds"/> placed by <see cref="Transform"/>, enclosed axis-aligned. This is the
+    /// entity's extent in the world: what streaming and the landscape system query against, because an
+    /// entity is in range when its bounds overlap a region, not when its origin happens to fall inside
+    /// one. Factories persist it so that test can run in the database.
+    /// </summary>
+    public Aabb WorldBounds => Transform * LocalBounds;
+
     public bool IsRepresented => Node != null;
 
     /// <summary>World placement. Setting it moves the live representation, if any.</summary>
