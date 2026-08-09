@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -60,7 +60,7 @@ public sealed class MapSystem
         {
             try
             {
-                foreach (Map map in Run(source.LoadAsync))
+                foreach (Map map in BlockingWork.Run(source.LoadAsync))
                 {
                     // First source to claim an id wins; ids are what entities store, so they can't collide.
                     if (_maps.All(existing => existing.Id != map.Id))
@@ -111,7 +111,7 @@ public sealed class MapSystem
 
         try
         {
-            Run(() => source.CreateAsync(created));
+            BlockingWork.Run(() => source.CreateAsync(created));
         }
         catch (Exception e)
         {
@@ -155,7 +155,7 @@ public sealed class MapSystem
 
         try
         {
-            Run(() => source.RenameAsync(map));
+            BlockingWork.Run(() => source.RenameAsync(map));
         }
         catch (Exception e)
         {
@@ -209,7 +209,7 @@ public sealed class MapSystem
 
         try
         {
-            Run(() => source.DeleteAsync(map));
+            BlockingWork.Run(() => source.DeleteAsync(map));
         }
         catch (Exception e)
         {
@@ -263,10 +263,4 @@ public sealed class MapSystem
     }
 
     private void Sort() => _maps.Sort((left, right) => left.Id.Value.CompareTo(right.Id.Value));
-
-    // Blocking DB work must run off the Godot main thread's synchronization context, or a
-    // continuation deadlocks trying to resume on the thread we are blocking (see MigrationSystem).
-    private static T Run<T>(Func<Task<T>> work) => Task.Run(work).GetAwaiter().GetResult();
-
-    private static void Run(Func<Task> work) => Task.Run(work).GetAwaiter().GetResult();
 }

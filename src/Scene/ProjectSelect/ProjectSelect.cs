@@ -64,7 +64,7 @@ public sealed class ProjectSelect : IScene
 
                     if (ImGui.Button("Open"))
                     {
-                        scene = new LoadingScreen(_root, project);
+                        scene = LoadingScreen.OpenProject(_root, project);
                     }
 
                     ImGui.SameLine();

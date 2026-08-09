@@ -105,4 +105,24 @@ public sealed partial class EditorContext : ISubsystemHost
         onStep?.Invoke("Checking schema");
         Migrations.Check();
     }
+
+    /// <summary>
+    /// Reads the project's content: the maps, then the open map's landscape settings and catalog.
+    /// Kept out of <see cref="Startup"/> because the migration gate runs between the two, and these
+    /// tables may not exist until it has.
+    ///
+    /// Off the main thread, like <see cref="Startup"/> and for the same reason — these are the two
+    /// largest reads in the open sequence, and running them from <c>Editor.Start()</c> froze the
+    /// window for as long as they took. Nothing here touches a Godot node, and the editor scene is not
+    /// running yet, so nothing else is reading what this fills in.
+    /// </summary>
+    public void LoadContent(Action<string>? onStep = null)
+    {
+        onStep?.Invoke("Loading maps");
+        Maps.Load();
+
+        // Needs the current map, so it follows the maps.
+        onStep?.Invoke("Loading landscape");
+        Landscape.Load();
+    }
 }

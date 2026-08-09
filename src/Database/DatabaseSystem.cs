@@ -163,10 +163,7 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
 
             try
             {
-                // Run on the thread pool, not the Godot main thread: blocking on an async DB call from
-                // a thread that carries a SynchronizationContext deadlocks when a continuation tries to
-                // resume on the (blocked) main thread. Task.Run keeps the whole chain off that context.
-                Task.Run(() => storage.CommitAsync(saves, deletes)).GetAwaiter().GetResult();
+                BlockingWork.Run(() => storage.CommitAsync(saves, deletes));
             }
             catch (Exception e)
             {
@@ -194,13 +191,13 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
         _ => true,
     };
 
-    // Reads under the storage's reader lock, off the Godot main thread (see the Commit note below).
+    // Reads under the storage's reader lock. Blocks the caller — see <see cref="BlockingWork"/>.
     private static IReadOnlyList<T> Read<T>(Storage storage, Func<Task<IReadOnlyList<T>>> read) =>
-        Task.Run(async () =>
+        BlockingWork.Run(async () =>
         {
             using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             return await read().ConfigureAwait(false);
-        }).GetAwaiter().GetResult();
+        });
 
     private static void EnsureDatabase(Storage storage)
     {

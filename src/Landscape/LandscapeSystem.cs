@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -247,7 +247,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
         try
         {
-            Run(() => source.SaveAsync(map, settings));
+            BlockingWork.Run(() => source.SaveAsync(map, settings));
         }
         catch (Exception e)
         {
@@ -275,7 +275,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             try
             {
                 // First source with settings for the map wins, matching how MapSystem resolves maps.
-                if (Run(() => source.LoadAsync(map)) is { } settings)
+                if (BlockingWork.Run(() => source.LoadAsync(map)) is { } settings)
                 {
                     Settings = settings;
                     break;
@@ -290,10 +290,4 @@ public sealed partial class LandscapeSystem : ISubsystemHost
 
         Version++;
     }
-
-    // Blocking DB work must run off the Godot main thread's synchronization context, or a
-    // continuation deadlocks trying to resume on the thread we are blocking (see MigrationSystem).
-    private static T Run<T>(Func<Task<T>> work) => Task.Run(work).GetAwaiter().GetResult();
-
-    private static void Run(Func<Task> work) => Task.Run(work).GetAwaiter().GetResult();
 }
