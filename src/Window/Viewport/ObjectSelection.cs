@@ -142,7 +142,7 @@ public sealed class ObjectSelection
             _selection.Clear();
         }
 
-        foreach (SceneEntity obj in _scene.Entities)
+        foreach (SceneEntity obj in _scene.InView)
         {
             GVector3 centre = obj.Transform * obj.LocalBounds.GetCenter();
             if (!WorldToScreen(camera, centre, imageMin, out NVector2 screen))
@@ -172,7 +172,7 @@ public sealed class ObjectSelection
 
         SceneEntity? best = null;
         float bestT = float.PositiveInfinity;
-        foreach (SceneEntity obj in _scene.Entities)
+        foreach (SceneEntity obj in _scene.InView)
         {
             if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float t) && t < bestT)
             {

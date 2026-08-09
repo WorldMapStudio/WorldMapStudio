@@ -15,11 +15,21 @@ namespace WorldMapStudio;
 /// Entering another map is just a scan whose results share nothing with the last one, so the previous
 /// map's entities unload — except the pinned ones, which stay loaded (and editable) until the session
 /// is committed or aborted.
+///
+/// Two regions, not one. The <b>view</b> is what the user is looking at and what loaders produce for.
+/// The <b>load</b> region is wider, by whatever margin a loader declares, and is what stored entities
+/// are read over: derived content at the edge of view is only correct if the entities just past that
+/// edge are loaded. Entities that fall in the margin but not the view are marked peripheral — loaded
+/// as inputs, but not drawn, listed or picked.
 /// </summary>
 public sealed class StreamingSystem
 {
-    private const float Range = 60.0f;          // half-extent of the load box
-    private const float RescanDistance = 15.0f; // focus travel before a re-scan
+    private const float Range = 160.0f;         // horizontal half-extent of the view box
+    private const float RescanDistance = 32.0f; // focus travel before a re-scan
+
+    // Height is not distance. Terrain is addressed on the ground plane and a map is authored from
+    // above, so climbing must not unload the world underneath you — which a cubic box would do.
+    private const float VerticalRange = 4096.0f;
 
     private readonly EditorContext _context;
     private readonly Dictionary<(Type Type, long Key), SceneEntity> _streamed = new();
@@ -75,9 +85,9 @@ public sealed class StreamingSystem
             loader.Prepare();
         }
 
-        var extent = new Vector3(Range, Range, Range);
-        var region = new Aabb(focus - extent, extent * 2.0f);
-        _pendingScan = ScanAsync(map, region);
+        var extent = new Vector3(Range, VerticalRange, Range);
+        var view = new Aabb(focus - extent, extent * 2.0f);
+        _pendingScan = ScanAsync(map, view, Grow(view, LoadMargin()));
     }
 
     private void ApplyCompletedScan()
@@ -99,7 +109,28 @@ public sealed class StreamingSystem
         Reconcile(scan.Result);
     }
 
-    private async Task<List<SceneEntity>> ScanAsync(MapId map, Aabb region)
+    /// <summary>The widest margin any loader needs its inputs loaded over.</summary>
+    private float LoadMargin()
+    {
+        float margin = 0.0f;
+        foreach (ISceneEntityLoader loader in _loaders)
+        {
+            margin = Mathf.Max(margin, loader.LoadMargin);
+        }
+
+        return margin;
+    }
+
+    // Horizontally only: the vertical extent is already effectively unbounded.
+    private static Aabb Grow(Aabb region, float margin) =>
+        margin <= 0.0f
+            ? region
+            : new Aabb(region.Position - new Vector3(margin, 0.0f, margin),
+                       region.Size + new Vector3(margin * 2.0f, 0.0f, margin * 2.0f));
+
+    // Stored entities are loaded over the wider region, because they are what derived data is built
+    // from; loaders produce what the user sees, so they get the view region.
+    private async Task<List<SceneEntity>> ScanAsync(MapId map, Aabb view, Aabb load)
     {
         var result = new List<SceneEntity>();
         foreach (Storage storage in _context.Database.Storages)
@@ -107,7 +138,7 @@ public sealed class StreamingSystem
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
                 using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-                IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, region).ConfigureAwait(false);
+                IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, load).ConfigureAwait(false);
                 result.AddRange(scanned);
             }
         }
@@ -115,11 +146,14 @@ public sealed class StreamingSystem
         // Storage-free sources (landscape chunks) take no lock: there is no database behind them.
         foreach (ISceneEntityLoader loader in _loaders)
         {
-            result.AddRange(await loader.ScanAsync(map, region).ConfigureAwait(false));
+            result.AddRange(await loader.ScanAsync(map, view).ConfigureAwait(false));
         }
 
+        _lastView = view;
         return result;
     }
+
+    private Aabb _lastView;
 
     private void Reconcile(List<SceneEntity> scanned)
     {
@@ -156,6 +190,10 @@ public sealed class StreamingSystem
             {
                 _context.Scene.Add(entity);
             }
+
+            // Loaded because something in view needs it, rather than because it is in view itself.
+            SceneEntity live = loaded.TryGetValue(id, out SceneEntity? kept) ? kept : entity;
+            SetPeripheral(live);
         }
 
         // Unload streamed entities that fell out of range, unless the session still holds them.
@@ -177,6 +215,19 @@ public sealed class StreamingSystem
         foreach ((Type, long) id in stale)
         {
             _streamed.Remove(id);
+        }
+    }
+
+    // Peripheral entities are inputs, not scenery: they are not drawn, listed or picked, and losing
+    // the selection with them keeps the gizmo off something the user can no longer see.
+    private void SetPeripheral(SceneEntity entity)
+    {
+        bool peripheral = !entity.WorldBounds.Intersects(_lastView);
+        _context.Scene.SetPeripheral(entity, peripheral);
+
+        if (peripheral)
+        {
+            _context.Selection.Remove(entity);
         }
     }
 

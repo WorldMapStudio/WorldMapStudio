@@ -164,7 +164,7 @@ public sealed class ViewportWindow : Window
     // representation of any entity that has left the registry (e.g. an undone creation).
     private void SyncRepresentations()
     {
-        foreach (SceneEntity entity in _scene.Entities)
+        foreach (SceneEntity entity in _scene.InView)
         {
             if (_represented.Add(entity))
             {
@@ -172,9 +172,11 @@ public sealed class ViewportWindow : Window
             }
         }
 
+        // Drops entities that left the registry *and* ones that became peripheral: those are loaded
+        // only to shape the terrain, and drawing them would put scenery beyond where you can go.
         _represented.RemoveWhere(entity =>
         {
-            if (_scene.Entities.Contains(entity))
+            if (_scene.Contains(entity) && !_scene.IsPeripheral(entity))
             {
                 return false;
             }
