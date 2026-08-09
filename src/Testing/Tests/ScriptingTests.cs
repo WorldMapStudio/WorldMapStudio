@@ -61,6 +61,11 @@ public static class ScriptingTests
 
         [ScriptFunction]
         public ScriptEntityHandle Get() => new(scene, catalog, sessions, entity);
+
+        // Accepts a handle as an argument, so a test can prove a handle returned from one
+        // [ScriptFunction] round-trips correctly when passed into another one.
+        [ScriptFunction]
+        public string Describe(ScriptEntityHandle handle) => $"describe:{handle.Resolve().DisplayName}";
     }
 
     private sealed class AsyncFixtureModule : IScriptModule
@@ -329,5 +334,81 @@ public static class ScriptingTests
 
         [ScriptFunction]
         public Task Wait(int milliseconds) => Task.Delay(milliseconds);
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void MapDescriptor_exposes_id_and_name()
+    {
+        var map = new Map(new MapId(3), "Eastern Kingdoms");
+        var descriptor = new MapDescriptor(map);
+
+        Assert.AreEqual(3, descriptor.Id);
+        Assert.AreEqual("Eastern Kingdoms", descriptor.Name);
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Events_fires_selection_changed_exactly_once_per_change()
+    {
+        var selection = new SelectionSystem();
+        var events = new EventsScriptApi(selection, () => 0);
+        int fired = 0;
+        events.On("selectionChanged", () => fired++);
+
+        events.Update();
+        Assert.AreEqual(0, fired, "no change yet");
+
+        selection.Add(new EmptyEntity());
+        events.Update();
+        Assert.AreEqual(1, fired);
+
+        events.Update();
+        Assert.AreEqual(1, fired, "must not re-fire without a further change");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Events_off_removes_every_handler_for_that_name()
+    {
+        var selection = new SelectionSystem();
+        var events = new EventsScriptApi(selection, () => 0);
+        int fired = 0;
+        events.On("selectionChanged", () => fired++);
+        events.Off("selectionChanged");
+
+        selection.Add(new EmptyEntity());
+        events.Update();
+
+        Assert.AreEqual(0, fired);
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Engine_registers_a_js_callback_for_an_event()
+    {
+        var selection = new SelectionSystem();
+        var events = new EventsScriptApi(selection, () => 0);
+        var host = new ScriptEngineHost([events]);
+        host.Evaluate("var fired = 0; wms.events.On('selectionChanged', function () { fired++; });");
+
+        selection.Add(new EmptyEntity());
+        events.Update();
+
+        Assert.AreEqual("1", host.Evaluate("fired.toString()"));
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Engine_can_pass_a_handle_it_received_back_into_another_function()
+    {
+        // The risky case Phase 11 needed to confirm before ViewportScriptApi.Focus/SceneScriptApi.Delete
+        // (both take a ScriptEntityHandle parameter) could be trusted: a handle returned from one
+        // [ScriptFunction] and passed as an argument into another must round-trip to the same CLR
+        // handle instance through Jint's Proxy machinery, not some copy or an unresolvable JS object.
+        var scene = new SceneEntityRegistry();
+        var catalog = new CatalogEntityRegistry();
+        var sessions = new EditSessionManager();
+        var widget = new WidgetEntity { Label = "Torch" };
+        scene.Add(widget);
+
+        var host = new ScriptEngineHost([new HandleFixtureModule(scene, catalog, sessions, widget)]);
+
+        Assert.AreEqual($"describe:{widget.DisplayName}", host.Evaluate("wms.handles.Describe(wms.handles.Get())"));
     }
 }
