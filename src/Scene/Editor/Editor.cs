@@ -27,11 +27,17 @@ public sealed class Editor : IScene
         // Read the maps here rather than in EditorContext.Startup: the migration gate runs between the
         // two, so this is the first point where the maps table is guaranteed to exist.
         _context.Maps.Load();
+
+        // Same reason, and it needs the current map, so it follows the maps.
+        _context.Landscape.Load();
     }
 
     public IScene? Update()
     {
         MenuBarManager menuBar = _context.MenuBarManager;
+
+        // Entering another map swaps to that map's landscape settings.
+        _context.Landscape.Update();
 
         ImGuiEx.MainMenuBar(() =>
         {
