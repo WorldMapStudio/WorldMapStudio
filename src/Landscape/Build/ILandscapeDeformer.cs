@@ -101,6 +101,12 @@ public interface ILandscapeDeformer
     /// rebuild.
     ///
     /// Position and size need not be included: <see cref="InfluenceBounds"/> is compared separately.
+    ///
+    /// A fingerprint, not a counter — implementations hash their fields, which means two different
+    /// states can collide and read as unchanged. Acceptable only because it is compared against a
+    /// value from the same process and never persisted: <c>HashCode</c> is seeded randomly per run, so
+    /// a stored one is meaningless on the next launch. Do not write this to the database or send it
+    /// over the HTTP endpoint.
     /// </summary>
     int ContentVersion { get; }
 
