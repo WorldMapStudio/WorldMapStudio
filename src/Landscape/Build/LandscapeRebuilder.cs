@@ -77,7 +77,7 @@ public sealed class LandscapeRebuilder
         if (_settingsVersion != landscape.Version)
         {
             _settingsVersion = landscape.Version;
-            _catalogVersion = _context.Catalog.Version;
+            _catalogVersion = System.HashCode.Combine(_context.Catalog.Version, landscape.Catalog.ContentVersion);
             _historyRevision = _context.EditSessions.Active.History.Revision;
             _sceneVersion = _context.Scene.Version;
             Reset();
@@ -86,10 +86,12 @@ public sealed class LandscapeRebuilder
         }
 
         // A catalog edit — a material's height amount, a layer's draw order — can change any chunk
-        // that binds it, and nothing cheap narrows that down.
-        if (_catalogVersion != _context.Catalog.Version)
+        // that binds it, and nothing cheap narrows that down. Membership and content both count: an
+        // edit mutates a catalog entity in place, which the registry's version never sees.
+        int catalog = System.HashCode.Combine(_context.Catalog.Version, landscape.Catalog.ContentVersion);
+        if (_catalogVersion != catalog)
         {
-            _catalogVersion = _context.Catalog.Version;
+            _catalogVersion = catalog;
             MarkAll();
         }
 

@@ -190,10 +190,14 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             _reportedCatalog = -1;
         }
 
-        if (IsEnabled && _reportedCatalog != _context.Catalog.Version)
+        if (IsEnabled)
         {
-            _reportedCatalog = _context.Catalog.Version;
-            Reporter.ReportCatalog(Catalog.Validate());
+            int catalog = System.HashCode.Combine(_context.Catalog.Version, Catalog.ContentVersion);
+            if (_reportedCatalog != catalog)
+            {
+                _reportedCatalog = catalog;
+                Reporter.ReportCatalog(Catalog.Validate());
+            }
         }
 
         // Problems belong to chunks; a chunk that streamed out has nothing left to be wrong with.

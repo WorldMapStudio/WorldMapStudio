@@ -48,6 +48,50 @@ public sealed class LandscapeCatalog
     public LandscapeFunctions? Functions { get; }
 
     /// <summary>
+    /// Changes whenever anything in the catalog that affects a build changes.
+    ///
+    /// Registry membership is not enough to notice an edit: changing a material's height amount or a
+    /// layer's draw order mutates an object in place, so nothing about the collection moves and a
+    /// chunk would happily keep whatever it was built with. Computed rather than cached, because the
+    /// catalog holds live entities that are edited underneath it.
+    /// </summary>
+    public int ContentVersion
+    {
+        get
+        {
+            var hash = new System.HashCode();
+
+            foreach (LandscapeChannel channel in Channels)
+            {
+                // The name is part of it: channels are bound by name, so renaming one rebinds it.
+                hash.Add(channel.Name);
+                hash.Add(channel.Resolution);
+                hash.Add(channel.BitDepth);
+            }
+
+            foreach (LandscapeLayer layer in Layers)
+            {
+                hash.Add(layer.RecordId);
+                hash.Add(layer.IsBase);
+                hash.Add(layer.Priority);
+                hash.Add(layer.DrawOrder);
+            }
+
+            foreach (LandscapeMaterial material in Materials)
+            {
+                hash.Add(material.RecordId);
+                hash.Add(material.TexturePath);
+                hash.Add(material.AlphaFunction);
+                hash.Add(material.AlphaParameters);
+                hash.Add(material.HeightFunction);
+                hash.Add(material.HeightParameters);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
+    /// <summary>
     /// The largest distance any bound function samples outside its chunk. This is what sizes the
     /// builder's halo and bounds the dirty set when an entity changes.
     /// </summary>
