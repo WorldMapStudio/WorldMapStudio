@@ -96,6 +96,9 @@ public static class LandscapeChunkMesh
         return indices;
     }
 
+    /// <summary>Whether chunk borders are drawn on the terrain. Set from the view settings.</summary>
+    public static bool ShowChunkEdges { get; set; } = true;
+
     /// <summary>Builds the splatting material for a chunk's slots.</summary>
     public static ShaderMaterial BuildMaterial(LandscapeChunkOutput output)
     {
@@ -140,6 +143,7 @@ public static class LandscapeChunkMesh
         material.SetShaderParameter("slot_alpha", alphaArray);
         material.SetShaderParameter("slot_count", Mathf.Max(1, output.Layers.Count));
         material.SetShaderParameter("tiling", TextureTiling);
+        material.SetShaderParameter("show_chunk_edges", ShowChunkEdges);
         return material;
     }
 
@@ -217,6 +221,8 @@ uniform sampler2DArray slot_albedo : source_color, filter_linear_mipmap, repeat_
 uniform sampler2DArray slot_alpha : filter_linear, repeat_disable;
 uniform int slot_count = 1;
 uniform float tiling = 8.0;
+uniform bool show_chunk_edges = false;
+uniform vec3 chunk_edge_color : source_color = vec3(0.95, 0.75, 0.35);
 
 void fragment() {
     vec2 tiled = UV * tiling;
@@ -225,6 +231,16 @@ void fragment() {
     for (int i = 1; i < slot_count; i++) {
         float coverage = texture(slot_alpha, vec3(UV, float(i - 1))).r;
         color = mix(color, texture(slot_albedo, vec3(tiled, float(i))).rgb, coverage);
+    }
+
+    // UV spans exactly one chunk, so its 0 and 1 edges are the chunk boundary. Drawing the border
+    // here rather than on the ground grid means it follows the terrain over hills and can never
+    // fight it for depth.
+    if (show_chunk_edges) {
+        vec2 toEdge = min(UV, vec2(1.0) - UV);
+        vec2 aa = fwidth(UV) * 1.5;
+        float edge = 1.0 - clamp(min(toEdge.x / aa.x, toEdge.y / aa.y), 0.0, 1.0);
+        color = mix(color, chunk_edge_color, edge * 0.8);
     }
 
     ALBEDO = color;

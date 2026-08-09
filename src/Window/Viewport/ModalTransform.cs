@@ -38,7 +38,10 @@ public sealed class ModalTransform
     /// <summary>Whether the last completed transform was confirmed (true) or cancelled (false).</summary>
     public bool Confirmed { get; private set; }
 
-    /// <summary>The selection's transforms captured at <see cref="Begin"/>, aligned with the selection order.</summary>
+    /// <summary>The entities being moved, captured at <see cref="Begin"/>.</summary>
+    public IReadOnlyList<SceneEntity> Targets => _targets;
+
+    /// <summary>Their transforms at <see cref="Begin"/>, aligned with <see cref="Targets"/>.</summary>
     public IReadOnlyList<Transform3D> StartTransforms => _startTransforms;
 
     /// <summary>
@@ -55,6 +58,10 @@ public sealed class ModalTransform
     private Transform3D _startPivot;
     private readonly List<Transform3D> _startTransforms = [];
 
+    // Captured up front rather than re-read each frame: the selection can change under a running
+    // modal, and an index mismatch against the start transforms would fling entities across the map.
+    private readonly List<SceneEntity> _targets = [];
+
     public void Begin(ModalTransformMode mode, ObjectSelection selection)
     {
         Mode = mode;
@@ -66,7 +73,9 @@ public sealed class ModalTransform
         _startMouse = ImGui.GetMousePos();
         _startPivot = selection.ComputePivot(false);
         _startTransforms.Clear();
-        foreach (SceneEntity obj in selection.Selection)
+        _targets.Clear();
+        _targets.AddRange(selection.Movable);
+        foreach (SceneEntity obj in _targets)
         {
             _startTransforms.Add(obj.Transform);
         }
@@ -86,9 +95,9 @@ public sealed class ModalTransform
 
         // Live preview: apply the current delta to every selected object.
         Transform3D delta = ComputeDelta(camera, ImGui.GetMousePos(), imageMin);
-        for (int i = 0; i < selection.Selection.Count; i++)
+        for (int i = 0; i < _targets.Count; i++)
         {
-            selection.Selection[i].Transform = delta * _startTransforms[i];
+            _targets[i].Transform = delta * _startTransforms[i];
         }
 
         DrawGuides(camera, imageMin);
@@ -102,9 +111,9 @@ public sealed class ModalTransform
 
         if (cancel)
         {
-            for (int i = 0; i < selection.Selection.Count; i++)
+            for (int i = 0; i < _targets.Count; i++)
             {
-                selection.Selection[i].Transform = _startTransforms[i];
+                _targets[i].Transform = _startTransforms[i];
             }
 
             Confirmed = false;
@@ -128,7 +137,7 @@ public sealed class ModalTransform
             return;
         }
 
-        bool canLocal = selection.Selection.Count == 1;
+        bool canLocal = _targets.Count == 1;
         bool preferLocal = localSpacePreferred && canLocal;
         bool exclude = Mode == ModalTransformMode.Translate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
 

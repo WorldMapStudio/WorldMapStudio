@@ -231,10 +231,39 @@ public sealed class ObjectSelection
         }
     }
 
-    // Centre of the selection and, for local space with exactly one entity, its orientation.
+    /// <summary>
+    /// The part of the selection that can actually be moved.
+    ///
+    /// Derived entities — landscape chunks — stay selectable because their inspector is worth having,
+    /// but their content is computed, so dragging one would be editing an output. Filtering them out
+    /// here means the gizmo never offers a move that the edit session would then have to refuse.
+    /// </summary>
+    public IReadOnlyList<SceneEntity> Movable
+    {
+        get
+        {
+            var movable = new List<SceneEntity>();
+            foreach (SceneEntity entity in Selection)
+            {
+                if (entity is not IDerivedEntity)
+                {
+                    movable.Add(entity);
+                }
+            }
+
+            return movable;
+        }
+    }
+
+    // Centre of what can be moved and, for local space with exactly one entity, its orientation.
     public Transform3D ComputePivot(bool useLocal)
     {
-        IReadOnlyList<SceneEntity> selection = Selection;
+        IReadOnlyList<SceneEntity> selection = Movable;
+        if (selection.Count == 0)
+        {
+            return Transform3D.Identity;
+        }
+
 
         GVector3 centre = GVector3.Zero;
         foreach (SceneEntity obj in selection)

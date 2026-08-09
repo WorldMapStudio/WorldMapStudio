@@ -27,6 +27,12 @@ public sealed class ViewMenu : IMainMenu
             {
                 _view.ShowGrid = showGrid;
             }
+
+            bool showChunkEdges = _view.ShowChunkEdges;
+            if (ImGui.MenuItem("Chunk Edges", string.Empty, ref showChunkEdges))
+            {
+                _view.ShowChunkEdges = showChunkEdges;
+            }
         });
     }
 }

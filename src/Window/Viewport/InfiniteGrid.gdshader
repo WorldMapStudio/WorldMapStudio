@@ -17,6 +17,12 @@ uniform vec3 x_axis_color : source_color = vec3(0.55, 0.18, 0.18);
 uniform vec3 z_axis_color : source_color = vec3(0.18, 0.32, 0.6);
 uniform float cell_size = 1.0;
 uniform float major_every = 10.0;
+
+// Landscape chunk boundaries. Zero means the open map has no landscape, and the grid falls back to
+// its plain metric spacing. Chunk (originX, originY) sits at world zero, so boundaries land exactly
+// on multiples of chunk_size and need no offset.
+uniform float chunk_size = 0.0;
+uniform vec3 chunk_line_color : source_color = vec3(0.95, 0.75, 0.35);
 uniform float fade_start = 18.0;
 uniform float fade_end = 90.0;
 uniform float grid_opacity = 1.0;
@@ -49,6 +55,14 @@ void fragment() {
 
 	vec3 col = mix(line_color, major_line_color, major);
 	float alpha = max(minor, major);
+
+	// Drawn over the metric lines: where the terrain is actually divided matters more than where
+	// round numbers fall, and the budget is spent per chunk.
+	if (chunk_size > 0.0) {
+		float chunk = grid_coverage(coord, chunk_size, 2.0);
+		col = mix(col, chunk_line_color, chunk);
+		alpha = max(alpha, chunk);
+	}
 
 	// The X axis runs along world X, so it is the line where Z == 0, and vice versa.
 	float x_axis = axis_coverage(coord.y, 1.5);

@@ -32,6 +32,12 @@ public sealed class ViewportWindow : Window
     /// <summary>How far back the camera sits when asked to look at something.</summary>
     private const float FocusDistance = 40.0f;
 
+    /// <summary>Grid cells across one landscape chunk, so major lines fall on chunk boundaries.</summary>
+    private const int GridCellsPerChunk = 8;
+
+    /// <summary>How far the grid plane sits below y=0, to keep it out of flat terrain's depth.</summary>
+    private const float GridDepthOffset = -0.1f;
+
     private readonly SubViewport _viewport;
     private readonly Camera3D _camera;
     private readonly MeshInstance3D _grid;
@@ -49,6 +55,7 @@ public sealed class ViewportWindow : Window
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
     private MapId _viewMap;
+    private bool _chunkEdgesShown = true;
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
@@ -235,9 +242,12 @@ public sealed class ViewportWindow : Window
 
         _grid.Visible = _view.ShowGrid;
         _upAxisLine.Visible = _view.ShowGrid;
+        UpdateGridScale();
+        UpdateChunkEdges();
 
-        // Keep the grid plane centred under the camera so the grid feels endless.
-        _grid.GlobalPosition = new GVector3(_flyCamera.Position.X, 0.0f, _flyCamera.Position.Z);
+        // Centred under the camera so the grid feels endless, and a hair below the ground plane:
+        // flat terrain sits at exactly zero, and two coplanar surfaces fight for depth.
+        _grid.GlobalPosition = new GVector3(_flyCamera.Position.X, GridDepthOffset, _flyCamera.Position.Z);
 
         // The up axis line stays pinned to the true X=0/Z=0 column (that's the line it draws),
         // only following the camera vertically, and is kept yawed to face the camera so its
@@ -251,6 +261,57 @@ public sealed class ViewportWindow : Window
 
         UpdateAxisLineColors();
         tool?.UpdateViewport(new ViewportContext(_camera, imageMin, imageSize, hovered, _flyCamera.IsFlying));
+    }
+
+    // Applies the view toggle to chunks already built. New ones pick it up from the static default
+    // when their material is made.
+    private void UpdateChunkEdges()
+    {
+        LandscapeChunkMesh.ShowChunkEdges = _view.ShowChunkEdges;
+        if (_chunkEdgesShown == _view.ShowChunkEdges)
+        {
+            return;
+        }
+
+        _chunkEdgesShown = _view.ShowChunkEdges;
+        foreach (SceneEntity entity in _scene.Entities)
+        {
+            (entity as LandscapeChunk)?.SetChunkEdgesVisible(_chunkEdgesShown);
+        }
+    }
+
+    /// <summary>
+    /// Matches the grid to the open map's landscape: cells subdivide a chunk, and chunk boundaries
+    /// get their own emphasised lines. Where the terrain is actually divided is more useful to see
+    /// than where round metric numbers fall, because the texture budget is spent per chunk.
+    ///
+    /// With no landscape the grid keeps its plain one-unit spacing.
+    /// </summary>
+    private void UpdateGridScale()
+    {
+        var material = (ShaderMaterial)_grid.MaterialOverride;
+
+        if (_landscape.Settings is not { } settings || settings.ChunkWorldSize <= 0.0f)
+        {
+            material.SetShaderParameter("chunk_size", 0.0f);
+            material.SetShaderParameter("cell_size", 1.0f);
+            material.SetShaderParameter("major_every", 10.0f);
+            material.SetShaderParameter("fade_start", 18.0f);
+            material.SetShaderParameter("fade_end", 90.0f);
+            return;
+        }
+
+        float chunk = settings.ChunkWorldSize;
+
+        // Cells divide the chunk rather than the world, so every line is on a boundary of something
+        // real and the major lines land exactly on chunk edges.
+        material.SetShaderParameter("chunk_size", chunk);
+        material.SetShaderParameter("cell_size", chunk / GridCellsPerChunk);
+        material.SetShaderParameter("major_every", (float)GridCellsPerChunk);
+
+        // A chunk-sized world needs a chunk-sized fade, or the grid dies out inside one chunk.
+        material.SetShaderParameter("fade_start", chunk * 1.5f);
+        material.SetShaderParameter("fade_end", chunk * 8.0f);
     }
 
     // Colors the grid's two horizontal axis lines and the vertical up line by whichever user
