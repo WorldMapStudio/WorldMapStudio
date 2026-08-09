@@ -32,10 +32,18 @@ public abstract class SceneEntity : Entity
 
     public bool IsRepresented => Node != null;
 
-    /// <summary>World placement. Setting it moves the live representation, if any.</summary>
+    /// <summary>
+    /// World placement. Setting it moves the live representation, if any.
+    ///
+    /// The field is the truth and the node is a mirror of it, never read back. It used to be the
+    /// other way around whenever a representation existed, which made this getter a Godot node access
+    /// — and background chunk building reads deformer transforms, so a rebuild racing a gizmo drag
+    /// was touching a live node off the main thread. Nothing writes the node's transform except the
+    /// two places below, so the mirror cannot drift.
+    /// </summary>
     public Transform3D Transform
     {
-        get => Node?.GlobalTransform ?? _transform;
+        get => _transform;
         set
         {
             _transform = value;
@@ -65,7 +73,7 @@ public abstract class SceneEntity : Entity
             return;
         }
 
-        _transform = Node.GlobalTransform;
+        // Nothing to read back: the node only ever mirrored _transform.
         Node.QueueFree();
         Node = null;
     }
