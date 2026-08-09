@@ -327,6 +327,66 @@ public static class ScriptingTests
         Assert.AreEqual("done", host.Evaluate("outcome"));
     }
 
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task EvaluateAsync_reports_the_value_an_async_script_settled_on()
+    {
+        // The synchronous Evaluate cannot wait, so it can only ever hand back "[object Promise]".
+        // EvaluateAsync is what the HTTP endpoint (and so MCP) calls, and it has to report the value —
+        // otherwise every asynchronous part of this API is unreachable from the transport it was
+        // built for.
+        var host = new ScriptEngineHost([new AsyncFixtureModule()]);
+        Task<ScriptResult> pending = host.EvaluateAsync(
+            "(async function () { return await wms.asyncFixture.LoadAsync(); })()");
+
+        for (int i = 0; i < 80 && !pending.IsCompleted; i++)
+        {
+            host.Update();
+            await Task.Delay(25);
+        }
+
+        Assert.IsTrue(pending.IsCompleted, "the request must not hang once its promise settles");
+
+        ScriptResult result = await pending;
+        Assert.IsTrue(result.Success, result.Output);
+        Assert.AreEqual("loaded", result.Output);
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task EvaluateAsync_fails_the_request_when_the_script_rejects()
+    {
+        var host = new ScriptEngineHost([new AsyncFixtureModule()]);
+        Task<ScriptResult> pending = host.EvaluateAsync(
+            "(async function () { return await wms.asyncFixture.FailAsync(); })()");
+
+        for (int i = 0; i < 80 && !pending.IsCompleted; i++)
+        {
+            host.Update();
+            await Task.Delay(25);
+        }
+
+        Assert.IsTrue(pending.IsCompleted, "a rejection has to end the request, not hang it");
+
+        ScriptResult result = await pending;
+        Assert.IsFalse(result.Success, "a rejected promise is a failed request, not a successful one");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task EvaluateAsync_still_answers_a_plain_synchronous_script()
+    {
+        var host = new ScriptEngineHost([new AsyncFixtureModule()]);
+        Task<ScriptResult> pending = host.EvaluateAsync("1 + 1");
+
+        for (int i = 0; i < 20 && !pending.IsCompleted; i++)
+        {
+            host.Update();
+            await Task.Delay(10);
+        }
+
+        ScriptResult result = await pending;
+        Assert.IsTrue(result.Success, result.Output);
+        Assert.AreEqual("2", result.Output);
+    }
+
     // TimeScriptApi's real constructor takes ScriptingSystem, which needs a live EditorContext to
     // build — this local double has the identical [ScriptFunction] surface without that dependency,
     // matching how ScriptEntityHandle's own tests avoid constructing EditorContext for the same reason.
