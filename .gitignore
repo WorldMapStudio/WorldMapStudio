@@ -2,6 +2,9 @@
 .godot/
 /android/
 
+# Generated JS scripting type declarations (regenerated every startup)
+.types/
+
 obj
 bin
 

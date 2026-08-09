@@ -30,6 +30,10 @@ public sealed class Editor : IScene
 
         // Same reason, and it needs the current map, so it follows the maps.
         _context.Landscape.Load();
+
+        // No DB/map dependency, but built here so every module (built-in and plugin) has finished
+        // constructing before the binder reflects over them.
+        _context.Scripting.Startup();
     }
 
     public IScene? Update()
