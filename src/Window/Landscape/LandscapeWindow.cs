@@ -194,20 +194,33 @@ public sealed class LandscapeWindow : Window
         Heading("Fallback");
 
         List<LandscapeTextureMaterial> materials = Landscape.Catalog.Materials.ToList();
-        LandscapeTextureMaterial? current = materials.FirstOrDefault(m => m.RecordId == _draft!.FallbackMaterialId);
+
+        // Only look up a real id: matching on a null id would find the first *uncommitted* material
+        // and show its name as though it were the fallback, when none is set.
+        LandscapeTextureMaterial? current = _draft!.FallbackMaterialId is { } id
+            ? materials.FirstOrDefault(m => m.RecordId == id)
+            : null;
 
         if (ImGui.BeginCombo("Fallback material", current?.Name ?? "(none)"))
         {
             if (ImGui.Selectable("(none)", current == null))
             {
-                _draft!.FallbackMaterialId = null;
+                _draft.FallbackMaterialId = null;
             }
 
-            foreach (LandscapeTextureMaterial material in materials.Where(m => m.RecordId != null))
+            foreach (LandscapeTextureMaterial material in materials)
             {
-                if (ImGui.Selectable(material.Name, material.RecordId == _draft!.FallbackMaterialId))
+                if (material.RecordId is not { } recordId)
                 {
-                    _draft.FallbackMaterialId = material.RecordId;
+                    // Referenced by row id, so it has to be committed once before anything can point
+                    // at it. Listed rather than hidden so the reason is visible.
+                    ImGui.TextDisabled($"{material.Name} — commit to use");
+                    continue;
+                }
+
+                if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == _draft.FallbackMaterialId))
+                {
+                    _draft.FallbackMaterialId = recordId;
                 }
             }
 

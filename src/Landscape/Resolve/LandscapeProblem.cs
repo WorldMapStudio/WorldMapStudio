@@ -24,6 +24,10 @@ public enum LandscapeProblemKind
     /// <summary>A texture claim carried no material, so there was nothing to put in the slot.</summary>
     MissingMaterial,
 
+    /// <summary>A height layer was claimed with a material that binds no height function, so nothing
+    /// deforms. Silent otherwise: the claim resolves fine and simply does nothing.</summary>
+    MissingHeightFunction,
+
     /// <summary>Even dropping every droppable group left more slots in use than the limit allows.</summary>
     Unsatisfiable,
 }

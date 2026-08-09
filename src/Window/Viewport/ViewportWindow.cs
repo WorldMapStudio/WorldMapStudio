@@ -36,6 +36,7 @@ public sealed class ViewportWindow : Window
     private readonly AxisConvention _axes;
 
     private readonly FlyCamera _flyCamera;
+    private readonly ViewSettings _view;
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
     private readonly StreamingSystem _streaming;
@@ -51,6 +52,7 @@ public sealed class ViewportWindow : Window
         EditorContext context = manager.Context;
         Node owner = context.Root;
         _flyCamera = new FlyCamera(owner, DefaultCameraPosition);
+        _view = context.View;
         _scene = context.Scene;
         _tools = context.Tools;
         _streaming = context.Streaming;
@@ -214,6 +216,9 @@ public sealed class ViewportWindow : Window
         // (right mouse) only starts when the tool isn't capturing.
         _flyCamera.Update(hovered && !(tool?.CapturesMouse ?? false));
         _flyCamera.ApplyTo(_camera);
+
+        _grid.Visible = _view.ShowGrid;
+        _upAxisLine.Visible = _view.ShowGrid;
 
         // Keep the grid plane centred under the camera so the grid feels endless.
         _grid.GlobalPosition = new GVector3(_flyCamera.Position.X, 0.0f, _flyCamera.Position.Z);

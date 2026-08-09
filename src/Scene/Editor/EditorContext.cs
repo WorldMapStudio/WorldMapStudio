@@ -18,6 +18,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Shared selection, constructed before the subsystem tree so windows can capture it.</summary>
     public SelectionSystem Selection { get; }
 
+    /// <summary>Editor-wide viewport display toggles (e.g. grid visibility), shared by the View menu.</summary>
+    public ViewSettings View { get; }
+
     /// <summary>Owns the active edit session and its undo history.</summary>
     public EditSessionManager EditSessions { get; }
 
@@ -50,6 +53,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Root = root;
         Project = project;
         Selection = new SelectionSystem();
+        View = new ViewSettings();
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();
         Catalog = new CatalogEntityRegistry();

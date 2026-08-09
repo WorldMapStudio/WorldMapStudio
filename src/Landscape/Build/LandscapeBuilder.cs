@@ -88,7 +88,7 @@ public sealed class LandscapeBuilder
         var chunks = new Dictionary<ChunkCoord, LandscapeChunkOutput>();
         foreach (ChunkCoord coord in interior)
         {
-            chunks[coord] = Evaluate(coord, resolutions[coord]);
+            chunks[coord] = Evaluate(coord, resolutions[coord], problems);
         }
 
         return new LandscapeBuildResult { Chunks = chunks, Problems = problems };
@@ -144,7 +144,10 @@ public sealed class LandscapeBuilder
             .OrderBy(deformer => deformer.DeformerKey, System.StringComparer.Ordinal);
     }
 
-    private LandscapeChunkOutput Evaluate(ChunkCoord coord, LandscapeResolution resolution)
+    private LandscapeChunkOutput Evaluate(
+        ChunkCoord coord,
+        LandscapeResolution resolution,
+        List<(ChunkCoord, LandscapeProblem)> problems)
     {
         int heightResolution = Mathf.Max(2, _settings.ChunkHeightResolution);
         int alphaResolution = Mathf.Max(1, _settings.ChunkAlphaResolution);
@@ -152,9 +155,25 @@ public sealed class LandscapeBuilder
         var heights = new float[heightResolution * heightResolution];
         foreach (LandscapeClaim claim in resolution.HeightClaims)
         {
-            if (claim.Material is not { } material ||
-                _functions.FindHeight(material.HeightFunction) is not { } function)
+            // A height claim that deforms nothing is otherwise completely silent: it resolves fine,
+            // takes no slot, and simply does not run. That is a confusing thing to debug by looking
+            // at flat terrain, so say so.
+            if (claim.Material is not { } material)
             {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingMaterial,
+                    $"Height layer '{claim.Layer.Name}' was claimed without a material, so nothing deforms.")));
+                continue;
+            }
+
+            if (_functions.FindHeight(material.HeightFunction) is not { } function)
+            {
+                string reason = material.HeightFunction.Length == 0
+                    ? "binds no height function"
+                    : $"binds height function '{material.HeightFunction}', which nothing provides";
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingHeightFunction,
+                    $"Height layer '{claim.Layer.Name}' uses material '{material.Name}', which {reason}, so nothing deforms.")));
                 continue;
             }
 
