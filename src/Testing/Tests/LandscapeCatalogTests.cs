@@ -108,4 +108,53 @@ public static class LandscapeCatalogTests
         resized.ChunkAlphaResolution = 128;
         Assert.AreEqual(LandscapeChangeCost.Rebuild, LandscapeSettings.ChangeCost(settings, resized));
     }
+
+    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
+    public static void Editing_a_material_in_place_changes_the_content_version()
+    {
+        // Nothing about the collection moves when a field is edited, so registry membership cannot
+        // notice it — and a chunk would keep whatever it was built with until something else forced
+        // a rebuild.
+        var material = new LandscapeMaterial { Name = "dirt", RecordId = 1, AlphaFunction = "test" };
+        LandscapeCatalog catalog = Catalog(layers: [Layer("ground", 0, isBase: true)], materials: [material]);
+
+        int before = catalog.ContentVersion;
+
+        material.HeightFunction = "test.height";
+        Assert.AreNotEqual(before, catalog.ContentVersion, "binding a height function must be noticed");
+
+        int afterFunction = catalog.ContentVersion;
+        material.AlphaParameters = "{\"threshold\":\"0.8\"}";
+        Assert.AreNotEqual(afterFunction, catalog.ContentVersion, "so must a parameter value");
+    }
+
+    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
+    public static void Editing_a_layer_or_channel_in_place_changes_the_content_version()
+    {
+        var layer = Layer("ground", 0, isBase: true);
+        var channel = new LandscapeChannel { Name = "mask", RecordId = 1 };
+        LandscapeCatalog catalog = Catalog(layers: [layer], channels: [channel]);
+
+        int before = catalog.ContentVersion;
+        layer.DrawOrder = 5;
+        Assert.AreNotEqual(before, catalog.ContentVersion);
+
+        int afterOrder = catalog.ContentVersion;
+        channel.Resolution = 128;
+        Assert.AreNotEqual(afterOrder, catalog.ContentVersion);
+
+        int afterResolution = catalog.ContentVersion;
+        channel.Name = "renamed";
+        Assert.AreNotEqual(afterResolution, catalog.ContentVersion, "channels are bound by name");
+    }
+
+    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
+    public static void An_unchanged_catalog_keeps_its_content_version()
+    {
+        LandscapeCatalog catalog = Catalog(
+            layers: [Layer("ground", 0, isBase: true)],
+            materials: [new LandscapeMaterial { Name = "dirt", RecordId = 1, AlphaFunction = "test" }]);
+
+        Assert.AreEqual(catalog.ContentVersion, catalog.ContentVersion, "reading it must not rebuild the world");
+    }
 }
