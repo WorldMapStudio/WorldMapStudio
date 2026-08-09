@@ -156,7 +156,7 @@ public sealed class LandscapeCatalog
         else if (textureLayers.Count > 0)
         {
             issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
-                "No layer is marked as a base, so every chunk falls back to the map's fallback material."));
+                "No layer is marked as a base, so every chunk depends on the map having a fallback material."));
         }
     }
 

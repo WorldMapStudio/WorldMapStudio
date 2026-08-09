@@ -97,6 +97,15 @@ public static class LandscapeChunkMesh
             }
         }
 
+        // A chunk can resolve to no slots at all: nothing claimed a base and the map has no fallback
+        // material, which is exactly the state a landscape starts in before anything is authored.
+        // That is a reported problem, not a crash — render the placeholder so the chunk is visibly
+        // unassigned rather than absent.
+        if (albedos.Count == 0)
+        {
+            albedos.Add(Placeholder(0));
+        }
+
         // A sampler2DArray needs at least one layer even when nothing composites over the base.
         if (alphas.Count == 0)
         {
@@ -110,7 +119,7 @@ public static class LandscapeChunkMesh
 
         material.SetShaderParameter("slot_albedo", albedoArray);
         material.SetShaderParameter("slot_alpha", alphaArray);
-        material.SetShaderParameter("slot_count", output.Layers.Count);
+        material.SetShaderParameter("slot_count", Mathf.Max(1, output.Layers.Count));
         material.SetShaderParameter("tiling", TextureTiling);
         return material;
     }
