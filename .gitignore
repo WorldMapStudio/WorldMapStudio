@@ -4,6 +4,7 @@
 
 # Generated JS scripting type declarations (regenerated every startup)
 .types/
+.traces/
 
 obj
 bin
