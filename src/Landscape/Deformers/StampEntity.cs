@@ -62,7 +62,7 @@ public sealed class StampEntity : SceneEntity, ILandscapeDeformer
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
     {
-        LandscapeTextureMaterial? material = context.Material(MaterialId);
+        LandscapeMaterial? material = context.Material(MaterialId);
         var claims = new List<LandscapeClaim>();
 
         if (context.Layer(TextureLayerId) is { } texture)

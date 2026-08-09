@@ -29,7 +29,7 @@ public sealed class LandscapeCatalog
     public LandscapeCatalog(
         IReadOnlyList<LandscapeChannel> channels,
         IReadOnlyList<LandscapeLayer> layers,
-        IReadOnlyList<LandscapeTextureMaterial> materials,
+        IReadOnlyList<LandscapeMaterial> materials,
         LandscapeFunctions? functions = null)
     {
         Channels = channels;
@@ -42,7 +42,7 @@ public sealed class LandscapeCatalog
 
     public IReadOnlyList<LandscapeLayer> Layers { get; }
 
-    public IReadOnlyList<LandscapeTextureMaterial> Materials { get; }
+    public IReadOnlyList<LandscapeMaterial> Materials { get; }
 
     /// <summary>The function registry material bindings resolve against, or null to skip those checks.</summary>
     public LandscapeFunctions? Functions { get; }
@@ -56,7 +56,7 @@ public sealed class LandscapeCatalog
         get
         {
             float radius = 0.0f;
-            foreach (LandscapeTextureMaterial material in Materials)
+            foreach (LandscapeMaterial material in Materials)
             {
                 foreach (ILandscapeFunction function in BoundFunctions(material))
                 {
@@ -69,7 +69,7 @@ public sealed class LandscapeCatalog
     }
 
     /// <summary>The functions a material binds, skipping ids nothing currently provides.</summary>
-    public IEnumerable<ILandscapeFunction> BoundFunctions(LandscapeTextureMaterial material)
+    public IEnumerable<ILandscapeFunction> BoundFunctions(LandscapeMaterial material)
     {
         if (Functions == null)
         {
@@ -164,18 +164,21 @@ public sealed class LandscapeCatalog
     {
         CheckNames(issues, Materials.Select(material => material.Name), "material");
 
-        foreach (LandscapeTextureMaterial material in Materials)
+        foreach (LandscapeMaterial material in Materials)
         {
-            if (material.AlphaFunction.Length == 0)
-            {
-                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
-                    $"Material '{material.Name}' has no alpha function, so nothing decides where it shows."));
-            }
-
-            if (material.TexturePath.Length == 0)
+            // Which half a material needs depends on the layer it is bound to, and that binding is
+            // made per entity and per chunk — so the only thing checkable here is that it does
+            // something at all. The builder reports a material missing the half its layer needed.
+            if (!material.PaintsTexture && !material.DeformsHeight)
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
-                    $"Material '{material.Name}' has no texture assigned."));
+                    $"Material '{material.Name}' has neither an alpha nor a height function, so it does nothing."));
+            }
+
+            if (material.PaintsTexture && material.TexturePath.Length == 0)
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
+                    $"Material '{material.Name}' paints a texture layer but has no texture assigned."));
             }
 
             ValidateBinding(issues, material, material.AlphaFunction, material.AlphaParameters, "alpha");
@@ -187,7 +190,7 @@ public sealed class LandscapeCatalog
     // whose plugin is not loaded, or a channel that was renamed or deleted out from under it.
     private void ValidateBinding(
         List<LandscapeIssue> issues,
-        LandscapeTextureMaterial material,
+        LandscapeMaterial material,
         string functionId,
         string serializedValues,
         string role)

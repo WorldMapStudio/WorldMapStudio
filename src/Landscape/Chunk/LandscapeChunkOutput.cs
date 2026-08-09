@@ -9,7 +9,7 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChunkLayer
 {
-    public required LandscapeTextureMaterial? Material { get; init; }
+    public required LandscapeMaterial? Material { get; init; }
 
     /// <summary>Coverage at the map's alpha resolution, row-major, or null for the base slot.</summary>
     public required byte[]? Alpha { get; init; }

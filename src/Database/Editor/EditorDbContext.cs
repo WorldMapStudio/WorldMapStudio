@@ -40,18 +40,27 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
         {
             entity.ToTable("landscape_channels");
             entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
         });
 
         model.Entity<LandscapeLayerRecord>(entity =>
         {
             entity.ToTable("landscape_layers");
             entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
         });
 
         model.Entity<LandscapeMaterialRecord>(entity =>
         {
             entity.ToTable("landscape_materials");
             entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
         });
 
         model.Entity<StampRecord>(entity =>

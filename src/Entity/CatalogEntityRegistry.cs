@@ -26,6 +26,27 @@ public sealed class CatalogEntityRegistry
     public IEnumerable<TEntity> OfType<TEntity>() where TEntity : CatalogEntity =>
         _entities.OfType<TEntity>();
 
+    /// <summary>
+    /// Gives a newly created entity the next free row id for its type, so other entities can
+    /// reference it immediately rather than only after a commit. Call before adding it.
+    ///
+    /// Highest-in-use plus one, over the loaded set — catalogs are loaded whole, so that is every id
+    /// there is.
+    /// </summary>
+    public void AssignId<TEntity>(TEntity entity) where TEntity : CatalogEntity, IKeyedCatalogEntity
+    {
+        int next = 1;
+        foreach (TEntity existing in OfType<TEntity>())
+        {
+            if (existing.RecordId is { } id && id >= next)
+            {
+                next = id + 1;
+            }
+        }
+
+        entity.RecordId = next;
+    }
+
     public void Add(CatalogEntity entity)
     {
         _entities.Add(entity);

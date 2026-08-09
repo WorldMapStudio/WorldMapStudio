@@ -21,7 +21,7 @@ public interface IKeyedRecord
 /// <see cref="ICatalogEntityFactory"/> directly instead — that freedom is the point of factories.
 /// </summary>
 public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFactory
-    where TEntity : CatalogEntity
+    where TEntity : CatalogEntity, IKeyedCatalogEntity
     where TRecord : class, IKeyedRecord, new()
 {
     protected EditorCatalogFactory(EditorStorage storage)
@@ -41,52 +41,51 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
     {
         await using EditorDbContext context = Storage.CreateContext();
         List<TRecord> rows = await Set(context).AsNoTracking().ToListAsync().ConfigureAwait(false);
-        return rows.Select(row => (CatalogEntity)ToEntity(row)).ToList();
+        return rows.Select(row =>
+        {
+            TEntity entity = ToEntity(row);
+            entity.IsSaved = true;
+            return (CatalogEntity)entity;
+        }).ToList();
     }
 
     public Action Stage(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
         var typed = (TEntity)entity;
-        bool isNew = RecordId(typed) is null;
 
-        var record = new TRecord();
-        if (RecordId(typed) is int id)
-        {
-            record.Id = id;
-        }
-
+        var record = new TRecord { Id = typed.RecordId ?? 0 };
         WriteRecord(typed, record);
 
-        if (isNew)
-        {
-            Set(db).Add(record);
-        }
-        else
+        // Ids are assigned at creation, so having one no longer means a row exists — IsSaved is what
+        // separates an insert from an update.
+        if (typed.IsSaved)
         {
             Set(db).Update(record);
         }
+        else
+        {
+            Set(db).Add(record);
+        }
 
-        // After SaveChanges, EF has populated the generated key on inserts; copy it back.
-        return () => SetRecordId(typed, record.Id);
+        return () => typed.IsSaved = true;
     }
 
     public void StageDelete(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
-        if (RecordId((TEntity)entity) is int id)
+        var typed = (TEntity)entity;
+
+        // A never-saved entity has no row to remove; its id was only ever an in-memory reference.
+        if (typed.IsSaved && typed.RecordId is int id)
         {
             Set(db).Remove(new TRecord { Id = id });
+            typed.IsSaved = false;
         }
     }
 
     /// <summary>The table this catalog lives in.</summary>
     protected abstract DbSet<TRecord> Set(EditorDbContext context);
-
-    /// <summary>The entity's row key, or null if it was never saved.</summary>
-    protected abstract int? RecordId(TEntity entity);
-
-    protected abstract void SetRecordId(TEntity entity, int id);
 
     protected abstract TEntity ToEntity(TRecord record);
 

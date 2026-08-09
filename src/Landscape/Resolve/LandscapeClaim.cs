@@ -16,7 +16,7 @@ public sealed class LandscapeClaim
     /// height layers use it only to carry a height function, and may leave it null to claim the layer
     /// purely for conflict detection.
     /// </summary>
-    public LandscapeTextureMaterial? Material { get; init; }
+    public LandscapeMaterial? Material { get; init; }
 
     public override string ToString() => $"{Layer.Name} = {Material?.Name ?? "(none)"}";
 }

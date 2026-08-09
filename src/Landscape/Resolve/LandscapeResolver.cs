@@ -238,7 +238,7 @@ public static class LandscapeResolver
         }
 
         // Nothing claimed a base, so the map's fallback keeps the chunk from being a hole.
-        LandscapeTextureMaterial? fallback = settings.FallbackMaterialId is { } id
+        LandscapeMaterial? fallback = settings.FallbackMaterialId is { } id
             ? catalog.Materials.FirstOrDefault(material => material.RecordId == id)
             : null;
 

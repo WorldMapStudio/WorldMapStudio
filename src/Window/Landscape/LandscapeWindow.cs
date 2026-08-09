@@ -193,11 +193,11 @@ public sealed class LandscapeWindow : Window
     {
         Heading("Fallback");
 
-        List<LandscapeTextureMaterial> materials = Landscape.Catalog.Materials.ToList();
+        List<LandscapeMaterial> materials = Landscape.Catalog.Materials.ToList();
 
         // Only look up a real id: matching on a null id would find the first *uncommitted* material
         // and show its name as though it were the fallback, when none is set.
-        LandscapeTextureMaterial? current = _draft!.FallbackMaterialId is { } id
+        LandscapeMaterial? current = _draft!.FallbackMaterialId is { } id
             ? materials.FirstOrDefault(m => m.RecordId == id)
             : null;
 
@@ -208,16 +208,9 @@ public sealed class LandscapeWindow : Window
                 _draft.FallbackMaterialId = null;
             }
 
-            foreach (LandscapeTextureMaterial material in materials)
+            foreach (LandscapeMaterial material in materials)
             {
-                if (material.RecordId is not { } recordId)
-                {
-                    // Referenced by row id, so it has to be committed once before anything can point
-                    // at it. Listed rather than hidden so the reason is visible.
-                    ImGui.TextDisabled($"{material.Name} — commit to use");
-                    continue;
-                }
-
+                int? recordId = material.RecordId;
                 if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == _draft.FallbackMaterialId))
                 {
                     _draft.FallbackMaterialId = recordId;
@@ -366,12 +359,12 @@ public sealed class LandscapeWindow : Window
     {
         if (ImGui.Button("Add material"))
         {
-            Create(new LandscapeTextureMaterial { Name = UniqueName("Material", Landscape.Catalog.Materials.Select(m => m.Name)) });
+            Create(new LandscapeMaterial { Name = UniqueName("Material", Landscape.Catalog.Materials.Select(m => m.Name)) });
         }
 
         ImGui.Separator();
 
-        foreach (LandscapeTextureMaterial material in Landscape.Catalog.Materials)
+        foreach (LandscapeMaterial material in Landscape.Catalog.Materials)
         {
             ImGui.PushID(material.Id.Value.GetHashCode());
             if (ImGui.CollapsingHeader($"{material.Name}##header", ImGuiTreeNodeFlags.DefaultOpen))
@@ -407,7 +400,7 @@ public sealed class LandscapeWindow : Window
     // that function declares. Parameter values live in a serialized bag, so an edit rewrites the bag
     // as a single undoable field change on the material.
     private void DrawFunctionBinding(
-        LandscapeTextureMaterial material,
+        LandscapeMaterial material,
         string role,
         IEnumerable<ILandscapeFunction> available,
         string boundId,
@@ -462,7 +455,7 @@ public sealed class LandscapeWindow : Window
     }
 
     private void DrawParameters(
-        LandscapeTextureMaterial material,
+        LandscapeMaterial material,
         ILandscapeFunction function,
         string serialized,
         System.Action<string> setParameters)
@@ -528,7 +521,7 @@ public sealed class LandscapeWindow : Window
     }
 
     private void DrawChannelParameter(
-        LandscapeTextureMaterial material,
+        LandscapeMaterial material,
         LandscapeParameter parameter,
         LandscapeParameterValues values,
         string serialized,
@@ -560,7 +553,7 @@ public sealed class LandscapeWindow : Window
 
     // Numeric parameters are dragged, so the whole drag is one undo step like every other field here.
     private void TrackParameter(
-        LandscapeTextureMaterial material,
+        LandscapeMaterial material,
         ILandscapeFunction function,
         LandscapeParameterValues values,
         string serialized,
@@ -668,8 +661,11 @@ public sealed class LandscapeWindow : Window
         _context.EditSessions.Record(command);
     }
 
-    private void Create(CatalogEntity entity)
+    private void Create<TEntity>(TEntity entity) where TEntity : CatalogEntity, IKeyedCatalogEntity
     {
+        // Identified before it is added, so a stamp created in the same session can reference it.
+        _context.Catalog.AssignId(entity);
+
         var command = new CreateCatalogEntityCommand(_context.Catalog, entity);
         command.Apply();
         _context.EditSessions.Record(command);

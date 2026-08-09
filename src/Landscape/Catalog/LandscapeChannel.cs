@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// Channels are <em>transient</em>: what is persisted here is the declaration (how big, how precise),
 /// never the pixels. The pixels are allocated from a pool per build and thrown away after.
 /// </summary>
-public sealed class LandscapeChannel : CatalogEntity
+public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity
 {
     public string Name { get; set; } = "Channel";
 
@@ -19,8 +19,11 @@ public sealed class LandscapeChannel : CatalogEntity
     /// <summary>Bits per texel: 8 for a mask, 16 where banding would show, 32 for distance fields.</summary>
     public int BitDepth { get; set; } = 8;
 
-    /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
+    /// <inheritdoc />
     public int? RecordId { get; set; }
+
+    /// <inheritdoc />
+    public bool IsSaved { get; set; }
 
     public override string DisplayName => Name;
 
