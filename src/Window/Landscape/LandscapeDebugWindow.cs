@@ -61,6 +61,13 @@ public sealed class LandscapeDebugWindow : Window
         (float min, float max) = HeightRange(output);
         ImGui.TextDisabled($"height {min:0.##} … {max:0.##}");
 
+        LandscapeRebuilder rebuilder = _context.Landscape.Rebuilder;
+        if (rebuilder.IsBuilding || rebuilder.PendingChunks > 0)
+        {
+            ImGui.TextColored(new NVector4(1.0f, 0.72f, 0.22f, 1.0f),
+                $"rebuilding — {rebuilder.PendingChunks} chunks queued");
+        }
+
         ImGui.Separator();
         DrawPreviews(output);
         ImGui.Separator();
@@ -158,7 +165,7 @@ public sealed class LandscapeDebugWindow : Window
 
     private LandscapeChunk? NearestChunk()
     {
-        Vector3 focus = _context.Landscape.DebugFocus;
+        Vector3 focus = _context.Landscape.Focus;
         LandscapeChunk? best = null;
         float bestDistance = float.MaxValue;
 

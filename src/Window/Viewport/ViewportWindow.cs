@@ -190,7 +190,7 @@ public sealed class ViewportWindow : Window
     protected override void DrawContent()
     {
         FollowCurrentMap();
-        _landscape.DebugFocus = _flyCamera.Position;
+        _landscape.Focus = _flyCamera.Position;
         _streaming.Update(_flyCamera.Position);
         SyncRepresentations();
 
