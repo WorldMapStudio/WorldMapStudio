@@ -98,7 +98,11 @@ public sealed class StampInspector : EntityInspector<StampEntity>
         System.Func<LandscapeLayer, bool> filter,
         System.Action<int?> set)
     {
-        LandscapeLayer? bound = catalog.Layers.FirstOrDefault(layer => layer.RecordId == current);
+        // Only look up a real id: matching on a null id would find the first *uncommitted* layer and
+        // show its name as though it were bound, when nothing is.
+        LandscapeLayer? bound = current is { } boundId
+            ? catalog.Layers.FirstOrDefault(layer => layer.RecordId == boundId)
+            : null;
 
         if (ImGui.BeginCombo(label, bound?.Name ?? "(none)"))
         {
@@ -107,11 +111,20 @@ public sealed class StampInspector : EntityInspector<StampEntity>
                 Record(context, stamp, label, current, null, set);
             }
 
-            foreach (LandscapeLayer layer in catalog.Layers.Where(filter).Where(layer => layer.RecordId != null))
+            foreach (LandscapeLayer layer in catalog.Layers.Where(filter))
             {
-                if (ImGui.Selectable($"{layer.Name}##{layer.RecordId}", layer.RecordId == current))
+                if (layer.RecordId is not { } recordId)
                 {
-                    Record(context, stamp, label, current, layer.RecordId, set);
+                    // Bindings are stored by row id, so a layer has to be committed once before
+                    // anything can point at it. Listed rather than hidden: an empty dropdown next to a
+                    // layer you just created reads as a bug.
+                    ImGui.TextDisabled($"{layer.Name} — commit to use");
+                    continue;
+                }
+
+                if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == current))
+                {
+                    Record(context, stamp, label, current, recordId, set);
                 }
             }
 
@@ -120,14 +133,15 @@ public sealed class StampInspector : EntityInspector<StampEntity>
 
         if (current != null && bound == null)
         {
-            // Layers are only pickable once committed, so an uncommitted layer reads as missing here.
             ImGui.TextDisabled("Bound layer is not loaded.");
         }
     }
 
     private void DrawMaterial(InspectorContext context, StampEntity stamp, LandscapeCatalog catalog)
     {
-        LandscapeTextureMaterial? bound = catalog.Materials.FirstOrDefault(m => m.RecordId == stamp.MaterialId);
+        LandscapeTextureMaterial? bound = stamp.MaterialId is { } boundId
+            ? catalog.Materials.FirstOrDefault(m => m.RecordId == boundId)
+            : null;
 
         if (ImGui.BeginCombo("Material", bound?.Name ?? "(none)"))
         {
@@ -136,12 +150,17 @@ public sealed class StampInspector : EntityInspector<StampEntity>
                 Record(context, stamp, "material", stamp.MaterialId, null, value => stamp.MaterialId = value);
             }
 
-            foreach (LandscapeTextureMaterial material in catalog.Materials.Where(m => m.RecordId != null))
+            foreach (LandscapeTextureMaterial material in catalog.Materials)
             {
-                if (ImGui.Selectable($"{material.Name}##{material.RecordId}", material.RecordId == stamp.MaterialId))
+                if (material.RecordId is not { } recordId)
                 {
-                    Record(context, stamp, "material", stamp.MaterialId, material.RecordId,
-                        value => stamp.MaterialId = value);
+                    ImGui.TextDisabled($"{material.Name} — commit to use");
+                    continue;
+                }
+
+                if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == stamp.MaterialId))
+                {
+                    Record(context, stamp, "material", stamp.MaterialId, recordId, value => stamp.MaterialId = value);
                 }
             }
 
