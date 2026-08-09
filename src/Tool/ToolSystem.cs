@@ -21,7 +21,7 @@ public sealed class ToolSystem
 
     public ToolSystem(EditorContext context)
     {
-        Context = new ToolContext(context.Selection, context.Scene, context.EditSessions, context.Axes);
+        Context = new ToolContext(context, context.Selection, context.Scene, context.EditSessions, context.Axes);
     }
 
     public void Register(IToolFactory factory)
