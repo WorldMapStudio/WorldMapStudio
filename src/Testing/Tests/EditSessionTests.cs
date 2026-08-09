@@ -104,6 +104,49 @@ public static class EditSessionTests
         Assert.IsFalse(session.History.CanUndo);
     }
 
+    private sealed class RecordingStore : IEditSessionStore
+    {
+        public List<IEntity> Persisted { get; } = [];
+
+        public void Persist(EditSession session) => Persisted.AddRange(session.Pinned);
+    }
+
+    [EditorTest(Category = "EditSession")]
+    public static void Committing_persists_before_clearing()
+    {
+        // Persisting used to be a second call every caller made for itself, and the scripting API
+        // never made it — so script edits were dropped instead of saved. Committing is one act now,
+        // and this is what stops it splitting back apart.
+        var entity = new FakeEntity();
+        var store = new RecordingStore();
+        var sessions = new EditSessionManager();
+        sessions.BindStore(store);
+
+        entity.Value = 4;
+        sessions.Record(new SetValueCommand(entity, 0, 4));
+        sessions.Commit();
+
+        Assert.AreEqual(1, store.Persisted.Count, "the commit must have written the pinned entity");
+        Assert.IsTrue(ReferenceEquals(entity, store.Persisted[0]));
+        Assert.IsFalse(sessions.Active.IsDirty, "committing starts a fresh session");
+    }
+
+    [EditorTest(Category = "EditSession")]
+    public static void Aborting_persists_nothing()
+    {
+        var entity = new FakeEntity();
+        var store = new RecordingStore();
+        var sessions = new EditSessionManager();
+        sessions.BindStore(store);
+
+        entity.Value = 4;
+        sessions.Record(new SetValueCommand(entity, 0, 4));
+        sessions.Abort();
+
+        Assert.AreEqual(0, store.Persisted.Count);
+        Assert.AreEqual(0, entity.Value, "aborting reverts the edit");
+    }
+
     private sealed class DerivedEntity : IDerivedEntity
     {
         public EntityId Id { get; } = EntityId.Next();

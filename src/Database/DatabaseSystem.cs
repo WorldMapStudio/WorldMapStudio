@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 /// On <see cref="Startup"/> it launches a managed <c>dolt sql-server</c> for each storage configured
 /// to launch one, then ensures each storage's database exists.
 /// </summary>
-public sealed partial class DatabaseSystem : ISubsystemHost
+public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
 
@@ -128,8 +128,12 @@ public sealed partial class DatabaseSystem : ISubsystemHost
     /// and catalog entities together, so a session that edited both commits atomically. A pinned entity
     /// still registered (in the scene or the catalog) is saved; one that has left (an undone creation or
     /// a deletion) is deleted.
+    ///
+    /// Reached through <see cref="IEditSessionStore"/> from <see cref="EditSessionManager.Commit"/>,
+    /// never called directly — committing is one act, not a write followed by a clear the caller has to
+    /// remember.
     /// </summary>
-    public void Commit(EditSession session)
+    public void Persist(EditSession session)
     {
         foreach (Storage storage in Storages)
         {

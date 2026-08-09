@@ -80,6 +80,11 @@ public sealed partial class EditorContext : ISubsystemHost
         // the landscape hands streaming a loader instead of a storage factory.
         Streaming.AddLoader(Landscape.ChunkLoader);
 
+        // Bound here rather than injected, because the session manager is constructed before the
+        // database it writes through. From now on committing a session persists it, whichever caller
+        // (menu, script, HTTP) asked.
+        EditSessions.BindStore(Database);
+
         InitializeSubsystems();
     }
 

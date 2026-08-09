@@ -19,7 +19,7 @@ public sealed class SessionScriptApi : IScriptModule
     [ScriptProperty]
     public bool IsDirty => _sessions.Active.IsDirty;
 
-    /// <summary>Keeps every edit in the active session and starts a fresh one — the flush-to-database path.</summary>
+    /// <summary>Writes every edit in the active session to the database and starts a fresh one.</summary>
     [ScriptFunction]
     public void Commit() => _sessions.Commit();
 
