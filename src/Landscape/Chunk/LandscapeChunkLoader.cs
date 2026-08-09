@@ -27,6 +27,27 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
         _landscape = landscape;
     }
 
+    /// <summary>
+    /// One chunk beyond the view, plus whatever the bound functions reach.
+    ///
+    /// A chunk only partly inside the view is still built whole, so something overlapping its far
+    /// half can sit a full chunk outside — and halo chunks, whose channels the visible ones sample,
+    /// need their own deformers too. Under-declaring this is not a crash: edge chunks simply come out
+    /// different depending on what happened to be loaded, and settle only once you fly closer.
+    /// </summary>
+    public float LoadMargin
+    {
+        get
+        {
+            if (_landscape.Settings is not { } settings)
+            {
+                return 0.0f;
+            }
+
+            return settings.ChunkWorldSize + _landscape.Catalog.MaxSampleRadius;
+        }
+    }
+
     public bool Handles(SceneEntity entity) => entity is LandscapeChunk;
 
     public long KeyOf(SceneEntity entity)

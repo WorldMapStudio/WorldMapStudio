@@ -15,6 +15,17 @@ namespace WorldMapStudio;
 /// </summary>
 public interface ISceneEntityLoader
 {
+    /// <summary>
+    /// How far beyond the view this loader needs <em>other</em> entities loaded in order to produce
+    /// correct results at the view's edge, in world units.
+    ///
+    /// Landscape chunks are the reason this exists: a chunk on the edge of view is shaped by whatever
+    /// overlaps it, and something overlapping it can easily sit outside the view. Without the margin,
+    /// an edge chunk is built from whichever of its deformers happen to be loaded and quietly changes
+    /// shape as you fly toward it.
+    /// </summary>
+    float LoadMargin => 0.0f;
+
     /// <summary>Whether this loader owns the given entity.</summary>
     bool Handles(SceneEntity entity);
 
@@ -28,7 +39,11 @@ public interface ISceneEntityLoader
     /// </summary>
     void Prepare() { }
 
-    /// <summary>The entities of this loader that belong in the region, for the given map.</summary>
+    /// <summary>
+    /// The entities of this loader that belong in the region, for the given map. This is the
+    /// <em>view</em> region: a loader produces what the user should see, while stored entities are
+    /// loaded over the wider region implied by <see cref="LoadMargin"/>.
+    /// </summary>
     Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region);
 
     /// <summary>

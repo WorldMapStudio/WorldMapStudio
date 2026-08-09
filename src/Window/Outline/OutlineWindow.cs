@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using ImGuiNET;
 
@@ -23,7 +24,7 @@ public sealed class OutlineWindow : Window
 
     protected override void DrawContent()
     {
-        IReadOnlyList<SceneEntity> entities = _scene.Entities;
+        List<SceneEntity> entities = _scene.InView.ToList();
         if (entities.Count == 0)
         {
             ImGui.TextDisabled("No entities loaded.");
