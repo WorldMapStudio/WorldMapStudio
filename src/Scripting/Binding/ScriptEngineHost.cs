@@ -57,6 +57,17 @@ public sealed class ScriptEngineHost
     }
 
     /// <summary>
+    /// Drains completed async script work once. A [ScriptFunction] returning <c>Task</c>/<c>Task&lt;T&gt;</c>
+    /// is automatically converted to a JS Promise by Jint itself (confirmed against the real package,
+    /// including that a faulted Task correctly rejects it, catchable via JS <c>try</c>/<c>catch</c>) —
+    /// this just needs calling once per frame from the main thread so a completed background Task's
+    /// continuation actually resumes the awaiting script, without ever blocking the caller on it. Call
+    /// from wherever already pumps other per-frame work (see <c>Editor.Update</c>), the same shape
+    /// <see cref="WorkQueue.PumpMainThread"/> already uses for its own background→main-thread work.
+    /// </summary>
+    public void Update() => _engine.Advanced.ProcessTasks();
+
+    /// <summary>
     /// Evaluates one snippet and returns a display string of the result, or an error message —
     /// never throws. This is the console's eval path; later callers (the HTTP endpoint) will want the
     /// raw <see cref="JsValue"/> instead, but nothing needs that yet.
