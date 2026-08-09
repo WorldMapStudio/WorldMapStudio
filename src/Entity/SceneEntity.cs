@@ -23,6 +23,12 @@ public abstract class SceneEntity : Entity
     public abstract Aabb LocalBounds { get; }
 
     /// <summary>
+    /// True when this entity is positioned only by its horizontal coordinates and derives its visible
+    /// height from the terrain. The stored world Y is ignored.
+    /// </summary>
+    public virtual bool UsesTerrainHeight => false;
+
+    /// <summary>
     /// <see cref="LocalBounds"/> placed by <see cref="Transform"/>, enclosed axis-aligned. This is the
     /// entity's extent in the world: what streaming and the landscape system query against, because an
     /// entity is in range when its bounds overlap a region, not when its origin happens to fall inside
@@ -46,10 +52,10 @@ public abstract class SceneEntity : Entity
         get => _transform;
         set
         {
-            _transform = value;
+            _transform = SanitizeTransform(value);
             if (Node != null)
             {
-                Node.GlobalTransform = value;
+                Node.GlobalTransform = _transform;
             }
         }
     }
@@ -83,4 +89,14 @@ public abstract class SceneEntity : Entity
 
     /// <summary>Reacts to a change in selection state (e.g. highlight). Default does nothing.</summary>
     public virtual void OnSelectionChanged(bool selected) { }
+
+    protected virtual Transform3D SanitizeTransform(Transform3D transform)
+    {
+        if (UsesTerrainHeight)
+        {
+            transform.Origin = new Vector3(transform.Origin.X, 0.0f, transform.Origin.Z);
+        }
+
+        return transform;
+    }
 }

@@ -69,7 +69,9 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
 
     public override string DisplayName => Name;
 
-    public override SelfRotation SelfRotation => SelfRotation.Full;
+    public override SelfRotation SelfRotation => SelfRotation.HeightOnly;
+
+    public override bool UsesTerrainHeight => true;
 
     public override Aabb LocalBounds => new(
         new Vector3(-WorldSizeX * 0.5f, -BoundsHeight * 0.5f, -WorldSizeZ * 0.5f),
@@ -287,5 +289,13 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
     protected override Node3D BuildNode()
     {
         return new Node3D { Name = $"DrawingTarget{Id.Value}" };
+    }
+
+    protected override Transform3D SanitizeTransform(Transform3D transform)
+    {
+        transform = base.SanitizeTransform(transform);
+        float yaw = transform.Basis.GetEuler().Y;
+        transform.Basis = new Basis(Vector3.Up, yaw);
+        return transform;
     }
 }
