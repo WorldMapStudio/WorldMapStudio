@@ -1,7 +1,11 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Godot;
+using HttpClient = System.Net.Http.HttpClient;
+using HttpResponseMessage = System.Net.Http.HttpResponseMessage;
+using StringContent = System.Net.Http.StringContent;
 
 namespace WorldMapStudio;
 
@@ -410,5 +414,85 @@ public static class ScriptingTests
         var host = new ScriptEngineHost([new HandleFixtureModule(scene, catalog, sessions, widget)]);
 
         Assert.AreEqual($"describe:{widget.DisplayName}", host.Evaluate("wms.handles.Describe(wms.handles.Get())"));
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Http_run_endpoint_evaluates_and_returns_json()
+    {
+        var host = new ScriptEngineHost([new FixtureModule([])]);
+        var server = new ScriptHttpServer(host, port: 18765);
+        server.Start();
+
+        await WithMainThreadPump(host, async () =>
+        {
+            using var client = new HttpClient();
+            using HttpResponseMessage response = await client.PostAsync(
+                "http://127.0.0.1:18765/run", new StringContent("wms.fixture.Add(2, 3).toString()"));
+            string body = await response.Content.ReadAsStringAsync();
+
+            Assert.IsTrue(body.Contains("\"ok\":true"), body);
+            Assert.IsTrue(body.Contains("\"result\":\"5\""), body);
+        });
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Http_run_endpoint_reports_a_script_error_as_json_not_a_500()
+    {
+        var host = new ScriptEngineHost([new FixtureModule([])]);
+        var server = new ScriptHttpServer(host, port: 18766);
+        server.Start();
+
+        await WithMainThreadPump(host, async () =>
+        {
+            using var client = new HttpClient();
+            using HttpResponseMessage response = await client.PostAsync(
+                "http://127.0.0.1:18766/run", new StringContent("wms.fixture.NoSuchMethod()"));
+            string body = await response.Content.ReadAsStringAsync();
+
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, response.StatusCode,
+                "a script error is a normal, well-formed response, not a transport failure");
+            Assert.IsTrue(body.Contains("\"ok\":false"), body);
+        });
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Http_health_endpoint_responds_without_touching_the_engine()
+    {
+        var host = new ScriptEngineHost([]);
+        var server = new ScriptHttpServer(host, port: 18767);
+        server.Start();
+
+        using var client = new HttpClient();
+        using HttpResponseMessage response = await client.GetAsync("http://127.0.0.1:18767/health");
+        string body = await response.Content.ReadAsStringAsync();
+
+        Assert.AreEqual(System.Net.HttpStatusCode.OK, response.StatusCode);
+        Assert.IsTrue(body.Contains("\"ok\":true"), body);
+    }
+
+    // Runs `action` while a background loop pumps ScriptEngineHost.Update() every 10ms — needed
+    // because /run's response only completes once Update() dequeues and evaluates it, the same
+    // reason the async-bridge tests above poll Update() themselves rather than blocking on the Task.
+    private static async Task WithMainThreadPump(ScriptEngineHost host, Func<Task> action)
+    {
+        using var cts = new CancellationTokenSource();
+        Task pump = Task.Run(async () =>
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                host.Update();
+                await Task.Delay(10);
+            }
+        });
+
+        try
+        {
+            await action().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            cts.Cancel();
+            await pump;
+        }
     }
 }

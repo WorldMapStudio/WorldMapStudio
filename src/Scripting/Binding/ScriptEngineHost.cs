@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Jint;
 using Jint.Native;
 using Jint.Native.Object;
@@ -7,6 +9,11 @@ using Jint.Runtime;
 using Jint.Runtime.Interop;
 
 namespace WorldMapStudio;
+
+/// <summary>One evaluation's outcome, success and failure kept separate rather than folded into a
+/// prefixed display string — what a structured caller (the HTTP endpoint) needs to build a proper
+/// response instead of string-sniffing for an "Error:" prefix.</summary>
+public readonly record struct ScriptResult(bool Success, string Output);
 
 /// <summary>
 /// Wraps the shared Jint engine every script call (console, and later the HTTP endpoint) runs
@@ -27,6 +34,12 @@ namespace WorldMapStudio;
 public sealed class ScriptEngineHost
 {
     private readonly Engine _engine;
+
+    // Requests from a non-main thread (the HTTP endpoint) — Jint's Engine is not thread-safe, so a
+    // request can't call Evaluate directly from whatever thread accepted it. It enqueues here and
+    // awaits a TaskCompletionSource that Update() completes once it dequeues and evaluates on the
+    // main thread, the same shape WorkQueue's own background→main-thread jobs use.
+    private readonly ConcurrentQueue<(string Code, TaskCompletionSource<ScriptResult> Completion)> _pending = new();
 
     public ScriptEngineHost(IEnumerable<IScriptModule> modules)
     {
@@ -57,35 +70,67 @@ public sealed class ScriptEngineHost
     }
 
     /// <summary>
-    /// Drains completed async script work once. A [ScriptFunction] returning <c>Task</c>/<c>Task&lt;T&gt;</c>
-    /// is automatically converted to a JS Promise by Jint itself (confirmed against the real package,
-    /// including that a faulted Task correctly rejects it, catchable via JS <c>try</c>/<c>catch</c>) —
-    /// this just needs calling once per frame from the main thread so a completed background Task's
-    /// continuation actually resumes the awaiting script, without ever blocking the caller on it. Call
-    /// from wherever already pumps other per-frame work (see <c>Editor.Update</c>), the same shape
+    /// Drains completed async script work and any queued <see cref="EvaluateAsync"/> requests once.
+    /// A [ScriptFunction] returning <c>Task</c>/<c>Task&lt;T&gt;</c> is automatically converted to a JS
+    /// Promise by Jint itself (confirmed against the real package, including that a faulted Task
+    /// correctly rejects it, catchable via JS <c>try</c>/<c>catch</c>) — this just needs calling once
+    /// per frame from the main thread so a completed background Task's continuation actually resumes
+    /// the awaiting script, without ever blocking the caller on it. Call from wherever already pumps
+    /// other per-frame work (see <c>Editor.Update</c>), the same shape
     /// <see cref="WorkQueue.PumpMainThread"/> already uses for its own background→main-thread work.
     /// </summary>
-    public void Update() => _engine.Advanced.ProcessTasks();
+    public void Update()
+    {
+        _engine.Advanced.ProcessTasks();
+
+        while (_pending.TryDequeue(out (string Code, TaskCompletionSource<ScriptResult> Completion) item))
+        {
+            item.Completion.TrySetResult(Run(item.Code));
+        }
+    }
 
     /// <summary>
     /// Evaluates one snippet and returns a display string of the result, or an error message —
-    /// never throws. This is the console's eval path; later callers (the HTTP endpoint) will want the
-    /// raw <see cref="JsValue"/> instead, but nothing needs that yet.
+    /// never throws. This is the console's eval path: it runs synchronously on whatever thread calls
+    /// it, which is only safe because the console always calls it from the main thread (ImGui runs
+    /// there). A caller on any other thread must use <see cref="EvaluateAsync"/> instead.
     /// </summary>
     public string Evaluate(string code)
+    {
+        ScriptResult result = Run(code);
+        return result.Success ? result.Output : $"Error: {result.Output}";
+    }
+
+    /// <summary>
+    /// The thread-safe entry point: queues the snippet and returns a <see cref="Task"/> that
+    /// completes once <see cref="Update"/> next dequeues and evaluates it on the main thread. Safe to
+    /// call — and await — from any thread, which is exactly what the HTTP endpoint needs, since Jint's
+    /// <see cref="Engine"/> itself is not thread-safe.
+    /// </summary>
+    public Task<ScriptResult> EvaluateAsync(string code)
+    {
+        // RunContinuationsAsynchronously matters: without it, whichever thread calls TrySetResult
+        // (the main thread, inside Update()) would run the awaiter's continuation inline — meaning an
+        // HTTP handler's post-await code (writing the response) would run on the Godot main thread.
+        var completion = new TaskCompletionSource<ScriptResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pending.Enqueue((code, completion));
+        return completion.Task;
+    }
+
+    private ScriptResult Run(string code)
     {
         try
         {
             JsValue result = _engine.Evaluate(code);
-            return result.IsUndefined() ? "undefined" : result.ToString();
+            return new ScriptResult(true, result.IsUndefined() ? "undefined" : result.ToString());
         }
         catch (JavaScriptException e)
         {
-            return $"Error: {e.Message}";
+            return new ScriptResult(false, e.Message);
         }
         catch (Exception e)
         {
-            return $"Error: {e.GetType().Name}: {e.Message}";
+            return new ScriptResult(false, $"{e.GetType().Name}: {e.Message}");
         }
     }
 }
