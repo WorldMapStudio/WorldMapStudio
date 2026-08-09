@@ -73,7 +73,9 @@ public sealed class Migration : IScene
 
             if (ImGui.Button("Continue", new Vector2(150, 30)))
             {
-                scene = new Editor(_context);
+                // Back to a loading screen rather than straight into the editor: the maps and the
+                // landscape still have to be read, and that is a background phase with a progress bar.
+                scene = LoadingScreen.LoadContent(_root, _context);
             }
 
             if (hasPending)

@@ -14,8 +14,8 @@ public sealed class Editor : IScene
     private readonly EditorContext _context;
 
     /// <summary>
-    /// Takes a context that has already been constructed and started (by <see cref="LoadingScreen"/>),
-    /// so opening the editor is instant rather than blocking on the database.
+    /// Takes a context that <see cref="LoadingScreen"/> has already started and loaded, so opening the
+    /// editor is instant rather than blocking on the database.
     /// </summary>
     public Editor(EditorContext context)
     {
@@ -24,15 +24,9 @@ public sealed class Editor : IScene
 
     public void Start()
     {
-        // Read the maps here rather than in EditorContext.Startup: the migration gate runs between the
-        // two, so this is the first point where the maps table is guaranteed to exist.
-        _context.Maps.Load();
-
-        // Same reason, and it needs the current map, so it follows the maps.
-        _context.Landscape.Load();
-
-        // No DB/map dependency, but built here so every module (built-in and plugin) has finished
-        // constructing before the binder reflects over them.
+        // The only startup work left on the main thread: no database behind it, and it has to happen
+        // once every module (built-in and plugin) has finished constructing, before the binder
+        // reflects over them.
         _context.Scripting.Startup();
     }
 

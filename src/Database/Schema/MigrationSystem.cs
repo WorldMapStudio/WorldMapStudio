@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -65,7 +65,7 @@ public sealed class MigrationSystem
             var migration = new StorageMigration(storage);
             try
             {
-                Schema live = Run(storage.ReadLiveSchemaAsync);
+                Schema live = BlockingWork.Run(storage.ReadLiveSchemaAsync);
                 migration.Set(SchemaDiff.Compute(expected, live));
             }
             catch (Exception e)
@@ -83,7 +83,7 @@ public sealed class MigrationSystem
     {
         try
         {
-            Run(() => migration.Storage.ApplySqlAsync(migration.Sql));
+            BlockingWork.Run(() => migration.Storage.ApplySqlAsync(migration.Sql));
         }
         catch (Exception e)
         {
@@ -96,7 +96,7 @@ public sealed class MigrationSystem
         {
             if (migration.Storage.ExpectedSchema() is { } expected)
             {
-                Schema live = Run(migration.Storage.ReadLiveSchemaAsync);
+                Schema live = BlockingWork.Run(migration.Storage.ReadLiveSchemaAsync);
                 migration.Set(SchemaDiff.Compute(expected, live));
             }
         }
@@ -105,10 +105,4 @@ public sealed class MigrationSystem
             migration.Error = e.Message;
         }
     }
-
-    // Blocking DB work must run off the Godot main thread's synchronization context (see the deadlock
-    // that froze commit); Task.Run keeps the whole async chain on the thread pool.
-    private static T Run<T>(Func<Task<T>> work) => Task.Run(work).GetAwaiter().GetResult();
-
-    private static void Run(Func<Task> work) => Task.Run(work).GetAwaiter().GetResult();
 }

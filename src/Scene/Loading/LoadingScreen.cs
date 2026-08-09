@@ -7,46 +7,80 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Bridges project selection and the editor: it builds the <see cref="EditorContext"/> and runs its
-/// blocking startup (launching dolt, ensuring schemas, checking migrations) on a background task while
-/// showing a centered progress bar, so the app never freezes. On success it transitions to
-/// <see cref="Migration"/> if the schema check found drift, otherwise straight into the
-/// <see cref="Editor"/> with the ready context; on failure it shows the error and returns to
+/// Runs one blocking phase of opening a project on a background task while showing a centered progress
+/// bar, then hands off to whatever comes next. On failure it shows the error and offers a way back to
 /// <see cref="ProjectSelect"/>.
+///
+/// Used twice, because opening a project has two blocking phases with the migration gate between them:
+/// <list type="number">
+/// <item><see cref="EditorContext.Startup"/> — launch dolt, ensure databases and schemas, check for
+/// drift. Followed by <see cref="Migration"/> if there is any.</item>
+/// <item><see cref="EditorContext.LoadContent"/> — read the maps and the landscape, which the migration
+/// gate has to run before, since their tables may not exist until it has.</item>
+/// </list>
+/// The second phase used to run in <c>Editor.Start()</c> instead, which is the Godot main thread — so
+/// the two largest reads in the whole open sequence were the two that froze the window.
 /// </summary>
 public sealed class LoadingScreen : IScene
 {
     private readonly Node3D _root;
-    private readonly Project _project;
+    private readonly string _caption;
+    private readonly Action<Action<string>> _work;
+    private readonly Func<IScene> _next;
 
-    private EditorContext _context = null!;
     private volatile string _step = "Preparing";
     private volatile bool _ready;
     private volatile string? _error;
 
-    public LoadingScreen(Node3D root, Project project)
+    /// <param name="caption">Headline shown above the bar, e.g. "Opening Azeroth".</param>
+    /// <param name="work">The blocking phase. Runs on a background thread; reports progress by calling
+    /// its argument with a step name.</param>
+    /// <param name="next">The scene to move to once the phase succeeds.</param>
+    public LoadingScreen(Node3D root, string caption, Action<Action<string>> work, Func<IScene> next)
     {
         _root = root;
-        _project = project;
+        _caption = caption;
+        _work = work;
+        _next = next;
     }
+
+    /// <summary>
+    /// Opens a project: constructs the context (cheap — subsystems only wire themselves up), then runs
+    /// the two blocking phases with the migration gate between them.
+    /// </summary>
+    public static LoadingScreen OpenProject(Node3D root, Project project)
+    {
+        var context = new EditorContext(root, project);
+
+        return new LoadingScreen(
+            root,
+            $"Opening {project.Name}",
+            step => context.Startup(step),
+            () => context.Migrations.HasPending
+                ? new Migration(root, context)
+                : LoadContent(root, context));
+    }
+
+    /// <summary>The second phase, entered directly by <see cref="Migration"/> once the user continues.</summary>
+    public static LoadingScreen LoadContent(Node3D root, EditorContext context) =>
+        new(root,
+            $"Opening {context.Project.Name}",
+            step => context.LoadContent(step),
+            () => new Editor(context));
 
     public void Start()
     {
-        // Constructing the context is cheap (subsystems only wire themselves up); the expensive,
-        // blocking part is Startup(), which we push onto a background thread so the UI keeps drawing.
-        _context = new EditorContext(_root, _project);
-
         _ = Task.Run(() =>
         {
             try
             {
-                _context.Startup(step => _step = step);
+                _work(step => _step = step);
                 _ready = true;
             }
             catch (Exception e)
             {
                 _error = e.Message;
-                GD.PushError($"[Loading] Failed to open '{_project.Name}': {e}");
+                GD.PushError($"[Loading] {_caption} failed: {e}");
             }
         });
     }
@@ -55,7 +89,7 @@ public sealed class LoadingScreen : IScene
     {
         if (_ready)
         {
-            return _context.Migrations.HasPending ? new Migration(_root, _context) : new Editor(_context);
+            return _next();
         }
 
         IScene? scene = this;
@@ -64,7 +98,7 @@ public sealed class LoadingScreen : IScene
         {
             ImGuiEx.Center(320, 40, 15, center =>
             {
-                center.Label($"Opening {_project.Name}");
+                center.Label(_caption);
 
                 if (_error == null)
                 {
