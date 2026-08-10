@@ -55,6 +55,12 @@ public sealed class Editor : IScene
         menuBar.WindowManager.Draw();
         menuBar.DrawOverlay();
 
-        return menuBar.FileMenuManager.ExitRequested ? null : this;
+        if (menuBar.FileMenuManager.ExitRequested)
+        {
+            menuBar.WindowManager.LayoutProfiles.SaveCurrent(out _);
+            return null;
+        }
+
+        return this;
     }
 }
