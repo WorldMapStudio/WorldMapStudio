@@ -41,8 +41,6 @@ public sealed partial class GodotImGui : Node
     private bool _initialized;
 
     public float FontScale { get; set; } = 1.0f;
-    public string IniFilename { get; set; } = "user://imgui.ini";
-
     public void AddLayout(Action layout)
     {
         _layouts.Add(layout);
@@ -77,8 +75,7 @@ public sealed partial class GodotImGui : Node
         {
             io.NativePtr->BackendPlatformName = (byte*)BackendName;
             io.NativePtr->BackendRendererName = (byte*)RendererName;
-            io.NativePtr->IniFilename = (byte*)Marshal.StringToCoTaskMemUTF8(Godot.ProjectSettings.GlobalizePath(IniFilename));
-
+            io.NativePtr->IniFilename = null;
         }
 
         ImGui.StyleColorsDark();

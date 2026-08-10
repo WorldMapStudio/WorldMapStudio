@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using ImGuiNET;
 
 namespace WorldMapStudio;
 
@@ -17,12 +18,25 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     /// <summary>The editor's shared systems, forwarded to the windows.</summary>
     public EditorContext Context { get; }
 
+    public ImGuiLayoutProfiles LayoutProfiles { get; }
+
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
+
+    private bool _layoutProfilesOpen;
+    private string _profileName = string.Empty;
+    private string? _profileMessage;
+    private bool _profileMessageIsError;
 
     public WindowManager(MenuBarManager manager)
     {
         Context = manager.Context;
         InitializeSubsystems();
+        LayoutProfiles = new ImGuiLayoutProfiles(this);
+        if (!LayoutProfiles.LoadCurrent(out string? error))
+        {
+            _profileMessage = $"Could not load current layout: {error}";
+            _profileMessageIsError = true;
+        }
     }
 
     public void Draw()
@@ -31,6 +45,9 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         {
             window.Draw();
         }
+
+        DrawLayoutProfilesWindow();
+        LayoutProfiles.UpdateAutosave();
     }
 
     public void DrawMenuItems()
@@ -39,7 +56,112 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         {
             window.DrawMenuItem();
         }
+
+        ImGui.Separator();
+        if (ImGui.MenuItem("Layout Profiles..."))
+        {
+            _layoutProfilesOpen = true;
+        }
     }
 
     void IMainMenu.Draw() => ImGuiEx.Menu("Window", DrawMenuItems);
+
+    private void DrawLayoutProfilesWindow()
+    {
+        if (!_layoutProfilesOpen)
+        {
+            return;
+        }
+
+        ImGui.SetNextWindowSize(new System.Numerics.Vector2(420.0f, 320.0f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Layout Profiles", ref _layoutProfilesOpen))
+        {
+            ImGui.End();
+            return;
+        }
+
+        ImGui.InputTextWithHint("Name", "Profile name", ref _profileName, 128);
+        ImGui.SameLine();
+        if (ImGui.Button("Save"))
+        {
+            if (LayoutProfiles.SaveProfile(_profileName, out string? error))
+            {
+                SetProfileMessage($"Saved '{_profileName.Trim()}'.", false);
+            }
+            else
+            {
+                SetProfileMessage(error ?? "Could not save profile.", true);
+            }
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Save Current"))
+        {
+            if (LayoutProfiles.SaveCurrent(out string? error))
+            {
+                SetProfileMessage("Saved current layout.", false);
+            }
+            else
+            {
+                SetProfileMessage(error ?? "Could not save current layout.", true);
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextDisabled(LayoutProfiles.Folder);
+
+        IReadOnlyList<string> profiles = LayoutProfiles.Profiles();
+        if (profiles.Count == 0)
+        {
+            ImGui.TextDisabled("No saved profiles.");
+        }
+        else if (ImGui.BeginTable("LayoutProfilesTable", 2, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH))
+        {
+            ImGui.TableSetupColumn("Profile");
+            ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 72.0f);
+            ImGui.TableHeadersRow();
+
+            foreach (string profile in profiles)
+            {
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                ImGui.Text(profile);
+                ImGui.TableNextColumn();
+                ImGui.PushID(profile);
+                if (ImGui.SmallButton("Load"))
+                {
+                    if (LayoutProfiles.LoadProfile(profile, out string? error))
+                    {
+                        _profileName = profile;
+                        SetProfileMessage($"Loaded '{profile}'.", false);
+                    }
+                    else
+                    {
+                        SetProfileMessage(error ?? "Could not load profile.", true);
+                    }
+                }
+                ImGui.PopID();
+            }
+
+            ImGui.EndTable();
+        }
+
+        if (!string.IsNullOrEmpty(_profileMessage))
+        {
+            ImGui.Separator();
+            ImGui.TextColored(
+                _profileMessageIsError
+                    ? new System.Numerics.Vector4(1.0f, 0.35f, 0.30f, 1.0f)
+                    : new System.Numerics.Vector4(0.45f, 0.85f, 0.55f, 1.0f),
+                _profileMessage);
+        }
+
+        ImGui.End();
+    }
+
+    private void SetProfileMessage(string message, bool isError)
+    {
+        _profileMessage = message;
+        _profileMessageIsError = isError;
+    }
 }
