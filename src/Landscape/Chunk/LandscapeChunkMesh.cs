@@ -100,7 +100,7 @@ public static class LandscapeChunkMesh
     public static bool ShowChunkEdges { get; set; } = true;
 
     /// <summary>Builds the splatting material for a chunk's slots.</summary>
-    public static ShaderMaterial BuildMaterial(LandscapeChunkOutput output)
+    public static ShaderMaterial BuildMaterial(LandscapeChunkOutput output, AssetSystem assets)
     {
         var material = new ShaderMaterial { Shader = SplatShader() };
 
@@ -110,7 +110,7 @@ public static class LandscapeChunkMesh
         for (int i = 0; i < output.Layers.Count; i++)
         {
             LandscapeChunkLayer layer = output.Layers[i];
-            albedos.Add(LoadAlbedo(layer.Material, i));
+            albedos.Add(LoadAlbedo(layer.Material, i, assets));
 
             // Slot 0 is the opaque base and has no alpha; the array holds one image per alpha slot.
             if (layer.Alpha != null)
@@ -160,10 +160,10 @@ public static class LandscapeChunkMesh
         return new Vector3(left - right, 2.0f * step, back - front).Normalized();
     }
 
-    private static Image LoadAlbedo(LandscapeMaterial? material, int slot)
+    private static Image LoadAlbedo(LandscapeMaterial? material, int slot, AssetSystem assets)
     {
-        if (material is { TexturePath.Length: > 0 } && ResourceLoader.Exists(material.TexturePath) &&
-            ResourceLoader.Load<Texture2D>(material.TexturePath) is { } texture)
+        if (material is { TexturePath.Length: > 0 } &&
+            assets.LoadTextureAsset(material.TexturePath) is { } texture)
         {
             Image image = texture.GetImage();
             image.Resize(PlaceholderSize, PlaceholderSize);

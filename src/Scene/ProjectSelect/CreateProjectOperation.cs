@@ -17,6 +17,8 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
     private string? _error;
     private readonly AxisConvention _axes = AxisConvention.GodotDefault;
     private readonly StorageConnection _database = EditorStorage.DefaultConnection();
+    private readonly List<AssetSourceSettings> _assetSources = [];
+    private readonly AssetSourceEditor _assetSourceEditor = new();
 
     public Project? CreatedProject { get; private set; }
 
@@ -36,6 +38,11 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
         ImGui.TextDisabled("Database");
         ImGui.Separator();
         StorageConnectionEditor.Draw(_database);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Assets");
+        ImGui.Separator();
+        _assetSourceEditor.Draw(_assetSources);
 
         if (_error != null)
         {
@@ -90,6 +97,11 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
             AxisConvention = _axes,
         };
         CreatedProject.StorageConnections[EditorStorage.StorageName] = _database;
+        foreach (AssetSourceSettings source in _assetSources)
+        {
+            CreatedProject.AssetSources.Add(source);
+        }
+
         error = null;
         return true;
     }
