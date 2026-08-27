@@ -32,8 +32,9 @@ public sealed class LandscapeProblemReporter
     public void Report(LandscapeBuildResult result, LandscapeGrid grid, IReadOnlyList<ILandscapeDeformer> deformers)
     {
         Dictionary<string, EntityId> sources = deformers
-            .Where(deformer => deformer is SceneEntity)
-            .ToDictionary(deformer => deformer.DeformerKey, deformer => ((SceneEntity)deformer).Id);
+            .Select(deformer => (Deformer: deformer, Owner: (deformer as SceneComponent)?.Owner))
+            .Where(pair => pair.Owner != null)
+            .ToDictionary(pair => pair.Deformer.DeformerKey, pair => pair.Owner!.Id);
 
         foreach (ChunkCoord coord in result.Chunks.Keys)
         {

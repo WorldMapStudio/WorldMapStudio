@@ -25,9 +25,9 @@ public sealed class SceneMenu : IMainMenu
         {
             if (ImGui.BeginMenu("Add Empty"))
             {
-                AddEmptyItem("Plain", EmptyShape.Plain);
-                AddEmptyItem("Cube", EmptyShape.Cube);
-                AddEmptyItem("Sphere", EmptyShape.Sphere);
+                AddEmptyItem("Plain", MarkerShape.Plain);
+                AddEmptyItem("Cube", MarkerShape.Cube);
+                AddEmptyItem("Sphere", MarkerShape.Sphere);
                 ImGui.EndMenu();
             }
 
@@ -68,45 +68,54 @@ public sealed class SceneMenu : IMainMenu
     private void AddStamp()
     {
         LandscapeCatalog catalog = _context.Landscape.Catalog;
-        var stamp = new StampEntity
+        var entity = new SceneEntity
         {
             Name = "Stamp",
             Map = _context.Maps.CurrentMap,
+        };
+        entity.AddComponent(new StampComponent
+        {
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
             LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
             MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
-        };
+        });
 
-        _context.Scene.Add(stamp);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, stamp));
+        _context.Scene.Add(entity);
+        _context.Selection.Set(entity);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
     }
 
     private void AddDrawingTarget()
     {
         LandscapeCatalog catalog = _context.Landscape.Catalog;
-        var target = new DrawingTargetEntity
+        var entity = new SceneEntity
         {
             Name = "Drawing Target",
             Map = _context.Maps.CurrentMap,
+        };
+        entity.AddComponent(new DrawingTargetComponent
+        {
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
             LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
             MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
-        };
+        });
 
-        _context.Scene.Add(target);
-        _context.Selection.Set(target);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, target));
+        _context.Scene.Add(entity);
+        _context.Selection.Set(entity);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
     }
 
-    private void AddEmptyItem(string label, EmptyShape shape)
+    private void AddEmptyItem(string label, MarkerShape shape)
     {
         if (!ImGui.MenuItem(label))
         {
             return;
         }
 
-        var empty = new EmptyEntity { Name = $"Empty ({shape})", Shape = shape, Map = _context.Maps.CurrentMap };
-        _context.Scene.Add(empty);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, empty));
+        var entity = new SceneEntity { Name = $"Empty ({shape})", Map = _context.Maps.CurrentMap };
+        entity.AddComponent(new MarkerComponent { Shape = shape });
+        _context.Scene.Add(entity);
+        _context.Selection.Set(entity);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
     }
 }

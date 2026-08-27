@@ -9,7 +9,7 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
-/// <summary>Projects a circular brush onto the selected <see cref="DrawingTargetEntity"/>.</summary>
+/// <summary>Projects a circular brush onto the selected entity's <see cref="DrawingTargetComponent"/>.</summary>
 public sealed class PaintTool : ITool
 {
     private readonly SelectionSystem _selection;
@@ -20,7 +20,7 @@ public sealed class PaintTool : ITool
     private float _opacity = 0.35f;
     private bool _erase;
     private bool _painting;
-    private DrawingTargetEntity? _strokeTarget;
+    private DrawingTargetComponent? _strokeTarget;
     private byte[]? _strokeBefore;
 
     public PaintTool(ToolContext context)
@@ -46,12 +46,12 @@ public sealed class PaintTool : ITool
 
         ImGui.Checkbox("Erase", ref _erase);
         ImGui.SameLine();
-        ImGui.TextDisabled(ActiveTarget()?.DisplayName ?? "No drawing target selected");
+        ImGui.TextDisabled(ActiveTarget()?.Owner?.DisplayName ?? "No drawing target selected");
     }
 
     public void UpdateViewport(in ViewportContext context)
     {
-        DrawingTargetEntity? target = ActiveTarget();
+        DrawingTargetComponent? target = ActiveTarget();
         if (target == null || context.CameraFlying)
         {
             FinishStroke(record: false);
@@ -83,7 +83,7 @@ public sealed class PaintTool : ITool
 
             if (_strokeTarget == target && hit && target.Paint(local, _radius, _opacity, _erase))
             {
-                _scene.Touch(target);
+                _scene.Touch(target.Owner!);
             }
         }
     }
@@ -93,8 +93,11 @@ public sealed class PaintTool : ITool
         FinishStroke(record: true);
     }
 
-    private DrawingTargetEntity? ActiveTarget() =>
-        _selection.Selected.OfType<DrawingTargetEntity>().FirstOrDefault(entity => _scene.Contains(entity));
+    private DrawingTargetComponent? ActiveTarget() =>
+        _selection.Selected.OfType<SceneEntity>()
+            .Where(entity => _scene.Contains(entity))
+            .Select(entity => entity.Component<DrawingTargetComponent>())
+            .FirstOrDefault(component => component != null);
 
     private void FinishStroke(bool record)
     {
@@ -104,7 +107,7 @@ public sealed class PaintTool : ITool
         }
 
         _painting = false;
-        DrawingTargetEntity? target = _strokeTarget;
+        DrawingTargetComponent? target = _strokeTarget;
         byte[]? before = _strokeBefore;
         _strokeTarget = null;
         _strokeBefore = null;
@@ -121,7 +124,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private bool TryHit(DrawingTargetEntity target, in ViewportContext context, out GVector3 local)
+    private bool TryHit(DrawingTargetComponent target, in ViewportContext context, out GVector3 local)
     {
         NVector2 mouse = ImGui.GetMousePos();
         GVector2 viewport = new(mouse.X - context.ImageMin.X, mouse.Y - context.ImageMin.Y);
@@ -142,7 +145,7 @@ public sealed class PaintTool : ITool
         return TryHitFallbackPlane(target, rayOrigin, rayDir, out local);
     }
 
-    private bool TryHitTerrain(DrawingTargetEntity target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    private bool TryHitTerrain(DrawingTargetComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
     {
         local = default;
         float bestT = float.PositiveInfinity;
@@ -155,7 +158,7 @@ public sealed class PaintTool : ITool
                 continue;
             }
 
-            GVector3 candidate = target.Transform.AffineInverse() * world;
+            GVector3 candidate = target.Owner!.Transform.AffineInverse() * world;
             if (!TargetContains(target, candidate))
             {
                 continue;
@@ -169,7 +172,7 @@ public sealed class PaintTool : ITool
         return hit;
     }
 
-    private static bool TryHitFallbackPlane(DrawingTargetEntity target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    private static bool TryHitFallbackPlane(DrawingTargetComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
     {
         if (Mathf.Abs(rayDir.Y) < 1e-6f)
         {
@@ -184,11 +187,11 @@ public sealed class PaintTool : ITool
             return false;
         }
 
-        local = target.Transform.AffineInverse() * (rayOrigin + (rayDir * t));
+        local = target.Owner!.Transform.AffineInverse() * (rayOrigin + (rayDir * t));
         return TargetContains(target, local);
     }
 
-    private static bool TargetContains(DrawingTargetEntity target, GVector3 local) =>
+    private static bool TargetContains(DrawingTargetComponent target, GVector3 local) =>
         Mathf.Abs(local.X) <= target.WorldSizeX * 0.5f &&
         Mathf.Abs(local.Z) <= target.WorldSizeZ * 0.5f;
 
@@ -360,9 +363,9 @@ public sealed class PaintTool : ITool
         return Mathf.Lerp(a, b, tz);
     }
 
-    private GVector3 TerrainPoint(DrawingTargetEntity target, GVector3 local)
+    private GVector3 TerrainPoint(DrawingTargetComponent target, GVector3 local)
     {
-        GVector3 world = target.Transform * new GVector3(local.X, 0.0f, local.Z);
+        GVector3 world = target.Owner!.Transform * new GVector3(local.X, 0.0f, local.Z);
         if (TrySampleTerrainHeight(world.X, world.Z, out float height))
         {
             world.Y = height;
@@ -371,7 +374,7 @@ public sealed class PaintTool : ITool
         return world;
     }
 
-    private void DrawTargetOutline(DrawingTargetEntity target, Camera3D camera, NVector2 imageMin)
+    private void DrawTargetOutline(DrawingTargetComponent target, Camera3D camera, NVector2 imageMin)
     {
         GVector3 half = new(target.WorldSizeX * 0.5f, 0.0f, target.WorldSizeZ * 0.5f);
         GVector3[] local =
@@ -399,7 +402,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private void DrawBrush(DrawingTargetEntity target, GVector3 local, Camera3D camera, NVector2 imageMin)
+    private void DrawBrush(DrawingTargetComponent target, GVector3 local, Camera3D camera, NVector2 imageMin)
     {
         const int Segments = 48;
 

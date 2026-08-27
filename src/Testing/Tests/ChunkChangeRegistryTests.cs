@@ -8,7 +8,7 @@ public static class ChunkChangeRegistryTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Undone_edit_does_not_report_a_committed_chunk_change()
     {
-        var entity = new EmptyEntity();
+        var entity = new SceneEntity();
         var history = new UndoHistory();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
@@ -24,7 +24,7 @@ public static class ChunkChangeRegistryTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Moving_back_to_the_start_reports_no_chunk_change()
     {
-        var entity = new EmptyEntity();
+        var entity = new SceneEntity();
         var history = new UndoHistory();
         Transform3D a = Transform3D.Identity;
         Transform3D b = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
@@ -42,7 +42,7 @@ public static class ChunkChangeRegistryTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Moving_once_reports_the_original_and_final_spans()
     {
-        var entity = new EmptyEntity();
+        var entity = new SceneEntity();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
         entity.Transform = after;
@@ -58,7 +58,7 @@ public static class ChunkChangeRegistryTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Uncommitted_entities_are_ignored_by_the_commit_reducer()
     {
-        var entity = new EmptyEntity();
+        var entity = new SceneEntity();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
         entity.Transform = after;

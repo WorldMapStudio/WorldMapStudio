@@ -10,7 +10,9 @@ public static class DrawingTargetTests
     [EditorTest(Category = "DrawingTarget", Thread = TestThread.Background)]
     public static void Painting_changes_the_bitmap_and_content_version()
     {
-        var target = new DrawingTargetEntity();
+        var entity = new SceneEntity();
+        var target = new DrawingTargetComponent();
+        entity.AddComponent(target);
         target.Resize(32, 32);
         int beforeVersion = target.ContentVersion;
 
@@ -24,12 +26,11 @@ public static class DrawingTargetTests
     [EditorTest(Category = "DrawingTarget", Thread = TestThread.Background)]
     public static void Drawing_targets_ignore_authored_height_and_tilt()
     {
-        var target = new DrawingTargetEntity
-        {
-            Transform = new Transform3D(
-                Basis.FromEuler(new Vector3(0.35f, 0.7f, -0.2f)),
-                new Vector3(12.0f, 99.0f, 24.0f)),
-        };
+        var target = new SceneEntity();
+        target.AddComponent(new DrawingTargetComponent());
+        target.Transform = new Transform3D(
+            Basis.FromEuler(new Vector3(0.35f, 0.7f, -0.2f)),
+            new Vector3(12.0f, 99.0f, 24.0f));
 
         Assert.AreApproximatelyEqual(0.0, target.Transform.Origin.Y, 1e-5);
         Assert.AreApproximatelyEqual(0.0, target.Transform.Basis.X.Y, 1e-5);
@@ -70,7 +71,8 @@ public static class DrawingTargetTests
         };
 
         var catalog = new LandscapeCatalog([channel], [baseLayer, paintLayer], [material], functions);
-        var target = new DrawingTargetEntity
+        var entity = new SceneEntity();
+        var target = new DrawingTargetComponent
         {
             Channel = MaskChannel,
             LayerId = paintLayer.RecordId,
@@ -78,6 +80,7 @@ public static class DrawingTargetTests
             WorldSizeX = 64.0f,
             WorldSizeZ = 64.0f,
         };
+        entity.AddComponent(target);
         target.Paint(Vector3.Zero, 12.0f, 1.0f, erase: false);
 
         LandscapeChunkOutput output = new LandscapeBuilder(settings, catalog, functions)
