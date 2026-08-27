@@ -196,6 +196,8 @@ public sealed class StreamingSystem
             SetPeripheral(live);
         }
 
+        RelinkLoadedParents();
+
         // Unload streamed entities that fell out of range, unless the session still holds them.
         var stale = new List<(Type, long)>();
         foreach (KeyValuePair<(Type, long), SceneEntity> pair in _streamed)
@@ -215,6 +217,25 @@ public sealed class StreamingSystem
         foreach ((Type, long) id in stale)
         {
             _streamed.Remove(id);
+        }
+    }
+
+    private void RelinkLoadedParents()
+    {
+        var byRecordId = new Dictionary<int, SceneEntity>();
+        foreach (SceneEntity entity in _context.Scene.Entities)
+        {
+            if (entity.RecordId is int id)
+            {
+                byRecordId[id] = entity;
+            }
+        }
+
+        foreach (SceneEntity entity in _context.Scene.Entities)
+        {
+            entity.Parent = entity.ParentRecordId is int parentId && byRecordId.TryGetValue(parentId, out SceneEntity? parent)
+                ? parent
+                : entity.Parent?.RecordId == null ? entity.Parent : null;
         }
     }
 

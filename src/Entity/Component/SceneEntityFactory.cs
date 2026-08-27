@@ -11,6 +11,8 @@ public sealed class SceneEntityRecord
 {
     public int Id { get; set; }
 
+    public int? ParentId { get; set; }
+
     public int MapId { get; set; }
 
     public string Name { get; set; } = "Entity";
@@ -40,6 +42,8 @@ public sealed class SceneEntityRecord
     public double MaxY { get; set; }
 
     public double MaxZ { get; set; }
+
+    public SceneEntityRecord? Parent { get; set; }
 }
 
 public sealed class SceneMarkerComponentRecord
@@ -138,6 +142,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 && record.MinZ <= max.Z && record.MaxZ >= min.Z)
             .ToListAsync()
             .ConfigureAwait(false);
+        await ExpandRowsToFamiliesAsync(context, rows, map).ConfigureAwait(false);
 
         int[] ids = rows.Select(row => row.Id).ToArray();
         Dictionary<int, SceneMarkerComponentRecord> markers = await context.SceneMarkerComponents.AsNoTracking()
@@ -165,7 +170,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 .ToDictionaryAsync(group => group.Key, group => group.ToList())
                 .ConfigureAwait(false);
 
-        return rows.Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries)).ToList();
+        List<SceneEntity> entities = rows
+            .Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries))
+            .ToList();
+        LinkParents(entities);
+        return entities;
     }
 
     public Action Stage(DbContext context, IEntity entity)
@@ -233,6 +242,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         var entity = new SceneEntity
         {
             RecordId = record.Id,
+            ParentRecordId = record.ParentId,
             Map = new MapId(record.MapId),
             Name = record.Name,
         };
@@ -293,6 +303,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         Aabb bounds = entity.WorldBounds;
 
         record.Name = entity.Name;
+        record.ParentId = entity.Parent?.RecordId ?? entity.ParentRecordId;
         record.MapId = entity.Map.Value;
         record.PosX = transform.Origin.X;
         record.PosY = transform.Origin.Y;
@@ -307,6 +318,69 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         record.MaxX = bounds.End.X;
         record.MaxY = bounds.End.Y;
         record.MaxZ = bounds.End.Z;
+    }
+
+    private static async Task ExpandRowsToFamiliesAsync(EditorDbContext context, List<SceneEntityRecord> rows, MapId map)
+    {
+        var byId = rows.ToDictionary(row => row.Id);
+        bool changed;
+        do
+        {
+            changed = false;
+
+            int[] missingParents = rows
+                .Select(row => row.ParentId)
+                .Where(id => id is not null && !byId.ContainsKey(id.Value))
+                .Select(id => id!.Value)
+                .Distinct()
+                .ToArray();
+            if (missingParents.Length > 0)
+            {
+                List<SceneEntityRecord> parents = await context.SceneEntities.AsNoTracking()
+                    .Where(record => record.MapId == map.Value && missingParents.Contains(record.Id))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                foreach (SceneEntityRecord parent in parents)
+                {
+                    if (byId.TryAdd(parent.Id, parent))
+                    {
+                        rows.Add(parent);
+                        changed = true;
+                    }
+                }
+            }
+
+            int[] parentIds = byId.Keys.ToArray();
+            List<SceneEntityRecord> children = await context.SceneEntities.AsNoTracking()
+                .Where(record => record.MapId == map.Value
+                    && record.ParentId != null
+                    && parentIds.Contains(record.ParentId.Value)
+                    && !parentIds.Contains(record.Id))
+                .ToListAsync()
+                .ConfigureAwait(false);
+            foreach (SceneEntityRecord child in children)
+            {
+                if (byId.TryAdd(child.Id, child))
+                {
+                    rows.Add(child);
+                    changed = true;
+                }
+            }
+        }
+        while (changed);
+    }
+
+    private static void LinkParents(IReadOnlyList<SceneEntity> entities)
+    {
+        var byRecordId = entities
+            .Where(entity => entity.RecordId is not null)
+            .ToDictionary(entity => entity.RecordId!.Value);
+        foreach (SceneEntity entity in entities)
+        {
+            entity.Parent = entity.ParentRecordId is int parentId && byRecordId.TryGetValue(parentId, out SceneEntity? parent)
+                ? parent
+                : null;
+        }
     }
 
     private static void StageComponents(EditorDbContext db, SceneEntity entity, SceneEntityRecord record)
