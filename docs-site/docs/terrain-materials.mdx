@@ -1,0 +1,332 @@
+---
+sidebar_position: 2
+---
+
+# Terrain Materials
+
+WorldMapStudio's terrain system is more indirect than a typical map editor. In many editors, a brush
+directly changes the terrain chunk: it paints a texture into the chunk's alpha map, or writes numbers
+into the chunk's heightmap.
+
+WorldMapStudio does not treat chunk data as the authored source of truth. Chunk data is output. The
+authored data is made of scene entities and catalog entries. When terrain needs to be shown or
+exported, the editor rebuilds chunk output from those inputs.
+
+That extra machinery exists so terrain can stay procedural and non-destructive. Moving a stamp moves
+the hill it creates. Editing a road entity can repaint and reshape the ground underneath it. Changing a
+material can rebuild every chunk that used it without erasing the entities that authored the terrain.
+
+## Start With One Edit
+
+Imagine a stamp that creates a dirt mound.
+
+The stamp itself does not say, "write dirt alpha into slot 2 and add 4.0 to these height vertices."
+Instead, the stamp says a few more reusable things:
+
+1. It has a shape in the world: center, radius, falloff, strength.
+2. It writes that shape into a named grayscale mask.
+3. It asks for a logical terrain layer.
+4. It binds a material to that layer.
+
+The named grayscale mask exists only for the current rebuild. White means "the stamp is
+strong here"; black means "the stamp is absent here"; values in between are falloff.
+
+The material decides what that mask means. One material might read the mask as texture coverage and
+paint dirt. Another material might read the same kind of mask as height offset and raise the ground.
+A third material might do both.
+
+That is the core idea:
+
+> Scene entities describe where influence exists. Materials describe what that influence does.
+
+## The Basic Primitives
+
+The terrain system has five basic primitives. They make more sense in this order.
+
+### Deformers
+
+A **deformer** is any scene entity that can influence terrain.
+
+Current examples:
+
+- `StampEntity`: a circular world-space influence with radius and falloff.
+- `DrawingTargetEntity`: a paintable rectangle whose pixels are projected into the world.
+
+A deformer does two jobs during a chunk build:
+
+1. It claims which terrain layer and material it wants to use.
+2. If the claim survives, it writes its shape into one or more working masks.
+
+The code contract for this is `ILandscapeDeformer`.
+
+### Masks
+
+A mask is a grid of values from 0 to 1. It says how much some authored shape affects each point.
+
+For example:
+
+- a stamp writes a radial mask;
+- a painted drawing target writes a brush-painted mask;
+- a future road spline might write a road-center mask and a shoulder mask.
+
+Masks are not the final terrain. They are intermediate evidence that functions can read later.
+
+### Channels
+
+A **channel** is a named place for one kind of mask.
+
+This is what `LandscapeChannel` represents. The channel catalog entry says:
+
+- what the channel is called;
+- how many texels it has per chunk;
+- what bit depth it expects for storage/export purposes.
+
+The important thing is that the channel entry is persistent, but the pixels are not. The pixels are
+temporary scratch data created during a rebuild.
+
+For example, a project might have channels named:
+
+- `road_mask`
+- `hill_mask`
+- `paint_mask`
+
+A stamp or drawing target chooses which channel it writes. A material function chooses which channel
+it reads. The channel name is the handshake between them.
+
+During a build, `LandscapeChannelPool` allocates float buffers for the channels needed by the current
+block of chunks plus its halo. Deformers write into these buffers during rasterization, and functions
+sample them during evaluation.
+
+Important details:
+
+- channel names are how materials and entities bind to a channel;
+- channel pixels are rebuilt and thrown away;
+- buffers are sampled in world space, so adjacent chunks agree on shared edges;
+- declared bit depth is a storage/export concern, while build buffers are floats.
+
+### Layers
+
+A **layer** is a named terrain responsibility plus ordering information.
+
+This is the part that differs from many editors. A layer is not inherently "a texture layer" or "a
+height layer." A layer is more like a slot in the project's terrain logic:
+
+- ground base;
+- road bed;
+- road surface;
+- cliff detail;
+- painted highlight.
+
+The layer answers questions like:
+
+- Is this the opaque base layer?
+- What draw/evaluation order does this layer have?
+- How important is this layer when a chunk runs out of texture slots?
+
+What the layer actually does depends on the material bound to it by a deformer in a particular chunk.
+
+Layer fields:
+
+- `IsBase`: this layer is the opaque bottom of a chunk and writes no alpha.
+- `Priority`: higher priority survives when the texture budget overflows.
+- `DrawOrder`: texture compositing order and height evaluation order.
+
+Draw orders must be unique. The resolver relies on that uniqueness when it decides whether adjacent
+layers with the same material can merge into one texture slot.
+
+### Materials
+
+A **material** is the behavior assigned to a layer claim.
+
+In a simple editor, "material" often means "the texture." In WorldMapStudio, a material can also carry
+the rules for where that texture appears and how the terrain height changes.
+
+`LandscapeMaterial` can carry:
+
+- `TexturePath`: the image used by a texture slot;
+- `AlphaFunction` and `AlphaParameters`: how to compute texture coverage;
+- `HeightFunction` and `HeightParameters`: how to change the heightmap.
+
+The helpers summarize the two halves:
+
+- `PaintsTexture` is true when the material has a texture path or alpha function.
+- `DeformsHeight` is true when it has a height function.
+
+A material can be texture-only, height-only, or both. The builder reports problems when a material is
+missing the half needed by the way it resolved in a chunk.
+
+For example:
+
+- a grass material might only provide a texture for the base;
+- a dirt material might provide a texture and an alpha function;
+- a hill material might provide only a height function;
+- a road material might provide a gravel texture, an alpha function, and a flatten height function.
+
+### Functions
+
+A **function** is code that turns channel data into output.
+
+There are two kinds:
+
+- an alpha function fills a texture slot's coverage map;
+- a height function rewrites the chunk heightmap.
+
+Functions are deliberately reusable. The built-in `Channel Mask` alpha function does not know or care
+whether it is being used for dirt, moss, road, or snow. The material tells it which channel to read
+and what threshold/softness values to use.
+
+## How The Pieces Fit
+
+Here is the same stamp example with the real primitive names:
+
+1. `StampEntity` is the deformer.
+2. It writes its radial mask into a `LandscapeChannel`, such as `hill_mask`.
+3. It claims a `LandscapeLayer`, such as `small_hill`.
+4. It binds a `LandscapeMaterial`, such as `soft_dirt_mound`.
+5. The material's alpha function reads `hill_mask` and produces dirt coverage.
+6. The material's height function reads `hill_mask` and raises the heightmap.
+
+The reason this is split up is reuse. The same stamp shape can drive different materials. The same
+material can be used by stamps, painted drawing targets, or future road entities. The same channel can
+feed both alpha and height behavior.
+
+## Authoring Flow
+
+Use the **Landscape** window to configure the terrain catalog:
+
+1. Create or edit channels on the **Channels** tab.
+2. Create layers on the **Layers** tab and set base, priority, and draw order.
+3. Create materials on the **Materials** tab.
+4. Bind alpha and height functions on each material.
+5. Bind function parameters, especially channel parameters, to channel names.
+6. Check the **Problems** tab for catalog errors.
+
+Then use a deformer entity, such as a stamp or drawing target, to bind authored geometry to the
+catalog:
+
+- pick the channel it writes;
+- pick the layer it claims;
+- pick the material it binds to that claim;
+- set the entity priority.
+
+The **Landscape Debug** window shows what the builder actually produced for the chunk near the
+camera: height preview, alpha previews per slot, slot count, and any reported problems.
+
+## Code Model
+
+Once the basic concepts are clear, the code model is compact. Anything implementing
+`ILandscapeDeformer` participates in the build with two separate calls:
+
+- `Claim(...)`: cheap and side-effect free. It returns the layer/material claims this entity wants in
+  the chunk.
+- `Rasterize(...)`: writes this entity's contribution into channel buffers after the resolver has
+  decided what survived.
+
+Both examples claim one layer with one material. A future road entity could emit a claim group with
+multiple claims, such as road center and shoulder, so those claims stand or fall together.
+
+## Claims And Resolution
+
+For each chunk, deformers emit `LandscapeClaimGroup` objects. A group has:
+
+- a stable `Key`;
+- a display `Label`;
+- a `Priority`;
+- one or more `LandscapeClaim` entries;
+- an optional source entity id for problem reporting.
+
+Resolution is deterministic and greedy. It is designed to prefer predictable terrain over an optimal
+slot packing that might vary between adjacent chunks.
+
+The resolver does this:
+
+1. Sort claim groups by stable key.
+2. Drop materialless claims and report them.
+3. Resolve layer conflicts: if two groups bind different materials to the same layer, the higher
+   priority group wins.
+4. Resolve base conflicts: a chunk can have only one base layer.
+5. Build texture slots in layer draw order.
+6. Add a fallback base material if no base layer was claimed.
+7. Merge adjacent surviving alpha layers that use the same material.
+8. If the used slot count exceeds `TextureLimit`, drop the lowest-priority group holding a texture
+   slot and try again.
+9. Keep height claims independently of the texture slot budget.
+
+Texture budget counts the base slot. A height-only material costs no texture slot.
+
+## Build Pipeline
+
+`LandscapeBuilder` builds a block of chunks in five stages:
+
+1. Gather deformers touching the block and its halo.
+2. Claim and resolve for every chunk in the block plus halo.
+3. Rasterize channels for block plus halo.
+4. Evaluate height and alpha for interior chunks.
+5. Emit `LandscapeChunkOutput`.
+
+The important invariant is:
+
+- rasterization writes channels and never reads them;
+- evaluation reads channels and never writes them.
+
+That separation lets the builder rasterize a whole neighbourhood before any function samples it. It
+also keeps chunk borders continuous because functions sample channel data by world position.
+
+## Function Details
+
+Landscape functions are discovered by reflection at startup. Materials store function ids, not type
+names or instances, so a function implementation can move as long as its id stays stable.
+
+Function rules:
+
+- functions must be stateless;
+- all input comes from `LandscapeEvalContext`;
+- `Version` should change when output behavior changes;
+- `MaxSampleRadius` declares how far outside the chunk the function samples;
+- channel parameters declare whether they read or write a channel.
+
+Current built-ins:
+
+- `builtin.alpha.channel_mask`: reads a channel as coverage, with threshold, softness, and invert.
+- `builtin.height.channel_offset`: adds a scaled channel value to accumulated height.
+- `builtin.height.channel_flatten`: pulls accumulated height toward a target where a channel is set.
+
+Height functions run in layer draw order and rewrite the height buffer in place. This is deliberate:
+a flatten function can run after a hill function and cut a flat bed into the hill.
+
+## Settings That Matter
+
+`LandscapeSettings` belongs to one map. Key settings include:
+
+- `ChunkWorldSize`: world units covered by one chunk.
+- `ChunkHeightResolution`: height vertices per chunk edge.
+- `ChunkAlphaResolution`: alpha texels per chunk edge.
+- `TextureLimit`: texture slots per chunk, including the base.
+- `FallbackMaterialId`: material used as the base when nothing claims one.
+- `AlphaNormalized`: whether output alphas should sum to 1.
+- `HeightEncoding`, `HeightOffset`, `HeightScale`: export-oriented height representation.
+
+Changing representation settings causes a rebuild. Lowering the texture limit or changing fallback
+material can force re-resolution, which may make layers appear or disappear.
+
+## Common Problems
+
+- **Missing base**: no base layer was claimed and the map has no fallback material.
+- **Layer conflict**: two groups claimed the same layer with different materials; priority chooses the
+  winner.
+- **Multiple base layers**: more than one base layer was claimed; priority chooses the winner.
+- **Budget overflow**: the chunk needed more texture slots than allowed, so lower-priority groups were
+  dropped.
+- **Below base**: a painting layer sorts below the base and would never be visible.
+- **Missing alpha function**: a non-base texture slot has no function deciding where it shows.
+- **Missing height function**: a height claim uses a material that binds no available height function.
+- **Dangling channel binding**: a material parameter points at a channel name that no longer exists.
+
+When terrain looks wrong, check in this order:
+
+1. Is the catalog valid in **Landscape > Problems**?
+2. Does the entity have channel, layer, and material bindings?
+3. Does the material bind the expected alpha or height function?
+4. Are the function's channel parameters bound to existing channels?
+5. Did the chunk drop the claim because of a conflict or texture budget overflow?
+6. Does **Landscape Debug** show non-empty alpha or height output?

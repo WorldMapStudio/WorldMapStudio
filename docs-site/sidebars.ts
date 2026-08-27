@@ -1,7 +1,7 @@
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
 const sidebars: SidebarsConfig = {
-  tutorialSidebar: ['intro'],
+  tutorialSidebar: ['intro', 'terrain-materials'],
 };
 
 export default sidebars;
