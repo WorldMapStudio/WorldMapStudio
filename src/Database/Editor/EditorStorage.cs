@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
@@ -84,4 +85,109 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             writeBack();
         }
     }
+
+    public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks, string contentHash)
+    {
+        if (chunks.Count == 0)
+        {
+            return;
+        }
+
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+        DateTime now = DateTime.UtcNow;
+
+        foreach ((int map, int x, int y) in chunks)
+        {
+            ChunkChangeRecord? record = await context.ChunkChanges.FindAsync([map, x, y]).ConfigureAwait(false);
+            if (record == null)
+            {
+                context.ChunkChanges.Add(new ChunkChangeRecord
+                {
+                    MapId = map,
+                    ChunkX = x,
+                    ChunkY = y,
+                    ContentHash = contentHash,
+                    UpdatedAtUtc = now,
+                });
+            }
+            else
+            {
+                record.ContentHash = contentHash;
+                record.UpdatedAtUtc = now;
+            }
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ChunkChange>> LoadDirtyChunksAsync(string exporterId, int? map)
+    {
+        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        var query =
+            from change in context.ChunkChanges.AsNoTracking()
+            join exported in context.ExportedChunks.AsNoTracking().Where(record => record.ExporterId == exporterId)
+                on new { change.MapId, change.ChunkX, change.ChunkY }
+                equals new { exported.MapId, exported.ChunkX, exported.ChunkY }
+                into exportedJoin
+            from exported in exportedJoin.DefaultIfEmpty()
+            where exported == null || exported.ContentHash != change.ContentHash
+            select change;
+
+        if (map is { } mapId)
+        {
+            query = query.Where(change => change.MapId == mapId);
+        }
+
+        List<ChunkChangeRecord> rows = await query
+            .OrderBy(change => change.MapId)
+            .ThenBy(change => change.ChunkY)
+            .ThenBy(change => change.ChunkX)
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        return rows.Select(ToChange).ToList();
+    }
+
+    public async Task UpsertExportedChunksAsync(string exporterId, IReadOnlyList<ChunkChange> chunks)
+    {
+        if (chunks.Count == 0)
+        {
+            return;
+        }
+
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+        DateTime now = DateTime.UtcNow;
+
+        foreach (ChunkChange chunk in chunks)
+        {
+            object[] key = [exporterId, chunk.Map.Value, chunk.Coord.X, chunk.Coord.Y];
+            ExportedChunkRecord? record = await context.ExportedChunks.FindAsync(key).ConfigureAwait(false);
+            if (record == null)
+            {
+                context.ExportedChunks.Add(new ExportedChunkRecord
+                {
+                    ExporterId = exporterId,
+                    MapId = chunk.Map.Value,
+                    ChunkX = chunk.Coord.X,
+                    ChunkY = chunk.Coord.Y,
+                    ContentHash = chunk.ContentHash,
+                    ExportedAtUtc = now,
+                });
+            }
+            else
+            {
+                record.ContentHash = chunk.ContentHash;
+                record.ExportedAtUtc = now;
+            }
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    private static ChunkChange ToChange(ChunkChangeRecord record) =>
+        new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.ContentHash);
 }

@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// every scriptable property on every entity type, built-in or plugin, without a hand-written command
 /// per property the way <see cref="TransformEntitiesCommand"/> is hand-written for the gizmo.
 /// </summary>
-public sealed class ScriptPropertyEditCommand : IEditCommand
+public sealed class ScriptPropertyEditCommand : IEditCommand, IChunkChangeCommand
 {
     private readonly Entity _entity;
     private readonly PropertyInfo _property;
@@ -24,13 +24,34 @@ public sealed class ScriptPropertyEditCommand : IEditCommand
         _before = before;
         _after = after;
         Targets = new IEntity[] { entity };
+        ChunkImpacts = CaptureImpacts(entity, property, before, after);
     }
 
     public IReadOnlyList<IEntity> Targets { get; }
+
+    public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
 
     public string Description => $"Set {_property.Name} on {_entity.DisplayName}";
 
     public void Apply() => _property.SetValue(_entity, _after);
 
     public void Revert() => _property.SetValue(_entity, _before);
+
+    private static IReadOnlyList<ChunkChangeImpact> CaptureImpacts(
+        Entity entity,
+        PropertyInfo property,
+        object? before,
+        object? after)
+    {
+        if (entity is not SceneEntity scene)
+        {
+            return [];
+        }
+
+        property.SetValue(entity, before);
+        ChunkChangeSnapshot beforeSnapshot = ChunkChangeSnapshot.Capture(scene);
+        property.SetValue(entity, after);
+        ChunkChangeSnapshot afterSnapshot = ChunkChangeSnapshot.Capture(scene);
+        return [new ChunkChangeImpact(scene, beforeSnapshot, afterSnapshot)];
+    }
 }

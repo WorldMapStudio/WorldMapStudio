@@ -57,6 +57,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts the JS-scriptable surface (console, and later the HTTP/MCP endpoint).</summary>
     public ScriptingSystem Scripting { get; }
 
+    /// <summary>Hosts chunk-oriented export scripts and the committed chunk change registry.</summary>
+    public ExportSystem Exports { get; }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -75,6 +78,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
         Scripting = new ScriptingSystem(this);
+        Exports = new ExportSystem(this);
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.

@@ -11,15 +11,48 @@ namespace WorldMapStudio;
 /// Recorded already-applied, like every command here: the edit ran live in the UI and this captures
 /// how to put it back.
 /// </summary>
-public sealed class SetFieldCommand<T>(Entity entity, string field, Action<T> set, T before, T after) : IEditCommand
+public sealed class SetFieldCommand<T> : IEditCommand, IChunkChangeCommand
 {
-    public IReadOnlyList<IEntity> Targets { get; } = new IEntity[] { entity };
+    private readonly Entity _entity;
+    private readonly string _field;
+    private readonly Action<T> _set;
+    private readonly T _before;
+    private readonly T _after;
 
-    public string Description => $"Set {field} on {entity.DisplayName}";
+    public SetFieldCommand(Entity entity, string field, Action<T> set, T before, T after)
+    {
+        _entity = entity;
+        _field = field;
+        _set = set;
+        _before = before;
+        _after = after;
+        Targets = new IEntity[] { entity };
+        ChunkImpacts = CaptureImpacts(entity, set, before, after);
+    }
 
-    public void Apply() => set(after);
+    public IReadOnlyList<IEntity> Targets { get; }
 
-    public void Revert() => set(before);
+    public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
+
+    public string Description => $"Set {_field} on {_entity.DisplayName}";
+
+    public void Apply() => _set(_after);
+
+    public void Revert() => _set(_before);
+
+    private static IReadOnlyList<ChunkChangeImpact> CaptureImpacts(Entity entity, Action<T> set, T before, T after)
+    {
+        if (entity is not SceneEntity scene)
+        {
+            return [];
+        }
+
+        set(before);
+        ChunkChangeSnapshot beforeSnapshot = ChunkChangeSnapshot.Capture(scene);
+        set(after);
+        ChunkChangeSnapshot afterSnapshot = ChunkChangeSnapshot.Capture(scene);
+        return [new ChunkChangeImpact(scene, beforeSnapshot, afterSnapshot)];
+    }
 }
 
 /// <summary>

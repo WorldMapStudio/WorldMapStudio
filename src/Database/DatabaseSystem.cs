@@ -135,6 +135,8 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
     /// </summary>
     public void Persist(EditSession session)
     {
+        var committed = new HashSet<IEntity>();
+
         foreach (Storage storage in Storages)
         {
             var saves = new List<IEntity>();
@@ -164,10 +166,31 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
             try
             {
                 BlockingWork.Run(() => storage.CommitAsync(saves, deletes));
+                foreach (IEntity entity in saves)
+                {
+                    committed.Add(entity);
+                }
+
+                foreach (IEntity entity in deletes)
+                {
+                    committed.Add(entity);
+                }
             }
             catch (Exception e)
             {
                 GD.PushError($"[Database] Commit failed for '{storage.Name}': {e.Message}");
+            }
+        }
+
+        if (committed.Count > 0)
+        {
+            try
+            {
+                _context.Exports.Changes.RecordCommit(session, committed.Contains);
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"[Export] Recording chunk changes failed: {e.Message}");
             }
         }
     }
