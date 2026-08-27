@@ -13,6 +13,8 @@ public class SceneEntity : Entity
 {
     private Transform3D _transform = Transform3D.Identity;
     private readonly List<SceneComponent> _components = [];
+    private readonly List<SceneEntity> _children = [];
+    private SceneEntity? _parent;
 
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
     protected Node3D? Node { get; private set; }
@@ -22,6 +24,37 @@ public class SceneEntity : Entity
 
     /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
     public int? RecordId { get; set; }
+
+    /// <summary>
+    /// Primary key of the persisted parent row. Kept separately so streamed entities can remember
+    /// relationships before every member has been resolved to a live object.
+    /// </summary>
+    public int? ParentRecordId { get; set; }
+
+    /// <summary>
+    /// Optional parent entity. Transforms are still stored in world space; the relationship controls
+    /// editor grouping, loading, and parent-driven movement rather than Godot node parenting.
+    /// </summary>
+    public SceneEntity? Parent
+    {
+        get => _parent;
+        set
+        {
+            if (ReferenceEquals(_parent, value))
+            {
+                return;
+            }
+
+            _parent?._children.Remove(this);
+            _parent = value;
+            if (_parent != null && !_parent._children.Contains(this))
+            {
+                _parent._children.Add(this);
+            }
+        }
+    }
+
+    public IReadOnlyList<SceneEntity> Children => _children;
 
     [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Entity";
@@ -100,10 +133,22 @@ public class SceneEntity : Entity
         get => _transform;
         set
         {
+            Transform3D before = _transform;
             _transform = SanitizeTransform(value);
             if (Node != null)
             {
                 Node.GlobalTransform = _transform;
+            }
+
+            if (_children.Count == 0 || before.IsEqualApprox(_transform))
+            {
+                return;
+            }
+
+            Transform3D delta = _transform * before.AffineInverse();
+            foreach (SceneEntity child in _children.ToArray())
+            {
+                child.Transform = delta * child.Transform;
             }
         }
     }

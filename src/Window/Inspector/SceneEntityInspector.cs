@@ -35,6 +35,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         if (targets.Count == 1)
         {
             DrawName(context, targets[0]);
+            DrawGrouping(context, targets[0]);
         }
 
         DrawPosition(context, targets);
@@ -58,6 +59,36 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         }
 
         _entityTracker.Track(context.Sessions, target, "name", target.Name, value => target.Name = value);
+    }
+
+    private void DrawGrouping(InspectorContext context, SceneEntity target)
+    {
+        string parentLabel = target.Parent?.DisplayName
+            ?? (target.ParentRecordId is int id ? $"Unloaded parent #{id}" : "(none)");
+        if (!ImGui.BeginCombo("Parent", parentLabel))
+        {
+            return;
+        }
+
+        if (ImGui.Selectable("(none)", target.Parent == null && target.ParentRecordId == null))
+        {
+            RecordParent(context, target, null);
+        }
+
+        foreach (SceneEntity candidate in _editor.Scene.Entities)
+        {
+            if (candidate is IDerivedEntity || !SetSceneEntityParentCommand.CanParentTo(target, candidate))
+            {
+                continue;
+            }
+
+            if (ImGui.Selectable($"{candidate.DisplayName}##{candidate.Id.Value}", ReferenceEquals(target.Parent, candidate)))
+            {
+                RecordParent(context, target, candidate);
+            }
+        }
+
+        ImGui.EndCombo();
     }
 
     private void DrawPosition(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -444,6 +475,18 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         }
 
         var command = new SetComponentFieldCommand<T>(component, field, set, before, after);
+        command.Apply();
+        context.Sessions.Record(command);
+    }
+
+    private static void RecordParent(InspectorContext context, SceneEntity target, SceneEntity? parent)
+    {
+        if (ReferenceEquals(target.Parent, parent) && target.ParentRecordId == parent?.RecordId)
+        {
+            return;
+        }
+
+        var command = new SetSceneEntityParentCommand(target, target.Parent, parent);
         command.Apply();
         context.Sessions.Record(command);
     }

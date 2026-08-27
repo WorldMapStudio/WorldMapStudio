@@ -39,6 +39,10 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
         {
             entity.ToTable("scene_entities");
             entity.HasKey(record => record.Id);
+            entity.HasOne(record => record.Parent)
+                .WithMany()
+                .HasForeignKey(record => record.ParentId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         model.Entity<SceneMarkerComponentRecord>(entity =>
