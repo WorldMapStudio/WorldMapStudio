@@ -11,10 +11,12 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
 {
+    private readonly AssetSystem _assets;
     private readonly float _chunkSize;
 
-    public LandscapeChunk(LandscapeChunkOutput output, LandscapeGrid grid, MapId map)
+    public LandscapeChunk(LandscapeChunkOutput output, LandscapeGrid grid, MapId map, AssetSystem assets)
     {
+        _assets = assets;
         Output = output;
         _chunkSize = grid.ChunkSize;
         Map = map;
@@ -77,6 +79,6 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
     {
         Name = "Surface",
         Mesh = LandscapeChunkMesh.BuildMesh(Output, _chunkSize),
-        MaterialOverride = LandscapeChunkMesh.BuildMaterial(Output),
+        MaterialOverride = LandscapeChunkMesh.BuildMaterial(Output, _assets),
     };
 }

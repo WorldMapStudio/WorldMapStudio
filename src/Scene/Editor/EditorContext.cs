@@ -45,6 +45,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
+    /// <summary>Lists and loads project-configured assets.</summary>
+    public AssetSystem Assets { get; }
+
     /// <summary>The open map's landscape settings and the catalog chunks resolve against.</summary>
     public LandscapeSystem Landscape { get; }
 
@@ -73,6 +76,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Focus = new ViewportFocus();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
+        Assets = new AssetSystem(this);
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
         Streaming = new StreamingSystem(this);

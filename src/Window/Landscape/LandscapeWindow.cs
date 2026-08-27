@@ -21,6 +21,7 @@ public sealed class LandscapeWindow : Window
 
     private readonly EditorContext _context;
     private readonly FieldEditTracker _tracker = new();
+    private readonly TextureAssetPicker _texturePicker;
 
     private LandscapeSettings? _draft;
     private string? _status;
@@ -31,6 +32,7 @@ public sealed class LandscapeWindow : Window
         : base("Landscape", startOpen: false, defaultSize: new Vector2(720.0f, 560.0f))
     {
         _context = manager.Context;
+        _texturePicker = new TextureAssetPicker(_context.Assets);
     }
 
     private LandscapeSystem Landscape => _context.Landscape;
@@ -360,6 +362,12 @@ public sealed class LandscapeWindow : Window
                 string texture = material.TexturePath;
                 if (ImGui.InputText("Texture", ref texture, PathMaxLength)) { material.TexturePath = texture; }
                 _tracker.Track(_context.EditSessions, material, "texture", material.TexturePath, v => material.TexturePath = v);
+                ImGui.SameLine();
+                if (ImGui.Button("Browse"))
+                {
+                    _texturePicker.Browse(material.TexturePath, selected =>
+                        RecordNow(material, "texture", material.TexturePath, selected, v => material.TexturePath = v));
+                }
 
                 Heading("Alpha");
                 DrawFunctionBinding(
@@ -380,6 +388,8 @@ public sealed class LandscapeWindow : Window
 
             ImGui.PopID();
         }
+
+        _texturePicker.Draw();
     }
 
     // Draws one function slot on a material: which function, then editors generated from whatever

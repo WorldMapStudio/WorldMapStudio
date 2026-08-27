@@ -30,6 +30,8 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         Functions.Discover();
     }
 
+    public EditorContext Context => _context;
+
     /// <summary>The export-target profiles available when setting up a map's landscape.</summary>
     public IEnumerable<ILandscapeProfile> Profiles => Subsystems.OfType<ILandscapeProfile>();
 

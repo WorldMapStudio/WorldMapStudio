@@ -9,6 +9,8 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class EditProjectSettingsOperation : IModalOperation<Project>
 {
+    private readonly AssetSourceEditor _assetSourceEditor = new();
+
     public ModalOperationState Draw(Project context)
     {
         ImGui.Text(context.Name);
@@ -22,6 +24,10 @@ public sealed class EditProjectSettingsOperation : IModalOperation<Project>
         ImGui.TextDisabled("Database");
         StorageConnection connection = context.GetOrAddStorageConnection(EditorStorage.StorageName, EditorStorage.DefaultConnection());
         StorageConnectionEditor.Draw(connection);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Assets");
+        _assetSourceEditor.Draw(context.AssetSources);
 
         ImGui.Separator();
 

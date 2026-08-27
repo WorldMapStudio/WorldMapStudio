@@ -18,6 +18,9 @@ public sealed class Project
     /// <summary>Per-storage database connection settings, keyed by storage name.</summary>
     public Dictionary<string, StorageConnection> StorageConnections { get; init; } = new();
 
+    /// <summary>Configured asset sources. Multiple entries may use the same source type.</summary>
+    public List<AssetSourceSettings> AssetSources { get; init; } = [];
+
     /// <summary>Returns the stored connection for a storage, adding <paramref name="defaults"/> if absent.</summary>
     public StorageConnection GetOrAddStorageConnection(string storageName, StorageConnection defaults)
     {

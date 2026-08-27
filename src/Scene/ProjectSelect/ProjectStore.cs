@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Godot;
@@ -97,6 +98,7 @@ public static class ProjectStore
         AxisY = project.AxisConvention.Y,
         AxisZ = project.AxisConvention.Z,
         StorageConnections = new Dictionary<string, StorageConnection>(project.StorageConnections),
+        AssetSources = project.AssetSources.Select(CloneAssetSource).ToList(),
     };
 
     private static Project FromDto(ProjectDto dto) => new()
@@ -104,6 +106,16 @@ public static class ProjectStore
         Name = dto.Name,
         AxisConvention = AxisConvention.Create(dto.AxisX, dto.AxisY, dto.AxisZ),
         StorageConnections = new Dictionary<string, StorageConnection>(dto.StorageConnections),
+        AssetSources = (dto.AssetSources ?? []).Select(CloneAssetSource).ToList(),
+    };
+
+    private static AssetSourceSettings CloneAssetSource(AssetSourceSettings source) => new()
+    {
+        Id = source.Id,
+        Name = source.Name,
+        Type = source.Type,
+        Enabled = source.Enabled,
+        RootPath = source.RootPath,
     };
 
     private static string Sanitize(string name)
@@ -123,5 +135,6 @@ public static class ProjectStore
         public SignedAxis AxisY { get; set; } = SignedAxis.PosY;
         public SignedAxis AxisZ { get; set; } = SignedAxis.PosZ;
         public Dictionary<string, StorageConnection> StorageConnections { get; set; } = new();
+        public List<AssetSourceSettings> AssetSources { get; set; } = [];
     }
 }

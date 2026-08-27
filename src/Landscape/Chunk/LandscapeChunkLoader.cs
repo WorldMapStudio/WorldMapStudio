@@ -96,7 +96,7 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
 
         return coords
             .Where(coord => result.Chunks.ContainsKey(coord))
-            .Select(coord => (SceneEntity)new LandscapeChunk(result.Chunks[coord], builder.Grid, map))
+            .Select(coord => (SceneEntity)new LandscapeChunk(result.Chunks[coord], builder.Grid, map, _landscape.Context.Assets))
             .ToList();
     }
 }
