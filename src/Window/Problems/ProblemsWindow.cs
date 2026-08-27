@@ -178,10 +178,18 @@ public sealed class ProblemsWindow : Window
 
         foreach (SceneEntity entity in _context.Scene.Entities)
         {
-            if (entity.Id.Equals(id) && entity is ILandscapeDeformer deformer)
+            if (!entity.Id.Equals(id))
             {
-                return grid.Overlapping(deformer.InfluenceBounds).Count();
+                continue;
             }
+
+            Aabb? bounds = null;
+            foreach (ILandscapeDeformer deformer in entity.Components.OfType<ILandscapeDeformer>())
+            {
+                bounds = bounds is { } existing ? existing.Merge(deformer.InfluenceBounds) : deformer.InfluenceBounds;
+            }
+
+            return bounds is { } influence ? grid.Overlapping(influence).Count() : null;
         }
 
         return null;

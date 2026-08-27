@@ -38,7 +38,7 @@ public static class ScriptReflection
     /// <summary>
     /// Reads the attribute off <paramref name="member"/> directly, then — because a virtual override's
     /// <see cref="MemberInfo"/> does not inherit attributes from the base declaration it overrides
-    /// (e.g. <c>EmptyEntity.DisplayName</c> overriding <c>Entity.DisplayName</c>, which is where
+    /// (e.g. <c>SceneEntity.DisplayName</c> overriding <c>Entity.DisplayName</c>, which is where
     /// [ScriptProperty] actually lives) — walks up to the root virtual slot's declaring type and
     /// checks the same-named member there too.
     /// </summary>

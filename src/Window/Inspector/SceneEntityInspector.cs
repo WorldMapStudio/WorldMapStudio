@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using ImGuiNET;
 using GVec3 = Godot.Vector3;
@@ -14,10 +15,16 @@ namespace WorldMapStudio;
 [Subsystem(nameof(InspectorWindow))]
 public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 {
+    private const uint NameMaxLength = 128;
+
+    private readonly EditorContext _editor;
     private Transform3D[]? _before;
+    private readonly FieldEditTracker _entityTracker = new();
+    private readonly ComponentFieldEditTracker _componentTracker = new();
 
     public SceneEntityInspector(InspectorWindow window)
     {
+        _editor = window.Context;
     }
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -25,8 +32,32 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         ImGui.Text(targets.Count == 1 ? targets[0].DisplayName : $"{targets.Count} entities selected");
         ImGui.Separator();
 
+        if (targets.Count == 1)
+        {
+            DrawName(context, targets[0]);
+        }
+
         DrawPosition(context, targets);
         DrawRotation(context, targets);
+
+        if (targets.Count == 1)
+        {
+            ImGui.Separator();
+            DrawSize(targets[0]);
+            ImGui.Separator();
+            DrawComponents(context, targets[0]);
+        }
+    }
+
+    private void DrawName(InspectorContext context, SceneEntity target)
+    {
+        string name = target.Name;
+        if (ImGui.InputText("Name", ref name, NameMaxLength))
+        {
+            target.Name = name;
+        }
+
+        _entityTracker.Track(context.Sessions, target, "name", target.Name, value => target.Name = value);
     }
 
     private void DrawPosition(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -64,6 +95,291 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
         MarkMultiple(uniform);
         HandleEditLifecycle(context, targets);
+    }
+
+    private static void DrawSize(SceneEntity target)
+    {
+        Vector3 size = target.LocalBounds.Size;
+        ImGui.TextDisabled($"Effective size: {size.X:0.##} x {size.Y:0.##} x {size.Z:0.##}");
+    }
+
+    private void DrawComponents(InspectorContext context, SceneEntity entity)
+    {
+        ImGui.Text("Components");
+        DrawAddComponent(context, entity);
+
+        foreach (SceneComponent component in entity.Components.ToList())
+        {
+            if (!ImGui.CollapsingHeader($"{component.DisplayName}##{component.TypeId}", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                continue;
+            }
+
+            ImGui.PushID(component.TypeId);
+            if (ImGui.SmallButton("Remove"))
+            {
+                var command = new RemoveComponentCommand(entity, component);
+                command.Apply();
+                context.Sessions.Record(command);
+                ImGui.PopID();
+                continue;
+            }
+
+            ImGui.Separator();
+            switch (component)
+            {
+                case MarkerComponent marker:
+                    DrawMarker(context, marker);
+                    break;
+                case StampComponent stamp:
+                    DrawStamp(context, stamp);
+                    break;
+                case DrawingTargetComponent target:
+                    DrawDrawingTarget(context, target);
+                    break;
+            }
+
+            ImGui.PopID();
+        }
+    }
+
+    private static void DrawAddComponent(InspectorContext context, SceneEntity entity)
+    {
+        if (!ImGui.BeginCombo("Add", "Choose component"))
+        {
+            return;
+        }
+
+        AddComponentItem(context, entity, "Marker", entity.Component<MarkerComponent>() == null, new MarkerComponent());
+        AddComponentItem(context, entity, "Landscape Stamp", entity.Component<StampComponent>() == null, new StampComponent());
+        AddComponentItem(context, entity, "Drawing Target", entity.Component<DrawingTargetComponent>() == null, new DrawingTargetComponent());
+        ImGui.EndCombo();
+    }
+
+    private static void AddComponentItem(
+        InspectorContext context,
+        SceneEntity entity,
+        string label,
+        bool enabled,
+        SceneComponent component)
+    {
+        if (!enabled)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Selectable(label, false, enabled ? ImGuiSelectableFlags.None : ImGuiSelectableFlags.Disabled))
+        {
+            SeedComponent(entity, component);
+            var command = new AddComponentCommand(entity, component);
+            command.Apply();
+            context.Sessions.Record(command);
+        }
+
+        if (!enabled)
+        {
+            ImGui.EndDisabled();
+        }
+    }
+
+    private static void SeedComponent(SceneEntity entity, SceneComponent component)
+    {
+        if (component is not StampComponent and not DrawingTargetComponent)
+        {
+            return;
+        }
+
+        // The menu seeds catalog bindings more thoroughly; inspector-added landscape components stay
+        // intentionally blank because the inspector may be used before landscape/catalog data is loaded.
+    }
+
+    private void DrawMarker(InspectorContext context, MarkerComponent marker)
+    {
+        int shape = (int)marker.Shape;
+        if (ImGui.Combo("Shape", ref shape, "Plain\0Cube\0Sphere\0"))
+        {
+            Record(context, marker, "shape", marker.Shape, (MarkerShape)shape, value => marker.Shape = value);
+        }
+    }
+
+    private void DrawStamp(InspectorContext context, StampComponent stamp)
+    {
+        float radius = stamp.Radius;
+        if (ImGui.DragFloat("Radius", ref radius, 0.5f, 0.5f, 4096.0f)) { stamp.Radius = radius; }
+        _componentTracker.Track(context.Sessions, stamp, "radius", stamp.Radius, value => stamp.Radius = value);
+
+        float falloff = stamp.Falloff;
+        if (ImGui.DragFloat("Falloff", ref falloff, 0.01f, 0.0f, 1.0f)) { stamp.Falloff = falloff; }
+        _componentTracker.Track(context.Sessions, stamp, "falloff", stamp.Falloff, value => stamp.Falloff = value);
+
+        DrawLandscapeBindings(context, stamp, stamp.Channel, value => stamp.Channel = value, stamp.LayerId, value => stamp.LayerId = value, stamp.MaterialId, value => stamp.MaterialId = value);
+
+        float strength = stamp.Strength;
+        if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { stamp.Strength = strength; }
+        _componentTracker.Track(context.Sessions, stamp, "strength", stamp.Strength, value => stamp.Strength = value);
+
+        int priority = stamp.Priority;
+        if (ImGui.DragInt("Priority", ref priority)) { stamp.Priority = priority; }
+        _componentTracker.Track(context.Sessions, stamp, "priority", stamp.Priority, value => stamp.Priority = value);
+    }
+
+    private void DrawDrawingTarget(InspectorContext context, DrawingTargetComponent target)
+    {
+        float sizeX = target.WorldSizeX;
+        if (ImGui.DragFloat("Width", ref sizeX, 0.5f, 0.5f, 4096.0f)) { target.WorldSizeX = sizeX; }
+        _componentTracker.Track(context.Sessions, target, "width", target.WorldSizeX, value => target.WorldSizeX = value);
+
+        float sizeZ = target.WorldSizeZ;
+        if (ImGui.DragFloat("Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { target.WorldSizeZ = sizeZ; }
+        _componentTracker.Track(context.Sessions, target, "depth", target.WorldSizeZ, value => target.WorldSizeZ = value);
+
+        DrawLandscapeBindings(context, target, target.Channel, value => target.Channel = value, target.LayerId, value => target.LayerId = value, target.MaterialId, value => target.MaterialId = value);
+
+        float strength = target.Strength;
+        if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { target.Strength = strength; }
+        _componentTracker.Track(context.Sessions, target, "strength", target.Strength, value => target.Strength = value);
+
+        int priority = target.Priority;
+        if (ImGui.DragInt("Priority", ref priority)) { target.Priority = priority; }
+        _componentTracker.Track(context.Sessions, target, "priority", target.Priority, value => target.Priority = value);
+
+        ImGui.TextDisabled($"{target.Width} x {target.Height} pixels");
+        DrawResizeButton(context, target, 128);
+        ImGui.SameLine();
+        DrawResizeButton(context, target, 256);
+        ImGui.SameLine();
+        DrawResizeButton(context, target, 512);
+        ImGui.SameLine();
+        DrawClearButton(context, target);
+    }
+
+    private void DrawLandscapeBindings(
+        InspectorContext context,
+        SceneComponent component,
+        string channel,
+        Action<string> setChannel,
+        int? layerId,
+        Action<int?> setLayer,
+        int? materialId,
+        Action<int?> setMaterial)
+    {
+        LandscapeCatalog catalog = _editor.Landscape.Catalog;
+
+        if (ImGui.BeginCombo("Channel", channel.Length == 0 ? "(none)" : channel))
+        {
+            if (ImGui.Selectable("(none)", channel.Length == 0))
+            {
+                Record(context, component, "channel", channel, "", setChannel);
+            }
+
+            foreach (LandscapeChannel item in catalog.Channels)
+            {
+                if (ImGui.Selectable(item.Name, item.Name == channel))
+                {
+                    Record(context, component, "channel", channel, item.Name, setChannel);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        LandscapeLayer? boundLayer = layerId is { } lid
+            ? catalog.Layers.FirstOrDefault(layer => layer.RecordId == lid)
+            : null;
+        if (ImGui.BeginCombo("Layer", boundLayer?.Name ?? "(none)"))
+        {
+            if (ImGui.Selectable("(none)", layerId == null))
+            {
+                Record(context, component, "layer", layerId, null, setLayer);
+            }
+
+            foreach (LandscapeLayer layer in catalog.LayersInOrder)
+            {
+                int? recordId = layer.RecordId;
+                if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == layerId))
+                {
+                    Record(context, component, "layer", layerId, recordId, setLayer);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        LandscapeMaterial? boundMaterial = materialId is { } mid
+            ? catalog.Materials.FirstOrDefault(material => material.RecordId == mid)
+            : null;
+        if (ImGui.BeginCombo("Material", boundMaterial?.Name ?? "(none)"))
+        {
+            if (ImGui.Selectable("(none)", materialId == null))
+            {
+                Record(context, component, "material", materialId, null, setMaterial);
+            }
+
+            foreach (LandscapeMaterial material in catalog.Materials)
+            {
+                int? recordId = material.RecordId;
+                if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == materialId))
+                {
+                    Record(context, component, "material", materialId, recordId, setMaterial);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    private static void DrawResizeButton(InspectorContext context, DrawingTargetComponent target, int size)
+    {
+        bool current = target.Width == size && target.Height == size;
+        if (current)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button($"{size}"))
+        {
+            int beforeWidth = target.Width;
+            int beforeHeight = target.Height;
+            byte[] beforePixels = target.CopyPixels();
+            target.Resize(size, size);
+            context.Sessions.Record(new ResizeDrawingTargetCommand(
+                target,
+                beforeWidth,
+                beforeHeight,
+                beforePixels,
+                target.Width,
+                target.Height,
+                target.CopyPixels()));
+        }
+
+        if (current)
+        {
+            ImGui.EndDisabled();
+        }
+    }
+
+    private static void DrawClearButton(InspectorContext context, DrawingTargetComponent target)
+    {
+        if (!ImGui.Button("Clear"))
+        {
+            return;
+        }
+
+        byte[] before = target.CopyPixels();
+        target.ReplacePixels(new byte[target.Width * target.Height]);
+        context.Sessions.Record(new SetDrawingTargetPixelsCommand(target, before, target.CopyPixels()));
+    }
+
+    private static void Record<T>(InspectorContext context, SceneComponent component, string field, T before, T after, Action<T> set)
+    {
+        if (EqualityComparer<T>.Default.Equals(before, after))
+        {
+            return;
+        }
+
+        var command = new SetComponentFieldCommand<T>(component, field, set, before, after);
+        command.Apply();
+        context.Sessions.Record(command);
     }
 
     private static void MarkMultiple(bool uniform)

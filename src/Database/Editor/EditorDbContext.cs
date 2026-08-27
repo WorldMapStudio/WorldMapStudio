@@ -5,7 +5,13 @@ namespace WorldMapStudio;
 /// <summary>EF Core context for the built-in Editor storage. Kept short-lived: create one per unit of work.</summary>
 public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) : DbContext(options)
 {
-    public DbSet<EmptyRecord> Empties => Set<EmptyRecord>();
+    public DbSet<SceneEntityRecord> SceneEntities => Set<SceneEntityRecord>();
+
+    public DbSet<SceneMarkerComponentRecord> SceneMarkerComponents => Set<SceneMarkerComponentRecord>();
+
+    public DbSet<SceneStampComponentRecord> SceneStampComponents => Set<SceneStampComponentRecord>();
+
+    public DbSet<SceneDrawingTargetComponentRecord> SceneDrawingTargetComponents => Set<SceneDrawingTargetComponentRecord>();
 
     public DbSet<MapRecord> Maps => Set<MapRecord>();
 
@@ -17,20 +23,46 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
     public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
 
-    public DbSet<StampRecord> LandscapeStamps => Set<StampRecord>();
-
-    public DbSet<DrawingTargetRecord> LandscapeDrawingTargets => Set<DrawingTargetRecord>();
-
     public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
 
     public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
-        model.Entity<EmptyRecord>(entity =>
+        model.Entity<SceneEntityRecord>(entity =>
         {
-            entity.ToTable("empties");
+            entity.ToTable("scene_entities");
             entity.HasKey(record => record.Id);
+        });
+
+        model.Entity<SceneMarkerComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_marker_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneMarkerComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneStampComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_stamp_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneStampComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneDrawingTargetComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_drawing_target_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneDrawingTargetComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         model.Entity<MapRecord>(entity =>
@@ -67,18 +99,6 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
             // The editor assigns catalog ids so entities can reference each other before a commit.
             entity.Property(record => record.Id).ValueGeneratedNever();
-        });
-
-        model.Entity<StampRecord>(entity =>
-        {
-            entity.ToTable("landscape_stamps");
-            entity.HasKey(record => record.Id);
-        });
-
-        model.Entity<DrawingTargetRecord>(entity =>
-        {
-            entity.ToTable("landscape_drawing_targets");
-            entity.HasKey(record => record.Id);
         });
 
         model.Entity<LandscapeSettingsRecord>(entity =>

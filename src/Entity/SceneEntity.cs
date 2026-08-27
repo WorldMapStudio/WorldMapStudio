@@ -1,4 +1,7 @@
 using Godot;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace WorldMapStudio;
 
@@ -6,9 +9,10 @@ namespace WorldMapStudio;
 /// An entity placed in a map: it has a world transform and bounds, and owns its Godot
 /// representation in the viewport. Streamed in and out as the user moves around the map.
 /// </summary>
-public abstract class SceneEntity : Entity
+public class SceneEntity : Entity
 {
     private Transform3D _transform = Transform3D.Identity;
+    private readonly List<SceneComponent> _components = [];
 
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
     protected Node3D? Node { get; private set; }
@@ -16,17 +20,38 @@ public abstract class SceneEntity : Entity
     /// <summary>The map this entity lives in. Streaming loads and unloads entities per map.</summary>
     public MapId Map { get; set; } = new(0);
 
+    /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
+    public int? RecordId { get; set; }
+
+    [ScriptProperty(Mutable = true)]
+    public string Name { get; set; } = "Entity";
+
     /// <summary>How the entity may rotate about itself; the object tool honours this.</summary>
-    public abstract SelfRotation SelfRotation { get; }
+    public virtual SelfRotation SelfRotation
+    {
+        get
+        {
+            SelfRotation rotation = SelfRotation.Full;
+            foreach (ITransformPolicy policy in Components.OfType<ITransformPolicy>())
+            {
+                if (policy.SelfRotation < rotation)
+                {
+                    rotation = policy.SelfRotation;
+                }
+            }
+
+            return rotation;
+        }
+    }
 
     /// <summary>Selection bounds in the entity's local space (picking, outlines, marquee).</summary>
-    public abstract Aabb LocalBounds { get; }
+    public virtual Aabb LocalBounds => EffectiveLocalBounds;
 
     /// <summary>
     /// True when this entity is positioned only by its horizontal coordinates and derives its visible
     /// height from the terrain. The stored world Y is ignored.
     /// </summary>
-    public virtual bool UsesTerrainHeight => false;
+    public virtual bool UsesTerrainHeight => Components.OfType<ITransformPolicy>().Any(policy => policy.UsesTerrainHeight);
 
     /// <summary>
     /// <see cref="LocalBounds"/> placed by <see cref="Transform"/>, enclosed axis-aligned. This is the
@@ -37,6 +62,29 @@ public abstract class SceneEntity : Entity
     public Aabb WorldBounds => Transform * LocalBounds;
 
     public bool IsRepresented => Node != null;
+
+    public IReadOnlyList<SceneComponent> Components => _components;
+
+    public override string DisplayName => Name;
+
+    /// <summary>The centered, per-axis maximum bounds contributed by this entity's components.</summary>
+    public Aabb EffectiveLocalBounds
+    {
+        get
+        {
+            Vector3 size = Vector3.One;
+            foreach (ISceneBoundsProvider provider in Components.OfType<ISceneBoundsProvider>())
+            {
+                Vector3 contribution = provider.LocalBounds.Size.Abs();
+                size = new Vector3(
+                    Mathf.Max(size.X, contribution.X),
+                    Mathf.Max(size.Y, contribution.Y),
+                    Mathf.Max(size.Z, contribution.Z));
+            }
+
+            return new Aabb(size * -0.5f, size);
+        }
+    }
 
     /// <summary>
     /// World placement. Setting it moves the live representation, if any.
@@ -84,8 +132,58 @@ public abstract class SceneEntity : Entity
         Node = null;
     }
 
+    public T? Component<T>() where T : SceneComponent =>
+        Components.OfType<T>().FirstOrDefault();
+
+    public IEnumerable<T> ComponentsOf<T>() =>
+        Components.OfType<T>();
+
+    public void AddComponent(SceneComponent component)
+    {
+        if (component.Owner != null)
+        {
+            throw new InvalidOperationException("Component already belongs to an entity.");
+        }
+
+        component.Owner = this;
+        _components.Add(component);
+        RebuildRepresentation();
+        Transform = Transform;
+    }
+
+    public bool RemoveComponent(SceneComponent component)
+    {
+        if (!_components.Remove(component))
+        {
+            return false;
+        }
+
+        component.Owner = null;
+        RebuildRepresentation();
+        Transform = Transform;
+        return true;
+    }
+
+    public void LoadComponent(SceneComponent component)
+    {
+        component.Owner = this;
+        _components.Add(component);
+    }
+
     /// <summary>Builds the entity's viewport node. Called on the main thread.</summary>
-    protected abstract Node3D BuildNode();
+    protected virtual Node3D BuildNode()
+    {
+        var root = new Node3D { Name = $"Entity{Id.Value}" };
+        foreach (ISceneNodeComponent component in Components.OfType<ISceneNodeComponent>())
+        {
+            if (component.BuildNode() is { } child)
+            {
+                root.AddChild(child);
+            }
+        }
+
+        return root;
+    }
 
     /// <summary>Reacts to a change in selection state (e.g. highlight). Default does nothing.</summary>
     public virtual void OnSelectionChanged(bool selected) { }
@@ -97,6 +195,27 @@ public abstract class SceneEntity : Entity
             transform.Origin = new Vector3(transform.Origin.X, 0.0f, transform.Origin.Z);
         }
 
+        if (SelfRotation == SelfRotation.HeightOnly)
+        {
+            float yaw = transform.Basis.GetEuler().Y;
+            transform.Basis = new Basis(Vector3.Up, yaw);
+        }
+        else if (SelfRotation == SelfRotation.None)
+        {
+            transform.Basis = Basis.Identity;
+        }
+
         return transform;
+    }
+
+    private void RebuildRepresentation()
+    {
+        if (Node?.GetParent() is not { } parent)
+        {
+            return;
+        }
+
+        DestroyRepresentation();
+        CreateRepresentation(parent);
     }
 }

@@ -18,9 +18,7 @@ public sealed record ChunkChangeSnapshot(MapId Map, Aabb Bounds, string Fingerpr
     public static ChunkChangeSnapshot Capture(SceneEntity entity, Transform3D? transform = null, string? fingerprint = null)
     {
         Transform3D usedTransform = transform ?? entity.Transform;
-        Aabb bounds = entity is ILandscapeDeformer deformer && transform == null
-            ? deformer.InfluenceBounds
-            : usedTransform * entity.LocalBounds;
+        Aabb bounds = usedTransform * entity.LocalBounds;
 
         return new ChunkChangeSnapshot(
             entity.Map,
@@ -50,11 +48,21 @@ public sealed record ChunkChangeSnapshot(MapId Map, Aabb Bounds, string Fingerpr
         AppendTransform(sb, transform);
         AppendAabb(sb, bounds);
 
-        if (entity is ILandscapeDeformer deformer)
+        foreach (SceneComponent component in entity.Components.OrderBy(component => component.TypeId, StringComparer.Ordinal))
         {
-            AppendValue(sb, deformer.DeformerKey);
-            AppendValue(sb, deformer.ContentVersion);
-            AppendAabb(sb, deformer.InfluenceBounds);
+            sb.Append("component=").Append(component.TypeId).Append('|');
+            AppendValue(sb, component.ContentVersion);
+
+            if (component is ISceneBoundsProvider boundsProvider)
+            {
+                AppendAabb(sb, boundsProvider.LocalBounds);
+            }
+
+            if (component is ILandscapeDeformer deformer)
+            {
+                AppendValue(sb, deformer.DeformerKey);
+                AppendAabb(sb, deformer.InfluenceBounds);
+            }
         }
 
         foreach (PropertyInfo property in entity.GetType()

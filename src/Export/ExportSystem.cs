@@ -81,7 +81,10 @@ public sealed partial class ExportSystem : ISubsystemHost
         var builder = new LandscapeBuilder(settings, catalog, functions);
         Aabb scan = ScanBounds(builder, coord);
         IReadOnlyList<SceneEntity> entities = await ScanSceneAsync(map, scan).ConfigureAwait(false);
-        List<ILandscapeDeformer> deformers = entities.OfType<ILandscapeDeformer>().ToList();
+        List<ILandscapeDeformer> deformers = entities
+            .SelectMany(entity => entity.Components)
+            .OfType<ILandscapeDeformer>()
+            .ToList();
         return builder.BuildOne(coord, deformers);
     }
 

@@ -19,11 +19,12 @@ public static class SchemaTests
 
         Schema schema = ModelSchema.Extract(context);
 
-        Assert.IsTrue(schema.Tables.ContainsKey("empties"), "model should define the empties table");
-        SchemaTable empties = schema.Tables["empties"];
-        Assert.IsNotNull(empties.Column("MapId"));
-        Assert.IsTrue(empties.PrimaryKey.Contains("Id"));
-        Assert.IsTrue(empties.Column("Id")!.AutoIncrement, "Id should be detected as auto-increment");
+        Assert.IsTrue(schema.Tables.ContainsKey("scene_entities"), "model should define the generic scene entity table");
+        Assert.IsTrue(schema.Tables.ContainsKey("scene_marker_components"), "model should define component tables");
+        SchemaTable entities = schema.Tables["scene_entities"];
+        Assert.IsNotNull(entities.Column("MapId"));
+        Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
+        Assert.IsTrue(entities.Column("Id")!.AutoIncrement, "Id should be detected as auto-increment");
     }
 
     [EditorTest(Category = "Schema")]

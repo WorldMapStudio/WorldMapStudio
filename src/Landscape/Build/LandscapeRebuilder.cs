@@ -116,7 +116,10 @@ public sealed class LandscapeRebuilder
 
         // Rebuilding a chunk replaces its content in place and never touches the registry, so
         // reacting to the scene version cannot feed itself.
-        List<ILandscapeDeformer> deformers = _context.Scene.Entities.OfType<ILandscapeDeformer>().ToList();
+        List<ILandscapeDeformer> deformers = _context.Scene.Entities
+            .SelectMany(entity => entity.Components)
+            .OfType<ILandscapeDeformer>()
+            .ToList();
         foreach (Aabb region in _tracker.Collect(deformers))
         {
             MarkRegion(landscape, region);

@@ -86,6 +86,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         }
 
         List<ILandscapeDeformer> deformers = _context.Scene.Entities
+            .SelectMany(entity => entity.Components)
             .OfType<ILandscapeDeformer>()
             .ToList();
 

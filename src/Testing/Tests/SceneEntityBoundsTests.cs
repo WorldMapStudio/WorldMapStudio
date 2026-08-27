@@ -9,6 +9,15 @@ namespace WorldMapStudio;
 /// </summary>
 public static class SceneEntityBoundsTests
 {
+    private sealed class BoundsComponent(Aabb bounds) : SceneComponent, ISceneBoundsProvider
+    {
+        public override string TypeId => "test-bounds";
+
+        public override string DisplayName => "Test Bounds";
+
+        public Aabb LocalBounds { get; } = bounds;
+    }
+
     private sealed class BoxEntity : SceneEntity
     {
         public required Aabb Local { get; init; }
@@ -61,5 +70,22 @@ public static class SceneEntityBoundsTests
 
         Assert.IsFalse(region.HasPoint(entity.Transform.Origin), "the origin is outside the region");
         Assert.IsTrue(region.Intersects(entity.WorldBounds), "but its bounds overlap it");
+    }
+
+    [EditorTest(Category = "SceneEntity", Thread = TestThread.Background)]
+    public static void Effective_bounds_use_the_largest_component_extent()
+    {
+        var entity = new SceneEntity();
+        entity.AddComponent(new BoundsComponent(new Aabb(Vector3.Zero, new Vector3(2.0f, 10.0f, 4.0f))));
+        entity.AddComponent(new BoundsComponent(new Aabb(Vector3.Zero, new Vector3(12.0f, 2.0f, 6.0f))));
+
+        Aabb bounds = entity.LocalBounds;
+
+        Assert.AreApproximatelyEqual(-6.0, bounds.Position.X, 1e-4);
+        Assert.AreApproximatelyEqual(-5.0, bounds.Position.Y, 1e-4);
+        Assert.AreApproximatelyEqual(-3.0, bounds.Position.Z, 1e-4);
+        Assert.AreApproximatelyEqual(12.0, bounds.Size.X, 1e-4);
+        Assert.AreApproximatelyEqual(10.0, bounds.Size.Y, 1e-4);
+        Assert.AreApproximatelyEqual(6.0, bounds.Size.Z, 1e-4);
     }
 }

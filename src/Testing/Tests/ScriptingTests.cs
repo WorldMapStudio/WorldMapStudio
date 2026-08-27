@@ -11,8 +11,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Covers the Phase 8 scripting core: that [ScriptProperty]/[ScriptFunction] reflection survives a
-/// virtual override (the real case that broke a naive implementation — see
-/// <see cref="EmptyEntity.DisplayName"/> overriding <see cref="Entity.DisplayName"/>), and that the
+/// virtual override (the real case that broke a naive implementation), and that the
 /// Jint engine's member filter actually restricts JS to the attributed surface rather than leaking
 /// the whole CLR object.
 /// </summary>
@@ -96,20 +95,19 @@ public static class ScriptingTests
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
     public static void Reflection_finds_attributes_through_a_virtual_override()
     {
-        var visible = ScriptReflection.Properties(typeof(EmptyEntity)).Select(p => p.Name).ToList();
+        var visible = ScriptReflection.Properties(typeof(SceneEntity)).Select(p => p.Name).ToList();
 
         Assert.IsTrue(visible.Contains(nameof(Entity.DisplayName)),
-            "EmptyEntity overrides DisplayName; [ScriptProperty] only lives on the Entity base declaration");
+            "SceneEntity overrides DisplayName; [ScriptProperty] only lives on the Entity base declaration");
         Assert.IsTrue(visible.Contains(nameof(Entity.Id)));
     }
 
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
     public static void Unattributed_members_are_not_reflected()
     {
-        var visible = ScriptReflection.Properties(typeof(EmptyEntity)).Select(p => p.Name).ToList();
+        var visible = ScriptReflection.Properties(typeof(SceneEntity)).Select(p => p.Name).ToList();
 
-        Assert.IsFalse(visible.Contains(nameof(EmptyEntity.Shape)), "Shape has no [ScriptProperty] yet");
-        Assert.IsFalse(visible.Contains(nameof(EmptyEntity.RecordId)));
+        Assert.IsFalse(visible.Contains(nameof(SceneEntity.RecordId)));
     }
 
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
@@ -157,11 +155,11 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new EmptyEntity { Name = "Torch" };
+        var empty = new SceneEntity { Name = "Torch" };
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
-        handle.Set(nameof(EmptyEntity.Name), "Lantern");
+        handle.Set(nameof(SceneEntity.Name), "Lantern");
 
         Assert.AreEqual("Lantern", empty.Name);
         Assert.IsTrue(sessions.Active.IsDirty, "a scripted edit must pin its target like any other edit");
@@ -176,7 +174,7 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new EmptyEntity();
+        var empty = new SceneEntity();
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
@@ -189,7 +187,7 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new EmptyEntity();
+        var empty = new SceneEntity();
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
@@ -421,7 +419,7 @@ public static class ScriptingTests
         events.Update();
         Assert.AreEqual(0, fired, "no change yet");
 
-        selection.Add(new EmptyEntity());
+        selection.Add(new SceneEntity());
         events.Update();
         Assert.AreEqual(1, fired);
 
@@ -438,7 +436,7 @@ public static class ScriptingTests
         events.On("selectionChanged", () => fired++);
         events.Off("selectionChanged");
 
-        selection.Add(new EmptyEntity());
+        selection.Add(new SceneEntity());
         events.Update();
 
         Assert.AreEqual(0, fired);
@@ -452,7 +450,7 @@ public static class ScriptingTests
         var host = new ScriptEngineHost([events]);
         host.Evaluate("var fired = 0; wms.events.On('selectionChanged', function () { fired++; });");
 
-        selection.Add(new EmptyEntity());
+        selection.Add(new SceneEntity());
         events.Update();
 
         Assert.AreEqual("1", host.Evaluate("fired.toString()"));

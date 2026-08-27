@@ -4,12 +4,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-/// <summary>
-/// A paintable raster in scene space. The bitmap lives in the entity's local X/Z rectangle and is
-/// sampled through the transform whenever terrain channels are rebuilt, so the target remains
-/// movable and rotatable without resampling the authored pixels.
-/// </summary>
-public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
+public sealed class DrawingTargetComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, IDrawingTargetComponent
 {
     private const float BoundsHeight = 2.0f;
 
@@ -19,9 +14,6 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
     private float _worldSizeZ = 64.0f;
     private byte[] _pixels = new byte[256 * 256];
     private int _paintVersion;
-
-    [ScriptProperty(Mutable = true)]
-    public string Name { get; set; } = "Drawing Target";
 
     public int Width
     {
@@ -47,41 +39,37 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
         set => _worldSizeZ = Mathf.Max(0.5f, value);
     }
 
-    /// <summary>Multiplier applied when the bitmap is written into the target channel.</summary>
     public float Strength { get; set; } = 1.0f;
 
-    /// <summary>Channel this target writes into, by name. Empty means it paints nothing.</summary>
     public string Channel { get; set; } = "";
 
-    /// <summary>The layer claimed, by record id. Null claims nothing.</summary>
     public int? LayerId { get; set; }
 
-    /// <summary>Material bound to the claim, by record id.</summary>
     public int? MaterialId { get; set; }
 
-    /// <summary>How important this target is when a chunk runs out of texture slots.</summary>
     public int Priority { get; set; }
-
-    /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
-    public int? RecordId { get; set; }
 
     public ReadOnlySpan<byte> Pixels => _pixels;
 
-    public override string DisplayName => Name;
+    public override string TypeId => "drawing-target";
 
-    public override SelfRotation SelfRotation => SelfRotation.HeightOnly;
+    public override string DisplayName => "Drawing Target";
 
-    public override bool UsesTerrainHeight => true;
+    public SelfRotation SelfRotation => SelfRotation.HeightOnly;
 
-    public override Aabb LocalBounds => new(
+    public bool UsesTerrainHeight => true;
+
+    public Aabb LocalBounds => new(
         new Vector3(-WorldSizeX * 0.5f, -BoundsHeight * 0.5f, -WorldSizeZ * 0.5f),
         new Vector3(WorldSizeX, BoundsHeight, WorldSizeZ));
 
-    public string DeformerKey => RecordId is { } id ? $"drawing-target:{id}" : $"drawing-target:new:{Id.Value}";
+    public string DeformerKey => Entity.RecordId is { } id
+        ? $"entity:{id}:drawing-target"
+        : $"entity:new:{Entity.Id.Value}:drawing-target";
 
-    public Aabb InfluenceBounds => WorldBounds;
+    public Aabb InfluenceBounds => Entity.Transform * LocalBounds;
 
-    public int ContentVersion
+    public override int ContentVersion
     {
         get
         {
@@ -112,10 +100,10 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
             new LandscapeClaimGroup
             {
                 Key = DeformerKey,
-                Label = Name,
+                Label = Entity.DisplayName,
                 Priority = Priority,
                 Claims = [new LandscapeClaim { Layer = layer, Material = context.Material(MaterialId) }],
-                Source = Id,
+                Source = Entity.Id,
             },
         ];
     }
@@ -133,7 +121,7 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
         }
 
         int resolution = channel.Resolution;
-        Transform3D inverse = Transform.AffineInverse();
+        Transform3D inverse = Entity.Transform.AffineInverse();
 
         for (int y = 0; y < resolution; y++)
         {
@@ -284,18 +272,5 @@ public sealed class DrawingTargetEntity : SceneEntity, ILandscapeDeformer
         float a = Mathf.Lerp(_pixels[(y0 * Width) + x0], _pixels[(y0 * Width) + x1], tx);
         float b = Mathf.Lerp(_pixels[(y1 * Width) + x0], _pixels[(y1 * Width) + x1], tx);
         return Mathf.Lerp(a, b, ty) / 255.0f;
-    }
-
-    protected override Node3D BuildNode()
-    {
-        return new Node3D { Name = $"DrawingTarget{Id.Value}" };
-    }
-
-    protected override Transform3D SanitizeTransform(Transform3D transform)
-    {
-        transform = base.SanitizeTransform(transform);
-        float yaw = transform.Basis.GetEuler().Y;
-        transform.Basis = new Basis(Vector3.Up, yaw);
-        return transform;
     }
 }
