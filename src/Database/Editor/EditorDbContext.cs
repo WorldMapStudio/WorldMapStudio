@@ -13,6 +13,12 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
     public DbSet<SceneDrawingTargetComponentRecord> SceneDrawingTargetComponents => Set<SceneDrawingTargetComponentRecord>();
 
+    public DbSet<SceneLandscapeMaterialBindComponentRecord> SceneLandscapeMaterialBindComponents =>
+        Set<SceneLandscapeMaterialBindComponentRecord>();
+
+    public DbSet<SceneLandscapeMaterialBindEntryRecord> SceneLandscapeMaterialBindEntries =>
+        Set<SceneLandscapeMaterialBindEntryRecord>();
+
     public DbSet<MapRecord> Maps => Set<MapRecord>();
 
     public DbSet<LandscapeChannelRecord> LandscapeChannels => Set<LandscapeChannelRecord>();
@@ -62,6 +68,26 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
             entity.HasOne(record => record.Entity)
                 .WithOne()
                 .HasForeignKey<SceneDrawingTargetComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneLandscapeMaterialBindComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_landscape_material_bind_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneLandscapeMaterialBindComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneLandscapeMaterialBindEntryRecord>(entity =>
+        {
+            entity.ToTable("scene_landscape_material_bind_entries");
+            entity.HasKey(record => new { record.EntityId, record.SortOrder });
+            entity.HasOne(record => record.Component)
+                .WithMany()
+                .HasForeignKey(record => record.EntityId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

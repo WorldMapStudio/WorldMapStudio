@@ -137,6 +137,9 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 case DrawingTargetComponent target:
                     DrawDrawingTarget(context, target);
                     break;
+                case LandscapeMaterialBindComponent bind:
+                    DrawLandscapeMaterialBind(context, bind);
+                    break;
             }
 
             ImGui.PopID();
@@ -153,6 +156,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         AddComponentItem(context, entity, "Marker", entity.Component<MarkerComponent>() == null, new MarkerComponent());
         AddComponentItem(context, entity, "Landscape Stamp", entity.Component<StampComponent>() == null, new StampComponent());
         AddComponentItem(context, entity, "Drawing Target", entity.Component<DrawingTargetComponent>() == null, new DrawingTargetComponent());
+        AddComponentItem(context, entity, "Landscape Material Bind", entity.Component<LandscapeMaterialBindComponent>() == null, new LandscapeMaterialBindComponent());
         ImGui.EndCombo();
     }
 
@@ -212,15 +216,12 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         if (ImGui.DragFloat("Falloff", ref falloff, 0.01f, 0.0f, 1.0f)) { stamp.Falloff = falloff; }
         _componentTracker.Track(context.Sessions, stamp, "falloff", stamp.Falloff, value => stamp.Falloff = value);
 
-        DrawLandscapeBindings(context, stamp, stamp.Channel, value => stamp.Channel = value, stamp.LayerId, value => stamp.LayerId = value, stamp.MaterialId, value => stamp.MaterialId = value);
+        DrawLandscapeChannel(context, stamp, stamp.Channel, value => stamp.Channel = value);
 
         float strength = stamp.Strength;
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { stamp.Strength = strength; }
         _componentTracker.Track(context.Sessions, stamp, "strength", stamp.Strength, value => stamp.Strength = value);
 
-        int priority = stamp.Priority;
-        if (ImGui.DragInt("Priority", ref priority)) { stamp.Priority = priority; }
-        _componentTracker.Track(context.Sessions, stamp, "priority", stamp.Priority, value => stamp.Priority = value);
     }
 
     private void DrawDrawingTarget(InspectorContext context, DrawingTargetComponent target)
@@ -233,15 +234,11 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         if (ImGui.DragFloat("Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { target.WorldSizeZ = sizeZ; }
         _componentTracker.Track(context.Sessions, target, "depth", target.WorldSizeZ, value => target.WorldSizeZ = value);
 
-        DrawLandscapeBindings(context, target, target.Channel, value => target.Channel = value, target.LayerId, value => target.LayerId = value, target.MaterialId, value => target.MaterialId = value);
+        DrawLandscapeChannel(context, target, target.Channel, value => target.Channel = value);
 
         float strength = target.Strength;
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { target.Strength = strength; }
         _componentTracker.Track(context.Sessions, target, "strength", target.Strength, value => target.Strength = value);
-
-        int priority = target.Priority;
-        if (ImGui.DragInt("Priority", ref priority)) { target.Priority = priority; }
-        _componentTracker.Track(context.Sessions, target, "priority", target.Priority, value => target.Priority = value);
 
         ImGui.TextDisabled($"{target.Width} x {target.Height} pixels");
         DrawResizeButton(context, target, 128);
@@ -253,15 +250,128 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         DrawClearButton(context, target);
     }
 
-    private void DrawLandscapeBindings(
+    private void DrawLandscapeMaterialBind(InspectorContext context, LandscapeMaterialBindComponent bind)
+    {
+        int priority = bind.Priority;
+        if (ImGui.DragInt("Priority", ref priority)) { bind.Priority = priority; }
+        _componentTracker.Track(context.Sessions, bind, "priority", bind.Priority, value => bind.Priority = value);
+
+        LandscapeCatalog catalog = _editor.Landscape.Catalog;
+
+        for (int i = 0; i < bind.Bindings.Count; i++)
+        {
+            LandscapeMaterialBinding binding = bind.Bindings[i];
+            ImGui.PushID(i);
+            ImGui.Separator();
+
+            DrawLayerBinding(context, bind, catalog, i, binding);
+            DrawMaterialBinding(context, bind, catalog, i, binding);
+
+            if (ImGui.SmallButton("Remove binding"))
+            {
+                List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
+                List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
+                after.RemoveAt(i);
+                Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
+                ImGui.PopID();
+                return;
+            }
+
+            ImGui.PopID();
+        }
+
+        if (ImGui.Button("Add binding"))
+        {
+            List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
+            List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
+            after.Add(new LandscapeMaterialBinding(
+                catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId ?? catalog.Layers.FirstOrDefault()?.RecordId,
+                catalog.Materials.FirstOrDefault()?.RecordId));
+            Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
+        }
+    }
+
+    private void DrawLayerBinding(
+        InspectorContext context,
+        LandscapeMaterialBindComponent bind,
+        LandscapeCatalog catalog,
+        int index,
+        LandscapeMaterialBinding binding)
+    {
+        LandscapeLayer? boundLayer = binding.LayerId is { } lid
+            ? catalog.Layers.FirstOrDefault(layer => layer.RecordId == lid)
+            : null;
+        if (!ImGui.BeginCombo("Layer", boundLayer?.Name ?? "(none)"))
+        {
+            return;
+        }
+
+        if (ImGui.Selectable("(none)", binding.LayerId == null))
+        {
+            ReplaceBinding(context, bind, index, binding with { LayerId = null });
+        }
+
+        foreach (LandscapeLayer layer in catalog.LayersInOrder)
+        {
+            int? recordId = layer.RecordId;
+            if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == binding.LayerId))
+            {
+                ReplaceBinding(context, bind, index, binding with { LayerId = recordId });
+            }
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private void DrawMaterialBinding(
+        InspectorContext context,
+        LandscapeMaterialBindComponent bind,
+        LandscapeCatalog catalog,
+        int index,
+        LandscapeMaterialBinding binding)
+    {
+        LandscapeMaterial? boundMaterial = binding.MaterialId is { } mid
+            ? catalog.Materials.FirstOrDefault(material => material.RecordId == mid)
+            : null;
+        if (!ImGui.BeginCombo("Material", boundMaterial?.Name ?? "(none)"))
+        {
+            return;
+        }
+
+        if (ImGui.Selectable("(none)", binding.MaterialId == null))
+        {
+            ReplaceBinding(context, bind, index, binding with { MaterialId = null });
+        }
+
+        foreach (LandscapeMaterial material in catalog.Materials)
+        {
+            int? recordId = material.RecordId;
+            if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == binding.MaterialId))
+            {
+                ReplaceBinding(context, bind, index, binding with { MaterialId = recordId });
+            }
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private static void ReplaceBinding(
+        InspectorContext context,
+        LandscapeMaterialBindComponent bind,
+        int index,
+        LandscapeMaterialBinding replacement)
+    {
+        List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
+        List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
+        after[index] = replacement;
+        Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
+    }
+
+    private void DrawLandscapeChannel(
         InspectorContext context,
         SceneComponent component,
         string channel,
-        Action<string> setChannel,
-        int? layerId,
-        Action<int?> setLayer,
-        int? materialId,
-        Action<int?> setMaterial)
+        Action<string> setChannel)
     {
         LandscapeCatalog catalog = _editor.Landscape.Catalog;
 
@@ -277,50 +387,6 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 if (ImGui.Selectable(item.Name, item.Name == channel))
                 {
                     Record(context, component, "channel", channel, item.Name, setChannel);
-                }
-            }
-
-            ImGui.EndCombo();
-        }
-
-        LandscapeLayer? boundLayer = layerId is { } lid
-            ? catalog.Layers.FirstOrDefault(layer => layer.RecordId == lid)
-            : null;
-        if (ImGui.BeginCombo("Layer", boundLayer?.Name ?? "(none)"))
-        {
-            if (ImGui.Selectable("(none)", layerId == null))
-            {
-                Record(context, component, "layer", layerId, null, setLayer);
-            }
-
-            foreach (LandscapeLayer layer in catalog.LayersInOrder)
-            {
-                int? recordId = layer.RecordId;
-                if (ImGui.Selectable($"{layer.Name}##{recordId}", recordId == layerId))
-                {
-                    Record(context, component, "layer", layerId, recordId, setLayer);
-                }
-            }
-
-            ImGui.EndCombo();
-        }
-
-        LandscapeMaterial? boundMaterial = materialId is { } mid
-            ? catalog.Materials.FirstOrDefault(material => material.RecordId == mid)
-            : null;
-        if (ImGui.BeginCombo("Material", boundMaterial?.Name ?? "(none)"))
-        {
-            if (ImGui.Selectable("(none)", materialId == null))
-            {
-                Record(context, component, "material", materialId, null, setMaterial);
-            }
-
-            foreach (LandscapeMaterial material in catalog.Materials)
-            {
-                int? recordId = material.RecordId;
-                if (ImGui.Selectable($"{material.Name}##{recordId}", recordId == materialId))
-                {
-                    Record(context, component, "material", materialId, recordId, setMaterial);
                 }
             }
 

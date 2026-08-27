@@ -114,6 +114,7 @@ public sealed class SceneScriptApi : IScriptModule
         "marker" => new MarkerComponent(),
         "landscape-stamp" => new StampComponent(),
         "drawing-target" => new DrawingTargetComponent(),
+        "landscape-material-bind" => new LandscapeMaterialBindComponent(),
         _ => throw new InvalidOperationException($"No scene component type named '{typeId}'."),
     };
 
@@ -122,6 +123,7 @@ public sealed class SceneScriptApi : IScriptModule
         "marker" => "Empty",
         "landscape-stamp" => "Stamp",
         "drawing-target" => "Drawing Target",
+        "landscape-material-bind" => "Landscape Material Bind",
         _ => "Entity",
     };
 }

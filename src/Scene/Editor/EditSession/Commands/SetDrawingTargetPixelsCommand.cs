@@ -18,10 +18,10 @@ public sealed class SetDrawingTargetPixelsCommand(
             target.Owner!,
             ChunkChangeSnapshot.Capture(target.Owner!, fingerprint: ChunkChangeSnapshot.FingerprintBytes(
                 target.Owner!, before, target.Width, target.Height, target.WorldSizeX, target.WorldSizeZ,
-                target.Strength, target.Channel, target.LayerId, target.MaterialId, target.Priority)),
+                target.Strength, target.Channel)),
             ChunkChangeSnapshot.Capture(target.Owner!, fingerprint: ChunkChangeSnapshot.FingerprintBytes(
                 target.Owner!, after, target.Width, target.Height, target.WorldSizeX, target.WorldSizeZ,
-                target.Strength, target.Channel, target.LayerId, target.MaterialId, target.Priority)))
+                target.Strength, target.Channel)))
     ];
 
     public string Description => $"Paint {Entity.DisplayName}";
@@ -51,10 +51,10 @@ public sealed class ResizeDrawingTargetCommand(
             target.Owner!,
             ChunkChangeSnapshot.Capture(target.Owner!, fingerprint: ChunkChangeSnapshot.FingerprintBytes(
                 target.Owner!, beforePixels, beforeWidth, beforeHeight, target.WorldSizeX, target.WorldSizeZ,
-                target.Strength, target.Channel, target.LayerId, target.MaterialId, target.Priority)),
+                target.Strength, target.Channel)),
             ChunkChangeSnapshot.Capture(target.Owner!, fingerprint: ChunkChangeSnapshot.FingerprintBytes(
                 target.Owner!, afterPixels, afterWidth, afterHeight, target.WorldSizeX, target.WorldSizeZ,
-                target.Strength, target.Channel, target.LayerId, target.MaterialId, target.Priority)))
+                target.Strength, target.Channel)))
     ];
 
     public string Description => $"Resize {Entity.DisplayName}";

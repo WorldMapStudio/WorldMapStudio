@@ -25,8 +25,9 @@ Instead, the stamp says a few more reusable things:
 
 1. It has a shape in the world: center, radius, falloff, strength.
 2. It writes that shape into a named grayscale mask.
-3. It asks for a logical terrain layer.
-4. It binds a material to that layer.
+
+A separate material bind component on the same entity says which material belongs on which logical
+terrain layer wherever the entity spans the chunk grid.
 
 The named grayscale mask exists only for the current rebuild. White means "the stamp is
 strong here"; black means "the stamp is absent here"; values in between are falloff.
@@ -49,13 +50,14 @@ A **deformer** is any scene entity that can influence terrain.
 
 Current examples:
 
-- `StampEntity`: a circular world-space influence with radius and falloff.
-- `DrawingTargetEntity`: a paintable rectangle whose pixels are projected into the world.
+- `Landscape Stamp`: a circular world-space influence with radius and falloff.
+- `Drawing Target`: a paintable rectangle whose pixels are projected into the world.
+- `Landscape Material Bind`: a list of layer/material pairs claimed over the entity's full bounds.
 
-A deformer does two jobs during a chunk build:
+A deformer can do one or both jobs during a chunk build:
 
-1. It claims which terrain layer and material it wants to use.
-2. If the claim survives, it writes its shape into one or more working masks.
+1. It claims which terrain layers and materials it wants to use.
+2. It writes its shape into one or more working masks.
 
 The code contract for this is `ILandscapeDeformer`.
 
@@ -123,7 +125,8 @@ The layer answers questions like:
 - What draw/evaluation order does this layer have?
 - How important is this layer when a chunk runs out of texture slots?
 
-What the layer actually does depends on the material bound to it by a deformer in a particular chunk.
+What the layer actually does depends on the material bound to it by a material bind component in a
+particular chunk.
 
 Layer fields:
 
@@ -179,10 +182,10 @@ and what threshold/softness values to use.
 
 Here is the same stamp example with the real primitive names:
 
-1. `StampEntity` is the deformer.
+1. `Landscape Stamp` writes a radial mask.
 2. It writes its radial mask into a `LandscapeChannel`, such as `hill_mask`.
-3. It claims a `LandscapeLayer`, such as `small_hill`.
-4. It binds a `LandscapeMaterial`, such as `soft_dirt_mound`.
+3. `Landscape Material Bind` claims a `LandscapeLayer`, such as `small_hill`.
+4. It binds a `LandscapeMaterial`, such as `soft_dirt_mound`, to that layer.
 5. The material's alpha function reads `hill_mask` and produces dirt coverage.
 6. The material's height function reads `hill_mask` and raises the heightmap.
 
@@ -201,13 +204,11 @@ Use the **Landscape** window to configure the terrain catalog:
 5. Bind function parameters, especially channel parameters, to channel names.
 6. Check the **Problems** tab for catalog errors.
 
-Then use a deformer entity, such as a stamp or drawing target, to bind authored geometry to the
-catalog:
+Then use deformer components and material bind components to bind authored geometry to the catalog:
 
-- pick the channel it writes;
-- pick the layer it claims;
-- pick the material it binds to that claim;
-- set the entity priority.
+- on stamps and drawing targets, pick the channel they write;
+- on landscape material binds, add layer/material pairs;
+- set the bind priority.
 
 The **Landscape Debug** window shows what the builder actually produced for the chunk near the
 camera: height preview, alpha previews per slot, slot count, and any reported problems.
@@ -222,8 +223,8 @@ Once the basic concepts are clear, the code model is compact. Anything implement
 - `Rasterize(...)`: writes this entity's contribution into channel buffers after the resolver has
   decided what survived.
 
-Both examples claim one layer with one material. A future road entity could emit a claim group with
-multiple claims, such as road center and shoulder, so those claims stand or fall together.
+Paint components can return no claims and only rasterize. Material bind components can claim layers
+and return no raster output.
 
 ## Claims And Resolution
 

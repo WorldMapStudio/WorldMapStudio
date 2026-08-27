@@ -13,12 +13,6 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
 
     public string Channel { get; set; } = "";
 
-    public int? LayerId { get; set; }
-
-    public int? MaterialId { get; set; }
-
-    public int Priority { get; set; }
-
     public override string TypeId => "landscape-stamp";
 
     public override string DisplayName => "Landscape Stamp";
@@ -38,35 +32,12 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
     public Aabb InfluenceBounds => Entity.Transform * LocalBounds;
 
     public override int ContentVersion =>
-        System.HashCode.Combine(Radius, Falloff, Strength, Channel, LayerId, MaterialId, Priority);
+        System.HashCode.Combine(Radius, Falloff, Strength, Channel);
 
-    public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
-    {
-        if (context.Layer(LayerId) is not { } layer)
-        {
-            return [];
-        }
-
-        return
-        [
-            new LandscapeClaimGroup
-            {
-                Key = DeformerKey,
-                Label = Entity.DisplayName,
-                Priority = Priority,
-                Claims = [new LandscapeClaim { Layer = layer, Material = context.Material(MaterialId) }],
-                Source = Entity.Id,
-            },
-        ];
-    }
+    public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
     public void Rasterize(in LandscapeRasterContext context)
     {
-        if (context.Resolution.IsDropped(DeformerKey))
-        {
-            return;
-        }
-
         if (context.Channel(Channel) is not { } channel || context.Buffer(Channel) is not { } buffer)
         {
             return;

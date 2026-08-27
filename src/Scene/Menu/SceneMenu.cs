@@ -76,9 +76,8 @@ public sealed class SceneMenu : IMainMenu
         entity.AddComponent(new StampComponent
         {
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-            LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
-            MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
         });
+        entity.AddComponent(DefaultMaterialBind(catalog));
 
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
@@ -96,9 +95,8 @@ public sealed class SceneMenu : IMainMenu
         entity.AddComponent(new DrawingTargetComponent
         {
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-            LayerId = catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
-            MaterialId = catalog.Materials.FirstOrDefault()?.RecordId,
         });
+        entity.AddComponent(DefaultMaterialBind(catalog));
 
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
@@ -117,5 +115,17 @@ public sealed class SceneMenu : IMainMenu
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
+    }
+
+    private static LandscapeMaterialBindComponent DefaultMaterialBind(LandscapeCatalog catalog)
+    {
+        var bind = new LandscapeMaterialBindComponent();
+        bind.ReplaceBindings(
+        [
+            new LandscapeMaterialBinding(
+                catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
+                catalog.Materials.FirstOrDefault()?.RecordId),
+        ]);
+        return bind;
     }
 }
