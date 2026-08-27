@@ -76,8 +76,8 @@ const config: Config = {
               to: '/docs/intro',
             },
             {
-              label: 'CLI',
-              to: '/docs/cli',
+              label: 'Terrain Materials',
+              to: '/docs/terrain-materials',
             },
           ],
         },
