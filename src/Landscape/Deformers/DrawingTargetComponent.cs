@@ -43,12 +43,6 @@ public sealed class DrawingTargetComponent : SceneComponent, ISceneBoundsProvide
 
     public string Channel { get; set; } = "";
 
-    public int? LayerId { get; set; }
-
-    public int? MaterialId { get; set; }
-
-    public int Priority { get; set; }
-
     public ReadOnlySpan<byte> Pixels => _pixels;
 
     public override string TypeId => "drawing-target";
@@ -80,41 +74,15 @@ public sealed class DrawingTargetComponent : SceneComponent, ISceneBoundsProvide
             hash.Add(WorldSizeZ);
             hash.Add(Strength);
             hash.Add(Channel);
-            hash.Add(LayerId);
-            hash.Add(MaterialId);
-            hash.Add(Priority);
             hash.Add(_paintVersion);
             return hash.ToHashCode();
         }
     }
 
-    public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
-    {
-        if (context.Layer(LayerId) is not { } layer)
-        {
-            return [];
-        }
-
-        return
-        [
-            new LandscapeClaimGroup
-            {
-                Key = DeformerKey,
-                Label = Entity.DisplayName,
-                Priority = Priority,
-                Claims = [new LandscapeClaim { Layer = layer, Material = context.Material(MaterialId) }],
-                Source = Entity.Id,
-            },
-        ];
-    }
+    public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
     public void Rasterize(in LandscapeRasterContext context)
     {
-        if (context.Resolution.IsDropped(DeformerKey))
-        {
-            return;
-        }
-
         if (context.Channel(Channel) is not { } channel || context.Buffer(Channel) is not { } buffer)
         {
             return;

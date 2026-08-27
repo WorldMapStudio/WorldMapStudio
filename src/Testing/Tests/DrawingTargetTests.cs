@@ -75,16 +75,17 @@ public static class DrawingTargetTests
         var target = new DrawingTargetComponent
         {
             Channel = MaskChannel,
-            LayerId = paintLayer.RecordId,
-            MaterialId = material.RecordId,
             WorldSizeX = 64.0f,
             WorldSizeZ = 64.0f,
         };
+        var bind = new LandscapeMaterialBindComponent();
+        bind.ReplaceBindings([new LandscapeMaterialBinding(paintLayer.RecordId, material.RecordId)]);
         entity.AddComponent(target);
+        entity.AddComponent(bind);
         target.Paint(Vector3.Zero, 12.0f, 1.0f, erase: false);
 
         LandscapeChunkOutput output = new LandscapeBuilder(settings, catalog, functions)
-            .BuildOne(new ChunkCoord(0, 0), [target]);
+            .BuildOne(new ChunkCoord(0, 0), entity.Components.OfType<ILandscapeDeformer>().ToList());
 
         Assert.AreEqual(2, output.Layers.Count);
         Assert.IsTrue(output.Layers[1].Alpha!.Any(alpha => alpha > 200), "painted pixels should become alpha");

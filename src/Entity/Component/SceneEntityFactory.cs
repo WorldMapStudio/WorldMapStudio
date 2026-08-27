@@ -63,12 +63,6 @@ public sealed class SceneStampComponentRecord
 
     public string Channel { get; set; } = "";
 
-    public int? LayerId { get; set; }
-
-    public int? MaterialId { get; set; }
-
-    public int Priority { get; set; }
-
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -88,15 +82,31 @@ public sealed class SceneDrawingTargetComponentRecord
 
     public string Channel { get; set; } = "";
 
+    public byte[] Pixels { get; set; } = [];
+
+    public SceneEntityRecord? Entity { get; set; }
+}
+
+public sealed class SceneLandscapeMaterialBindComponentRecord
+{
+    public int EntityId { get; set; }
+
+    public int Priority { get; set; }
+
+    public SceneEntityRecord? Entity { get; set; }
+}
+
+public sealed class SceneLandscapeMaterialBindEntryRecord
+{
+    public int EntityId { get; set; }
+
+    public int SortOrder { get; set; }
+
     public int? LayerId { get; set; }
 
     public int? MaterialId { get; set; }
 
-    public int Priority { get; set; }
-
-    public byte[] Pixels { get; set; } = [];
-
-    public SceneEntityRecord? Entity { get; set; }
+    public SceneLandscapeMaterialBindComponentRecord? Component { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -142,8 +152,20 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
             .Where(record => ids.Contains(record.EntityId))
             .ToDictionaryAsync(record => record.EntityId)
             .ConfigureAwait(false);
+        Dictionary<int, SceneLandscapeMaterialBindComponentRecord> materialBinds =
+            await context.SceneLandscapeMaterialBindComponents.AsNoTracking()
+                .Where(record => ids.Contains(record.EntityId))
+                .ToDictionaryAsync(record => record.EntityId)
+                .ConfigureAwait(false);
+        Dictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries =
+            await context.SceneLandscapeMaterialBindEntries.AsNoTracking()
+                .Where(record => ids.Contains(record.EntityId))
+                .OrderBy(record => record.SortOrder)
+                .GroupBy(record => record.EntityId)
+                .ToDictionaryAsync(group => group.Key, group => group.ToList())
+                .ConfigureAwait(false);
 
-        return rows.Select(row => ToEntity(row, markers, stamps, drawingTargets)).ToList();
+        return rows.Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries)).ToList();
     }
 
     public Action Stage(DbContext context, IEntity entity)
@@ -191,6 +213,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 db.SceneDrawingTargetComponents.Remove(new SceneDrawingTargetComponentRecord { EntityId = id });
             }
 
+            if (db.SceneLandscapeMaterialBindComponents.Any(record => record.EntityId == id))
+            {
+                db.SceneLandscapeMaterialBindComponents.Remove(new SceneLandscapeMaterialBindComponentRecord { EntityId = id });
+            }
+
             db.SceneEntities.Remove(new SceneEntityRecord { Id = id });
         }
     }
@@ -199,7 +226,9 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         SceneEntityRecord record,
         IReadOnlyDictionary<int, SceneMarkerComponentRecord> markers,
         IReadOnlyDictionary<int, SceneStampComponentRecord> stamps,
-        IReadOnlyDictionary<int, SceneDrawingTargetComponentRecord> drawingTargets)
+        IReadOnlyDictionary<int, SceneDrawingTargetComponentRecord> drawingTargets,
+        IReadOnlyDictionary<int, SceneLandscapeMaterialBindComponentRecord> materialBinds,
+        IReadOnlyDictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries)
     {
         var entity = new SceneEntity
         {
@@ -221,9 +250,6 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 Falloff = (float)stamp.Falloff,
                 Strength = (float)stamp.Strength,
                 Channel = stamp.Channel,
-                LayerId = stamp.LayerId,
-                MaterialId = stamp.MaterialId,
-                Priority = stamp.Priority,
             });
         }
 
@@ -235,12 +261,23 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 WorldSizeZ = (float)targetRecord.WorldSizeZ,
                 Strength = (float)targetRecord.Strength,
                 Channel = targetRecord.Channel,
-                LayerId = targetRecord.LayerId,
-                MaterialId = targetRecord.MaterialId,
-                Priority = targetRecord.Priority,
             };
             target.LoadPixels(targetRecord.Width, targetRecord.Height, targetRecord.Pixels);
             entity.LoadComponent(target);
+        }
+
+        if (materialBinds.TryGetValue(record.Id, out SceneLandscapeMaterialBindComponentRecord? bindRecord))
+        {
+            var bind = new LandscapeMaterialBindComponent
+            {
+                Priority = bindRecord.Priority,
+            };
+            if (materialBindEntries.TryGetValue(record.Id, out List<SceneLandscapeMaterialBindEntryRecord>? entries))
+            {
+                bind.ReplaceBindings(entries.Select(entry => new LandscapeMaterialBinding(entry.LayerId, entry.MaterialId)));
+            }
+
+            entity.LoadComponent(bind);
         }
 
         var rotation = new Quaternion((float)record.RotX, (float)record.RotY, (float)record.RotZ, (float)record.RotW);
@@ -302,9 +339,6 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 Falloff = stamp.Falloff,
                 Strength = stamp.Strength,
                 Channel = stamp.Channel,
-                LayerId = stamp.LayerId,
-                MaterialId = stamp.MaterialId,
-                Priority = stamp.Priority,
             };
             StageComponentRow(db.SceneStampComponents, row, entityId);
         }
@@ -326,9 +360,6 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 WorldSizeZ = target.WorldSizeZ,
                 Strength = target.Strength,
                 Channel = target.Channel,
-                LayerId = target.LayerId,
-                MaterialId = target.MaterialId,
-                Priority = target.Priority,
                 Pixels = target.CopyPixels(),
             };
             StageComponentRow(db.SceneDrawingTargetComponents, row, entityId);
@@ -336,6 +367,78 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         else
         {
             StageComponentDelete(db.SceneDrawingTargetComponents, entityId);
+        }
+
+        LandscapeMaterialBindComponent? bind = entity.Component<LandscapeMaterialBindComponent>();
+        if (bind != null)
+        {
+            var row = new SceneLandscapeMaterialBindComponentRecord
+            {
+                Entity = entityId is null ? record : null,
+                EntityId = entityId ?? 0,
+                Priority = bind.Priority,
+            };
+            StageComponentRow(db.SceneLandscapeMaterialBindComponents, row, entityId);
+            StageMaterialBindEntries(db, bind, row, entityId);
+        }
+        else
+        {
+            StageComponentDelete(db.SceneLandscapeMaterialBindComponents, entityId);
+        }
+    }
+
+    private static void StageMaterialBindEntries(
+        EditorDbContext db,
+        LandscapeMaterialBindComponent bind,
+        SceneLandscapeMaterialBindComponentRecord row,
+        int? entityId)
+    {
+        if (entityId is int id)
+        {
+            List<SceneLandscapeMaterialBindEntryRecord> existing = db.SceneLandscapeMaterialBindEntries
+                .Where(record => record.EntityId == id)
+                .OrderBy(record => record.SortOrder)
+                .ToList();
+
+            for (int i = 0; i < existing.Count; i++)
+            {
+                if (i >= bind.Bindings.Count)
+                {
+                    db.SceneLandscapeMaterialBindEntries.Remove(existing[i]);
+                    continue;
+                }
+
+                LandscapeMaterialBinding binding = bind.Bindings[i];
+                existing[i].LayerId = binding.LayerId;
+                existing[i].MaterialId = binding.MaterialId;
+            }
+
+            for (int i = existing.Count; i < bind.Bindings.Count; i++)
+            {
+                LandscapeMaterialBinding binding = bind.Bindings[i];
+                db.SceneLandscapeMaterialBindEntries.Add(new SceneLandscapeMaterialBindEntryRecord
+                {
+                    EntityId = id,
+                    SortOrder = i,
+                    LayerId = binding.LayerId,
+                    MaterialId = binding.MaterialId,
+                });
+            }
+
+            return;
+        }
+
+        for (int i = 0; i < bind.Bindings.Count; i++)
+        {
+            LandscapeMaterialBinding binding = bind.Bindings[i];
+            db.SceneLandscapeMaterialBindEntries.Add(new SceneLandscapeMaterialBindEntryRecord
+            {
+                Component = entityId is null ? row : null,
+                EntityId = entityId ?? 0,
+                SortOrder = i,
+                LayerId = binding.LayerId,
+                MaterialId = binding.MaterialId,
+            });
         }
     }
 
