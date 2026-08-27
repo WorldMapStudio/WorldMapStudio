@@ -21,6 +21,10 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
 
     public DbSet<DrawingTargetRecord> LandscapeDrawingTargets => Set<DrawingTargetRecord>();
 
+    public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
+
+    public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<EmptyRecord>(entity =>
@@ -84,6 +88,21 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
             // One landscape per map, so the map id is the key rather than a generated one.
             entity.HasKey(record => record.MapId);
             entity.Property(record => record.MapId).ValueGeneratedNever();
+        });
+
+        model.Entity<ChunkChangeRecord>(entity =>
+        {
+            entity.ToTable("chunk_changes");
+            entity.HasKey(record => new { record.MapId, record.ChunkX, record.ChunkY });
+            entity.Property(record => record.ContentHash).HasMaxLength(64);
+        });
+
+        model.Entity<ExportedChunkRecord>(entity =>
+        {
+            entity.ToTable("exported_chunks");
+            entity.HasKey(record => new { record.ExporterId, record.MapId, record.ChunkX, record.ChunkY });
+            entity.Property(record => record.ExporterId).HasMaxLength(128);
+            entity.Property(record => record.ContentHash).HasMaxLength(64);
         });
     }
 }
