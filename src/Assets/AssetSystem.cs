@@ -21,6 +21,13 @@ public sealed partial class AssetSystem : ISubsystemHost
     private readonly Dictionary<string, Task<ModelAsset?>> _pendingModelLoads = new();
     private int _modelCacheGeneration;
 
+    private readonly object _textureListLock = new();
+    private IReadOnlyList<AssetRef>? _textureListCache;
+    private Task<IReadOnlyList<AssetRef>>? _textureListTask;
+    private readonly object _modelListLock = new();
+    private IReadOnlyList<AssetRef>? _modelListCache;
+    private Task<IReadOnlyList<AssetRef>>? _modelListTask;
+
     public AssetSystem(EditorContext context)
     {
         _context = context;
@@ -75,6 +82,74 @@ public sealed partial class AssetSystem : ISubsystemHost
         }
 
         return assets;
+    }
+
+    /// <summary>
+    /// Same as <see cref="ListTextureAssets"/>, but runs off the main thread. The first call against a
+    /// given MPQ source opens and indexes every archive in its patch chain, which can take several
+    /// seconds on a full retail install, so callers on the render loop must not do this synchronously.
+    /// </summary>
+    public Task<IReadOnlyList<AssetRef>> ListTextureAssetsAsync()
+    {
+        lock (_textureListLock)
+        {
+            if (_textureListCache is { } cached)
+            {
+                return Task.FromResult(cached);
+            }
+
+            if (_textureListTask is { } pending)
+            {
+                return pending;
+            }
+
+            var completion = new TaskCompletionSource<IReadOnlyList<AssetRef>>();
+            WorkQueue.Schedule("Index Textures", _ =>
+            {
+                IReadOnlyList<AssetRef> result = ListTextureAssets();
+                lock (_textureListLock)
+                {
+                    _textureListCache = result;
+                    _textureListTask = null;
+                }
+
+                completion.SetResult(result);
+            });
+            _textureListTask = completion.Task;
+            return _textureListTask;
+        }
+    }
+
+    /// <summary>See <see cref="ListTextureAssetsAsync"/>; the model equivalent.</summary>
+    public Task<IReadOnlyList<AssetRef>> ListModelAssetsAsync()
+    {
+        lock (_modelListLock)
+        {
+            if (_modelListCache is { } cached)
+            {
+                return Task.FromResult(cached);
+            }
+
+            if (_modelListTask is { } pending)
+            {
+                return pending;
+            }
+
+            var completion = new TaskCompletionSource<IReadOnlyList<AssetRef>>();
+            WorkQueue.Schedule("Index Models", _ =>
+            {
+                IReadOnlyList<AssetRef> result = ListModelAssets();
+                lock (_modelListLock)
+                {
+                    _modelListCache = result;
+                    _modelListTask = null;
+                }
+
+                completion.SetResult(result);
+            });
+            _modelListTask = completion.Task;
+            return _modelListTask;
+        }
     }
 
     public Texture2D? LoadTextureAsset(string path)
@@ -149,6 +224,12 @@ public sealed partial class AssetSystem : ISubsystemHost
             _pendingTextureLoads.Clear();
             _textureCacheGeneration++;
         }
+
+        lock (_textureListLock)
+        {
+            _textureListCache = null;
+            _textureListTask = null;
+        }
     }
 
     public ModelAsset? LoadModelAsset(string path)
@@ -222,6 +303,12 @@ public sealed partial class AssetSystem : ISubsystemHost
             _modelCache.Clear();
             _pendingModelLoads.Clear();
             _modelCacheGeneration++;
+        }
+
+        lock (_modelListLock)
+        {
+            _modelListCache = null;
+            _modelListTask = null;
         }
     }
 
