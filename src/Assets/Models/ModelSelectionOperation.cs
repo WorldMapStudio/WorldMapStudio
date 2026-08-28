@@ -11,10 +11,15 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
 {
     private static readonly Vector2 BodySize = new(900, 480);
     private static readonly Vector2 PreviewSize = new(320, 320);
+    private const int LargeSetThreshold = 500;
+    private const int MinFilterLengthForLargeSets = 2;
 
     private string _filter = "";
     private string _previewPath = "";
     private List<AssetRef>? _models;
+    private List<AssetRef> _filtered = [];
+    private List<AssetRef>? _filteredSourceModels;
+    private string _filteredForFilter = "";
     private ModelPreviewRenderer? _preview;
 
     public ModalOperationState Draw(ModelSelectionContext context)
@@ -96,29 +101,75 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         Vector2 listSize = new(BodySize.X - PreviewSize.X - 24.0f, BodySize.Y - 8.0f);
         ImGui.BeginChild("ModelAssetList", listSize, true, ImGuiWindowFlags.None);
 
-        List<AssetRef> visible = FilteredModels().ToList();
-        if (visible.Count == 0)
+        RefreshFilteredModels();
+
+        int totalCount = _models?.Count ?? 0;
+        if (totalCount > LargeSetThreshold && _filter.Trim().Length < MinFilterLengthForLargeSets)
         {
-            ImGui.TextDisabled(_models?.Count == 0 ? "No model assets found." : "No models match the filter.");
+            ImGui.TextDisabled($"{totalCount} models. Type at least {MinFilterLengthForLargeSets} characters to filter.");
             ImGui.EndChild();
             return;
         }
 
-        foreach (AssetRef model in visible)
+        if (_filtered.Count == 0)
         {
-            bool selected = model.Path == _previewPath;
-            if (ImGui.Selectable($"{model.DisplayName}##{model.Path}", selected))
+            ImGui.TextDisabled(totalCount == 0 ? "No model assets found." : "No models match the filter.");
+            ImGui.EndChild();
+            return;
+        }
+
+        ImGui.TextDisabled($"{_filtered.Count} models");
+
+        unsafe
+        {
+            var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+            clipper.Begin(_filtered.Count);
+            while (clipper.Step())
             {
-                _previewPath = model.Path;
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                {
+                    AssetRef model = _filtered[i];
+                    bool selected = model.Path == _previewPath;
+                    if (ImGui.Selectable($"{model.DisplayName}##{model.Path}", selected))
+                    {
+                        _previewPath = model.Path;
+                    }
+
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(model.FullPath);
+                    }
+                }
             }
 
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip(model.FullPath);
-            }
+            clipper.End();
+            clipper.Destroy();
         }
 
         ImGui.EndChild();
+    }
+
+    private void RefreshFilteredModels()
+    {
+        if (_models == null)
+        {
+            _filtered = [];
+            _filteredSourceModels = null;
+            return;
+        }
+
+        string filter = _filter.Trim();
+        if (ReferenceEquals(_models, _filteredSourceModels) && filter == _filteredForFilter)
+        {
+            return;
+        }
+
+        _filteredSourceModels = _models;
+        _filteredForFilter = filter;
+        _filtered = filter.Length == 0 ? _models : _models.Where(model =>
+            model.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            model.SourceName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+            model.Path.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
     }
 
     private void DrawPreviewPanel(ModelSelectionContext context)
@@ -131,22 +182,4 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         ImGui.EndGroup();
     }
 
-    private IEnumerable<AssetRef> FilteredModels()
-    {
-        if (_models == null)
-        {
-            return [];
-        }
-
-        string filter = _filter.Trim();
-        if (filter.Length == 0)
-        {
-            return _models;
-        }
-
-        return _models.Where(model =>
-            model.DisplayName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            model.SourceName.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
-            model.Path.Contains(filter, StringComparison.OrdinalIgnoreCase));
-    }
 }
