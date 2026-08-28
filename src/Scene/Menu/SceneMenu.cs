@@ -11,12 +11,36 @@ namespace WorldMapStudio;
 public sealed class SceneMenu : IMainMenu
 {
     private readonly EditorContext _context;
+    private readonly ShortcutAction _addStamp;
+    private readonly ShortcutAction _addDrawingTarget;
+    private readonly ShortcutAction _deleteSelected;
 
     public float Priority => 0.75f;
 
     public SceneMenu(MenuBarManager manager)
     {
         _context = manager.Context;
+        _addStamp = _context.Shortcuts.Register(
+            "scene.add-landscape-stamp",
+            "Scene",
+            "Add Landscape Stamp",
+            new KeyboardShortcut(ImGuiKey.S, ShortcutModifiers.Alt),
+            AddStamp,
+            () => _context.Landscape.IsEnabled);
+        _addDrawingTarget = _context.Shortcuts.Register(
+            "scene.add-drawing-target",
+            "Scene",
+            "Add Drawing Target",
+            new KeyboardShortcut(ImGuiKey.D, ShortcutModifiers.Alt),
+            AddDrawingTarget,
+            () => _context.Landscape.IsEnabled);
+        _deleteSelected = _context.Shortcuts.Register(
+            "scene.delete-selected",
+            "Scene",
+            "Delete Selected",
+            new KeyboardShortcut(ImGuiKey.Delete, ShortcutModifiers.None),
+            DeleteSelected,
+            () => _context.Selection.Selected.Count > 0);
     }
 
     public void Draw()
@@ -31,12 +55,12 @@ public sealed class SceneMenu : IMainMenu
                 ImGui.EndMenu();
             }
 
-            if (ImGui.MenuItem("Add Landscape Stamp", string.Empty, false, _context.Landscape.IsEnabled))
+            if (ImGui.MenuItem("Add Landscape Stamp", _addStamp.ShortcutLabel, false, _context.Landscape.IsEnabled))
             {
                 AddStamp();
             }
 
-            if (ImGui.MenuItem("Add Drawing Target", string.Empty, false, _context.Landscape.IsEnabled))
+            if (ImGui.MenuItem("Add Drawing Target", _addDrawingTarget.ShortcutLabel, false, _context.Landscape.IsEnabled))
             {
                 AddDrawingTarget();
             }
@@ -44,7 +68,7 @@ public sealed class SceneMenu : IMainMenu
             ImGui.Separator();
 
             bool hasSelection = _context.Selection.Selected.Count > 0;
-            if (ImGui.MenuItem("Delete Selected", string.Empty, false, hasSelection))
+            if (ImGui.MenuItem("Delete Selected", _deleteSelected.ShortcutLabel, false, hasSelection))
             {
                 DeleteSelected();
             }

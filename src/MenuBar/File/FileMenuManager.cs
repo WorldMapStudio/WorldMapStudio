@@ -15,10 +15,13 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 {
     public float Priority => 0f;
 
+    public ShortcutSystem Shortcuts { get; }
+
     public bool ExitRequested { get; private set; }
 
     public FileMenuManager(MenuBarManager manager)
     {
+        Shortcuts = manager.Context.Shortcuts;
         InitializeSubsystems();
     }
 
