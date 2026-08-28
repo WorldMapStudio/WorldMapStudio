@@ -228,6 +228,35 @@ f 1/1 2/2 3/3
     }
 
     [EditorTest(Category = "Project")]
+    public static void Model_instantiate_defaults_to_each_parts_default_visible()
+    {
+        var shown = new ModelPart("shown", Transform3D.Identity, [], [], DefaultVisible: true);
+        var hidden = new ModelPart("hidden", Transform3D.Identity, [], [], DefaultVisible: false);
+        var model = new ModelAsset("visibility.synthetic", [shown, hidden]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_visibility_test__" });
+
+        Node3D node = model.Instantiate(context.Assets);
+
+        Assert.AreEqual(1, node.GetChildCount());
+        Assert.AreEqual("shown", node.GetChild(0).Name.ToString());
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Model_instantiate_part_filter_overrides_default_visible()
+    {
+        var shown = new ModelPart("shown", Transform3D.Identity, [], [], DefaultVisible: true);
+        var hidden = new ModelPart("hidden", Transform3D.Identity, [], [], DefaultVisible: false);
+        var model = new ModelAsset("visibility-override.synthetic", [shown, hidden]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_visibility_override_test__" });
+        var options = new ModelInstantiateOptions { PartFilter = part => part.Name == "hidden" };
+
+        Node3D node = model.Instantiate(context.Assets, options);
+
+        Assert.AreEqual(1, node.GetChildCount());
+        Assert.AreEqual("hidden", node.GetChild(0).Name.ToString());
+    }
+
+    [EditorTest(Category = "Project")]
     public static void Model_local_bounds_ignore_reference_only_parts()
     {
         ArrayMesh mesh = BuildTriangleMesh(new Vector3(10, 0, 0));
