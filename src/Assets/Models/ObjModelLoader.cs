@@ -87,7 +87,8 @@ public sealed class ObjModelLoader : IModelLoader
 
             string texturePath = materials.TryGetValue(name, out ObjMaterial? material) ? material.TexturePath : "";
             Color color = material?.Color ?? ModelAsset.FallbackColor(index);
-            modelSurfaces.Add(new ModelSurface(name, BuildMesh(builder), texturePath, color));
+            var modelMaterial = new ModelMaterial { TexturePath = texturePath, AlbedoColor = color, TwoSided = true };
+            modelSurfaces.Add(new ModelSurface(name, BuildMesh(builder), modelMaterial));
             index++;
         }
 
