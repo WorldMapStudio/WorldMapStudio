@@ -11,6 +11,8 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed partial class AssetSystem : ISubsystemHost
 {
+    private readonly record struct AssetIndex(IReadOnlyList<AssetRef> Textures, IReadOnlyList<AssetRef> Models);
+
     private readonly EditorContext _context;
     private readonly object _textureLock = new();
     private readonly Dictionary<string, Texture2D> _textureCache = new();
@@ -21,12 +23,9 @@ public sealed partial class AssetSystem : ISubsystemHost
     private readonly Dictionary<string, Task<ModelAsset?>> _pendingModelLoads = new();
     private int _modelCacheGeneration;
 
-    private readonly object _textureListLock = new();
-    private IReadOnlyList<AssetRef>? _textureListCache;
-    private Task<IReadOnlyList<AssetRef>>? _textureListTask;
-    private readonly object _modelListLock = new();
-    private IReadOnlyList<AssetRef>? _modelListCache;
-    private Task<IReadOnlyList<AssetRef>>? _modelListTask;
+    private readonly object _assetIndexLock = new();
+    private AssetIndex? _assetIndexCache;
+    private Task<AssetIndex>? _assetIndexTask;
 
     public AssetSystem(EditorContext context)
     {
@@ -38,117 +37,106 @@ public sealed partial class AssetSystem : ISubsystemHost
     public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
     public IEnumerable<IModelLoader> ModelLoaders => Subsystems.OfType<IModelLoader>();
 
-    public IReadOnlyList<AssetRef> ListTextureAssets()
+    public IReadOnlyList<AssetRef> ListTextureAssets() => BuildAssetIndex().Textures;
+
+    public IReadOnlyList<AssetRef> ListModelAssets() => BuildAssetIndex().Models;
+
+    /// <summary>
+    /// Same as <see cref="ListTextureAssets"/> and <see cref="ListModelAssets"/> combined, but runs off
+    /// the main thread. The first call against a given MPQ source opens and indexes every archive in
+    /// its patch chain, which can take several seconds on a full retail install, so callers on the
+    /// render loop must not do this synchronously. Texture and model listings share one provider scan
+    /// (and one cache) since they are both just different filters over the same underlying paths.
+    /// </summary>
+    public async Task<IReadOnlyList<AssetRef>> ListTextureAssetsAsync() => (await ListAssetIndexAsync().ConfigureAwait(false)).Textures;
+
+    /// <summary>See <see cref="ListTextureAssetsAsync"/>; the model equivalent.</summary>
+    public async Task<IReadOnlyList<AssetRef>> ListModelAssetsAsync() => (await ListAssetIndexAsync().ConfigureAwait(false)).Models;
+
+    private Task<AssetIndex> ListAssetIndexAsync()
     {
-        var assets = new List<AssetRef>();
-        var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        foreach (AssetSourceSettings source in ActiveSources())
+        lock (_assetIndexLock)
         {
-            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            if (_assetIndexCache is { } cached)
             {
-                foreach (AssetRef asset in provider.ListAssets(source))
-                {
-                    if (!TextureLoaders.Any(loader => loader.CanLoad(asset.Path)) || !paths.Add(asset.Path))
-                    {
-                        continue;
-                    }
-
-                    assets.Add(asset with { Kind = AssetKind.Texture });
-                }
+                return Task.FromResult(cached);
             }
-        }
 
-        return assets;
-    }
-
-    public IReadOnlyList<AssetRef> ListModelAssets()
-    {
-        var assets = new List<AssetRef>();
-        var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-        foreach (AssetSourceSettings source in ActiveSources())
-        {
-            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            if (_assetIndexTask is { } pending)
             {
-                foreach (AssetRef asset in provider.ListAssets(source))
-                {
-                    if (!ModelLoaders.Any(loader => loader.CanList(asset.Path)) || !paths.Add(asset.Path))
-                    {
-                        continue;
-                    }
-
-                    assets.Add(asset with { Kind = AssetKind.Model });
-                }
+                return pending;
             }
-        }
 
-        return assets;
+            var completion = new TaskCompletionSource<AssetIndex>();
+            WorkQueue.Schedule("Index Assets", _ =>
+            {
+                AssetIndex result = BuildAssetIndex();
+                lock (_assetIndexLock)
+                {
+                    _assetIndexCache = result;
+                    _assetIndexTask = null;
+                }
+
+                completion.SetResult(result);
+            });
+            _assetIndexTask = completion.Task;
+            return _assetIndexTask;
+        }
     }
 
     /// <summary>
-    /// Same as <see cref="ListTextureAssets"/>, but runs off the main thread. The first call against a
-    /// given MPQ source opens and indexes every archive in its patch chain, which can take several
-    /// seconds on a full retail install, so callers on the render loop must not do this synchronously.
+    /// Walks every active provider's asset list exactly once, sorting each path into the texture
+    /// and/or model bucket by asking each format loader — instead of the equivalent of two full,
+    /// independent scans (one per kind), which used to double the cost of the same underlying walk.
     /// </summary>
-    public Task<IReadOnlyList<AssetRef>> ListTextureAssetsAsync()
+    private AssetIndex BuildAssetIndex()
     {
-        lock (_textureListLock)
+        lock (_assetIndexLock)
         {
-            if (_textureListCache is { } cached)
+            if (_assetIndexCache is { } cached)
             {
-                return Task.FromResult(cached);
+                return cached;
             }
+        }
 
-            if (_textureListTask is { } pending)
-            {
-                return pending;
-            }
+        var textures = new List<AssetRef>();
+        var models = new List<AssetRef>();
+        var textureSeen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        var modelSeen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
 
-            var completion = new TaskCompletionSource<IReadOnlyList<AssetRef>>();
-            WorkQueue.Schedule("Index Textures", _ =>
+        foreach (AssetSourceSettings source in ActiveSources())
+        {
+            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
             {
-                IReadOnlyList<AssetRef> result = ListTextureAssets();
-                lock (_textureListLock)
+                foreach (AssetRef asset in provider.ListAssets(source))
                 {
-                    _textureListCache = result;
-                    _textureListTask = null;
-                }
+                    if (TextureLoaders.Any(loader => loader.CanLoad(asset.Path)) && textureSeen.Add(asset.Path))
+                    {
+                        textures.Add(asset with { Kind = AssetKind.Texture });
+                    }
 
-                completion.SetResult(result);
-            });
-            _textureListTask = completion.Task;
-            return _textureListTask;
+                    if (ModelLoaders.Any(loader => loader.CanList(asset.Path)) && modelSeen.Add(asset.Path))
+                    {
+                        models.Add(asset with { Kind = AssetKind.Model });
+                    }
+                }
+            }
+        }
+
+        var result = new AssetIndex(textures, models);
+        lock (_assetIndexLock)
+        {
+            _assetIndexCache ??= result;
+            return _assetIndexCache.Value;
         }
     }
 
-    /// <summary>See <see cref="ListTextureAssetsAsync"/>; the model equivalent.</summary>
-    public Task<IReadOnlyList<AssetRef>> ListModelAssetsAsync()
+    private void ClearAssetIndex()
     {
-        lock (_modelListLock)
+        lock (_assetIndexLock)
         {
-            if (_modelListCache is { } cached)
-            {
-                return Task.FromResult(cached);
-            }
-
-            if (_modelListTask is { } pending)
-            {
-                return pending;
-            }
-
-            var completion = new TaskCompletionSource<IReadOnlyList<AssetRef>>();
-            WorkQueue.Schedule("Index Models", _ =>
-            {
-                IReadOnlyList<AssetRef> result = ListModelAssets();
-                lock (_modelListLock)
-                {
-                    _modelListCache = result;
-                    _modelListTask = null;
-                }
-
-                completion.SetResult(result);
-            });
-            _modelListTask = completion.Task;
-            return _modelListTask;
+            _assetIndexCache = null;
+            _assetIndexTask = null;
         }
     }
 
@@ -225,11 +213,7 @@ public sealed partial class AssetSystem : ISubsystemHost
             _textureCacheGeneration++;
         }
 
-        lock (_textureListLock)
-        {
-            _textureListCache = null;
-            _textureListTask = null;
-        }
+        ClearAssetIndex();
     }
 
     public ModelAsset? LoadModelAsset(string path)
@@ -305,11 +289,7 @@ public sealed partial class AssetSystem : ISubsystemHost
             _modelCacheGeneration++;
         }
 
-        lock (_modelListLock)
-        {
-            _modelListCache = null;
-            _modelListTask = null;
-        }
+        ClearAssetIndex();
     }
 
     public async Task<byte[]?> ReadAssetBytesAsync(string path)
