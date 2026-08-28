@@ -2,6 +2,7 @@ using System;
 using System.Buffers.Binary;
 using System.Linq;
 using System.IO;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -201,6 +202,62 @@ f 1/1 2/2 3/3
         {
             Directory.Delete(root, recursive: true);
         }
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Model_part_transform_is_applied_to_instantiated_node()
+    {
+        var transform = new Transform3D(Basis.Identity, new Vector3(3, 0, 0));
+        var part = new ModelPart("offset", transform, [], []);
+        var model = new ModelAsset("offset.synthetic", [part]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_part_transform_test__" });
+
+        Node3D node = model.Instantiate(context.Assets);
+        var partNode = (Node3D)node.GetChild(0);
+
+        Assert.IsTrue(partNode.Transform.Origin.IsEqualApprox(transform.Origin));
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Model_local_bounds_ignore_reference_only_parts()
+    {
+        ArrayMesh mesh = BuildTriangleMesh(new Vector3(10, 0, 0));
+        var geometryPart = new ModelPart("geometry", Transform3D.Identity, [new ModelSurface("tri", mesh, new ModelMaterial())], []);
+        var referencePart = new ModelPart("refs", Transform3D.Identity, [], [new ModelReference("child", "unused.synthetic", Transform3D.Identity)]);
+        var model = new ModelAsset("bounds.synthetic", [geometryPart, referencePart]);
+
+        Aabb expected = ModelAsset.CombineBounds([geometryPart.LocalBounds]);
+
+        Assert.IsTrue(model.LocalBounds.Position.IsEqualApprox(expected.Position));
+        Assert.IsTrue(model.LocalBounds.Size.IsEqualApprox(expected.Size));
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Model_self_reference_terminates_without_resolving()
+    {
+        var selfReference = new ModelReference("self", "loop.synthetic", Transform3D.Identity);
+        var part = new ModelPart("root", Transform3D.Identity, [], [selfReference]);
+        var model = new ModelAsset("loop.synthetic", [part]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_cycle_test__" });
+
+        Node3D node = model.Instantiate(context.Assets);
+        var partNode = (Node3D)node.GetChild(0);
+        var anchor = (Node3D)partNode.GetChild(0);
+
+        Assert.AreEqual(0, anchor.GetChildCount());
+    }
+
+    private static ArrayMesh BuildTriangleMesh(Vector3 offset)
+    {
+        Vector3[] vertices = [offset, offset + new Vector3(1, 0, 0), offset + new Vector3(0, 1, 0)];
+        int[] indices = [0, 1, 2];
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Index] = indices;
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        return mesh;
     }
 
     [EditorTest(Category = "Project")]
