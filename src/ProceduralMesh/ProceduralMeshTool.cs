@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Godot;
 using ImGuiNET;
@@ -62,6 +63,7 @@ public sealed class ProceduralMeshTool : ITool
     private Transform3D _modalStartPivot;
     private ProceduralMeshNetwork? _modalBefore;
     private readonly Dictionary<int, GVector3> _modalStartPositions = [];
+    private string _modalNumeric = string.Empty;
     private string _modalDescription = "";
 
     public ProceduralMeshTool(ToolContext context)
@@ -277,6 +279,7 @@ public sealed class ProceduralMeshTool : ITool
         _modalStartMouse = ImGui.GetMousePos();
         _modalStartPivot = ComputePivot(component, entity);
         _modalBefore = before.Clone();
+        _modalNumeric = string.Empty;
         _modalDescription = description;
         _modalStartPositions.Clear();
         foreach (int id in _vertices)
@@ -293,6 +296,7 @@ public sealed class ProceduralMeshTool : ITool
         if (ImGui.IsKeyPressed(ImGuiKey.X, false)) { _modalAxis = _modalAxis == 0 ? -1 : 0; }
         if (ImGui.IsKeyPressed(ImGuiKey.Y, false)) { _modalAxis = _modalAxis == 1 ? -1 : 1; }
         if (ImGui.IsKeyPressed(ImGuiKey.Z, false)) { _modalAxis = _modalAxis == 2 ? -1 : 2; }
+        HandleModalNumericKeys();
 
         Transform3D delta = _modalMode switch
         {
@@ -337,13 +341,18 @@ public sealed class ProceduralMeshTool : ITool
         _modalMode = ProceduralMeshModalMode.None;
         _modalBefore = null;
         _modalStartPositions.Clear();
+        _modalNumeric = string.Empty;
     }
 
     private Transform3D ComputeModalTranslate(Camera3D camera, NVector2 imageMin)
     {
         GVector3 pivot = _modalStartPivot.Origin;
         GVector3 move;
-        if (_modalAxis < 0)
+        if (TryModalNumeric(out float number))
+        {
+            move = _context.Axes.UserAxis(_modalAxis < 0 ? 0 : _modalAxis) * number;
+        }
+        else if (_modalAxis < 0)
         {
             GVector3 normal = -camera.GlobalTransform.Basis.Z;
             move = RayToPlane(camera, ImGui.GetMousePos(), imageMin, pivot, normal) -
@@ -365,12 +374,21 @@ public sealed class ProceduralMeshTool : ITool
     {
         GVector3 pivot = _modalStartPivot.Origin;
         GVector3 axis = _modalAxis < 0 ? (camera.GlobalPosition - pivot).Normalized() : _context.Axes.UserAxis(_modalAxis);
-        ObjectSelection.WorldToScreen(camera, pivot, imageMin, out NVector2 centre);
-        NVector2 mouse = ImGui.GetMousePos();
-        float now = Mathf.Atan2(mouse.Y - centre.Y, mouse.X - centre.X);
-        float start = Mathf.Atan2(_modalStartMouse.Y - centre.Y, _modalStartMouse.X - centre.X);
-        float facing = axis.Dot(camera.GlobalPosition - pivot);
-        float angle = -(now - start) * (facing >= 0.0f ? 1.0f : -1.0f);
+        float angle;
+        if (TryModalNumeric(out float number))
+        {
+            angle = Mathf.DegToRad(number);
+        }
+        else
+        {
+            ObjectSelection.WorldToScreen(camera, pivot, imageMin, out NVector2 centre);
+            NVector2 mouse = ImGui.GetMousePos();
+            float now = Mathf.Atan2(mouse.Y - centre.Y, mouse.X - centre.X);
+            float start = Mathf.Atan2(_modalStartMouse.Y - centre.Y, _modalStartMouse.X - centre.X);
+            float facing = axis.Dot(camera.GlobalPosition - pivot);
+            angle = -(now - start) * (facing >= 0.0f ? 1.0f : -1.0f);
+        }
+
         Basis rotation = new(axis, angle);
         return new Transform3D(rotation, pivot - rotation * pivot);
     }
@@ -378,7 +396,10 @@ public sealed class ProceduralMeshTool : ITool
     private Transform3D ComputeModalScale(Camera3D camera, NVector2 imageMin)
     {
         GVector3 pivot = _modalStartPivot.Origin;
-        float factor = Mathf.Max(0.01f, ScaleFactorFromScreen(camera, imageMin, pivot, _modalStartMouse, ImGui.GetMousePos()));
+        float factor = TryModalNumeric(out float number)
+            ? number
+            : ScaleFactorFromScreen(camera, imageMin, pivot, _modalStartMouse, ImGui.GetMousePos());
+        factor = Mathf.Max(0.01f, factor);
         return _modalAxis < 0
             ? ScaleAround(pivot, factor)
             : ScaleAround(pivot, _context.Axes.UserAxis(_modalAxis), factor);
@@ -394,10 +415,57 @@ public sealed class ProceduralMeshTool : ITool
             _ => "Transform",
         };
         string axis = _modalAxis < 0 ? "" : $" {"XYZ".Substring(_modalAxis, 1)}";
+        string value = _modalNumeric.Length > 0
+            ? $": {_modalNumeric}{(_modalMode == ProceduralMeshModalMode.Rotate ? " deg" : string.Empty)}"
+            : string.Empty;
         ImGui.GetWindowDrawList().AddText(
             imageMin + new NVector2(8.0f, 6.0f),
             ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 1.0f)),
-            $"{op}{axis}   (LMB/Enter confirm, RMB/Esc cancel, X/Y/Z axis)");
+            $"{op}{axis}{value}   (LMB/Enter confirm, RMB/Esc cancel, X/Y/Z axis, type a value)");
+    }
+
+    private void HandleModalNumericKeys()
+    {
+        for (int d = 0; d <= 9; d++)
+        {
+            if (ImGui.IsKeyPressed(ImGuiKey._0 + d, false) || ImGui.IsKeyPressed(ImGuiKey.Keypad0 + d, false))
+            {
+                _modalNumeric += (char)('0' + d);
+            }
+        }
+
+        if ((ImGui.IsKeyPressed(ImGuiKey.Period, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadDecimal, false)) &&
+            !_modalNumeric.Contains('.'))
+        {
+            _modalNumeric += _modalNumeric.Length == 0 ? "0." : ".";
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Minus, false) || ImGui.IsKeyPressed(ImGuiKey.KeypadSubtract, false))
+        {
+            _modalNumeric = _modalNumeric.StartsWith('-') ? _modalNumeric[1..] : "-" + _modalNumeric;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Backspace, false) && _modalNumeric.Length > 0)
+        {
+            _modalNumeric = _modalNumeric[..^1];
+        }
+    }
+
+    private bool TryModalNumeric(out float value)
+    {
+        if (_modalNumeric.Length == 0 || _modalNumeric == "-")
+        {
+            value = 0.0f;
+            return _modalNumeric.Length > 0;
+        }
+
+        return float.TryParse(_modalNumeric, NumberStyles.Float, CultureInfo.InvariantCulture, out value) || SetZero(out value);
+
+        static bool SetZero(out float v)
+        {
+            v = 0.0f;
+            return true;
+        }
     }
 
     private void DriveGizmo(ProceduralMeshComponent component, SceneEntity entity, in ViewportContext viewport)
