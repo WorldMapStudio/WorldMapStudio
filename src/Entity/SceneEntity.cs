@@ -215,6 +215,12 @@ public class SceneEntity : Entity
         _components.Add(component);
     }
 
+    public void RefreshRepresentation()
+    {
+        RebuildRepresentation();
+        Transform = Transform;
+    }
+
     /// <summary>Builds the entity's viewport node. Called on the main thread.</summary>
     protected virtual Node3D BuildNode()
     {

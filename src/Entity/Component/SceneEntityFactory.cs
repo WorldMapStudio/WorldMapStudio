@@ -100,6 +100,15 @@ public sealed class SceneLandscapeMaterialBindComponentRecord
     public SceneEntityRecord? Entity { get; set; }
 }
 
+public sealed class SceneModelRendererComponentRecord
+{
+    public int EntityId { get; set; }
+
+    public string ModelPath { get; set; } = "";
+
+    public SceneEntityRecord? Entity { get; set; }
+}
+
 public sealed class SceneLandscapeMaterialBindEntryRecord
 {
     public int EntityId { get; set; }
@@ -117,10 +126,12 @@ public sealed class SceneLandscapeMaterialBindEntryRecord
 public sealed class SceneEntityFactory : ISceneEntityFactory
 {
     private readonly EditorStorage _storage;
+    private readonly AssetSystem _assets;
 
     public SceneEntityFactory(EditorStorage storage)
     {
         _storage = storage;
+        _assets = storage.Assets;
     }
 
     public float Priority => 0.0f;
@@ -162,6 +173,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 .Where(record => ids.Contains(record.EntityId))
                 .ToDictionaryAsync(record => record.EntityId)
                 .ConfigureAwait(false);
+        Dictionary<int, SceneModelRendererComponentRecord> modelRenderers =
+            await context.SceneModelRendererComponents.AsNoTracking()
+                .Where(record => ids.Contains(record.EntityId))
+                .ToDictionaryAsync(record => record.EntityId)
+                .ConfigureAwait(false);
         Dictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries =
             await context.SceneLandscapeMaterialBindEntries.AsNoTracking()
                 .Where(record => ids.Contains(record.EntityId))
@@ -171,7 +187,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 .ConfigureAwait(false);
 
         List<SceneEntity> entities = rows
-            .Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries))
+            .Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries, modelRenderers))
             .ToList();
         LinkParents(entities);
         return entities;
@@ -227,17 +243,23 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 db.SceneLandscapeMaterialBindComponents.Remove(new SceneLandscapeMaterialBindComponentRecord { EntityId = id });
             }
 
+            if (db.SceneModelRendererComponents.Any(record => record.EntityId == id))
+            {
+                db.SceneModelRendererComponents.Remove(new SceneModelRendererComponentRecord { EntityId = id });
+            }
+
             db.SceneEntities.Remove(new SceneEntityRecord { Id = id });
         }
     }
 
-    private static SceneEntity ToEntity(
+    private SceneEntity ToEntity(
         SceneEntityRecord record,
         IReadOnlyDictionary<int, SceneMarkerComponentRecord> markers,
         IReadOnlyDictionary<int, SceneStampComponentRecord> stamps,
         IReadOnlyDictionary<int, SceneDrawingTargetComponentRecord> drawingTargets,
         IReadOnlyDictionary<int, SceneLandscapeMaterialBindComponentRecord> materialBinds,
-        IReadOnlyDictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries)
+        IReadOnlyDictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries,
+        IReadOnlyDictionary<int, SceneModelRendererComponentRecord> modelRenderers)
     {
         var entity = new SceneEntity
         {
@@ -288,6 +310,14 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
             }
 
             entity.LoadComponent(bind);
+        }
+
+        if (modelRenderers.TryGetValue(record.Id, out SceneModelRendererComponentRecord? modelRecord))
+        {
+            entity.LoadComponent(new ModelRendererComponent(_assets)
+            {
+                ModelPath = modelRecord.ModelPath,
+            });
         }
 
         var rotation = new Quaternion((float)record.RotX, (float)record.RotY, (float)record.RotZ, (float)record.RotW);
@@ -458,6 +488,22 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         else
         {
             StageComponentDelete(db.SceneLandscapeMaterialBindComponents, entityId);
+        }
+
+        ModelRendererComponent? model = entity.Component<ModelRendererComponent>();
+        if (model != null)
+        {
+            var row = new SceneModelRendererComponentRecord
+            {
+                Entity = entityId is null ? record : null,
+                EntityId = entityId ?? 0,
+                ModelPath = model.ModelPath,
+            };
+            StageComponentRow(db.SceneModelRendererComponents, row, entityId);
+        }
+        else
+        {
+            StageComponentDelete(db.SceneModelRendererComponents, entityId);
         }
     }
 

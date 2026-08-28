@@ -4,4 +4,5 @@ public enum AssetKind
 {
     Unknown,
     Texture,
+    Model,
 }
