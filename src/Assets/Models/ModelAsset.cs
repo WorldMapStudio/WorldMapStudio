@@ -8,8 +8,7 @@ namespace WorldMapStudio;
 public sealed record ModelSurface(
     string Name,
     ArrayMesh Mesh,
-    string TexturePath,
-    Color AlbedoColor)
+    ModelMaterial Material)
 {
     public Aabb LocalBounds => Mesh.GetAabb();
 }
@@ -52,7 +51,7 @@ public sealed class ModelAsset
             {
                 Name = surface.Name.Length == 0 ? $"Surface{i}" : surface.Name,
                 Mesh = surface.Mesh,
-                MaterialOverride = BuildMaterial(assets, surface, i),
+                MaterialOverride = ModelMaterialFactory.Build(assets, surface.Material),
             });
         }
 
@@ -76,20 +75,6 @@ public sealed class ModelAsset
         return combined.Size.LengthSquared() <= 0.0001f
             ? new Aabb(-Vector3.One * 0.5f, Vector3.One)
             : combined;
-    }
-
-    private static StandardMaterial3D BuildMaterial(AssetSystem assets, ModelSurface surface, int index)
-    {
-        Texture2D? texture = surface.TexturePath.Length > 0 ? assets.LoadTextureAsset(surface.TexturePath) : null;
-        return new StandardMaterial3D
-        {
-            AlbedoTexture = texture,
-            AlbedoColor = texture == null ? surface.AlbedoColor : Colors.White,
-            Roughness = 0.9f,
-            SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps,
-        };
     }
 
     public static Color FallbackColor(int index) => FallbackColours[Math.Abs(index) % FallbackColours.Length];

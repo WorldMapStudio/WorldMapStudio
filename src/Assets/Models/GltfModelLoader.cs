@@ -100,7 +100,8 @@ public sealed class GltfModelLoader : IModelLoader
                 }
 
                 GltfMaterial material = MaterialFor(materials, Int(primitive, "material", -1), surfaces.Count);
-                surfaces.Add(new ModelSurface($"{meshName}.{primitiveIndex}", BuildMesh(positions, normals, uvs, indices), material.TexturePath, material.Color));
+                var modelMaterial = new ModelMaterial { TexturePath = material.TexturePath, AlbedoColor = material.Color, TwoSided = true };
+                surfaces.Add(new ModelSurface($"{meshName}.{primitiveIndex}", BuildMesh(positions, normals, uvs, indices), modelMaterial));
             }
         }
 

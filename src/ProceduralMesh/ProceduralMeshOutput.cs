@@ -8,8 +8,7 @@ namespace WorldMapStudio;
 public sealed record ProceduralMeshSurface(
     string Name,
     ArrayMesh Mesh,
-    string TexturePath,
-    Color AlbedoColor)
+    ModelMaterial Material)
 {
     public Aabb LocalBounds => Mesh.GetAabb();
 }
@@ -61,7 +60,8 @@ public sealed class ProceduralMeshOutputBuilder
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
-        _surfaces.Add(new ProceduralMeshSurface(name, mesh, texturePath, albedoColor ?? Colors.White));
+        var material = new ModelMaterial { TexturePath = texturePath, AlbedoColor = albedoColor ?? Colors.White, TwoSided = true };
+        _surfaces.Add(new ProceduralMeshSurface(name, mesh, material));
     }
 
     public ProceduralMeshOutput Build() => new(_surfaces);

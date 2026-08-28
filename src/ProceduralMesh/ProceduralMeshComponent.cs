@@ -98,7 +98,7 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
             {
                 Name = surface.Name.Length == 0 ? $"Surface{i}" : surface.Name,
                 Mesh = surface.Mesh,
-                MaterialOverride = BuildMaterial(surface),
+                MaterialOverride = ModelMaterialFactory.Build(_system.Context.Assets, surface.Material),
             });
         }
 
@@ -116,20 +116,6 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         _cached = _system.Build(this);
         _cacheKey = key;
         return _cached;
-    }
-
-    private StandardMaterial3D BuildMaterial(ProceduralMeshSurface surface)
-    {
-        Texture2D? texture = surface.TexturePath.Length > 0 ? _system.Context.Assets.LoadTextureAsset(surface.TexturePath) : null;
-        return new StandardMaterial3D
-        {
-            AlbedoTexture = texture,
-            AlbedoColor = texture == null ? surface.AlbedoColor : surface.AlbedoColor,
-            Roughness = 0.9f,
-            SpecularMode = BaseMaterial3D.SpecularModeEnum.Disabled,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-            TextureFilter = BaseMaterial3D.TextureFilterEnum.LinearWithMipmaps,
-        };
     }
 
     private static MeshInstance3D Placeholder() => new()
