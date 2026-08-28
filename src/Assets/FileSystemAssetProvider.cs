@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
-using Godot;
 
 namespace WorldMapStudio;
 
@@ -10,19 +9,6 @@ namespace WorldMapStudio;
 [Subsystem(nameof(AssetSystem))]
 public sealed class FileSystemAssetProvider : IAssetProvider
 {
-    private static readonly HashSet<string> TextureExtensions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ".bmp",
-        ".exr",
-        ".hdr",
-        ".jpg",
-        ".jpeg",
-        ".png",
-        ".svg",
-        ".tga",
-        ".webp",
-    };
-
     public FileSystemAssetProvider(AssetSystem assets)
     {
     }
@@ -31,7 +17,7 @@ public sealed class FileSystemAssetProvider : IAssetProvider
 
     public bool Supports(AssetSourceType type) => type == AssetSourceType.FileSystem;
 
-    public IEnumerable<AssetRef> ListTextureAssets(AssetSourceSettings source)
+    public IEnumerable<AssetRef> ListAssets(AssetSourceSettings source)
     {
         if (!Directory.Exists(source.RootPath))
         {
@@ -40,36 +26,30 @@ public sealed class FileSystemAssetProvider : IAssetProvider
 
         foreach (string file in Directory.EnumerateFiles(source.RootPath, "*", SearchOption.AllDirectories))
         {
-            if (!TextureExtensions.Contains(Path.GetExtension(file)))
-            {
-                continue;
-            }
-
             string relative = Path.GetRelativePath(source.RootPath, file);
-            yield return new AssetRef(AssetKind.Texture, source.Id, source.Name, relative, Path.GetFileName(file), file);
+            yield return new AssetRef(AssetKind.Unknown, source.Id, source.Name, relative, Path.GetFileName(file), file);
         }
     }
 
-    public Task<Image?> LoadTextureImageAsync(AssetSourceSettings source, string path)
+    public async Task<byte[]?> ReadBytesAsync(AssetSourceSettings source, string path)
     {
         if (!TryResolve(source, path, out string fullPath))
         {
-            return Task.FromResult<Image?>(null);
+            return null;
         }
 
-        var image = new Image();
-        if (image.Load(fullPath) != Error.Ok)
-        {
-            return Task.FromResult<Image?>(null);
-        }
-
-        return Task.FromResult<Image?>(image);
+        return await File.ReadAllBytesAsync(fullPath).ConfigureAwait(false);
     }
 
-    public Texture2D? LoadTextureAsset(AssetSourceSettings source, string path) =>
-        LoadTextureImageAsync(source, path).GetAwaiter().GetResult() is { } image
-            ? ImageTexture.CreateFromImage(image)
-            : null;
+    public async Task<string?> ReadTextAsync(AssetSourceSettings source, string path)
+    {
+        if (!TryResolve(source, path, out string fullPath))
+        {
+            return null;
+        }
+
+        return await File.ReadAllTextAsync(fullPath).ConfigureAwait(false);
+    }
 
     private static bool TryResolve(AssetSourceSettings source, string path, out string fullPath)
     {

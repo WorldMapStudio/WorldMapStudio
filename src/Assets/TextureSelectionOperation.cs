@@ -137,10 +137,10 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         var size = new Vector2(CardWidth, ThumbnailSize + LabelHeight + Padding * 2.0f);
         Vector2 origin = ImGui.GetCursorScreenPos();
 
-        ImGui.PushID(texture.QualifiedPath);
+        ImGui.PushID(texture.Path);
         bool clicked = ImGui.InvisibleButton("##texture", size);
         bool hovered = ImGui.IsItemHovered();
-        bool selected = texture.QualifiedPath == context.CurrentPath || texture.Path == context.CurrentPath;
+        bool selected = texture.Path == context.CurrentPath;
 
         ImDrawListPtr draw = ImGui.GetWindowDrawList();
         draw.AddRectFilled(origin, origin + size, ImGui.GetColorU32(hovered ? ImGuiCol.FrameBgHovered : ImGuiCol.FrameBg), 4.0f);
@@ -182,7 +182,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
             return false;
         }
 
-        context.Select(texture.QualifiedPath);
+        context.Select(texture.Path);
         return true;
     }
 
@@ -212,13 +212,13 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
 
     private Task<Texture2D?> PreviewTask(TextureSelectionContext context, AssetRef texture)
     {
-        if (_previews.TryGetValue(texture.QualifiedPath, out Task<Texture2D?>? preview))
+        if (_previews.TryGetValue(texture.Path, out Task<Texture2D?>? preview))
         {
             return preview;
         }
 
         preview = context.Assets.LoadTextureAssetAsync(texture);
-        _previews[texture.QualifiedPath] = preview;
+        _previews[texture.Path] = preview;
         return preview;
     }
 

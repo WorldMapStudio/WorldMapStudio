@@ -71,7 +71,7 @@ public static class ProjectTests
     }
 
     [EditorTest(Category = "Project")]
-    public static void Filesystem_asset_provider_lists_texture_assets()
+    public static void Filesystem_asset_provider_lists_assets()
     {
         string root = Path.Combine(Path.GetTempPath(), "__wms_assets_test__");
         string nested = Path.Combine(root, "Tiles");
@@ -85,12 +85,14 @@ public static class ProjectTests
             var provider = new FileSystemAssetProvider(null!);
             var source = new AssetSourceSettings { Id = "textures", Name = "Textures", RootPath = root };
 
-            var assets = provider.ListTextureAssets(source).OrderBy(asset => asset.Path).ToList();
+            var assets = provider.ListAssets(source).OrderBy(asset => asset.Path).ToList();
 
-            Assert.AreEqual(2, assets.Count);
-            Assert.AreEqual("grass.png", assets[0].Path);
-            Assert.AreEqual("textures::grass.png", assets[0].QualifiedPath);
-            Assert.AreEqual(Path.Combine("Tiles", "stone.jpg"), assets[1].Path);
+            Assert.AreEqual(3, assets.Count);
+            Assert.IsTrue(assets.Any(asset =>
+                asset.Path == "grass.png" &&
+                asset.Kind == AssetKind.Unknown));
+            Assert.IsTrue(assets.Any(asset => asset.Path == "notes.txt"));
+            Assert.IsTrue(assets.Any(asset => asset.Path == Path.Combine("Tiles", "stone.jpg")));
         }
         finally
         {

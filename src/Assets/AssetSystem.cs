@@ -6,8 +6,8 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Editor-wide asset access. Providers register as subsystems, while the project supplies any number
-/// of configured source instances for those providers to read from.
+/// Editor-wide asset access. Providers expose raw project sources, while typed loaders interpret
+/// asset formats without caring which provider supplied the bytes.
 /// </summary>
 public sealed partial class AssetSystem : ISubsystemHost
 {
@@ -23,16 +23,26 @@ public sealed partial class AssetSystem : ISubsystemHost
         InitializeSubsystems();
     }
 
-    public IEnumerable<IAssetProvider> Providers => Subsystems.Cast<IAssetProvider>();
+    public IEnumerable<IAssetProvider> Providers => Subsystems.OfType<IAssetProvider>();
+    public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
 
     public IReadOnlyList<AssetRef> ListTextureAssets()
     {
         var assets = new List<AssetRef>();
+        var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
         foreach (AssetSourceSettings source in ActiveSources())
         {
             foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
             {
-                assets.AddRange(provider.ListTextureAssets(source));
+                foreach (AssetRef asset in provider.ListAssets(source))
+                {
+                    if (!TextureLoaders.Any(loader => loader.CanLoad(asset.Path)) || !paths.Add(asset.Path))
+                    {
+                        continue;
+                    }
+
+                    assets.Add(asset with { Kind = AssetKind.Texture });
+                }
             }
         }
 
@@ -54,19 +64,11 @@ public sealed partial class AssetSystem : ISubsystemHost
             }
         }
 
-        if (TrySplitQualifiedPath(path, out string sourceName, out string sourcePath))
+        foreach (ITextureLoader loader in TextureLoaders.Where(loader => loader.CanLoad(path)))
         {
-            return Cache(path, LoadTextureAsset(sourceName, sourcePath));
-        }
-
-        foreach (AssetSourceSettings source in ActiveSources())
-        {
-            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            if (loader.LoadTextureImageAsync(this, path).GetAwaiter().GetResult() is { } image)
             {
-                if (provider.LoadTextureAsset(source, path) is { } texture)
-                {
-                    return Cache(path, texture);
-                }
+                return Cache(path, ImageTexture.CreateFromImage(image));
             }
         }
 
@@ -79,10 +81,10 @@ public sealed partial class AssetSystem : ISubsystemHost
     }
 
     public Texture2D? LoadTextureAsset(AssetRef asset) =>
-        asset.Kind == AssetKind.Texture ? LoadTextureAsset(asset.QualifiedPath) : null;
+        asset.Kind == AssetKind.Texture ? LoadTextureAsset(asset.Path) : null;
 
     public Task<Texture2D?> LoadTextureAssetAsync(AssetRef asset) =>
-        asset.Kind == AssetKind.Texture ? LoadTextureAssetAsync(asset.QualifiedPath) : Task.FromResult<Texture2D?>(null);
+        asset.Kind == AssetKind.Texture ? LoadTextureAssetAsync(asset.Path) : Task.FromResult<Texture2D?>(null);
 
     public Task<Texture2D?> LoadTextureAssetAsync(string path)
     {
@@ -126,16 +128,31 @@ public sealed partial class AssetSystem : ISubsystemHost
         }
     }
 
-    private Texture2D? LoadTextureAsset(string sourceIdOrName, string path)
+    public async Task<byte[]?> ReadAssetBytesAsync(string path)
     {
-        foreach (AssetSourceSettings source in ActiveSources().Where(source =>
-            source.Id == sourceIdOrName || source.Name == sourceIdOrName))
+        foreach (AssetSourceSettings source in ActiveSources())
         {
             foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
             {
-                if (provider.LoadTextureAsset(source, path) is { } texture)
+                if (await provider.ReadBytesAsync(source, path).ConfigureAwait(false) is { } bytes)
                 {
-                    return texture;
+                    return bytes;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    public async Task<string?> ReadAssetTextAsync(string path)
+    {
+        foreach (AssetSourceSettings source in ActiveSources())
+        {
+            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            {
+                if (await provider.ReadTextAsync(source, path).ConfigureAwait(false) is { } text)
+                {
+                    return text;
                 }
             }
         }
@@ -193,19 +210,11 @@ public sealed partial class AssetSystem : ISubsystemHost
 
     private async Task<Image?> LoadTextureImageAsync(WorkContext work, string path)
     {
-        if (TrySplitQualifiedPath(path, out string sourceName, out string sourcePath))
+        foreach (ITextureLoader loader in TextureLoaders.Where(loader => loader.CanLoad(path)))
         {
-            return await LoadTextureImageAsync(sourceName, sourcePath).ConfigureAwait(false);
-        }
-
-        foreach (AssetSourceSettings source in ActiveSources())
-        {
-            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            if (await loader.LoadTextureImageAsync(this, path).ConfigureAwait(false) is { } image)
             {
-                if (await provider.LoadTextureImageAsync(source, path).ConfigureAwait(false) is { } image)
-                {
-                    return image;
-                }
+                return image;
             }
         }
 
@@ -218,38 +227,6 @@ public sealed partial class AssetSystem : ISubsystemHost
         return null;
     }
 
-    private async Task<Image?> LoadTextureImageAsync(string sourceIdOrName, string path)
-    {
-        foreach (AssetSourceSettings source in ActiveSources().Where(source =>
-            source.Id == sourceIdOrName || source.Name == sourceIdOrName))
-        {
-            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
-            {
-                if (await provider.LoadTextureImageAsync(source, path).ConfigureAwait(false) is { } image)
-                {
-                    return image;
-                }
-            }
-        }
-
-        return null;
-    }
-
     private IEnumerable<AssetSourceSettings> ActiveSources() =>
         _context.Project.AssetSources.Where(source => source.Enabled);
-
-    private static bool TrySplitQualifiedPath(string path, out string sourceName, out string sourcePath)
-    {
-        int separator = path.IndexOf("::", System.StringComparison.Ordinal);
-        if (separator <= 0)
-        {
-            sourceName = "";
-            sourcePath = "";
-            return false;
-        }
-
-        sourceName = path[..separator];
-        sourcePath = path[(separator + 2)..];
-        return sourcePath.Length > 0;
-    }
 }
