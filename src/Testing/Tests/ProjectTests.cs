@@ -1,3 +1,5 @@
+using System;
+using System.Buffers.Binary;
 using System.Linq;
 using System.IO;
 
@@ -101,6 +103,107 @@ public static class ProjectTests
     }
 
     [EditorTest(Category = "Project")]
+    public static void Asset_system_lists_provider_backed_model_assets()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "__wms_model_assets_test__");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "tree.obj"), "");
+        File.WriteAllText(Path.Combine(root, "rock.gltf"), "{}");
+        File.WriteAllText(Path.Combine(root, "grass.png"), "");
+        File.WriteAllText(Path.Combine(root, "notes.txt"), "");
+
+        try
+        {
+            var project = new Project { Name = "__wms_model_asset_listing__" };
+            project.AssetSources.Add(new AssetSourceSettings
+            {
+                Id = "models",
+                Name = "Loose Models",
+                Type = AssetSourceType.FileSystem,
+                Enabled = true,
+                RootPath = root,
+            });
+            var context = new EditorContext(new Godot.Node3D(), project);
+
+            var models = context.Assets.ListModelAssets().OrderBy(asset => asset.Path).ToList();
+
+            Assert.AreEqual(2, models.Count);
+            Assert.IsTrue(models.Any(asset => asset.Path == "rock.gltf" && asset.Kind == AssetKind.Model));
+            Assert.IsTrue(models.Any(asset => asset.Path == "tree.obj" && asset.Kind == AssetKind.Model));
+            Assert.IsFalse(models.Any(asset => asset.Path == "grass.png"));
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Obj_model_loader_builds_a_provider_backed_mesh()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "__wms_obj_model_test__");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "triangle.obj"), """
+v 0 0 0
+v 1 0 0
+v 0 1 0
+vt 0 0
+vt 1 0
+vt 0 1
+f 1/1 2/2 3/3
+""");
+
+        try
+        {
+            ModelAsset? model = LoadModelFrom(root, "triangle.obj");
+
+            Assert.IsNotNull(model);
+            Assert.AreEqual(1, model!.Surfaces.Count);
+            Assert.IsTrue(model.LocalBounds.Size.Length() > 0.0f);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Gltf_model_loader_builds_a_provider_backed_mesh()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "__wms_gltf_model_test__");
+        Directory.CreateDirectory(root);
+        string buffer = Convert.ToBase64String(GltfTriangleBuffer());
+        File.WriteAllText(Path.Combine(root, "triangle.gltf"), $$"""
+{
+  "asset": { "version": "2.0" },
+  "buffers": [{ "uri": "data:application/octet-stream;base64,{{buffer}}", "byteLength": 42 }],
+  "bufferViews": [
+    { "buffer": 0, "byteOffset": 0, "byteLength": 36 },
+    { "buffer": 0, "byteOffset": 36, "byteLength": 6 }
+  ],
+  "accessors": [
+    { "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3" },
+    { "bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR" }
+  ],
+  "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 }, "indices": 1 }] }]
+}
+""");
+
+        try
+        {
+            ModelAsset? model = LoadModelFrom(root, "triangle.gltf");
+
+            Assert.IsNotNull(model);
+            Assert.AreEqual(1, model!.Surfaces.Count);
+            Assert.IsTrue(model.LocalBounds.Size.Length() > 0.0f);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [EditorTest(Category = "Project")]
     public static void Asset_source_ids_are_path_safe_and_unique()
     {
         var sources = new[]
@@ -116,4 +219,40 @@ public static class ProjectTests
         Assert.IsNotNull(AssetSourceId.Validate("terrain textures", sources, null));
         Assert.IsNotNull(AssetSourceId.Validate("textures", sources, null));
     }
+
+    private static ModelAsset? LoadModelFrom(string root, string path)
+    {
+        var project = new Project { Name = "__wms_model_asset_loading__" };
+        project.AssetSources.Add(new AssetSourceSettings
+        {
+            Id = "models",
+            Name = "Models",
+            Type = AssetSourceType.FileSystem,
+            Enabled = true,
+            RootPath = root,
+        });
+        var context = new EditorContext(new Godot.Node3D(), project);
+        return context.Assets.LoadModelAsset(path);
+    }
+
+    private static byte[] GltfTriangleBuffer()
+    {
+        byte[] bytes = new byte[42];
+        WriteFloat(bytes, 0, 0.0f);
+        WriteFloat(bytes, 4, 0.0f);
+        WriteFloat(bytes, 8, 0.0f);
+        WriteFloat(bytes, 12, 1.0f);
+        WriteFloat(bytes, 16, 0.0f);
+        WriteFloat(bytes, 20, 0.0f);
+        WriteFloat(bytes, 24, 0.0f);
+        WriteFloat(bytes, 28, 1.0f);
+        WriteFloat(bytes, 32, 0.0f);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(36, 2), 0);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(38, 2), 1);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(40, 2), 2);
+        return bytes;
+    }
+
+    private static void WriteFloat(byte[] bytes, int offset, float value) =>
+        BinaryPrimitives.WriteSingleLittleEndian(bytes.AsSpan(offset, 4), value);
 }

@@ -19,6 +19,9 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
     public DbSet<SceneLandscapeMaterialBindEntryRecord> SceneLandscapeMaterialBindEntries =>
         Set<SceneLandscapeMaterialBindEntryRecord>();
 
+    public DbSet<SceneModelRendererComponentRecord> SceneModelRendererComponents =>
+        Set<SceneModelRendererComponentRecord>();
+
     public DbSet<MapRecord> Maps => Set<MapRecord>();
 
     public DbSet<LandscapeChannelRecord> LandscapeChannels => Set<LandscapeChannelRecord>();
@@ -92,6 +95,16 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
             entity.HasOne(record => record.Component)
                 .WithMany()
                 .HasForeignKey(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneModelRendererComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_model_renderer_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneModelRendererComponentRecord>(record => record.EntityId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

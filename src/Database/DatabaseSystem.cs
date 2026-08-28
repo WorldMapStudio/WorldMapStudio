@@ -32,6 +32,8 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
         BindConnections();
     }
 
+    public EditorContext Context => _context;
+
     // Each storage reads its connection from the project's settings, which are seeded with the
     // storage's defaults the first time a project uses it.
     private void BindConnections()

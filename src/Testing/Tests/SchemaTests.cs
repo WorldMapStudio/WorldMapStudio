@@ -21,6 +21,7 @@ public static class SchemaTests
 
         Assert.IsTrue(schema.Tables.ContainsKey("scene_entities"), "model should define the generic scene entity table");
         Assert.IsTrue(schema.Tables.ContainsKey("scene_marker_components"), "model should define component tables");
+        Assert.IsTrue(schema.Tables.ContainsKey("scene_model_renderer_components"), "model should define model renderer component table");
         SchemaTable entities = schema.Tables["scene_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.Column("ParentId")?.Nullable == true, "ParentId should be nullable for root entities");

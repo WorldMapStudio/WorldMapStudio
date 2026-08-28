@@ -15,13 +15,17 @@ namespace WorldMapStudio;
 public sealed partial class EditorStorage : Storage, ISubsystemHost
 {
     public const string StorageName = "Editor";
+    private readonly DatabaseSystem _database;
 
     public override string Name => StorageName;
 
     public EditorStorage(DatabaseSystem database)
     {
+        _database = database;
         InitializeSubsystems();
     }
+
+    public AssetSystem Assets => _database.Context.Assets;
 
     // Default to an editor-managed dolt instance so a new project works out of the box. Exposed
     // statically so project settings (created before any Storage instance exists) can seed the same

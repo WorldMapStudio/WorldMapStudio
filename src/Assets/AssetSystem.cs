@@ -16,6 +16,10 @@ public sealed partial class AssetSystem : ISubsystemHost
     private readonly Dictionary<string, Texture2D> _textureCache = new();
     private readonly Dictionary<string, Task<Texture2D?>> _pendingTextureLoads = new();
     private int _textureCacheGeneration;
+    private readonly object _modelLock = new();
+    private readonly Dictionary<string, ModelAsset> _modelCache = new();
+    private readonly Dictionary<string, Task<ModelAsset?>> _pendingModelLoads = new();
+    private int _modelCacheGeneration;
 
     public AssetSystem(EditorContext context)
     {
@@ -25,6 +29,7 @@ public sealed partial class AssetSystem : ISubsystemHost
 
     public IEnumerable<IAssetProvider> Providers => Subsystems.OfType<IAssetProvider>();
     public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
+    public IEnumerable<IModelLoader> ModelLoaders => Subsystems.OfType<IModelLoader>();
 
     public IReadOnlyList<AssetRef> ListTextureAssets()
     {
@@ -42,6 +47,29 @@ public sealed partial class AssetSystem : ISubsystemHost
                     }
 
                     assets.Add(asset with { Kind = AssetKind.Texture });
+                }
+            }
+        }
+
+        return assets;
+    }
+
+    public IReadOnlyList<AssetRef> ListModelAssets()
+    {
+        var assets = new List<AssetRef>();
+        var paths = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+        foreach (AssetSourceSettings source in ActiveSources())
+        {
+            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            {
+                foreach (AssetRef asset in provider.ListAssets(source))
+                {
+                    if (!ModelLoaders.Any(loader => loader.CanLoad(asset.Path)) || !paths.Add(asset.Path))
+                    {
+                        continue;
+                    }
+
+                    assets.Add(asset with { Kind = AssetKind.Model });
                 }
             }
         }
@@ -70,11 +98,6 @@ public sealed partial class AssetSystem : ISubsystemHost
             {
                 return Cache(path, ImageTexture.CreateFromImage(image));
             }
-        }
-
-        if (ResourceLoader.Exists(path))
-        {
-            return Cache(path, ResourceLoader.Load<Texture2D>(path));
         }
 
         return null;
@@ -128,6 +151,80 @@ public sealed partial class AssetSystem : ISubsystemHost
         }
     }
 
+    public ModelAsset? LoadModelAsset(string path)
+    {
+        if (path.Length == 0)
+        {
+            return null;
+        }
+
+        lock (_modelLock)
+        {
+            if (_modelCache.TryGetValue(path, out ModelAsset? cached))
+            {
+                return cached;
+            }
+        }
+
+        foreach (IModelLoader loader in ModelLoaders.Where(loader => loader.CanLoad(path)))
+        {
+            if (loader.LoadModelAsync(this, path).GetAwaiter().GetResult() is { } model)
+            {
+                return Cache(path, model);
+            }
+        }
+
+        return null;
+    }
+
+    public ModelAsset? LoadModelAsset(AssetRef asset) =>
+        asset.Kind == AssetKind.Model ? LoadModelAsset(asset.Path) : null;
+
+    public Task<ModelAsset?> LoadModelAssetAsync(AssetRef asset) =>
+        asset.Kind == AssetKind.Model ? LoadModelAssetAsync(asset.Path) : Task.FromResult<ModelAsset?>(null);
+
+    public Task<ModelAsset?> LoadModelAssetAsync(string path)
+    {
+        if (path.Length == 0)
+        {
+            return Task.FromResult<ModelAsset?>(null);
+        }
+
+        lock (_modelLock)
+        {
+            if (_modelCache.TryGetValue(path, out ModelAsset? cached))
+            {
+                return Task.FromResult<ModelAsset?>(cached);
+            }
+
+            if (_pendingModelLoads.TryGetValue(path, out Task<ModelAsset?>? pending))
+            {
+                return pending;
+            }
+
+            Task<ModelAsset?> task = ScheduleModelLoad(path, _modelCacheGeneration);
+            _pendingModelLoads[path] = task;
+            _ = task.ContinueWith(_ =>
+            {
+                lock (_modelLock)
+                {
+                    _pendingModelLoads.Remove(path);
+                }
+            }, TaskScheduler.Default);
+            return task;
+        }
+    }
+
+    public void ClearModelCache()
+    {
+        lock (_modelLock)
+        {
+            _modelCache.Clear();
+            _pendingModelLoads.Clear();
+            _modelCacheGeneration++;
+        }
+    }
+
     public async Task<byte[]?> ReadAssetBytesAsync(string path)
     {
         foreach (AssetSourceSettings source in ActiveSources())
@@ -178,6 +275,24 @@ public sealed partial class AssetSystem : ISubsystemHost
         return texture;
     }
 
+    private ModelAsset? Cache(string key, ModelAsset? model, int? generation = null)
+    {
+        if (model != null)
+        {
+            lock (_modelLock)
+            {
+                if (generation.HasValue && generation.Value != _modelCacheGeneration)
+                {
+                    return model;
+                }
+
+                _modelCache[key] = model;
+            }
+        }
+
+        return model;
+    }
+
     private Task<Texture2D?> ScheduleTextureLoad(string path, int generation)
     {
         var completion = new TaskCompletionSource<Texture2D?>();
@@ -208,6 +323,28 @@ public sealed partial class AssetSystem : ISubsystemHost
         return completion.Task;
     }
 
+    private Task<ModelAsset?> ScheduleModelLoad(string path, int generation)
+    {
+        var completion = new TaskCompletionSource<ModelAsset?>();
+        WorkQueue.Schedule("Load Model", async work =>
+        {
+            try
+            {
+                work.Step(path);
+                ModelAsset? model = await LoadModelAsync(path).ConfigureAwait(false);
+                await work.SwitchToMain();
+                Cache(path, model, generation);
+                completion.SetResult(model);
+            }
+            catch (System.Exception e)
+            {
+                completion.SetException(e);
+                throw;
+            }
+        });
+        return completion.Task;
+    }
+
     private async Task<Image?> LoadTextureImageAsync(WorkContext work, string path)
     {
         foreach (ITextureLoader loader in TextureLoaders.Where(loader => loader.CanLoad(path)))
@@ -218,10 +355,17 @@ public sealed partial class AssetSystem : ISubsystemHost
             }
         }
 
-        await work.SwitchToMain();
-        if (ResourceLoader.Exists(path) && ResourceLoader.Load<Texture2D>(path) is { } texture)
+        return null;
+    }
+
+    private async Task<ModelAsset?> LoadModelAsync(string path)
+    {
+        foreach (IModelLoader loader in ModelLoaders.Where(loader => loader.CanLoad(path)))
         {
-            return texture.GetImage();
+            if (await loader.LoadModelAsync(this, path).ConfigureAwait(false) is { } model)
+            {
+                return model;
+            }
         }
 
         return null;

@@ -21,10 +21,12 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
     private Transform3D[]? _before;
     private readonly FieldEditTracker _entityTracker = new();
     private readonly ComponentFieldEditTracker _componentTracker = new();
+    private readonly ModelAssetPicker _modelPicker;
 
     public SceneEntityInspector(InspectorWindow window)
     {
         _editor = window.Context;
+        _modelPicker = new ModelAssetPicker(_editor.Assets, _editor.Root);
     }
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -48,6 +50,8 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             ImGui.Separator();
             DrawComponents(context, targets[0]);
         }
+
+        _modelPicker.Draw();
     }
 
     private void DrawName(InspectorContext context, SceneEntity target)
@@ -171,13 +175,16 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 case LandscapeMaterialBindComponent bind:
                     DrawLandscapeMaterialBind(context, bind);
                     break;
+                case ModelRendererComponent model:
+                    DrawModelRenderer(context, model);
+                    break;
             }
 
             ImGui.PopID();
         }
     }
 
-    private static void DrawAddComponent(InspectorContext context, SceneEntity entity)
+    private void DrawAddComponent(InspectorContext context, SceneEntity entity)
     {
         if (!ImGui.BeginCombo("Add", "Choose component"))
         {
@@ -188,6 +195,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         AddComponentItem(context, entity, "Landscape Stamp", entity.Component<StampComponent>() == null, new StampComponent());
         AddComponentItem(context, entity, "Drawing Target", entity.Component<DrawingTargetComponent>() == null, new DrawingTargetComponent());
         AddComponentItem(context, entity, "Landscape Material Bind", entity.Component<LandscapeMaterialBindComponent>() == null, new LandscapeMaterialBindComponent());
+        AddComponentItem(context, entity, "Model Renderer", entity.Component<ModelRendererComponent>() == null, new ModelRendererComponent(_editor.Assets));
         ImGui.EndCombo();
     }
 
@@ -320,6 +328,34 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 catalog.Materials.FirstOrDefault()?.RecordId));
             Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
         }
+    }
+
+    private void DrawModelRenderer(InspectorContext context, ModelRendererComponent renderer)
+    {
+        DrawAssetPath("Model", renderer.ModelPath);
+        ImGui.SameLine();
+        if (ImGui.Button("Browse##model"))
+        {
+            _modelPicker.Browse(renderer.ModelPath, selected =>
+                Record(context, renderer, "model", renderer.ModelPath, selected, value => renderer.ModelPath = value));
+        }
+
+        if (renderer.ModelPath.Length > 0)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear##model"))
+            {
+                Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
+            }
+        }
+    }
+
+    private static void DrawAssetPath(string label, string path)
+    {
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text($"{label}:");
+        ImGui.SameLine();
+        ImGui.TextDisabled(path.Length == 0 ? "(none)" : path);
     }
 
     private void DrawLayerBinding(
