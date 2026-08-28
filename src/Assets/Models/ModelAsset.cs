@@ -39,7 +39,7 @@ public sealed class ModelAsset
 
     public Node3D Instantiate(AssetSystem assets)
     {
-        var root = new Node3D { Name = $"Model:{System.IO.Path.GetFileName(Path)}" };
+        var root = new Node3D { Name = $"Model:{AssetPath.FileName(Path)}" };
         if (Surfaces.Count == 0)
         {
             return root;
