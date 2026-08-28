@@ -4,7 +4,12 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent
+/// <summary>
+/// Renders a <see cref="ModelAsset"/> at the owning entity. Declared <c>partial</c> so a plugin
+/// (compiled into the same assembly, e.g. the WoW plugin's WMO doodad-set picker) can extend it with
+/// format-specific state and inspector UI without this file needing to know about that format.
+/// </summary>
+public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent
 {
     private readonly AssetSystem _assets;
     private string _modelPath = "";
@@ -34,7 +39,15 @@ public sealed class ModelRendererComponent : SceneComponent, ISceneBoundsProvide
 
     public override string DisplayName => "Model Renderer";
 
-    public override int ContentVersion => HashCode.Combine(ModelPath);
+    public override int ContentVersion
+    {
+        get
+        {
+            int extra = 0;
+            AddContentVersion(ref extra);
+            return HashCode.Combine(ModelPath, extra);
+        }
+    }
 
     public Aabb LocalBounds => TryGetModel(out ModelAsset? model)
         ? Centered(model!.LocalBounds)
@@ -47,11 +60,30 @@ public sealed class ModelRendererComponent : SceneComponent, ISceneBoundsProvide
             return Placeholder();
         }
 
-        Node3D node = model!.Instantiate(_assets);
+        Func<ModelPart, bool>? partFilter = null;
+        ConfigurePartFilter(model!, ref partFilter);
+        ModelInstantiateOptions? options = partFilter == null ? null : new ModelInstantiateOptions { PartFilter = partFilter };
+
+        Node3D node = model!.Instantiate(_assets, options);
         node.Name = "ModelRendererComponent";
         node.Position = -model.LocalBounds.GetCenter();
         return node;
     }
+
+    /// <summary>
+    /// Extension point for a format-specific plugin to override which parts render (e.g. picking one
+    /// WMO doodad set among several). Left unimplemented, this call compiles away entirely.
+    /// </summary>
+    partial void ConfigurePartFilter(ModelAsset model, ref Func<ModelPart, bool>? filter);
+
+    /// <summary>Extension point for a format-specific plugin to fold its own state into <see cref="ContentVersion"/>.</summary>
+    partial void AddContentVersion(ref int hash);
+
+    /// <summary>Draws any format-specific inspector UI a plugin has contributed for this component.</summary>
+    public void DrawInspectorExtra(InspectorContext context) => DrawInspectorExtraHook(context);
+
+    /// <summary>Extension point for a format-specific plugin to draw extra inspector UI for this component.</summary>
+    partial void DrawInspectorExtraHook(InspectorContext context);
 
     private bool TryGetModel(out ModelAsset? model)
     {
