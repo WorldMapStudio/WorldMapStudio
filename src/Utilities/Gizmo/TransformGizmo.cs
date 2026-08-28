@@ -15,6 +15,7 @@ public enum GizmoOperation
 {
     Translate,
     Rotate,
+    Scale,
 }
 
 /// <summary>
@@ -55,6 +56,8 @@ public sealed class TransformGizmo
         Axis,
         Plane,
         Ring,
+        ScaleAxis,
+        ScaleUniform,
     }
 
     /// <summary>Which manipulation the gizmo currently offers. Toggle freely between frames.</summary>
@@ -91,6 +94,8 @@ public sealed class TransformGizmo
     private Basis _dragStartBasis;
     private GVector3 _ringLastVec;
     private float _ringAccum;
+    private NVector2 _scaleStartMouse;
+    private float _scaleStartDistance;
 
     /// <summary>
     /// Draw the gizmo and process one frame of interaction against <paramref name="transform"/>.
@@ -129,7 +134,7 @@ public sealed class TransformGizmo
         {
             if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
-                changed = ContinueDrag(camera, ref transform, origin, rayOrigin, rayDir);
+                changed = ContinueDrag(camera, ref transform, origin, rayOrigin, rayDir, mouse);
             }
             else
             {
@@ -198,7 +203,7 @@ public sealed class TransformGizmo
                 }
             }
         }
-        else
+        else if (Operation == GizmoOperation.Rotate)
         {
             float best = RingPickWidth;
             for (int i = 0; i < 3; i++)
@@ -208,6 +213,34 @@ public sealed class TransformGizmo
                 {
                     best = d;
                     _hoverKind = DragKind.Ring;
+                    _hoverAxis = i;
+                    IsHovered = true;
+                }
+            }
+        }
+        else
+        {
+            if (Project(camera, imageMin, origin, out NVector2 center) && (mouse - center).Length() < 9.0f)
+            {
+                _hoverKind = DragKind.ScaleUniform;
+                _hoverAxis = -1;
+                IsHovered = true;
+                return;
+            }
+
+            float best = AxisPickWidth;
+            for (int i = 0; i < 3; i++)
+            {
+                if (!Project(camera, imageMin, origin + axes[i] * worldScale, out NVector2 tip))
+                {
+                    continue;
+                }
+
+                float d = (mouse - tip).Length();
+                if (d < best)
+                {
+                    best = d;
+                    _hoverKind = DragKind.ScaleAxis;
                     _hoverAxis = i;
                     IsHovered = true;
                 }
@@ -240,10 +273,24 @@ public sealed class TransformGizmo
                 _ringLastVec = InPlane(hit - origin, _dragAxisWorld).Normalized();
                 _ringAccum = 0.0f;
                 break;
+
+            case DragKind.ScaleAxis:
+                _dragAxisWorld = axes[_activeAxis];
+                _dragReference = RayPlane(rayOrigin, rayDir, origin, AxisDragPlaneNormal(_dragAxisWorld, origin, camera));
+                _scaleStartDistance = (_dragReference - origin).Dot(_dragAxisWorld);
+                if (Mathf.Abs(_scaleStartDistance) < 0.001f)
+                {
+                    _scaleStartDistance = _scaleStartDistance < 0.0f ? -0.001f : 0.001f;
+                }
+                break;
+
+            case DragKind.ScaleUniform:
+                _scaleStartMouse = ImGui.GetMousePos();
+                break;
         }
     }
 
-    private bool ContinueDrag(Camera3D camera, ref Transform3D transform, GVector3 origin, GVector3 rayOrigin, GVector3 rayDir)
+    private bool ContinueDrag(Camera3D camera, ref Transform3D transform, GVector3 origin, GVector3 rayOrigin, GVector3 rayDir, NVector2 mouse)
     {
         switch (_dragKind)
         {
@@ -290,6 +337,32 @@ public sealed class TransformGizmo
                 transform.Basis = new Basis(_dragAxisWorld, _ringAccum) * _dragStartBasis;
                 return true;
             }
+
+            case DragKind.ScaleAxis:
+            {
+                GVector3 planeNormal = AxisDragPlaneNormal(_dragAxisWorld, _dragStartOrigin, camera);
+                float denom = rayDir.Dot(planeNormal);
+                if (Mathf.Abs(denom) < GrazingCosine)
+                {
+                    return false;
+                }
+
+                float t = (_dragStartOrigin - rayOrigin).Dot(planeNormal) / denom;
+                GVector3 current = rayOrigin + rayDir * t;
+                float currentDistance = (current - _dragStartOrigin).Dot(_dragAxisWorld);
+                float factor = Mathf.Max(0.01f, currentDistance / _scaleStartDistance);
+                transform.Origin = _dragStartOrigin;
+                transform.Basis = ScaleBasis(_dragAxisWorld, factor) * _dragStartBasis;
+                return true;
+            }
+
+            case DragKind.ScaleUniform:
+            {
+                float factor = Mathf.Max(0.01f, Mathf.Exp((_scaleStartMouse.Y - mouse.Y) / 120.0f));
+                transform.Origin = _dragStartOrigin;
+                transform.Basis = UniformScaleBasis(factor) * _dragStartBasis;
+                return true;
+            }
         }
 
         return false;
@@ -309,14 +382,21 @@ public sealed class TransformGizmo
         {
             DrawTranslate(drawList, camera, imageMin, origin, axes, worldScale, center);
         }
-        else
+        else if (Operation == GizmoOperation.Rotate)
         {
             DrawRotate(drawList, camera, imageMin, origin, axes, worldScale, center);
         }
+        else
+        {
+            DrawScale(drawList, camera, imageMin, origin, axes, worldScale, center);
+        }
 
-        // Central pivot dot, drawn last so it always caps the axes cleanly.
-        drawList.AddCircleFilled(center, 4.0f, ImGui.GetColorU32(new NVector4(0.92f, 0.92f, 0.92f, 1.0f)));
-        drawList.AddCircle(center, 4.0f, ImGui.GetColorU32(new NVector4(0.1f, 0.1f, 0.1f, 0.9f)), 0, 1.5f);
+        if (Operation != GizmoOperation.Scale)
+        {
+            // Central pivot dot, drawn last so it always caps the axes cleanly.
+            drawList.AddCircleFilled(center, 4.0f, ImGui.GetColorU32(new NVector4(0.92f, 0.92f, 0.92f, 1.0f)));
+            drawList.AddCircle(center, 4.0f, ImGui.GetColorU32(new NVector4(0.1f, 0.1f, 0.1f, 0.9f)), 0, 1.5f);
+        }
     }
 
     private void DrawTranslate(ImDrawListPtr drawList, Camera3D camera, NVector2 imageMin, GVector3 origin, Span<GVector3> axes, float worldScale, NVector2 center)
@@ -397,6 +477,38 @@ public sealed class TransformGizmo
         {
             DrawRotationSweep(drawList, camera, imageMin, origin, worldScale, center);
         }
+    }
+
+    private void DrawScale(ImDrawListPtr drawList, Camera3D camera, NVector2 imageMin, GVector3 origin, Span<GVector3> axes, float worldScale, NVector2 center)
+    {
+        Span<int> order = [0, 1, 2];
+        SortByDepth(camera, origin, axes, worldScale, order);
+        foreach (int i in order)
+        {
+            bool hot = (_dragKind == DragKind.ScaleAxis && _activeAxis == i) ||
+                       (_dragKind == DragKind.None && _hoverKind == DragKind.ScaleAxis && _hoverAxis == i);
+            if (!Project(camera, imageMin, origin + axes[i] * worldScale, out NVector2 tip))
+            {
+                continue;
+            }
+
+            NVector4 color = hot ? HighlightColor : AxisColors[i];
+            uint col = ImGui.GetColorU32(color);
+            drawList.AddLine(center, tip, col, hot ? 4.0f : 3.0f);
+            DrawSquare(drawList, tip, 7.0f, col);
+        }
+
+        bool uniformHot = (_dragKind == DragKind.ScaleUniform) ||
+                          (_dragKind == DragKind.None && _hoverKind == DragKind.ScaleUniform);
+        DrawSquare(drawList, center, uniformHot ? 8.0f : 6.0f, ImGui.GetColorU32(uniformHot ? HighlightColor : new NVector4(0.92f, 0.92f, 0.92f, 1.0f)));
+    }
+
+    private static void DrawSquare(ImDrawListPtr drawList, NVector2 center, float halfSize, uint color)
+    {
+        NVector2 min = center - new NVector2(halfSize, halfSize);
+        NVector2 max = center + new NVector2(halfSize, halfSize);
+        drawList.AddRectFilled(min, max, color);
+        drawList.AddRect(min, max, ImGui.GetColorU32(new NVector4(0.05f, 0.05f, 0.05f, 0.9f)), 0.0f, ImDrawFlags.None, 1.5f);
     }
 
     private void DrawRotationSweep(ImDrawListPtr drawList, Camera3D camera, NVector2 imageMin, GVector3 origin, float worldScale, NVector2 center)
@@ -570,6 +682,27 @@ public sealed class TransformGizmo
     {
         return v - normal * v.Dot(normal);
     }
+
+    private static Basis UniformScaleBasis(float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X *= factor;
+        basis.Y *= factor;
+        basis.Z *= factor;
+        return basis;
+    }
+
+    private static Basis ScaleBasis(GVector3 axis, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X = ScaleVector(basis.X, axis, factor);
+        basis.Y = ScaleVector(basis.Y, axis, factor);
+        basis.Z = ScaleVector(basis.Z, axis, factor);
+        return basis;
+    }
+
+    private static GVector3 ScaleVector(GVector3 value, GVector3 axis, float factor) =>
+        value + axis * (value.Dot(axis) * (factor - 1.0f));
 
     private static float SignedAngle(GVector3 a, GVector3 b, GVector3 axis)
     {

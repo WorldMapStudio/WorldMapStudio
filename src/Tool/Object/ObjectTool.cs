@@ -6,8 +6,8 @@ using NVector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Blender-style object mode: select and deselect scene entities, and move or rotate them with the
-/// gizmo or G/R modal transforms. Each completed move records one undoable command.
+/// Blender-style object mode: select and deselect scene entities, and transform them with the
+/// gizmo or G/R/S modal transforms. Each completed transform records one undoable command.
 /// </summary>
 public sealed class ObjectTool : ITool
 {
@@ -51,6 +51,12 @@ public sealed class ObjectTool : ITool
         if (ImGui.RadioButton("Rotate", _gizmo.Operation == GizmoOperation.Rotate))
         {
             _gizmo.Operation = GizmoOperation.Rotate;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Scale", _gizmo.Operation == GizmoOperation.Scale))
+        {
+            _gizmo.Operation = GizmoOperation.Scale;
         }
 
         ImGui.SameLine();
@@ -101,18 +107,19 @@ public sealed class ObjectTool : ITool
             return;
         }
 
-        // W / E toggle between translate and rotate, mirroring the Unreal editor.
+        // W / E toggle between translate and rotate, mirroring the existing editor hotkeys.
         if (ctx.Hovered && !ctx.CameraFlying)
         {
             if (Godot.Input.IsPhysicalKeyPressed(Key.W)) { _gizmo.Operation = GizmoOperation.Translate; }
             if (Godot.Input.IsPhysicalKeyPressed(Key.E)) { _gizmo.Operation = GizmoOperation.Rotate; }
         }
 
-        // G / R begin a Blender-style modal grab / rotate on the current selection.
+        // G / R / S begin Blender-style modal grab / rotate / scale on the current selection.
         if (ctx.Hovered && !ctx.CameraFlying && !GizmoBusy && !_objectSelection.IsDragging && _objectSelection.Movable.Count > 0)
         {
             if (ImGui.IsKeyPressed(ImGuiKey.G, false)) { _modalTransform.Begin(ModalTransformMode.Translate, _objectSelection); return; }
             if (ImGui.IsKeyPressed(ImGuiKey.R, false)) { _modalTransform.Begin(ModalTransformMode.Rotate, _objectSelection); return; }
+            if (ImGui.IsKeyPressed(ImGuiKey.S, false)) { _modalTransform.Begin(ModalTransformMode.Scale, _objectSelection); return; }
         }
 
         _objectSelection.DrawOutlines(ctx.Camera, ctx.ImageMin);
@@ -165,7 +172,9 @@ public sealed class ObjectTool : ITool
             Transform3D delta = _pivot * _dragStartPivot.AffineInverse();
             for (int i = 0; i < selection.Count; i++)
             {
-                selection[i].Transform = delta * _dragStartTransforms[i];
+                selection[i].Transform = _gizmo.Operation == GizmoOperation.Scale
+                    ? ScaleObjectTransform(delta, _dragStartTransforms[i])
+                    : delta * _dragStartTransforms[i];
             }
         }
 
@@ -176,7 +185,7 @@ public sealed class ObjectTool : ITool
         }
     }
 
-    // Records a finished move/rotate of the given entities from their captured start transforms to
+    // Records a finished transform of the given entities from their captured start transforms to
     // their current ones as a single command, unless nothing actually moved.
     private void RecordTransformEdit(IReadOnlyList<SceneEntity> entities, IReadOnlyList<Transform3D> before)
     {
@@ -205,5 +214,11 @@ public sealed class ObjectTool : ITool
         {
             _sessions.Record(new TransformEntitiesCommand(targets, start, end));
         }
+    }
+
+    private static Transform3D ScaleObjectTransform(Transform3D delta, Transform3D start)
+    {
+        start.Origin = delta * start.Origin;
+        return start;
     }
 }

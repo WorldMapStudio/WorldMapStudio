@@ -21,6 +21,7 @@ public enum ProceduralMeshModalMode
     None,
     Translate,
     Rotate,
+    Scale,
 }
 
 [Subsystem(nameof(ToolWindow))]
@@ -90,6 +91,26 @@ public sealed class ProceduralMeshTool : ITool
         ImGui.SameLine();
         ImGui.TextDisabled("|");
         ImGui.SameLine();
+        if (ImGui.RadioButton("Move", _gizmo.Operation == GizmoOperation.Translate))
+        {
+            _gizmo.Operation = GizmoOperation.Translate;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Rotate", _gizmo.Operation == GizmoOperation.Rotate))
+        {
+            _gizmo.Operation = GizmoOperation.Rotate;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Scale", _gizmo.Operation == GizmoOperation.Scale))
+        {
+            _gizmo.Operation = GizmoOperation.Scale;
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("|");
+        ImGui.SameLine();
         ImGui.TextDisabled($"{_vertices.Count} vertices, {_edges.Count} edges");
     }
 
@@ -141,6 +162,12 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
+        if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _vertices.Count > 0 && !Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
+        {
+            BeginModal(component, active.Entity, ProceduralMeshModalMode.Scale, component.Network.Clone(), "Scale procedural mesh vertices");
+            return;
+        }
+
         if (ImGui.IsKeyPressed(ImGuiKey.Delete, false) || ImGui.IsKeyPressed(ImGuiKey.Backspace, false))
         {
             Mutate(component, "Delete procedural mesh selection", network =>
@@ -174,7 +201,7 @@ public sealed class ProceduralMeshTool : ITool
             });
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _edges.Count > 0)
+        if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _edges.Count > 0 && Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
         {
             Mutate(component, "Split procedural mesh edges", network =>
             {
@@ -267,9 +294,13 @@ public sealed class ProceduralMeshTool : ITool
         if (ImGui.IsKeyPressed(ImGuiKey.Y, false)) { _modalAxis = _modalAxis == 1 ? -1 : 1; }
         if (ImGui.IsKeyPressed(ImGuiKey.Z, false)) { _modalAxis = _modalAxis == 2 ? -1 : 2; }
 
-        Transform3D delta = _modalMode == ProceduralMeshModalMode.Translate
-            ? ComputeModalTranslate(viewport.Camera, viewport.ImageMin)
-            : ComputeModalRotate(viewport.Camera, viewport.ImageMin);
+        Transform3D delta = _modalMode switch
+        {
+            ProceduralMeshModalMode.Translate => ComputeModalTranslate(viewport.Camera, viewport.ImageMin),
+            ProceduralMeshModalMode.Rotate => ComputeModalRotate(viewport.Camera, viewport.ImageMin),
+            ProceduralMeshModalMode.Scale => ComputeModalScale(viewport.Camera, viewport.ImageMin),
+            _ => Transform3D.Identity,
+        };
 
         ProceduralMeshNetwork changed = component.Network.Clone();
         foreach ((int id, GVector3 local) in _modalStartPositions)
@@ -344,9 +375,24 @@ public sealed class ProceduralMeshTool : ITool
         return new Transform3D(rotation, pivot - rotation * pivot);
     }
 
+    private Transform3D ComputeModalScale(Camera3D camera, NVector2 imageMin)
+    {
+        GVector3 pivot = _modalStartPivot.Origin;
+        float factor = Mathf.Max(0.01f, ScaleFactorFromScreen(camera, imageMin, pivot, _modalStartMouse, ImGui.GetMousePos()));
+        return _modalAxis < 0
+            ? ScaleAround(pivot, factor)
+            : ScaleAround(pivot, _context.Axes.UserAxis(_modalAxis), factor);
+    }
+
     private void DrawModalHud(NVector2 imageMin)
     {
-        string op = _modalMode == ProceduralMeshModalMode.Translate ? "Move" : "Rotate";
+        string op = _modalMode switch
+        {
+            ProceduralMeshModalMode.Translate => "Move",
+            ProceduralMeshModalMode.Rotate => "Rotate",
+            ProceduralMeshModalMode.Scale => "Scale",
+            _ => "Transform",
+        };
         string axis = _modalAxis < 0 ? "" : $" {"XYZ".Substring(_modalAxis, 1)}";
         ImGui.GetWindowDrawList().AddText(
             imageMin + new NVector2(8.0f, 6.0f),
@@ -741,6 +787,39 @@ public sealed class ProceduralMeshTool : ITool
         }
 
         return origin + dir * ((planePoint - origin).Dot(planeNormal) / denom);
+    }
+
+    private static Transform3D ScaleAround(GVector3 pivot, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X *= factor;
+        basis.Y *= factor;
+        basis.Z *= factor;
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
+    private static Transform3D ScaleAround(GVector3 pivot, GVector3 axis, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X = ScaleVector(basis.X, axis, factor);
+        basis.Y = ScaleVector(basis.Y, axis, factor);
+        basis.Z = ScaleVector(basis.Z, axis, factor);
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
+    private static GVector3 ScaleVector(GVector3 value, GVector3 axis, float factor) =>
+        value + axis * (value.Dot(axis) * (factor - 1.0f));
+
+    private static float ScaleFactorFromScreen(Camera3D camera, NVector2 imageMin, GVector3 pivot, NVector2 startMouse, NVector2 mouse)
+    {
+        if (!Project(camera, imageMin, pivot, out NVector2 centre))
+        {
+            return Mathf.Exp((startMouse.Y - mouse.Y) / 120.0f);
+        }
+
+        float startDistance = Mathf.Max(8.0f, (startMouse - centre).Length());
+        float currentDistance = (mouse - centre).Length();
+        return currentDistance / startDistance;
     }
 
     private static GVector3 AxisDragPlaneNormal(GVector3 axisDir, GVector3 origin, Camera3D camera)
