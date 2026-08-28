@@ -64,7 +64,7 @@ public sealed partial class AssetSystem : ISubsystemHost
             {
                 foreach (AssetRef asset in provider.ListAssets(source))
                 {
-                    if (!ModelLoaders.Any(loader => loader.CanLoad(asset.Path)) || !paths.Add(asset.Path))
+                    if (!ModelLoaders.Any(loader => loader.CanList(asset.Path)) || !paths.Add(asset.Path))
                     {
                         continue;
                     }

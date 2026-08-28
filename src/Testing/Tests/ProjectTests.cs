@@ -205,6 +205,15 @@ f 1/1 2/2 3/3
     }
 
     [EditorTest(Category = "Project")]
+    public static void Model_loader_can_list_defaults_to_can_load()
+    {
+        IModelLoader loader = new ObjModelLoader(null!);
+
+        Assert.AreEqual(loader.CanLoad("mesh.obj"), loader.CanList("mesh.obj"));
+        Assert.AreEqual(loader.CanLoad("mesh.png"), loader.CanList("mesh.png"));
+    }
+
+    [EditorTest(Category = "Project")]
     public static void Model_part_transform_is_applied_to_instantiated_node()
     {
         var transform = new Transform3D(Basis.Identity, new Vector3(3, 0, 0));
