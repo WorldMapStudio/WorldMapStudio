@@ -12,6 +12,7 @@ namespace WorldMapStudio;
 public sealed class MapMenu : IMainMenu
 {
     private readonly EditorContext _context;
+    private readonly ShortcutAction _openMap;
 
     private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal =
         new("SelectMap", () => new MapSelectOperation(), new Vector2(700, 0));
@@ -21,6 +22,12 @@ public sealed class MapMenu : IMainMenu
     public MapMenu(MenuBarManager manager)
     {
         _context = manager.Context;
+        _openMap = _context.Shortcuts.Register(
+            "map.open",
+            "Map",
+            "Open Map",
+            new KeyboardShortcut(ImGuiKey.M, ShortcutModifiers.Alt),
+            Open);
     }
 
     public void Draw()
@@ -30,7 +37,7 @@ public sealed class MapMenu : IMainMenu
             ImGui.MenuItem(_context.Maps.Current.DisplayName, string.Empty, false, false);
             ImGui.Separator();
 
-            if (ImGui.MenuItem("Open Map…"))
+            if (ImGui.MenuItem("Open Map…", _openMap.ShortcutLabel))
             {
                 Open();
             }

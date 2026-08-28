@@ -10,12 +10,26 @@ namespace WorldMapStudio;
 public sealed class ViewMenu : IMainMenu
 {
     private readonly ViewSettings _view;
+    private readonly ShortcutAction _grid;
+    private readonly ShortcutAction _chunkEdges;
 
     public float Priority => 0.6f;
 
     public ViewMenu(MenuBarManager manager)
     {
         _view = manager.Context.View;
+        _grid = manager.Context.Shortcuts.Register(
+            "view.grid",
+            "View",
+            "Grid",
+            new KeyboardShortcut(ImGuiKey.G, ShortcutModifiers.Alt),
+            () => _view.ShowGrid = !_view.ShowGrid);
+        _chunkEdges = manager.Context.Shortcuts.Register(
+            "view.chunk-edges",
+            "View",
+            "Chunk Edges",
+            new KeyboardShortcut(ImGuiKey.E, ShortcutModifiers.Alt),
+            () => _view.ShowChunkEdges = !_view.ShowChunkEdges);
     }
 
     public void Draw()
@@ -23,13 +37,13 @@ public sealed class ViewMenu : IMainMenu
         ImGuiEx.Menu("View", () =>
         {
             bool showGrid = _view.ShowGrid;
-            if (ImGui.MenuItem("Grid", string.Empty, ref showGrid))
+            if (ImGui.MenuItem("Grid", _grid.ShortcutLabel, ref showGrid))
             {
                 _view.ShowGrid = showGrid;
             }
 
             bool showChunkEdges = _view.ShowChunkEdges;
-            if (ImGui.MenuItem("Chunk Edges", string.Empty, ref showChunkEdges))
+            if (ImGui.MenuItem("Chunk Edges", _chunkEdges.ShortcutLabel, ref showChunkEdges))
             {
                 _view.ShowChunkEdges = showChunkEdges;
             }

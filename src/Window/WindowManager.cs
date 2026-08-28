@@ -22,6 +22,8 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 
     public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
 
+    private readonly Dictionary<Window, ShortcutAction> _windowShortcuts = [];
+    private ShortcutAction _layoutProfilesShortcut = null!;
     private bool _layoutProfilesOpen;
     private string _profileName = string.Empty;
     private string? _profileMessage;
@@ -31,6 +33,13 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     {
         Context = manager.Context;
         InitializeSubsystems();
+        RegisterWindowShortcuts();
+        _layoutProfilesShortcut = Context.Shortcuts.Register(
+            "window.layout-profiles",
+            "Window",
+            "Layout Profiles",
+            new KeyboardShortcut(ImGuiKey.L, ShortcutModifiers.Alt),
+            () => _layoutProfilesOpen = true);
         LayoutProfiles = new ImGuiLayoutProfiles(this);
         if (!LayoutProfiles.LoadCurrent(out string? error))
         {
@@ -54,11 +63,12 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     {
         foreach (Window window in Windows)
         {
-            window.DrawMenuItem();
+            _windowShortcuts.TryGetValue(window, out ShortcutAction? shortcut);
+            window.DrawMenuItem(shortcut?.ShortcutLabel);
         }
 
         ImGui.Separator();
-        if (ImGui.MenuItem("Layout Profiles..."))
+        if (ImGui.MenuItem("Layout Profiles...", _layoutProfilesShortcut.ShortcutLabel))
         {
             _layoutProfilesOpen = true;
         }
@@ -163,5 +173,49 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
     {
         _profileMessage = message;
         _profileMessageIsError = isError;
+    }
+
+    private void RegisterWindowShortcuts()
+    {
+        foreach (Window window in Windows)
+        {
+            ShortcutAction action = Context.Shortcuts.Register(
+                $"window.{StableId(window.Title)}",
+                "Window",
+                window.Title,
+                DefaultWindowShortcut(window.Title),
+                () => window.IsOpen = !window.IsOpen);
+            _windowShortcuts[window] = action;
+        }
+    }
+
+    private static KeyboardShortcut DefaultWindowShortcut(string title) => title switch
+    {
+        "Compute Materials" => Alt(ImGuiKey.N),
+        "Export" => Alt(ImGuiKey.X),
+        "Inspector" => Alt(ImGuiKey.I),
+        "Keybindings" => Alt(ImGuiKey.K),
+        "Landscape" => Alt(ImGuiKey.H),
+        "Landscape Debug" => Alt(ImGuiKey.B),
+        "Outline" => Alt(ImGuiKey.O),
+        "Performance" => Alt(ImGuiKey.P),
+        "Problems" => Alt(ImGuiKey.R),
+        "Script Console" => Alt(ImGuiKey.F),
+        "Test Runner" => Alt(ImGuiKey.J),
+        "Tools" => Alt(ImGuiKey.T),
+        "Undo History" => Alt(ImGuiKey.U),
+        "Viewport" => Alt(ImGuiKey.V),
+        "Work Queue" => Alt(ImGuiKey.W),
+        "Work Queue Tester" => Alt(ImGuiKey.Q),
+        _ => KeyboardShortcut.None,
+    };
+
+    private static KeyboardShortcut Alt(ImGuiKey key) => new(key, ShortcutModifiers.Alt);
+
+    private static string StableId(string value)
+    {
+        IEnumerable<char> chars = value.Trim().ToLowerInvariant()
+            .Select(static ch => char.IsLetterOrDigit(ch) ? ch : '-');
+        return string.Join('-', new string(chars.ToArray()).Split('-', System.StringSplitOptions.RemoveEmptyEntries));
     }
 }

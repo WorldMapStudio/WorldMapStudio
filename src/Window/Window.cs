@@ -54,10 +54,10 @@ public abstract class Window : ISubsystem
         IsOpen = isOpen;
     }
 
-    public void DrawMenuItem()
+    public void DrawMenuItem(string? shortcut = null)
     {
         bool isOpen = IsOpen;
-        if (ImGui.MenuItem(Title, null, ref isOpen))
+        if (ImGui.MenuItem(Title, shortcut, ref isOpen))
         {
             IsOpen = isOpen;
         }
