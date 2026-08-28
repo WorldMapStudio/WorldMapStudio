@@ -131,8 +131,8 @@ public sealed class ModalTransform
 
     // X/Y/Z pick an axis; pressing the same one again cycles to the other space, then to
     // free. The first press honours the toolbar's Local/World choice (local needs one object).
-    // Holding Shift while pressing (translate only) constrains to the plane of the OTHER two
-    // axes instead -- e.g. Shift+X moves freely in Y/Z -- exactly like Blender's grab tool.
+    // Holding Shift while pressing translate/scale constrains to the OTHER two axes instead:
+    // e.g. Shift+X moves in Y/Z, or scales Y/Z while leaving X unchanged.
     private void HandleAxisKey(ImGuiKey key, int axis, ObjectSelection selection, bool localSpacePreferred)
     {
         if (!ImGui.IsKeyPressed(key, false))
@@ -142,7 +142,7 @@ public sealed class ModalTransform
 
         bool canLocal = _targets.Count == 1;
         bool preferLocal = localSpacePreferred && canLocal;
-        bool exclude = Mode == ModalTransformMode.Translate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
+        bool exclude = Mode != ModalTransformMode.Rotate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
 
         if (_axis != axis || _axisExclude != exclude)
         {
@@ -241,7 +241,15 @@ public sealed class ModalTransform
             GVector3 move;
             if (numeric)
             {
-                move = AxisVec(_axis < 0 ? 0 : _axis) * number;
+                if (_axis >= 0 && _axisExclude)
+                {
+                    GVector3 planeMove = PlaneTranslate(camera, mouse, imageMin, pivot, AxisVec(_axis));
+                    move = planeMove.LengthSquared() < 1e-8f ? GVector3.Zero : planeMove.Normalized() * number;
+                }
+                else
+                {
+                    move = AxisVec(_axis < 0 ? 0 : _axis) * number;
+                }
             }
             else if (_axis < 0)
             {
@@ -252,8 +260,7 @@ public sealed class ModalTransform
             else if (_axisExclude)
             {
                 // Shift+axis: free movement in the plane the excluded axis is normal to.
-                GVector3 normal = AxisVec(_axis);
-                move = RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _startMouse, imageMin, pivot, normal);
+                move = PlaneTranslate(camera, mouse, imageMin, pivot, AxisVec(_axis));
             }
             else
             {
@@ -271,9 +278,15 @@ public sealed class ModalTransform
         {
             float factor = numeric ? number : ScaleFactorFromScreen(camera, imageMin, pivot, _startMouse, mouse);
             factor = Mathf.Max(0.01f, factor);
-            return _axis < 0
-                ? ScaleAround(pivot, factor)
-                : ScaleAround(pivot, AxisVec(_axis), factor);
+            if (_axis < 0)
+            {
+                return ScaleAround(pivot, factor);
+            }
+
+            GVector3 axis = AxisVec(_axis);
+            return _axisExclude
+                ? ScaleAroundExcludingAxis(pivot, axis, factor)
+                : ScaleAround(pivot, axis, factor);
         }
 
         // Rotate.
@@ -391,6 +404,9 @@ public sealed class ModalTransform
         return origin + dir * ((planePoint - origin).Dot(planeNormal) / denom);
     }
 
+    private GVector3 PlaneTranslate(Camera3D camera, NVector2 mouse, NVector2 imageMin, GVector3 pivot, GVector3 normal) =>
+        RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _startMouse, imageMin, pivot, normal);
+
     private static Transform3D ScaleObjectTransform(Transform3D delta, Transform3D start)
     {
         start.Origin = delta * start.Origin;
@@ -415,8 +431,23 @@ public sealed class ModalTransform
         return new Transform3D(basis, pivot - basis * pivot);
     }
 
+    private static Transform3D ScaleAroundExcludingAxis(GVector3 pivot, GVector3 axis, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X = ScaleVectorExcludingAxis(basis.X, axis, factor);
+        basis.Y = ScaleVectorExcludingAxis(basis.Y, axis, factor);
+        basis.Z = ScaleVectorExcludingAxis(basis.Z, axis, factor);
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
     private static GVector3 ScaleVector(GVector3 value, GVector3 axis, float factor) =>
         value + axis * (value.Dot(axis) * (factor - 1.0f));
+
+    private static GVector3 ScaleVectorExcludingAxis(GVector3 value, GVector3 axis, float factor)
+    {
+        GVector3 alongAxis = axis * value.Dot(axis);
+        return alongAxis + (value - alongAxis) * factor;
+    }
 
     private static float ScaleFactorFromScreen(Camera3D camera, NVector2 imageMin, GVector3 pivot, NVector2 startMouse, NVector2 mouse)
     {

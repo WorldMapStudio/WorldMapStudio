@@ -59,6 +59,7 @@ public sealed class ProceduralMeshTool : ITool
     private NVector2 _marqueeStart;
     private ProceduralMeshModalMode _modalMode;
     private int _modalAxis = -1;
+    private bool _modalAxisExclude;
     private NVector2 _modalStartMouse;
     private Transform3D _modalStartPivot;
     private ProceduralMeshNetwork? _modalBefore;
@@ -276,6 +277,7 @@ public sealed class ProceduralMeshTool : ITool
     {
         _modalMode = mode;
         _modalAxis = -1;
+        _modalAxisExclude = false;
         _modalStartMouse = ImGui.GetMousePos();
         _modalStartPivot = ComputePivot(component, entity);
         _modalBefore = before.Clone();
@@ -293,9 +295,9 @@ public sealed class ProceduralMeshTool : ITool
 
     private void UpdateModal(ProceduralMeshComponent component, SceneEntity entity, in ViewportContext viewport)
     {
-        if (ImGui.IsKeyPressed(ImGuiKey.X, false)) { _modalAxis = _modalAxis == 0 ? -1 : 0; }
-        if (ImGui.IsKeyPressed(ImGuiKey.Y, false)) { _modalAxis = _modalAxis == 1 ? -1 : 1; }
-        if (ImGui.IsKeyPressed(ImGuiKey.Z, false)) { _modalAxis = _modalAxis == 2 ? -1 : 2; }
+        HandleModalAxisKey(ImGuiKey.X, 0);
+        HandleModalAxisKey(ImGuiKey.Y, 1);
+        HandleModalAxisKey(ImGuiKey.Z, 2);
         HandleModalNumericKeys();
 
         Transform3D delta = _modalMode switch
@@ -339,9 +341,29 @@ public sealed class ProceduralMeshTool : ITool
         }
 
         _modalMode = ProceduralMeshModalMode.None;
+        _modalAxisExclude = false;
         _modalBefore = null;
         _modalStartPositions.Clear();
         _modalNumeric = string.Empty;
+    }
+
+    private void HandleModalAxisKey(ImGuiKey key, int axis)
+    {
+        if (!ImGui.IsKeyPressed(key, false))
+        {
+            return;
+        }
+
+        bool exclude = _modalMode != ProceduralMeshModalMode.Rotate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
+        if (_modalAxis != axis || _modalAxisExclude != exclude)
+        {
+            _modalAxis = axis;
+            _modalAxisExclude = exclude;
+            return;
+        }
+
+        _modalAxis = -1;
+        _modalAxisExclude = false;
     }
 
     private Transform3D ComputeModalTranslate(Camera3D camera, NVector2 imageMin)
@@ -350,13 +372,25 @@ public sealed class ProceduralMeshTool : ITool
         GVector3 move;
         if (TryModalNumeric(out float number))
         {
-            move = _context.Axes.UserAxis(_modalAxis < 0 ? 0 : _modalAxis) * number;
+            if (_modalAxis >= 0 && _modalAxisExclude)
+            {
+                GVector3 planeMove = PlaneTranslate(camera, ImGui.GetMousePos(), imageMin, pivot, _context.Axes.UserAxis(_modalAxis));
+                move = planeMove.LengthSquared() < 1e-8f ? GVector3.Zero : planeMove.Normalized() * number;
+            }
+            else
+            {
+                move = _context.Axes.UserAxis(_modalAxis < 0 ? 0 : _modalAxis) * number;
+            }
         }
         else if (_modalAxis < 0)
         {
             GVector3 normal = -camera.GlobalTransform.Basis.Z;
             move = RayToPlane(camera, ImGui.GetMousePos(), imageMin, pivot, normal) -
                    RayToPlane(camera, _modalStartMouse, imageMin, pivot, normal);
+        }
+        else if (_modalAxisExclude)
+        {
+            move = PlaneTranslate(camera, ImGui.GetMousePos(), imageMin, pivot, _context.Axes.UserAxis(_modalAxis));
         }
         else
         {
@@ -400,9 +434,15 @@ public sealed class ProceduralMeshTool : ITool
             ? number
             : ScaleFactorFromScreen(camera, imageMin, pivot, _modalStartMouse, ImGui.GetMousePos());
         factor = Mathf.Max(0.01f, factor);
-        return _modalAxis < 0
-            ? ScaleAround(pivot, factor)
-            : ScaleAround(pivot, _context.Axes.UserAxis(_modalAxis), factor);
+        if (_modalAxis < 0)
+        {
+            return ScaleAround(pivot, factor);
+        }
+
+        GVector3 axis = _context.Axes.UserAxis(_modalAxis);
+        return _modalAxisExclude
+            ? ScaleAroundExcludingAxis(pivot, axis, factor)
+            : ScaleAround(pivot, axis, factor);
     }
 
     private void DrawModalHud(NVector2 imageMin)
@@ -414,7 +454,12 @@ public sealed class ProceduralMeshTool : ITool
             ProceduralMeshModalMode.Scale => "Scale",
             _ => "Transform",
         };
-        string axis = _modalAxis < 0 ? "" : $" {"XYZ".Substring(_modalAxis, 1)}";
+        string axis = string.Empty;
+        if (_modalAxis >= 0)
+        {
+            string axisLabel = _modalAxisExclude ? "XYZ".Remove(_modalAxis, 1) : "XYZ".Substring(_modalAxis, 1);
+            axis = $" {axisLabel}";
+        }
         string value = _modalNumeric.Length > 0
             ? $": {_modalNumeric}{(_modalMode == ProceduralMeshModalMode.Rotate ? " deg" : string.Empty)}"
             : string.Empty;
@@ -857,6 +902,9 @@ public sealed class ProceduralMeshTool : ITool
         return origin + dir * ((planePoint - origin).Dot(planeNormal) / denom);
     }
 
+    private GVector3 PlaneTranslate(Camera3D camera, NVector2 mouse, NVector2 imageMin, GVector3 pivot, GVector3 normal) =>
+        RayToPlane(camera, mouse, imageMin, pivot, normal) - RayToPlane(camera, _modalStartMouse, imageMin, pivot, normal);
+
     private static Transform3D ScaleAround(GVector3 pivot, float factor)
     {
         Basis basis = Basis.Identity;
@@ -875,8 +923,23 @@ public sealed class ProceduralMeshTool : ITool
         return new Transform3D(basis, pivot - basis * pivot);
     }
 
+    private static Transform3D ScaleAroundExcludingAxis(GVector3 pivot, GVector3 axis, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X = ScaleVectorExcludingAxis(basis.X, axis, factor);
+        basis.Y = ScaleVectorExcludingAxis(basis.Y, axis, factor);
+        basis.Z = ScaleVectorExcludingAxis(basis.Z, axis, factor);
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
     private static GVector3 ScaleVector(GVector3 value, GVector3 axis, float factor) =>
         value + axis * (value.Dot(axis) * (factor - 1.0f));
+
+    private static GVector3 ScaleVectorExcludingAxis(GVector3 value, GVector3 axis, float factor)
+    {
+        GVector3 alongAxis = axis * value.Dot(axis);
+        return alongAxis + (value - alongAxis) * factor;
+    }
 
     private static float ScaleFactorFromScreen(Camera3D camera, NVector2 imageMin, GVector3 pivot, NVector2 startMouse, NVector2 mouse)
     {
