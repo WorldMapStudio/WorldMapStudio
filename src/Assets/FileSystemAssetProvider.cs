@@ -15,7 +15,7 @@ public sealed class FileSystemAssetProvider : IAssetProvider
 
     public float Priority => 0f;
 
-    public bool Supports(AssetSourceType type) => type == AssetSourceType.FileSystem;
+    public bool Supports(string type) => type == AssetSourceType.FileSystem;
 
     public IEnumerable<AssetRef> ListAssets(AssetSourceSettings source)
     {

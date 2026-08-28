@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace WorldMapStudio;
 
 /// <summary>
@@ -10,9 +14,30 @@ public sealed class AssetSourceSettings
 
     public string Name { get; set; } = "Assets";
 
-    public AssetSourceType Type { get; set; } = AssetSourceType.FileSystem;
+    public string Type { get; set; } = AssetSourceType.FileSystem;
 
     public bool Enabled { get; set; } = true;
 
     public string RootPath { get; set; } = "";
+
+    public Dictionary<string, string> Properties { get; set; } = new();
+
+    public string GetProperty(string key) =>
+        Properties.TryGetValue(key, out string? value) ? value :
+        ExtensionData.TryGetValue(key, out JsonElement element) && element.ValueKind == JsonValueKind.String ? element.GetString() ?? "" :
+        "";
+
+    public void SetProperty(string key, string value)
+    {
+        if (value.Length == 0)
+        {
+            Properties.Remove(key);
+            return;
+        }
+
+        Properties[key] = value;
+    }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement> ExtensionData { get; set; } = new();
 }

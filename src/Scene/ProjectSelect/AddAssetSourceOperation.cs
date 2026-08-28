@@ -7,10 +7,10 @@ namespace WorldMapStudio;
 
 public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceSettings>>
 {
-    private AssetSourceType _type = AssetSourceType.FileSystem;
+    private IAssetSourceDefinition? _definition;
     private string _id = "";
     private string _name = "";
-    private string _rootPath = "";
+    private AssetSourceSettings _draft = new();
     private bool _initialized;
     private string? _error;
 
@@ -24,13 +24,14 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
         ImGui.Text("Add Asset Source");
         ImGui.Separator();
 
-        if (ImGui.BeginCombo("Type", Label(_type)))
+        _definition ??= AssetSourceTypeRegistry.Definitions.FirstOrDefault();
+        if (ImGui.BeginCombo("Type", _definition?.Label ?? "No registered source types"))
         {
-            foreach (AssetSourceType type in System.Enum.GetValues<AssetSourceType>())
+            foreach (IAssetSourceDefinition definition in AssetSourceTypeRegistry.Definitions)
             {
-                if (ImGui.Selectable(Label(type), type == _type))
+                if (ImGui.Selectable(definition.Label, definition.Type == _definition?.Type))
                 {
-                    _type = type;
+                    _definition = definition;
                     ResetDefaults(sources);
                 }
             }
@@ -43,11 +44,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
         ImGui.SetNextItemWidth(220.0f);
         ImGui.InputText("Name", ref _name, 128);
 
-        if (_type == AssetSourceType.FileSystem)
-        {
-            ImGui.SetNextItemWidth(300.0f);
-            ImGui.InputText("Root path", ref _rootPath, 512);
-        }
+        _definition?.DrawSettings(_draft);
 
         ImGui.TextDisabled("Assets are referenced by their relative path.");
 
@@ -60,7 +57,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
 
         if (ImGui.Button("Add", new Vector2(120, 0)))
         {
-            _error = AssetSourceId.Validate(_id.Trim(), sources, null);
+            _error = _definition == null ? "No asset source type is registered." : AssetSourceId.Validate(_id.Trim(), sources, null);
             if (_error == null)
             {
                 sources.Add(CreateSource());
@@ -82,39 +79,23 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
     {
         _initialized = true;
         _error = null;
-        _id = _type switch
+        _definition ??= AssetSourceTypeRegistry.Definitions.FirstOrDefault(definition => definition.Type == AssetSourceType.FileSystem) ??
+            AssetSourceTypeRegistry.Definitions.FirstOrDefault();
+
+        _id = AssetSourceId.Unique(_definition?.DefaultIdPrefix ?? "assets", sources.Select(source => source.Id));
+        _name = AssetSourceEditor.UniqueName(_definition?.DefaultNamePrefix ?? "Assets", sources.Select(source => source.Name));
+        _draft = new AssetSourceSettings
         {
-            AssetSourceType.FileSystem => AssetSourceId.Unique("textures", sources.Select(source => source.Id)),
-            _ => AssetSourceId.Unique("assets", sources.Select(source => source.Id)),
+            Type = _definition?.Type ?? AssetSourceType.FileSystem,
         };
-        _name = _type switch
-        {
-            AssetSourceType.FileSystem => AssetSourceEditor.UniqueName("Textures", sources.Select(source => source.Name)),
-            _ => AssetSourceEditor.UniqueName("Assets", sources.Select(source => source.Name)),
-        };
-        _rootPath = "";
     }
 
-    private AssetSourceSettings CreateSource() => _type switch
+    private AssetSourceSettings CreateSource() => new()
     {
-        AssetSourceType.FileSystem => new AssetSourceSettings
-        {
-            Id = _id.Trim(),
-            Type = AssetSourceType.FileSystem,
-            Name = _name.Trim().Length == 0 ? _id.Trim() : _name.Trim(),
-            RootPath = _rootPath.Trim(),
-        },
-        _ => new AssetSourceSettings
-        {
-            Id = _id.Trim(),
-            Type = _type,
-            Name = _name.Trim().Length == 0 ? _id.Trim() : _name.Trim(),
-        },
-    };
-
-    private static string Label(AssetSourceType type) => type switch
-    {
-        AssetSourceType.FileSystem => "Filesystem",
-        _ => type.ToString(),
+        Id = _id.Trim(),
+        Type = _definition?.Type ?? _draft.Type,
+        Name = _name.Trim().Length == 0 ? _id.Trim() : _name.Trim(),
+        RootPath = _draft.RootPath.Trim(),
+        Properties = new Dictionary<string, string>(_draft.Properties),
     };
 }
