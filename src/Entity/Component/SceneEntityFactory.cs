@@ -109,6 +109,19 @@ public sealed class SceneModelRendererComponentRecord
     public SceneEntityRecord? Entity { get; set; }
 }
 
+public sealed class SceneProceduralMeshComponentRecord
+{
+    public int EntityId { get; set; }
+
+    public string FunctionId { get; set; } = "";
+
+    public string Parameters { get; set; } = "";
+
+    public string NetworkJson { get; set; } = "";
+
+    public SceneEntityRecord? Entity { get; set; }
+}
+
 public sealed class SceneLandscapeMaterialBindEntryRecord
 {
     public int EntityId { get; set; }
@@ -178,6 +191,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 .Where(record => ids.Contains(record.EntityId))
                 .ToDictionaryAsync(record => record.EntityId)
                 .ConfigureAwait(false);
+        Dictionary<int, SceneProceduralMeshComponentRecord> proceduralMeshes =
+            await context.SceneProceduralMeshComponents.AsNoTracking()
+                .Where(record => ids.Contains(record.EntityId))
+                .ToDictionaryAsync(record => record.EntityId)
+                .ConfigureAwait(false);
         Dictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries =
             await context.SceneLandscapeMaterialBindEntries.AsNoTracking()
                 .Where(record => ids.Contains(record.EntityId))
@@ -187,7 +205,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 .ConfigureAwait(false);
 
         List<SceneEntity> entities = rows
-            .Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries, modelRenderers))
+            .Select(row => ToEntity(row, markers, stamps, drawingTargets, materialBinds, materialBindEntries, modelRenderers, proceduralMeshes))
             .ToList();
         LinkParents(entities);
         return entities;
@@ -248,6 +266,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 db.SceneModelRendererComponents.Remove(new SceneModelRendererComponentRecord { EntityId = id });
             }
 
+            if (db.SceneProceduralMeshComponents.Any(record => record.EntityId == id))
+            {
+                db.SceneProceduralMeshComponents.Remove(new SceneProceduralMeshComponentRecord { EntityId = id });
+            }
+
             db.SceneEntities.Remove(new SceneEntityRecord { Id = id });
         }
     }
@@ -259,7 +282,8 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         IReadOnlyDictionary<int, SceneDrawingTargetComponentRecord> drawingTargets,
         IReadOnlyDictionary<int, SceneLandscapeMaterialBindComponentRecord> materialBinds,
         IReadOnlyDictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> materialBindEntries,
-        IReadOnlyDictionary<int, SceneModelRendererComponentRecord> modelRenderers)
+        IReadOnlyDictionary<int, SceneModelRendererComponentRecord> modelRenderers,
+        IReadOnlyDictionary<int, SceneProceduralMeshComponentRecord> proceduralMeshes)
     {
         var entity = new SceneEntity
         {
@@ -318,6 +342,17 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
             {
                 ModelPath = modelRecord.ModelPath,
             });
+        }
+
+        if (proceduralMeshes.TryGetValue(record.Id, out SceneProceduralMeshComponentRecord? meshRecord))
+        {
+            var mesh = new ProceduralMeshComponent(_storage.Context.ProceduralMeshes)
+            {
+                FunctionId = meshRecord.FunctionId,
+                Parameters = meshRecord.Parameters,
+            };
+            mesh.ReplaceNetwork(ProceduralMeshNetwork.Parse(meshRecord.NetworkJson));
+            entity.LoadComponent(mesh);
         }
 
         var rotation = new Quaternion((float)record.RotX, (float)record.RotY, (float)record.RotZ, (float)record.RotW);
@@ -504,6 +539,24 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         else
         {
             StageComponentDelete(db.SceneModelRendererComponents, entityId);
+        }
+
+        ProceduralMeshComponent? proceduralMesh = entity.Component<ProceduralMeshComponent>();
+        if (proceduralMesh != null)
+        {
+            var row = new SceneProceduralMeshComponentRecord
+            {
+                Entity = entityId is null ? record : null,
+                EntityId = entityId ?? 0,
+                FunctionId = proceduralMesh.FunctionId,
+                Parameters = proceduralMesh.Parameters,
+                NetworkJson = proceduralMesh.Network.Serialize(),
+            };
+            StageComponentRow(db.SceneProceduralMeshComponents, row, entityId);
+        }
+        else
+        {
+            StageComponentDelete(db.SceneProceduralMeshComponents, entityId);
         }
     }
 

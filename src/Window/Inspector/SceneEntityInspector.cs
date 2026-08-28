@@ -22,11 +22,14 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
     private readonly FieldEditTracker _entityTracker = new();
     private readonly ComponentFieldEditTracker _componentTracker = new();
     private readonly ModelAssetPicker _modelPicker;
+    private readonly TextureAssetPicker _texturePicker;
+    private string? _proceduralParameterBefore;
 
     public SceneEntityInspector(InspectorWindow window)
     {
         _editor = window.Context;
         _modelPicker = new ModelAssetPicker(_editor.Assets, _editor.Root);
+        _texturePicker = new TextureAssetPicker(_editor.Assets);
     }
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -52,6 +55,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         }
 
         _modelPicker.Draw();
+        _texturePicker.Draw();
     }
 
     private void DrawName(InspectorContext context, SceneEntity target)
@@ -178,6 +182,9 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 case ModelRendererComponent model:
                     DrawModelRenderer(context, model);
                     break;
+                case ProceduralMeshComponent procedural:
+                    DrawProceduralMesh(context, procedural);
+                    break;
             }
 
             ImGui.PopID();
@@ -196,7 +203,17 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         AddComponentItem(context, entity, "Drawing Target", entity.Component<DrawingTargetComponent>() == null, new DrawingTargetComponent());
         AddComponentItem(context, entity, "Landscape Material Bind", entity.Component<LandscapeMaterialBindComponent>() == null, new LandscapeMaterialBindComponent());
         AddComponentItem(context, entity, "Model Renderer", entity.Component<ModelRendererComponent>() == null, new ModelRendererComponent(_editor.Assets));
+        AddComponentItem(context, entity, "Procedural Mesh", entity.Component<ProceduralMeshComponent>() == null, SeedProceduralMesh());
         ImGui.EndCombo();
+    }
+
+    private ProceduralMeshComponent SeedProceduralMesh()
+    {
+        var component = new ProceduralMeshComponent(_editor.ProceduralMeshes);
+        int a = component.Network.AddVertex(new GVec3(-1.0f, 0.0f, 0.0f));
+        int b = component.Network.AddVertex(new GVec3(1.0f, 0.0f, 0.0f));
+        component.Network.AddEdge(a, b);
+        return component;
     }
 
     private static void AddComponentItem(
@@ -347,6 +364,176 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             {
                 Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
             }
+        }
+    }
+
+    private void DrawProceduralMesh(InspectorContext context, ProceduralMeshComponent component)
+    {
+        ProceduralMeshSystem system = _editor.ProceduralMeshes;
+        IProceduralMeshFunction? bound = system.Find(component.FunctionId);
+        string label = bound?.DisplayName ?? (component.FunctionId.Length == 0 ? "(none)" : $"{component.FunctionId} (missing)");
+
+        if (ImGui.BeginCombo("Function", label))
+        {
+            foreach (IProceduralMeshFunction function in system.All)
+            {
+                if (ImGui.Selectable($"{function.DisplayName}##{function.Id}", function.Id == component.FunctionId))
+                {
+                    Record(context, component, "function", component.FunctionId, function.Id, value => component.FunctionId = value);
+                }
+
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip(function.Description);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (bound == null)
+        {
+            if (component.FunctionId.Length > 0)
+            {
+                ImGui.TextColored(new System.Numerics.Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded function provides '{component.FunctionId}'.");
+            }
+        }
+        else
+        {
+            string graphMode = bound.AllowsMultipleGraphs ? "multiple graphs" : "single graph";
+            string branchMode = bound.AllowsBranching ? "branching" : "linear";
+            ImGui.TextDisabled($"v{bound.Version}, {graphMode}, {branchMode}");
+            foreach (string problem in component.Network.ValidateFor(bound))
+            {
+                ImGui.TextColored(new System.Numerics.Vector4(1.0f, 0.72f, 0.22f, 1.0f), problem);
+            }
+
+            DrawProceduralParameters(context, component, bound);
+        }
+
+        ImGui.Separator();
+        ImGui.TextDisabled($"{component.Network.Vertices.Count} vertices, {component.Network.Edges.Count} edges");
+    }
+
+    private void DrawProceduralParameters(
+        InspectorContext context,
+        ProceduralMeshComponent component,
+        IProceduralMeshFunction function)
+    {
+        string serialized = component.Parameters;
+        ProceduralMeshParameterValues values = ProceduralMeshParameterValues.Parse(serialized);
+
+        foreach (ProceduralMeshParameter parameter in function.Parameters)
+        {
+            ImGui.PushID(parameter.Name);
+
+            switch (parameter.Kind)
+            {
+                case ProceduralMeshParameterKind.Float:
+                {
+                    float value = values.GetFloat(parameter);
+                    if (ImGui.DragFloat(parameter.DisplayName, ref value, 0.01f, parameter.Min, parameter.Max))
+                    {
+                        values.Set(parameter, value);
+                    }
+
+                    TrackProceduralParameter(context, component, function, values);
+                    break;
+                }
+                case ProceduralMeshParameterKind.Int:
+                {
+                    int value = values.GetInt(parameter);
+                    if (ImGui.DragInt(parameter.DisplayName, ref value, 1.0f, (int)parameter.Min, (int)parameter.Max))
+                    {
+                        values.Set(parameter, value);
+                    }
+
+                    TrackProceduralParameter(context, component, function, values);
+                    break;
+                }
+                case ProceduralMeshParameterKind.Bool:
+                {
+                    bool value = values.GetBool(parameter);
+                    if (ImGui.Checkbox(parameter.DisplayName, ref value))
+                    {
+                        values.Set(parameter, value);
+                        Record(context, component, parameter.DisplayName, component.Parameters, values.Serialize(), v => component.Parameters = v);
+                    }
+
+                    break;
+                }
+                case ProceduralMeshParameterKind.Texture:
+                {
+                    string texture = values.GetTexture(parameter);
+                    DrawAssetPath(parameter.DisplayName, texture);
+                    ImGui.SameLine();
+                    if (ImGui.Button($"Browse##{parameter.Name}"))
+                    {
+                        _texturePicker.Browse(texture, selected =>
+                        {
+                            ProceduralMeshParameterValues changed = ProceduralMeshParameterValues.Parse(component.Parameters);
+                            changed.Set(parameter, selected);
+                            Record(context, component, parameter.DisplayName, component.Parameters, changed.Serialize(), v => component.Parameters = v);
+                        });
+                    }
+
+                    if (texture.Length > 0)
+                    {
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton($"Clear##{parameter.Name}"))
+                        {
+                            values.Set(parameter, "");
+                            Record(context, component, parameter.DisplayName, component.Parameters, values.Serialize(), v => component.Parameters = v);
+                        }
+                    }
+
+                    break;
+                }
+                case ProceduralMeshParameterKind.Color:
+                {
+                    Color color = values.GetColor(parameter);
+                    var value = new System.Numerics.Vector4(color.R, color.G, color.B, color.A);
+                    if (ImGui.ColorEdit4(parameter.DisplayName, ref value))
+                    {
+                        values.Set(parameter, new Color(value.X, value.Y, value.Z, value.W));
+                    }
+
+                    TrackProceduralParameter(context, component, function, values);
+                    break;
+                }
+            }
+
+            if (parameter.Description.Length > 0 && ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(parameter.Description);
+            }
+
+            ImGui.PopID();
+        }
+    }
+
+    private void TrackProceduralParameter(
+        InspectorContext context,
+        ProceduralMeshComponent component,
+        IProceduralMeshFunction function,
+        ProceduralMeshParameterValues values)
+    {
+        if (ImGui.IsItemActivated())
+        {
+            _proceduralParameterBefore = component.Parameters;
+        }
+
+        if (!ImGui.IsItemDeactivatedAfterEdit() || _proceduralParameterBefore == null)
+        {
+            return;
+        }
+
+        string before = _proceduralParameterBefore;
+        _proceduralParameterBefore = null;
+        string after = values.Serialize();
+        if (before != after)
+        {
+            Record(context, component, $"{function.DisplayName} parameters", before, after, value => component.Parameters = value);
         }
     }
 
