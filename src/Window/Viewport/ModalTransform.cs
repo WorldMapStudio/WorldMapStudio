@@ -14,14 +14,15 @@ public enum ModalTransformMode
     None,
     Translate,
     Rotate,
+    Scale,
 }
 
 /// <summary>
-/// Blender-style modal transform: press G to grab or R to rotate the current selection,
+/// Blender-style modal transform: press G to grab, R to rotate, or S to scale the current selection,
 /// then optionally constrain to an axis (X/Y/Z; pressing the same one again cycles
 /// global/local/free) and/or type an exact numeric value. Confirm with left-click or
 /// Enter, cancel with right-click or Escape. Operates on a shared pivot, so a
-/// multi-object selection moves or rotates together, exactly like <see cref="TransformGizmo"/>.
+/// multi-object selection transforms together, exactly like <see cref="TransformGizmo"/>.
 /// </summary>
 public sealed class ModalTransform
 {
@@ -38,7 +39,7 @@ public sealed class ModalTransform
     /// <summary>Whether the last completed transform was confirmed (true) or cancelled (false).</summary>
     public bool Confirmed { get; private set; }
 
-    /// <summary>The entities being moved, captured at <see cref="Begin"/>.</summary>
+    /// <summary>The entities being transformed, captured at <see cref="Begin"/>.</summary>
     public IReadOnlyList<SceneEntity> Targets => _targets;
 
     /// <summary>Their transforms at <see cref="Begin"/>, aligned with <see cref="Targets"/>.</summary>
@@ -97,7 +98,9 @@ public sealed class ModalTransform
         Transform3D delta = ComputeDelta(camera, ImGui.GetMousePos(), imageMin);
         for (int i = 0; i < _targets.Count; i++)
         {
-            _targets[i].Transform = delta * _startTransforms[i];
+            _targets[i].Transform = Mode == ModalTransformMode.Scale
+                ? ScaleObjectTransform(delta, _startTransforms[i])
+                : delta * _startTransforms[i];
         }
 
         DrawGuides(camera, imageMin);
@@ -264,6 +267,15 @@ public sealed class ModalTransform
             return new Transform3D(Basis.Identity, move);
         }
 
+        if (Mode == ModalTransformMode.Scale)
+        {
+            float factor = numeric ? number : ScaleFactorFromScreen(camera, imageMin, pivot, _startMouse, mouse);
+            factor = Mathf.Max(0.01f, factor);
+            return _axis < 0
+                ? ScaleAround(pivot, factor)
+                : ScaleAround(pivot, AxisVec(_axis), factor);
+        }
+
         // Rotate.
         GVector3 rotAxis = _axis < 0 ? (camera.GlobalPosition - pivot).Normalized() : AxisVec(_axis);
         float angle;
@@ -341,7 +353,13 @@ public sealed class ModalTransform
 
     private void DrawHud(NVector2 imageMin)
     {
-        string op = Mode == ModalTransformMode.Translate ? "Move" : "Rotate";
+        string op = Mode switch
+        {
+            ModalTransformMode.Translate => "Move",
+            ModalTransformMode.Rotate => "Rotate",
+            ModalTransformMode.Scale => "Scale",
+            _ => "Transform",
+        };
         string axis = string.Empty;
         if (_axis >= 0)
         {
@@ -371,6 +389,45 @@ public sealed class ModalTransform
         }
 
         return origin + dir * ((planePoint - origin).Dot(planeNormal) / denom);
+    }
+
+    private static Transform3D ScaleObjectTransform(Transform3D delta, Transform3D start)
+    {
+        start.Origin = delta * start.Origin;
+        return start;
+    }
+
+    private static Transform3D ScaleAround(GVector3 pivot, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X *= factor;
+        basis.Y *= factor;
+        basis.Z *= factor;
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
+    private static Transform3D ScaleAround(GVector3 pivot, GVector3 axis, float factor)
+    {
+        Basis basis = Basis.Identity;
+        basis.X = ScaleVector(basis.X, axis, factor);
+        basis.Y = ScaleVector(basis.Y, axis, factor);
+        basis.Z = ScaleVector(basis.Z, axis, factor);
+        return new Transform3D(basis, pivot - basis * pivot);
+    }
+
+    private static GVector3 ScaleVector(GVector3 value, GVector3 axis, float factor) =>
+        value + axis * (value.Dot(axis) * (factor - 1.0f));
+
+    private static float ScaleFactorFromScreen(Camera3D camera, NVector2 imageMin, GVector3 pivot, NVector2 startMouse, NVector2 mouse)
+    {
+        if (!ObjectSelection.WorldToScreen(camera, pivot, imageMin, out NVector2 centre))
+        {
+            return Mathf.Exp((startMouse.Y - mouse.Y) / 120.0f);
+        }
+
+        float startDistance = Mathf.Max(8.0f, (startMouse - centre).Length());
+        float currentDistance = (mouse - centre).Length();
+        return currentDistance / startDistance;
     }
 
     // Plane containing the axis and facing the camera (mirrors the gizmo's stable axis drag).
