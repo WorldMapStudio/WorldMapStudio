@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
@@ -17,6 +18,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
     private string _filter = "";
     private string _previewPath = "";
     private List<AssetRef>? _models;
+    private Task<IReadOnlyList<AssetRef>>? _modelsTask;
     private List<AssetRef> _filtered = [];
     private List<AssetRef>? _filteredSourceModels;
     private string _filteredForFilter = "";
@@ -36,6 +38,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         if (ImGui.Button("Refresh"))
         {
             _models = null;
+            _modelsTask = null;
             context.Assets.ClearModelCache();
             _previewPath = "";
         }
@@ -44,10 +47,14 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         ImGui.SetNextItemWidth(BodySize.X - 140.0f);
         ImGui.InputTextWithHint("##filter", "Filter models...", ref _filter, 128);
 
-        _models ??= context.Assets.ListModelAssets()
-            .OrderBy(model => model.SourceName)
-            .ThenBy(model => model.Path)
-            .ToList();
+        _modelsTask ??= context.Assets.ListModelAssetsAsync();
+        if (_models == null && _modelsTask.IsCompletedSuccessfully)
+        {
+            _models = _modelsTask.Result
+                .OrderBy(model => model.SourceName)
+                .ThenBy(model => model.Path)
+                .ToList();
+        }
 
         ImGui.BeginChild("ModelAssetBody", BodySize, true, ImGuiWindowFlags.None);
         DrawList(context);
@@ -100,6 +107,13 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
     {
         Vector2 listSize = new(BodySize.X - PreviewSize.X - 24.0f, BodySize.Y - 8.0f);
         ImGui.BeginChild("ModelAssetList", listSize, true, ImGuiWindowFlags.None);
+
+        if (_models == null)
+        {
+            ImGui.TextDisabled("Indexing models...");
+            ImGui.EndChild();
+            return;
+        }
 
         RefreshFilteredModels();
 

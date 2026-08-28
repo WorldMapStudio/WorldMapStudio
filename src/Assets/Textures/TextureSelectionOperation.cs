@@ -19,6 +19,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
 
     private string _filter = "";
     private List<AssetRef>? _textures;
+    private Task<IReadOnlyList<AssetRef>>? _texturesTask;
     private readonly Dictionary<string, Task<Texture2D?>> _previews = new();
 
     public ModalOperationState Draw(TextureSelectionContext context)
@@ -29,6 +30,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         if (ImGui.Button("Refresh"))
         {
             _textures = null;
+            _texturesTask = null;
             _previews.Clear();
             context.Assets.ClearTextureCache();
         }
@@ -37,15 +39,23 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         ImGui.SetNextItemWidth(BodySize.X - 140.0f);
         ImGui.InputTextWithHint("##filter", "Filter textures...", ref _filter, 128);
 
-        _textures ??= context.Assets.ListTextureAssets()
-            .OrderBy(texture => texture.SourceName)
-            .ThenBy(texture => texture.Path)
-            .ToList();
+        _texturesTask ??= context.Assets.ListTextureAssetsAsync();
+        if (_textures == null && _texturesTask.IsCompletedSuccessfully)
+        {
+            _textures = _texturesTask.Result
+                .OrderBy(texture => texture.SourceName)
+                .ThenBy(texture => texture.Path)
+                .ToList();
+        }
 
         DrawCurrent(context);
         ImGui.Separator();
 
-        if (_textures.Count == 0)
+        if (_textures == null)
+        {
+            ImGui.TextDisabled("Indexing textures...");
+        }
+        else if (_textures.Count == 0)
         {
             ImGui.TextDisabled("No texture assets found.");
         }
