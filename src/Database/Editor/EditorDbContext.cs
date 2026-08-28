@@ -1,29 +1,32 @@
+using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
-/// <summary>EF Core context for the built-in Editor storage. Kept short-lived: create one per unit of work.</summary>
-public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) : DbContext(options)
+/// <summary>
+/// EF Core context for the built-in Editor storage. Kept short-lived: create one per unit of work.
+///
+/// Scene-component tables are not declared here: each registered <see cref="ISceneComponentPersistence"/>
+/// contributes its own via <see cref="Configure"/>, so a plugin's component gets a table the same way a
+/// built-in one does. See <see cref="EditorStorage.CreateContext"/> for where the persister list comes
+/// from, and <see cref="ISceneComponentPersistence"/> for the model-caching assumption this relies on.
+/// </summary>
+public sealed class EditorDbContext : DbContext
 {
+    private readonly IReadOnlyList<ISceneComponentPersistence> _componentPersistence;
+    private readonly IReadOnlyList<IEntityFactory> _entityFactories;
+
+    public EditorDbContext(
+        DbContextOptions<EditorDbContext> options,
+        IReadOnlyList<ISceneComponentPersistence> componentPersistence,
+        IReadOnlyList<IEntityFactory> entityFactories)
+        : base(options)
+    {
+        _componentPersistence = componentPersistence;
+        _entityFactories = entityFactories;
+    }
+
     public DbSet<SceneEntityRecord> SceneEntities => Set<SceneEntityRecord>();
-
-    public DbSet<SceneMarkerComponentRecord> SceneMarkerComponents => Set<SceneMarkerComponentRecord>();
-
-    public DbSet<SceneStampComponentRecord> SceneStampComponents => Set<SceneStampComponentRecord>();
-
-    public DbSet<SceneDrawingTargetComponentRecord> SceneDrawingTargetComponents => Set<SceneDrawingTargetComponentRecord>();
-
-    public DbSet<SceneLandscapeMaterialBindComponentRecord> SceneLandscapeMaterialBindComponents =>
-        Set<SceneLandscapeMaterialBindComponentRecord>();
-
-    public DbSet<SceneLandscapeMaterialBindEntryRecord> SceneLandscapeMaterialBindEntries =>
-        Set<SceneLandscapeMaterialBindEntryRecord>();
-
-    public DbSet<SceneModelRendererComponentRecord> SceneModelRendererComponents =>
-        Set<SceneModelRendererComponentRecord>();
-
-    public DbSet<SceneProceduralMeshComponentRecord> SceneProceduralMeshComponents =>
-        Set<SceneProceduralMeshComponentRecord>();
 
     public DbSet<MapRecord> Maps => Set<MapRecord>();
 
@@ -49,76 +52,6 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
                 .WithMany()
                 .HasForeignKey(record => record.ParentId)
                 .OnDelete(DeleteBehavior.SetNull);
-        });
-
-        model.Entity<SceneMarkerComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_marker_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneMarkerComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneStampComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_stamp_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneStampComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneDrawingTargetComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_drawing_target_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneDrawingTargetComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneLandscapeMaterialBindComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_landscape_material_bind_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneLandscapeMaterialBindComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneLandscapeMaterialBindEntryRecord>(entity =>
-        {
-            entity.ToTable("scene_landscape_material_bind_entries");
-            entity.HasKey(record => new { record.EntityId, record.SortOrder });
-            entity.HasOne(record => record.Component)
-                .WithMany()
-                .HasForeignKey(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneModelRendererComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_model_renderer_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneModelRendererComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        model.Entity<SceneProceduralMeshComponentRecord>(entity =>
-        {
-            entity.ToTable("scene_procedural_mesh_components");
-            entity.HasKey(record => record.EntityId);
-            entity.HasOne(record => record.Entity)
-                .WithOne()
-                .HasForeignKey<SceneProceduralMeshComponentRecord>(record => record.EntityId)
-                .OnDelete(DeleteBehavior.Cascade);
         });
 
         model.Entity<MapRecord>(entity =>
@@ -180,5 +113,17 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
             entity.Property(record => record.ExporterId).HasMaxLength(128);
             entity.Property(record => record.ContentHash).HasMaxLength(64);
         });
+
+        foreach (ISceneComponentPersistence persistence in _componentPersistence)
+        {
+            persistence.Configure(model);
+        }
+
+        // Catalog (and, redundantly but harmlessly, scene) factories that target this storage and
+        // need their own table — e.g. a plugin's catalog living in tables the core does not declare.
+        foreach (IEntityFactory factory in _entityFactories)
+        {
+            factory.Configure(model);
+        }
     }
 }

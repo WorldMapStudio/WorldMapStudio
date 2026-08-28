@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
@@ -24,11 +25,18 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Editor-wide viewport display toggles (e.g. grid visibility), shared by the View menu.</summary>
     public ViewSettings View { get; }
 
+    /// <summary>The editor's day clock, advanced once per frame. See <see cref="WorldClock"/>.</summary>
+    public WorldClock Clock { get; } = new();
+
     /// <summary>Owns the active edit session and its undo history.</summary>
     public EditSessionManager EditSessions { get; }
 
     /// <summary>The scene entities currently loaded into the editor.</summary>
     public SceneEntityRegistry Scene { get; }
+
+    /// <summary>Registered scene component kinds, driving the inspector's add-menu and per-component
+    /// drawing. Plugins add their own kinds here instead of the inspector naming them.</summary>
+    public SceneComponentRegistry ComponentTypes { get; private set; } = null!;
 
     /// <summary>The catalog entities currently loaded into the editor.</summary>
     public CatalogEntityRegistry Catalog { get; }
@@ -60,6 +68,10 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
+    /// <summary>Blends loaded <see cref="IEnvironmentSource"/> components (lights, sky) against the
+    /// viewport focus and <see cref="Clock"/> into the active <see cref="EnvironmentValues"/>.</summary>
+    public EnvironmentSystem Environments { get; private set; } = null!;
+
     /// <summary>Compares each storage's expected schema to the live database and drives migrations.</summary>
     public MigrationSystem Migrations { get; }
 
@@ -87,7 +99,12 @@ public sealed partial class EditorContext : ISubsystemHost
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
         ProceduralMeshes = new ProceduralMeshSystem(this);
+
+        // Built after Assets/Landscape/ProceduralMeshes: the built-in component types capture them.
+        ComponentTypes = new SceneComponentRegistry(this);
+
         Streaming = new StreamingSystem(this);
+        Environments = new EnvironmentSystem(this);
         Migrations = new MigrationSystem(this);
         Scripting = new ScriptingSystem(this);
         Exports = new ExportSystem(this);
@@ -140,5 +157,11 @@ public sealed partial class EditorContext : ISubsystemHost
         // Needs the current map, so it follows the maps.
         onStep?.Invoke("Loading landscape");
         Landscape.Load();
+
+        // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
+        foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())
+        {
+            loader.Load();
+        }
     }
 }

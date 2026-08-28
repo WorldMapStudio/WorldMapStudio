@@ -12,16 +12,24 @@ public static class SchemaTests
     public static void Model_schema_matches_the_editor_context()
     {
         // Building the model does not connect, so a placeholder connection string is fine here.
+        // A handful of persisters stand in for the full registered set (some need a live AssetSystem
+        // or ProceduralMeshSystem to construct, which this schema-only test has no reason to spin up);
+        // proving the persister-driven model wiring works generically for a couple of them is enough.
         var options = new DbContextOptionsBuilder<EditorDbContext>()
             .UseMySql("Server=localhost;Database=x;Uid=root", new MySqlServerVersion(new Version(8, 0, 0)))
             .Options;
-        using var context = new EditorDbContext(options);
+        var persistence = new ISceneComponentPersistence[]
+        {
+            new MarkerComponentPersistence(null!),
+            new StampComponentPersistence(null!),
+        };
+        using var context = new EditorDbContext(options, persistence, []);
 
         Schema schema = ModelSchema.Extract(context);
 
         Assert.IsTrue(schema.Tables.ContainsKey("scene_entities"), "model should define the generic scene entity table");
         Assert.IsTrue(schema.Tables.ContainsKey("scene_marker_components"), "model should define component tables");
-        Assert.IsTrue(schema.Tables.ContainsKey("scene_model_renderer_components"), "model should define model renderer component table");
+        Assert.IsTrue(schema.Tables.ContainsKey("scene_stamp_components"), "model should define landscape stamp component table");
         SchemaTable entities = schema.Tables["scene_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.Column("ParentId")?.Nullable == true, "ParentId should be nullable for root entities");

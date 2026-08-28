@@ -26,4 +26,13 @@ public interface IEntityFactory : ISubsystem
 
     /// <summary>Stages a delete of the entity, or does nothing if it was never persisted.</summary>
     void StageDelete(DbContext context, IEntity entity);
+
+    /// <summary>
+    /// Declares this factory's table(s) into the storage's EF model, for a factory whose storage uses
+    /// EF Core. Most core factories don't need this — their tables are already declared directly in
+    /// that storage's <c>DbContext</c> — but a plugin factory targeting <see cref="EditorStorage"/> has
+    /// no other way to contribute without <see cref="EditorStorage"/> knowing about it. Mirrors
+    /// <see cref="ISceneComponentPersistence.Configure"/> on the component side.
+    /// </summary>
+    void Configure(ModelBuilder model) { }
 }
