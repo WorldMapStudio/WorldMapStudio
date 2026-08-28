@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Threading.Tasks;
 using Godot;
 
@@ -27,7 +26,7 @@ public sealed class GodotTextureLoader : ITextureLoader
 
     public float Priority => 0f;
 
-    public bool CanLoad(string path) => Extensions.Contains(Path.GetExtension(path));
+    public bool CanLoad(string path) => Extensions.Contains(AssetPath.Extension(path));
 
     public async Task<Image?> LoadTextureImageAsync(AssetSystem assets, string path)
     {
@@ -38,7 +37,7 @@ public sealed class GodotTextureLoader : ITextureLoader
         }
 
         var image = new Image();
-        Error error = Path.GetExtension(path).ToLowerInvariant() switch
+        Error error = AssetPath.Extension(path).ToLowerInvariant() switch
         {
             ".bmp" => image.LoadBmpFromBuffer(bytes),
             ".jpg" or ".jpeg" => image.LoadJpgFromBuffer(bytes),

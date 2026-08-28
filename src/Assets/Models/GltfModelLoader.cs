@@ -2,7 +2,6 @@ using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -32,7 +31,7 @@ public sealed class GltfModelLoader : IModelLoader
 
     public bool CanLoad(string path)
     {
-        string extension = Path.GetExtension(path);
+        string extension = AssetPath.Extension(path);
         return string.Equals(extension, ".gltf", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(extension, ".glb", StringComparison.OrdinalIgnoreCase);
     }
@@ -116,7 +115,7 @@ public sealed class GltfModelLoader : IModelLoader
             return null;
         }
 
-        if (string.Equals(Path.GetExtension(path), ".glb", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(AssetPath.Extension(path), ".glb", StringComparison.OrdinalIgnoreCase))
         {
             return ParseGlb(bytes);
         }

@@ -29,7 +29,7 @@ public sealed class ObjModelLoader : IModelLoader
 
     public float Priority => 0.0f;
 
-    public bool CanLoad(string path) => string.Equals(Path.GetExtension(path), ".obj", StringComparison.OrdinalIgnoreCase);
+    public bool CanLoad(string path) => string.Equals(AssetPath.Extension(path), ".obj", StringComparison.OrdinalIgnoreCase);
 
     public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path)
     {

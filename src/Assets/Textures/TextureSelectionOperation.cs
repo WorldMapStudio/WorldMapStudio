@@ -197,7 +197,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         }
 
         draw.AddRectFilled(min, max, ImGui.GetColorU32(ImGuiCol.WindowBg), 2.0f);
-        string label = preview.IsFaulted ? "Failed" : "Loading";
+        string label = preview.IsCompleted ? "Failed" : "Loading";
         Vector2 textSize = ImGui.CalcTextSize(label);
         draw.AddText((min + max) * 0.5f - textSize * 0.5f, ImGui.GetColorU32(ImGuiCol.TextDisabled), label);
     }
