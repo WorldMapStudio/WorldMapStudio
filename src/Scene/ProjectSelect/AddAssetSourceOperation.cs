@@ -49,7 +49,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
             ImGui.InputText("Root path", ref _rootPath, 512);
         }
 
-        ImGui.TextDisabled("Texture paths use this as source_id::relative/path.png.");
+        ImGui.TextDisabled("Assets are referenced by their relative path.");
 
         if (_error != null)
         {
