@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Godot;
 
 namespace WorldMapStudio;
@@ -18,7 +17,6 @@ public static class ProjectStore
     private static readonly JsonSerializerOptions Options = new()
     {
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() },
     };
 
     public static string ProjectsRoot => Path.Combine(
@@ -116,6 +114,8 @@ public static class ProjectStore
         Type = source.Type,
         Enabled = source.Enabled,
         RootPath = source.RootPath,
+        Properties = new Dictionary<string, string>(source.Properties),
+        ExtensionData = new Dictionary<string, System.Text.Json.JsonElement>(source.ExtensionData),
     };
 
     private static string Sanitize(string name)

@@ -6,7 +6,7 @@ namespace WorldMapStudio;
 /// <summary>Storage implementation registered under <see cref="AssetSystem"/>.</summary>
 public interface IAssetProvider : ISubsystem
 {
-    public bool Supports(AssetSourceType type);
+    public bool Supports(string type);
 
     public IEnumerable<AssetRef> ListAssets(AssetSourceSettings source);
 

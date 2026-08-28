@@ -9,7 +9,6 @@ public sealed class AssetSourceEditor
 {
     private const uint IdMaxLength = AssetSourceId.MaxLength;
     private const uint NameMaxLength = 128;
-    private const uint PathMaxLength = 512;
 
     private readonly ModalOperator<AddAssetSourceOperation, IList<AssetSourceSettings>> _addModal =
         new("AddAssetSource", () => new AddAssetSourceOperation(), new Vector2(320, 0));
@@ -35,7 +34,7 @@ public sealed class AssetSourceEditor
             AssetSourceSettings source = sources[i];
             ImGui.PushID(i);
 
-            bool open = ImGui.CollapsingHeader($"{source.Name} ({source.Type})##source", ImGuiTreeNodeFlags.DefaultOpen);
+            bool open = ImGui.CollapsingHeader($"{source.Name} ({AssetSourceTypeRegistry.Label(source.Type)})##source", ImGuiTreeNodeFlags.DefaultOpen);
             if (open)
             {
                 bool enabled = source.Enabled;
@@ -61,13 +60,13 @@ public sealed class AssetSourceEditor
                     ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), idError);
                 }
 
-                if (source.Type == AssetSourceType.FileSystem)
+                if (AssetSourceTypeRegistry.Find(source.Type) is { } definition)
                 {
-                    string root = source.RootPath;
-                    if (ImGui.InputText("Root path", ref root, PathMaxLength))
-                    {
-                        source.RootPath = root;
-                    }
+                    definition.DrawSettings(source);
+                }
+                else
+                {
+                    ImGui.TextDisabled("No editor is registered for this asset source type.");
                 }
 
                 if (ImGui.SmallButton("Remove"))

@@ -1,6 +1,6 @@
 namespace WorldMapStudio;
 
-public enum AssetSourceType
+public static class AssetSourceType
 {
-    FileSystem,
+    public const string FileSystem = "FileSystem";
 }
