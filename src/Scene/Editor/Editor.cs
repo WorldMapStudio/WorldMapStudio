@@ -34,6 +34,9 @@ public sealed class Editor : IScene
     {
         MenuBarManager menuBar = _context.MenuBarManager;
 
+        // Regardless of which windows are open, the same way the viewport's fly camera keeps moving.
+        _context.Clock.Update();
+
         // Entering another map swaps to that map's landscape settings.
         _context.Landscape.Update();
 

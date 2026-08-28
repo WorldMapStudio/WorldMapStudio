@@ -49,6 +49,9 @@ public sealed class ViewportWindow : Window
     private readonly SceneEntityRegistry _scene;
     private readonly ToolSystem _tools;
     private readonly StreamingSystem _streaming;
+    private readonly EnvironmentSystem _environments;
+    private readonly EnvironmentRenderer _environmentRenderer;
+    private readonly EnvironmentVolumeGizmos _environmentVolumes;
     private readonly LandscapeSystem _landscape;
     private readonly MapSystem _maps;
     private readonly HashSet<SceneEntity> _represented = [];
@@ -66,6 +69,7 @@ public sealed class ViewportWindow : Window
         _scene = context.Scene;
         _tools = context.Tools;
         _streaming = context.Streaming;
+        _environments = context.Environments;
         _landscape = context.Landscape;
         _maps = context.Maps;
         _viewMap = _maps.CurrentMap;
@@ -80,21 +84,12 @@ public sealed class ViewportWindow : Window
             OwnWorld3D = true,
         };
 
-        var environment = new Godot.Environment
-        {
-            BackgroundMode = Godot.Environment.BGMode.Color,
-            BackgroundColor = new Color(0.28f, 0.28f, 0.28f),
-            AmbientLightSource = Godot.Environment.AmbientSource.Color,
-            AmbientLightColor = new Color(0.28f, 0.28f, 0.28f),
-        };
-
         _camera = new Camera3D
         {
             Name = "Camera",
             Current = true,
             Near = 0.05f,
             Far = 5000.0f,
-            Environment = environment,
         };
 
         var gridShader = GD.Load<Shader>("res://src/Window/Viewport/InfiniteGrid.gdshader");
@@ -123,6 +118,10 @@ public sealed class ViewportWindow : Window
         _viewport.AddChild(_upAxisLine);
         CreateDemoScene();
         owner.AddChild(_viewport);
+
+        _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, _environments, _view);
+        _camera.Environment = _environmentRenderer.Environment;
+        _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _scene, _view);
 
         // The map picker previews each map with a snapshot of this view; only the viewport can take one.
         _maps.CaptureView = () => _viewport.GetTexture()?.GetImage();
@@ -219,7 +218,10 @@ public sealed class ViewportWindow : Window
         FollowCurrentMap();
         _landscape.Focus = _flyCamera.Position;
         _streaming.Update(_flyCamera.Position);
+        _environments.Update(_flyCamera.Position);
+        _environmentRenderer.Update(_flyCamera.Position);
         SyncRepresentations();
+        _environmentVolumes.Update();
 
         ITool? tool = _tools.Active;
         tool?.DrawToolbar();
