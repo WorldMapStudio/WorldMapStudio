@@ -1,0 +1,124 @@
+using System.Collections.Generic;
+using Godot;
+
+namespace WorldMapStudio;
+
+[Subsystem(nameof(ProceduralMeshSystem))]
+public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
+{
+    public static readonly ProceduralMeshParameter Radius =
+        ProceduralMeshParameter.Float("radius", "Radius", 0.25f, 0.01f, 128.0f, "Tube radius in local units.");
+
+    public static readonly ProceduralMeshParameter Segments =
+        ProceduralMeshParameter.Int("segments", "Segments", 8, 3, 64, "Radial segment count.");
+
+    public static readonly ProceduralMeshParameter Texture =
+        ProceduralMeshParameter.Texture("texture", "Texture", "Albedo texture.");
+
+    public static readonly ProceduralMeshParameter Tint =
+        ProceduralMeshParameter.Color("tint", "Tint", new Color(0.72f, 0.74f, 0.78f), "Fallback or texture tint.");
+
+    public static readonly ProceduralMeshParameter UvScale =
+        ProceduralMeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
+
+    public string Id => "builtin.mesh.tube_network";
+
+    public string DisplayName => "Tube Network";
+
+    public string Description => "Turns every network edge into a textured round tube.";
+
+    public int Version => 1;
+
+    public bool AllowsMultipleGraphs => true;
+
+    public bool AllowsBranching => true;
+
+    public float Priority => 0f;
+
+    public IReadOnlyList<ProceduralMeshParameter> Parameters { get; } =
+        ProceduralMeshParameter.List(Radius, Segments, Texture, Tint, UvScale);
+
+    public TubeNetworkMeshFunction(ProceduralMeshSystem system)
+    {
+    }
+
+    public void Build(in ProceduralMeshBuildContext context, ProceduralMeshOutputBuilder output)
+    {
+        float radius = Mathf.Max(0.001f, context.Float(Radius));
+        int segments = Mathf.Clamp(context.Int(Segments), 3, 64);
+        float uvScale = Mathf.Max(0.001f, context.Float(UvScale));
+
+        var vertices = new List<Vector3>();
+        var normals = new List<Vector3>();
+        var uvs = new List<Vector2>();
+        var indices = new List<int>();
+
+        foreach (ProceduralMeshEdge edge in context.Network.Edges)
+        {
+            ProceduralMeshVertex? a = context.Network.Vertex(edge.A);
+            ProceduralMeshVertex? b = context.Network.Vertex(edge.B);
+            if (a == null || b == null)
+            {
+                continue;
+            }
+
+            AddTube(a.Position, b.Position, radius, segments, uvScale, vertices, normals, uvs, indices);
+        }
+
+        output.AddSurface("Tubes", vertices, indices, normals, uvs, context.Texture(Texture), context.Color(Tint));
+    }
+
+    private static void AddTube(
+        Vector3 a,
+        Vector3 b,
+        float radius,
+        int segments,
+        float uvScale,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uvs,
+        List<int> indices)
+    {
+        Vector3 axis = b - a;
+        float length = axis.Length();
+        if (length <= 1e-5f)
+        {
+            return;
+        }
+
+        Vector3 forward = axis / length;
+        Vector3 reference = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.95f ? Vector3.Right : Vector3.Up;
+        Vector3 right = reference.Cross(forward).Normalized();
+        Vector3 up = forward.Cross(right).Normalized();
+        int start = vertices.Count;
+
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = Mathf.Tau * i / segments;
+            Vector3 normal = (right * Mathf.Cos(angle) + up * Mathf.Sin(angle)).Normalized();
+            vertices.Add(a + normal * radius);
+            vertices.Add(b + normal * radius);
+            normals.Add(normal);
+            normals.Add(normal);
+            float u = i / (float)segments;
+            uvs.Add(new Vector2(u, 0.0f));
+            uvs.Add(new Vector2(u, length * uvScale));
+        }
+
+        for (int i = 0; i < segments; i++)
+        {
+            int next = (i + 1) % segments;
+            int a0 = start + i * 2;
+            int b0 = a0 + 1;
+            int a1 = start + next * 2;
+            int b1 = a1 + 1;
+
+            indices.Add(a0);
+            indices.Add(a1);
+            indices.Add(b0);
+            indices.Add(a1);
+            indices.Add(b1);
+            indices.Add(b0);
+        }
+    }
+}

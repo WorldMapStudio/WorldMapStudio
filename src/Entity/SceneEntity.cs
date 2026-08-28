@@ -105,17 +105,21 @@ public class SceneEntity : Entity
     {
         get
         {
-            Vector3 size = Vector3.One;
-            foreach (ISceneBoundsProvider provider in Components.OfType<ISceneBoundsProvider>())
+            using IEnumerator<ISceneBoundsProvider> providers = Components.OfType<ISceneBoundsProvider>().GetEnumerator();
+            if (!providers.MoveNext())
             {
-                Vector3 contribution = provider.LocalBounds.Size.Abs();
-                size = new Vector3(
-                    Mathf.Max(size.X, contribution.X),
-                    Mathf.Max(size.Y, contribution.Y),
-                    Mathf.Max(size.Z, contribution.Z));
+                return new Aabb(-Vector3.One * 0.5f, Vector3.One);
             }
 
-            return new Aabb(size * -0.5f, size);
+            Aabb bounds = providers.Current.LocalBounds;
+            while (providers.MoveNext())
+            {
+                bounds = bounds.Merge(providers.Current.LocalBounds);
+            }
+
+            return bounds.Size.LengthSquared() <= 0.0001f
+                ? new Aabb(-Vector3.One * 0.5f, Vector3.One)
+                : bounds;
         }
     }
 

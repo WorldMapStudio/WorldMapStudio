@@ -109,12 +109,13 @@ public sealed class SceneScriptApi : IScriptModule
             ? entity
             : throw new InvalidOperationException("That handle does not refer to a scene entity.");
 
-    private static SceneComponent CreateComponent(string typeId) => typeId switch
+    private SceneComponent CreateComponent(string typeId) => typeId switch
     {
         "marker" => new MarkerComponent(),
         "landscape-stamp" => new StampComponent(),
         "drawing-target" => new DrawingTargetComponent(),
         "landscape-material-bind" => new LandscapeMaterialBindComponent(),
+        "procedural-mesh" => new ProceduralMeshComponent(_context.ProceduralMeshes),
         _ => throw new InvalidOperationException($"No scene component type named '{typeId}'."),
     };
 
@@ -124,6 +125,7 @@ public sealed class SceneScriptApi : IScriptModule
         "landscape-stamp" => "Stamp",
         "drawing-target" => "Drawing Target",
         "landscape-material-bind" => "Landscape Material Bind",
+        "procedural-mesh" => "Procedural Mesh",
         _ => "Entity",
     };
 }

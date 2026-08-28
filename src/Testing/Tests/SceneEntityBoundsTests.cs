@@ -73,7 +73,7 @@ public static class SceneEntityBoundsTests
     }
 
     [EditorTest(Category = "SceneEntity", Thread = TestThread.Background)]
-    public static void Effective_bounds_use_the_largest_component_extent()
+    public static void Effective_bounds_merge_component_extents()
     {
         var entity = new SceneEntity();
         entity.AddComponent(new BoundsComponent(new Aabb(Vector3.Zero, new Vector3(2.0f, 10.0f, 4.0f))));
@@ -81,9 +81,9 @@ public static class SceneEntityBoundsTests
 
         Aabb bounds = entity.LocalBounds;
 
-        Assert.AreApproximatelyEqual(-6.0, bounds.Position.X, 1e-4);
-        Assert.AreApproximatelyEqual(-5.0, bounds.Position.Y, 1e-4);
-        Assert.AreApproximatelyEqual(-3.0, bounds.Position.Z, 1e-4);
+        Assert.AreApproximatelyEqual(0.0, bounds.Position.X, 1e-4);
+        Assert.AreApproximatelyEqual(0.0, bounds.Position.Y, 1e-4);
+        Assert.AreApproximatelyEqual(0.0, bounds.Position.Z, 1e-4);
         Assert.AreApproximatelyEqual(12.0, bounds.Size.X, 1e-4);
         Assert.AreApproximatelyEqual(10.0, bounds.Size.Y, 1e-4);
         Assert.AreApproximatelyEqual(6.0, bounds.Size.Z, 1e-4);

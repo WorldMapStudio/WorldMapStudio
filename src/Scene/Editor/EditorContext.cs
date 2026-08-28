@@ -54,6 +54,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The open map's landscape settings and the catalog chunks resolve against.</summary>
     public LandscapeSystem Landscape { get; }
 
+    /// <summary>Builds scene procedural meshes from authored graph components.</summary>
+    public ProceduralMeshSystem ProceduralMeshes { get; }
+
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
@@ -83,6 +86,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Assets = new AssetSystem(this);
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
+        ProceduralMeshes = new ProceduralMeshSystem(this);
         Streaming = new StreamingSystem(this);
         Migrations = new MigrationSystem(this);
         Scripting = new ScriptingSystem(this);

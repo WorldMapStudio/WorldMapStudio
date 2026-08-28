@@ -22,6 +22,9 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
     public DbSet<SceneModelRendererComponentRecord> SceneModelRendererComponents =>
         Set<SceneModelRendererComponentRecord>();
 
+    public DbSet<SceneProceduralMeshComponentRecord> SceneProceduralMeshComponents =>
+        Set<SceneProceduralMeshComponentRecord>();
+
     public DbSet<MapRecord> Maps => Set<MapRecord>();
 
     public DbSet<LandscapeChannelRecord> LandscapeChannels => Set<LandscapeChannelRecord>();
@@ -105,6 +108,16 @@ public sealed class EditorDbContext(DbContextOptions<EditorDbContext> options) :
             entity.HasOne(record => record.Entity)
                 .WithOne()
                 .HasForeignKey<SceneModelRendererComponentRecord>(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        model.Entity<SceneProceduralMeshComponentRecord>(entity =>
+        {
+            entity.ToTable("scene_procedural_mesh_components");
+            entity.HasKey(record => record.EntityId);
+            entity.HasOne(record => record.Entity)
+                .WithOne()
+                .HasForeignKey<SceneProceduralMeshComponentRecord>(record => record.EntityId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
