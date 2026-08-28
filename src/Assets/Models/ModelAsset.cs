@@ -22,7 +22,8 @@ public sealed record ModelPart(
     string Name,
     Transform3D Transform,
     IReadOnlyList<ModelSurface> Surfaces,
-    IReadOnlyList<ModelReference> References)
+    IReadOnlyList<ModelReference> References,
+    bool DefaultVisible = true)
 {
     public Aabb LocalBounds => ModelAsset.CombineBounds(Surfaces.Select(surface => surface.LocalBounds));
 }
@@ -31,6 +32,13 @@ public sealed class ModelInstantiateOptions
 {
     /// <summary>Caps how many reference hops (e.g. WMO doodad -> M2) are resolved before giving up.</summary>
     public int MaxDepth { get; init; } = 4;
+
+    /// <summary>
+    /// Overrides which parts are instantiated. When set, it fully decides inclusion for every part
+    /// (a filter that only cares about some parts should fall back to <see cref="ModelPart.DefaultVisible"/>
+    /// for the rest); when null, every part's own <see cref="ModelPart.DefaultVisible"/> applies.
+    /// </summary>
+    public Func<ModelPart, bool>? PartFilter { get; init; }
 }
 
 public sealed class ModelAsset
@@ -74,7 +82,7 @@ public sealed class ModelAsset
     {
         options ??= new ModelInstantiateOptions();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path };
-        return Instantiate(assets, options.MaxDepth, depth: 0, visited);
+        return Instantiate(assets, options, depth: 0, visited);
     }
 
     public static Aabb CombineBounds(IEnumerable<Aabb> bounds)
@@ -98,11 +106,16 @@ public sealed class ModelAsset
 
     public static Color FallbackColor(int index) => FallbackColours[Math.Abs(index) % FallbackColours.Length];
 
-    private Node3D Instantiate(AssetSystem assets, int maxDepth, int depth, IReadOnlySet<string> visited)
+    private Node3D Instantiate(AssetSystem assets, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         var root = new Node3D { Name = $"Model:{AssetPath.FileName(Path)}" };
         foreach (ModelPart part in Parts)
         {
+            if (!(options.PartFilter?.Invoke(part) ?? part.DefaultVisible))
+            {
+                continue;
+            }
+
             var partNode = new Node3D { Name = part.Name.Length == 0 ? "Part" : part.Name, Transform = part.Transform };
             root.AddChild(partNode);
 
@@ -119,21 +132,21 @@ public sealed class ModelAsset
 
             foreach (ModelReference reference in part.References)
             {
-                AttachReference(assets, partNode, reference, maxDepth, depth, visited);
+                AttachReference(assets, partNode, reference, options, depth, visited);
             }
         }
 
         return root;
     }
 
-    private static void AttachReference(AssetSystem assets, Node3D parent, ModelReference reference, int maxDepth, int depth, IReadOnlySet<string> visited)
+    private static void AttachReference(AssetSystem assets, Node3D parent, ModelReference reference, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         var anchor = new Node3D { Name = reference.Name.Length == 0 ? "Reference" : reference.Name, Transform = reference.Transform };
         parent.AddChild(anchor);
 
         // Depth/cycle guards are per-branch: siblings that reference the same model (common for
         // repeated WMO doodads) must each resolve independently rather than dedupe against each other.
-        if (depth >= maxDepth || visited.Contains(reference.Path))
+        if (depth >= options.MaxDepth || visited.Contains(reference.Path))
         {
             return;
         }
@@ -143,7 +156,7 @@ public sealed class ModelAsset
         Task<ModelAsset?> task = assets.LoadModelAssetAsync(reference.Path);
         if (task.IsCompletedSuccessfully)
         {
-            AttachResolved(assets, anchor, task.Result, maxDepth, depth, branchVisited);
+            AttachResolved(assets, anchor, task.Result, options, depth, branchVisited);
             return;
         }
 
@@ -153,19 +166,19 @@ public sealed class ModelAsset
             await work.SwitchToMain();
             if (GodotObject.IsInstanceValid(anchor))
             {
-                AttachResolved(assets, anchor, resolved, maxDepth, depth, branchVisited);
+                AttachResolved(assets, anchor, resolved, options, depth, branchVisited);
             }
         });
     }
 
-    private static void AttachResolved(AssetSystem assets, Node3D anchor, ModelAsset? resolved, int maxDepth, int depth, IReadOnlySet<string> visited)
+    private static void AttachResolved(AssetSystem assets, Node3D anchor, ModelAsset? resolved, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         if (resolved == null)
         {
             return;
         }
 
-        anchor.AddChild(resolved.Instantiate(assets, maxDepth, depth + 1, visited));
+        anchor.AddChild(resolved.Instantiate(assets, options, depth + 1, visited));
     }
 
     private static ModelPart FilterEmptySurfaces(ModelPart part)

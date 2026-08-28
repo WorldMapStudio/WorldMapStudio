@@ -365,6 +365,8 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
             }
         }
+
+        renderer.DrawInspectorExtra(context);
     }
 
     private void DrawProceduralMesh(InspectorContext context, ProceduralMeshComponent component)
