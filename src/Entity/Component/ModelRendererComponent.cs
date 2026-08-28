@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using Godot;
 
 namespace WorldMapStudio;
@@ -7,6 +8,7 @@ public sealed class ModelRendererComponent : SceneComponent, ISceneBoundsProvide
 {
     private readonly AssetSystem _assets;
     private string _modelPath = "";
+    private string _pendingPath = "";
 
     public ModelRendererComponent(AssetSystem assets)
     {
@@ -34,21 +36,54 @@ public sealed class ModelRendererComponent : SceneComponent, ISceneBoundsProvide
 
     public override int ContentVersion => HashCode.Combine(ModelPath);
 
-    public Aabb LocalBounds => ModelPath.Length > 0 && _assets.LoadModelAsset(ModelPath) is { } model
-        ? Centered(model.LocalBounds)
+    public Aabb LocalBounds => TryGetModel(out ModelAsset? model)
+        ? Centered(model!.LocalBounds)
         : new Aabb(-Vector3.One * 0.5f, Vector3.One);
 
     public Node3D BuildNode()
     {
-        if (ModelPath.Length == 0 || _assets.LoadModelAsset(ModelPath) is not { } model)
+        if (!TryGetModel(out ModelAsset? model))
         {
             return Placeholder();
         }
 
-        Node3D node = model.Instantiate(_assets);
+        Node3D node = model!.Instantiate(_assets);
         node.Name = "ModelRendererComponent";
         node.Position = -model.LocalBounds.GetCenter();
         return node;
+    }
+
+    private bool TryGetModel(out ModelAsset? model)
+    {
+        model = null;
+        if (_modelPath.Length == 0)
+        {
+            return false;
+        }
+
+        Task<ModelAsset?> task = _assets.LoadModelAssetAsync(_modelPath);
+        if (task.IsCompletedSuccessfully)
+        {
+            model = task.Result;
+            return model != null;
+        }
+
+        if (_pendingPath != _modelPath)
+        {
+            _pendingPath = _modelPath;
+            string path = _modelPath;
+            WorkQueue.Schedule("Refresh Model Renderer", async work =>
+            {
+                await task.ConfigureAwait(false);
+                await work.SwitchToMain();
+                if (_modelPath == path)
+                {
+                    Owner?.RefreshRepresentation();
+                }
+            });
+        }
+
+        return false;
     }
 
     private static Aabb Centered(Aabb bounds) => new(bounds.Size * -0.5f, bounds.Size);
