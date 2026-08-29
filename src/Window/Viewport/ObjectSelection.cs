@@ -12,7 +12,9 @@ namespace WorldMapStudio;
 /// <summary>
 /// Viewport picking over <see cref="SceneEntity"/>s: left-click selects, shift-click adds or
 /// removes, and dragging from empty space marquee-selects everything whose centre falls inside the
-/// box. Selection lives in the shared <see cref="SelectionSystem"/> so the outline and inspector
+/// box. Marquee selection skips <see cref="IDerivedEntity"/>s (e.g. landscape chunks) — they're
+/// still individually clickable for their inspector, but a box drag shouldn't sweep them up.
+/// Selection lives in the shared <see cref="SelectionSystem"/> so the outline and inspector
 /// stay in sync; each entity is picked and outlined against its own <see cref="SceneEntity.LocalBounds"/>
 /// in its world transform.
 /// </summary>
@@ -144,6 +146,11 @@ public sealed class ObjectSelection
 
         foreach (SceneEntity obj in _scene.InView)
         {
+            if (obj is IDerivedEntity)
+            {
+                continue;
+            }
+
             GVector3 centre = obj.Transform * obj.LocalBounds.GetCenter();
             if (!WorldToScreen(camera, centre, imageMin, out NVector2 screen))
             {

@@ -124,6 +124,13 @@ public sealed class SceneMenu : IMainMenu
         EditSession session = _context.EditSessions.Active;
         foreach (SceneEntity entity in _context.Selection.Selected.OfType<SceneEntity>().ToList())
         {
+            // Derived entities (e.g. landscape chunks) are computed, not authored, so there's
+            // nothing to delete — leave them selected rather than throwing out of the loop.
+            if (entity is IDerivedEntity)
+            {
+                continue;
+            }
+
             var command = new DeleteEntityCommand(_context.Scene, entity);
             command.Apply();
             session.Record(command);
