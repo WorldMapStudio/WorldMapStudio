@@ -9,17 +9,9 @@ public sealed class SceneProceduralMeshComponentRecord
 {
     public int EntityId { get; set; }
 
-    public string FunctionId { get; set; } = "";
-
-    public string Parameters { get; set; } = "";
-
-    public string NetworkJson { get; set; } = "";
-
-    /// <summary>Empty on a row written before formats existed; the component resolves that the same
-    /// way as an unset value (defer to the bound function's default).</summary>
-    public string FormatId { get; set; } = "";
-
-    public string Materials { get; set; } = "";
+    /// <summary>The referenced <see cref="ProceduralModel"/>'s row id. Null for a placement created
+    /// without ever picking a model.</summary>
+    public int? ModelId { get; set; }
 
     public SceneEntityRecord? Entity { get; set; }
 }
@@ -75,14 +67,7 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
                 continue;
             }
 
-            var mesh = new ProceduralMeshComponent(ProceduralMeshes)
-            {
-                FunctionId = row.FunctionId,
-                Parameters = row.Parameters,
-                FormatId = row.FormatId,
-                Materials = row.Materials,
-            };
-            mesh.ReplaceNetwork(VertexNetwork.Parse(row.NetworkJson));
+            var mesh = new ProceduralMeshComponent(ProceduralMeshes) { ModelId = row.ModelId };
             entity.LoadComponent(mesh);
         }
     }
@@ -104,11 +89,7 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
         {
             Entity = entity.RecordId is null ? entityRow : null,
             EntityId = entity.RecordId ?? 0,
-            FunctionId = proceduralMesh.FunctionId,
-            Parameters = proceduralMesh.Parameters,
-            NetworkJson = proceduralMesh.Network.Serialize(),
-            FormatId = proceduralMesh.FormatId,
-            Materials = proceduralMesh.Materials,
+            ModelId = proceduralMesh.ModelId,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }

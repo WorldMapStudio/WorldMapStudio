@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace WorldMapStudio;
 
 /// <summary>
@@ -21,4 +24,19 @@ public interface INetworkEditable
     /// cursor instead of on the entity's local plane.
     /// </summary>
     bool PlanarXZ { get; }
+
+    /// <summary>
+    /// What an edit session pins and persists a network edit against — a road's own entity, but a
+    /// procedural mesh's <em>model</em> rather than the placement being edited, since the network
+    /// lives on the model and may be shared by other placements. Defaults to <see cref="Owner"/> for
+    /// components (like a road) where the network is not shared.
+    /// </summary>
+    IEntity EditTarget => Owner ?? throw new System.InvalidOperationException("Component is not attached.");
+
+    /// <summary>
+    /// Every loaded scene entity whose rendered result this network feeds, for chunk-change capture —
+    /// just <see cref="Owner"/> for a component with its own network, but every loaded placement of a
+    /// shared model. Defaults to <see cref="Owner"/> alone.
+    /// </summary>
+    IEnumerable<SceneEntity> AffectedEntities => Owner is { } owner ? Enumerable.Repeat(owner, 1) : [];
 }
