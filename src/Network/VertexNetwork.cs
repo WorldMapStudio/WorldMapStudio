@@ -357,6 +357,316 @@ public sealed class VertexNetwork
         return true;
     }
 
+    /// <summary>Blender's Subdivide: splits every selected edge at its midpoint (patching any face
+    /// that used it so the face keeps referencing real edges instead of losing them), then replaces
+    /// any face whose <em>entire</em> boundary ended up subdivided with a fan of quads around a new
+    /// centre vertex — the default "cut a quad into 4 quads" behaviour, generalized to any n-gon. A
+    /// face with only some of its edges selected keeps its shape (now an n-gon with extra vertices
+    /// along the cut edges) rather than attempting a partial tessellation.</summary>
+    public NetworkSubgraph Subdivide(IEnumerable<int> edgeIds, IEnumerable<int> faceIds)
+    {
+        HashSet<int> selectedEdges = edgeIds.ToHashSet();
+        var targets = new HashSet<int>(faceIds);
+        foreach (NetworkFace face in _faces)
+        {
+            if (targets.Contains(face.Id) || face.Vertices.Count < 3)
+            {
+                continue;
+            }
+
+            bool everyBoundaryEdgeSelected = true;
+            for (int i = 0; i < face.Vertices.Count; i++)
+            {
+                NetworkEdge? edge = FindEdge(face.Vertices[i], face.Vertices[(i + 1) % face.Vertices.Count]);
+                if (edge == null || !selectedEdges.Contains(edge.Id))
+                {
+                    everyBoundaryEdgeSelected = false;
+                    break;
+                }
+            }
+
+            if (everyBoundaryEdgeSelected)
+            {
+                targets.Add(face.Id);
+            }
+        }
+
+        var edgesToSplit = new HashSet<int>(selectedEdges);
+        foreach (int faceId in targets)
+        {
+            NetworkFace face = Face(faceId)!;
+            for (int i = 0; i < face.Vertices.Count; i++)
+            {
+                if (FindEdge(face.Vertices[i], face.Vertices[(i + 1) % face.Vertices.Count]) is { } edge)
+                {
+                    edgesToSplit.Add(edge.Id);
+                }
+            }
+        }
+
+        var newVertices = new List<int>();
+        foreach (int edgeId in edgesToSplit)
+        {
+            if (SplitEdgePreservingFaces(edgeId) is int mid)
+            {
+                newVertices.Add(mid);
+            }
+        }
+
+        var newFaces = new List<int>();
+        foreach (int faceId in targets)
+        {
+            NetworkFace? face = Face(faceId);
+            IReadOnlyList<int>? loop = face?.Vertices;
+            if (loop == null || loop.Count < 6 || loop.Count % 2 != 0)
+            {
+                continue; // not every edge actually gained a midpoint (a degenerate/duplicate loop) — leave it
+            }
+
+            int n = loop.Count / 2;
+            Vector3 centre = Vector3.Zero;
+            for (int i = 0; i < n; i++)
+            {
+                centre += Vertex(loop[i * 2])!.Position;
+            }
+
+            int ctr = AddVertex(centre / n);
+            newVertices.Add(ctr);
+            RemoveFace(faceId);
+            for (int i = 0; i < n; i++)
+            {
+                int v = loop[i * 2];
+                int mNext = loop[i * 2 + 1];
+                int mPrev = loop[(i * 2 - 1 + loop.Count) % loop.Count];
+                if (AddFace([v, mNext, ctr, mPrev]) is int newFaceId)
+                {
+                    newFaces.Add(newFaceId);
+                }
+            }
+        }
+
+        _version++;
+        return new NetworkSubgraph(newVertices, newFaces);
+    }
+
+    /// <summary>Blender's Ctrl+R: walks the ring of quads sharing <paramref name="seedEdgeId"/>'s
+    /// direction — an edge's "opposite" edge in a quad face, continued into whichever other face
+    /// shares that opposite edge — splitting every ring edge at its midpoint and connecting each
+    /// crossed quad's two new midpoints with a fresh edge, cutting that quad in two. Ring-walking
+    /// only continues through quads (four-vertex faces), exactly like Blender's own loop cut; it
+    /// stops at a boundary or a non-quad neighbour. Always cuts at the centre — there is no
+    /// interactive slide-to-reposition phase, and a ring that closes into a full loop does not cut
+    /// its final wrap-around quad (a known limitation, not a general closed-ring cutter).</summary>
+    public NetworkSubgraph LoopCut(int seedEdgeId)
+    {
+        if (Edge(seedEdgeId) is not { } seed)
+        {
+            return new NetworkSubgraph([], []);
+        }
+
+        var ring = new List<int> { seedEdgeId };
+        ExtendRing(ring, seed.A, seed.B, prepend: false);
+        ExtendRing(ring, seed.A, seed.B, prepend: true);
+
+        var crossedFaces = new List<int>();
+        for (int i = 0; i < ring.Count - 1; i++)
+        {
+            NetworkEdge e1 = Edge(ring[i])!;
+            NetworkEdge e2 = Edge(ring[i + 1])!;
+            NetworkFace? quad = _faces.FirstOrDefault(f => f.Vertices.Count == 4 && FaceUsesEdge(f, e1.A, e1.B) && FaceUsesEdge(f, e2.A, e2.B));
+            crossedFaces.Add(quad?.Id ?? -1);
+        }
+
+        var midpointByEdge = new Dictionary<int, int>();
+        var newVertices = new List<int>();
+        foreach (int edgeId in ring)
+        {
+            if (SplitEdgePreservingFaces(edgeId) is int mid)
+            {
+                midpointByEdge[edgeId] = mid;
+                newVertices.Add(mid);
+            }
+        }
+
+        var newFaces = new List<int>();
+        for (int i = 0; i < crossedFaces.Count; i++)
+        {
+            if (crossedFaces[i] < 0 || Face(crossedFaces[i]) is not { } face ||
+                !midpointByEdge.TryGetValue(ring[i], out int m1) || !midpointByEdge.TryGetValue(ring[i + 1], out int m2))
+            {
+                continue;
+            }
+
+            List<int> loop = face.Vertices.ToList();
+            int idx1 = loop.IndexOf(m1);
+            int idx2 = loop.IndexOf(m2);
+            if (idx1 < 0 || idx2 < 0)
+            {
+                continue;
+            }
+
+            List<int> arcA = Arc(loop, idx1, idx2);
+            List<int> arcB = Arc(loop, idx2, idx1);
+            RemoveFace(face.Id);
+            if (AddFace(arcA) is int fa)
+            {
+                newFaces.Add(fa);
+            }
+
+            if (AddFace(arcB) is int fb)
+            {
+                newFaces.Add(fb);
+            }
+        }
+
+        _version++;
+        return new NetworkSubgraph(newVertices, newFaces);
+    }
+
+    /// <summary>The cyclic run of <paramref name="loop"/> from index <paramref name="from"/> to
+    /// <paramref name="to"/> inclusive, walking forward and wrapping — one of the two arcs a loop cut
+    /// splits a face's boundary into.</summary>
+    private static List<int> Arc(List<int> loop, int from, int to)
+    {
+        var arc = new List<int>();
+        for (int i = from; ; i = (i + 1) % loop.Count)
+        {
+            arc.Add(loop[i]);
+            if (i == to)
+            {
+                break;
+            }
+        }
+
+        return arc;
+    }
+
+    /// <summary>Walks outward from a seed edge through adjacent quads (the face on the side not
+    /// already visited), following each quad's "opposite" boundary edge, appending or prepending
+    /// every ring edge found. Stops at an open boundary, a non-quad neighbour, or the ring closing
+    /// back on itself.</summary>
+    private void ExtendRing(List<int> ring, int seedA, int seedB, bool prepend)
+    {
+        int a = seedA;
+        int b = seedB;
+        int fromFaceId = -1;
+        while (true)
+        {
+            int nextFaceId = -1;
+            foreach (int candidateId in FacesUsingEdge(a, b))
+            {
+                if (candidateId != fromFaceId)
+                {
+                    nextFaceId = candidateId;
+                    break;
+                }
+            }
+
+            if (nextFaceId < 0 || Face(nextFaceId) is not { } quad || quad.Vertices.Count != 4)
+            {
+                return;
+            }
+
+            int index = BoundaryEdgeIndex(quad, a, b);
+            if (index < 0)
+            {
+                return;
+            }
+
+            int oppIndex = (index + 2) % 4;
+            int oa = quad.Vertices[oppIndex];
+            int ob = quad.Vertices[(oppIndex + 1) % 4];
+            if (FindEdge(oa, ob) is not { } oppEdge || ring.Contains(oppEdge.Id))
+            {
+                return;
+            }
+
+            if (prepend)
+            {
+                ring.Insert(0, oppEdge.Id);
+            }
+            else
+            {
+                ring.Add(oppEdge.Id);
+            }
+
+            fromFaceId = nextFaceId;
+            a = oa;
+            b = ob;
+        }
+    }
+
+    private List<int> FacesUsingEdge(int a, int b)
+    {
+        var result = new List<int>();
+        foreach (NetworkFace face in _faces)
+        {
+            if (FaceUsesEdge(face, a, b))
+            {
+                result.Add(face.Id);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Splits an edge at its midpoint like <see cref="SplitEdge"/>, but instead of letting
+    /// <see cref="RemoveEdge"/>'s cascade delete any face that used it, patches every such face's loop
+    /// in place to route through the new midpoint — the edge is gone, but the face's boundary stays
+    /// whole and valid.</summary>
+    private int? SplitEdgePreservingFaces(int edgeId)
+    {
+        NetworkEdge? edge = Edge(edgeId);
+        NetworkVertex? a = edge == null ? null : Vertex(edge.A);
+        NetworkVertex? b = edge == null ? null : Vertex(edge.B);
+        if (edge == null || a == null || b == null)
+        {
+            return null;
+        }
+
+        int mid = AddVertex((a.Position + b.Position) * 0.5f);
+        for (int i = 0; i < _faces.Count; i++)
+        {
+            NetworkFace face = _faces[i];
+            int index = BoundaryEdgeIndex(face, edge.A, edge.B);
+            if (index < 0)
+            {
+                continue;
+            }
+
+            var vertices = face.Vertices.ToList();
+            vertices.Insert(index + 1, mid);
+            _faces[i] = face with { Vertices = vertices };
+        }
+
+        _edges.RemoveAll(e => e.Id == edgeId);
+        AddEdge(a.Id, mid);
+        AddEdge(mid, b.Id);
+        _version++;
+        return mid;
+    }
+
+    private NetworkEdge? FindEdge(int a, int b) =>
+        _edges.FirstOrDefault(edge => (edge.A == a && edge.B == b) || (edge.A == b && edge.B == a));
+
+    /// <summary>Index i such that <c>(loop[i], loop[i+1])</c> is the boundary pair (a,b), in either
+    /// direction; -1 if the face's loop does not have that edge on its boundary.</summary>
+    private static int BoundaryEdgeIndex(NetworkFace face, int a, int b)
+    {
+        IReadOnlyList<int> vertices = face.Vertices;
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            int x = vertices[i];
+            int y = vertices[(i + 1) % vertices.Count];
+            if ((x == a && y == b) || (x == b && y == a))
+            {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
     public NetworkVertex? Vertex(int id) => _vertices.FirstOrDefault(vertex => vertex.Id == id);
 
     public NetworkEdge? Edge(int id) => _edges.FirstOrDefault(edge => edge.Id == id);

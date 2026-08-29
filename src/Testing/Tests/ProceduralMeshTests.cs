@@ -177,6 +177,85 @@ public static class ProceduralMeshTests
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Subdivide_a_quad_face_creates_a_centre_fan_of_four_quads()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(2.0f, 2.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 2.0f, 0.0f));
+        int face = network.AddFace([a, b, c, d])!.Value;
+
+        var result = network.Subdivide([], [face]);
+
+        Assert.AreEqual(5, result.VertexIds.Count, "4 edge midpoints plus 1 centre vertex");
+        Assert.AreEqual(4, result.FaceIds.Count, "the quad becomes 4 quads");
+        Assert.AreEqual(4, network.Faces.Count);
+        Assert.AreEqual(9, network.Vertices.Count, "4 original + 5 new");
+        Assert.IsNull(network.Face(face), "the original face id should be gone, replaced by 4 new ones");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Subdividing_only_some_of_a_faces_edges_keeps_it_as_one_larger_ngon()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int face = network.AddFace([a, b, c, d])!.Value;
+        NetworkEdge ab = network.Edges.First(e => (e.A == a && e.B == b) || (e.A == b && e.B == a));
+
+        var result = network.Subdivide([ab.Id], []);
+
+        Assert.AreEqual(1, result.VertexIds.Count);
+        Assert.AreEqual(0, result.FaceIds.Count, "no centre fan when only one of the face's edges was cut");
+        NetworkFace updated = network.Face(face)!;
+        Assert.AreEqual(5, updated.Vertices.Count, "the face keeps its id and shape, gaining the new midpoint on its boundary");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Loop_cut_splits_a_ring_of_two_quads()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int e = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        int f = network.AddVertex(new Vector3(2.0f, 1.0f, 0.0f));
+        network.AddFace([a, b, c, d]);
+        network.AddFace([b, e, f, c]);
+        NetworkEdge shared = network.Edges.First(edge => (edge.A == b && edge.B == c) || (edge.A == c && edge.B == b));
+
+        var result = network.LoopCut(shared.Id);
+
+        Assert.AreEqual(3, result.VertexIds.Count, "3 new midpoints: the seed edge plus one on each side of the ring");
+        Assert.AreEqual(4, result.FaceIds.Count, "each of the 2 quads the ring crosses splits into 2");
+        Assert.AreEqual(4, network.Faces.Count, "the two original quads are replaced by 4 smaller ones");
+        Assert.AreEqual(9, network.Vertices.Count, "6 original vertices plus 3 midpoints");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Loop_cut_on_a_lone_quad_does_not_wall_off_the_boundary_edges()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int face = network.AddFace([a, b, c, d])!.Value;
+        NetworkEdge ab = network.Edges.First(edge => (edge.A == a && edge.B == b) || (edge.A == b && edge.B == a));
+
+        var result = network.LoopCut(ab.Id);
+
+        Assert.AreEqual(2, result.VertexIds.Count, "the seed edge and its one opposite edge each get a midpoint");
+        Assert.AreEqual(2, result.FaceIds.Count, "the single quad splits into 2");
+        Assert.AreEqual(2, network.Faces.Count);
+        Assert.IsNull(network.Face(face));
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Network_bounds_follow_off_origin_vertices()
     {
         var network = new VertexNetwork();
