@@ -53,6 +53,16 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
         ? Centered(model!.LocalBounds)
         : new Aabb(-Vector3.One * 0.5f, Vector3.One);
 
+    public override SceneComponent Clone()
+    {
+        var clone = new ModelRendererComponent(_assets) { ModelPath = ModelPath };
+        CopyExtraTo(clone);
+        return clone;
+    }
+
+    /// <summary>Extension point for a format-specific plugin to copy its own state onto a clone (e.g. copy/paste).</summary>
+    partial void CopyExtraTo(ModelRendererComponent clone);
+
     public Node3D BuildNode()
     {
         if (!TryGetModel(out ModelAsset? model))

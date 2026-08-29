@@ -46,6 +46,13 @@ public sealed class LandscapeMaterialBindComponent : SceneComponent, ILandscapeD
         _bindings.AddRange(bindings);
     }
 
+    public override SceneComponent Clone()
+    {
+        var clone = new LandscapeMaterialBindComponent { Priority = Priority };
+        clone.ReplaceBindings(Bindings);
+        return clone;
+    }
+
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context)
     {
         var groups = new List<LandscapeClaimGroup>();

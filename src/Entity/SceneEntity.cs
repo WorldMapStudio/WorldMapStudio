@@ -181,6 +181,24 @@ public class SceneEntity : Entity
         Node = null;
     }
 
+    /// <summary>
+    /// An independent duplicate: fresh identity, no persisted record or parent link, and its own deep
+    /// copy of every component. Used by copy/paste, which must not depend on the original entity still
+    /// being loaded — once cloned, nothing here references the source, so streaming unloading (or even
+    /// deleting) the original afterwards has no effect on the clone.
+    /// </summary>
+    public SceneEntity Clone()
+    {
+        var clone = new SceneEntity { Name = Name, Map = Map };
+        foreach (SceneComponent component in Components)
+        {
+            clone.AddComponent(component.Clone());
+        }
+
+        clone.Transform = Transform;
+        return clone;
+    }
+
     public T? Component<T>() where T : SceneComponent =>
         Components.OfType<T>().FirstOrDefault();
 

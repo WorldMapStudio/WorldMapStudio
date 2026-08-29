@@ -54,6 +54,8 @@ public sealed class ViewportWindow : Window
     private readonly EnvironmentVolumeGizmos _environmentVolumes;
     private readonly LandscapeSystem _landscape;
     private readonly MapSystem _maps;
+    private readonly TerrainProbe _terrainProbe;
+    private readonly ViewportPointer _pointer;
     private readonly HashSet<SceneEntity> _represented = [];
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
@@ -74,6 +76,8 @@ public sealed class ViewportWindow : Window
         _maps = context.Maps;
         _viewMap = _maps.CurrentMap;
         _axes = context.Axes;
+        _terrainProbe = new TerrainProbe(_scene);
+        _pointer = context.Pointer;
 
         _viewport = new SubViewport
         {
@@ -245,6 +249,7 @@ public sealed class ViewportWindow : Window
         // (right mouse) only starts when the tool isn't capturing.
         _flyCamera.Update(hovered && !(tool?.CapturesMouse ?? false));
         _flyCamera.ApplyTo(_camera);
+        UpdatePointer(hovered, imageMin);
 
         _grid.Visible = _view.ShowGrid;
         _upAxisLine.Visible = _view.ShowGrid;
@@ -267,6 +272,34 @@ public sealed class ViewportWindow : Window
 
         UpdateAxisLineColors();
         tool?.UpdateViewport(new ViewportContext(_camera, imageMin, imageSize, hovered, _flyCamera.IsFlying));
+    }
+
+    // Casts a ray from the mouse into the world (terrain, falling back to the Y=0 ground plane) so
+    // anything that places something under the cursor — paste, so far — knows where that is without
+    // needing its own camera/viewport-rect plumbing.
+    private void UpdatePointer(bool hovered, NVector2 imageMin)
+    {
+        _pointer.Hovered = hovered;
+        if (!hovered)
+        {
+            _pointer.Valid = false;
+            return;
+        }
+
+        NVector2 mouse = ImGui.GetMousePos();
+        GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
+        GVector3 origin = _camera.ProjectRayOrigin(local);
+        GVector3 dir = _camera.ProjectRayNormal(local);
+
+        if (_terrainProbe.TryHit(origin, dir, out GVector3 world) || TerrainProbe.TryGroundPlane(origin, dir, out world))
+        {
+            _pointer.Valid = true;
+            _pointer.WorldPoint = world;
+        }
+        else
+        {
+            _pointer.Valid = false;
+        }
     }
 
     // Applies the view toggle to chunks already built. New ones pick it up from the static default

@@ -34,6 +34,14 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
     public override int ContentVersion =>
         System.HashCode.Combine(Radius, Falloff, Strength, Channel);
 
+    public override SceneComponent Clone() => new StampComponent
+    {
+        Radius = Radius,
+        Falloff = Falloff,
+        Strength = Strength,
+        Channel = Channel,
+    };
+
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
     public void Rasterize(in LandscapeRasterContext context)

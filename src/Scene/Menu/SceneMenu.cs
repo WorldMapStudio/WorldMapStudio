@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using ImGuiNET;
@@ -15,6 +16,8 @@ public sealed class SceneMenu : IMainMenu
     private readonly ShortcutAction _addStamp;
     private readonly ShortcutAction _addDrawingTarget;
     private readonly ShortcutAction _addRoad;
+    private readonly ShortcutAction _copySelected;
+    private readonly ShortcutAction _paste;
     private readonly ShortcutAction _deleteSelected;
 
     public float Priority => 0.75f;
@@ -43,6 +46,20 @@ public sealed class SceneMenu : IMainMenu
             new KeyboardShortcut(ImGuiKey.R, ShortcutModifiers.Alt),
             AddRoad,
             () => _context.Landscape.IsEnabled);
+        _copySelected = _context.Shortcuts.Register(
+            "scene.copy-selected",
+            "Scene",
+            "Copy",
+            new KeyboardShortcut(ImGuiKey.C, ShortcutModifiers.Ctrl),
+            CopySelected,
+            () => _context.Selection.Selected.OfType<SceneEntity>().Any());
+        _paste = _context.Shortcuts.Register(
+            "scene.paste",
+            "Scene",
+            "Paste",
+            new KeyboardShortcut(ImGuiKey.V, ShortcutModifiers.Ctrl),
+            Paste,
+            () => _context.Clipboard.HasContent);
         _deleteSelected = _context.Shortcuts.Register(
             "scene.delete-selected",
             "Scene",
@@ -81,6 +98,19 @@ public sealed class SceneMenu : IMainMenu
 
             ImGui.Separator();
 
+            bool hasSceneSelection = _context.Selection.Selected.OfType<SceneEntity>().Any();
+            if (ImGui.MenuItem("Copy", _copySelected.ShortcutLabel, false, hasSceneSelection))
+            {
+                CopySelected();
+            }
+
+            if (ImGui.MenuItem("Paste", _paste.ShortcutLabel, false, _context.Clipboard.HasContent))
+            {
+                Paste();
+            }
+
+            ImGui.Separator();
+
             bool hasSelection = _context.Selection.Selected.Count > 0;
             if (ImGui.MenuItem("Delete Selected", _deleteSelected.ShortcutLabel, false, hasSelection))
             {
@@ -99,6 +129,62 @@ public sealed class SceneMenu : IMainMenu
             session.Record(command);
             _context.Selection.Remove(entity);
         }
+    }
+
+    // Clones the current selection into the clipboard immediately: the clipboard owns independent
+    // copies from this point on, so it keeps working even if the source entities later stream out or
+    // get deleted before the user pastes.
+    private void CopySelected() =>
+        _context.Clipboard.Copy(_context.Selection.Selected.OfType<SceneEntity>());
+
+    // Pastes wherever the mouse currently projects into the world rather than on top of the copied
+    // entities: not over the viewport means no meaningful drop point, so it's a no-op there.
+    private void Paste()
+    {
+        ViewportPointer pointer = _context.Pointer;
+        if (!pointer.Hovered || !pointer.Valid)
+        {
+            return;
+        }
+
+        IReadOnlyList<SceneEntity> pasted = _context.Clipboard.Paste(_context.Maps.CurrentMap);
+        if (pasted.Count == 0)
+        {
+            return;
+        }
+
+        // Shift the whole batch rigidly so its centre lands under the cursor, preserving whatever
+        // layout (and, for a parent/child pair, relative offset) the copied entities had.
+        Vector3 delta = pointer.WorldPoint - Centroid(pasted);
+        foreach (SceneEntity entity in pasted)
+        {
+            Transform3D transform = entity.Transform;
+            entity.Transform = new Transform3D(transform.Basis, transform.Origin + delta);
+        }
+
+        var commands = new List<IEditCommand>();
+        _context.Selection.Clear();
+        foreach (SceneEntity entity in pasted)
+        {
+            _context.Scene.Add(entity);
+            _context.Selection.Add(entity);
+            commands.Add(new CreateEntityCommand(_context.Scene, entity));
+        }
+
+        _context.EditSessions.Record(commands.Count == 1
+            ? commands[0]
+            : new BatchEditCommand($"Paste {commands.Count} entities", commands));
+    }
+
+    private static Vector3 Centroid(IReadOnlyList<SceneEntity> entities)
+    {
+        Vector3 sum = Vector3.Zero;
+        foreach (SceneEntity entity in entities)
+        {
+            sum += entity.Transform.Origin;
+        }
+
+        return sum / entities.Count;
     }
 
     // Seeded from the catalog so a fresh stamp does something visible instead of needing four fields

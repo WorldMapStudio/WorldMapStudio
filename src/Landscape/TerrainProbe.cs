@@ -73,6 +73,27 @@ public sealed class TerrainProbe
         return world;
     }
 
+    /// <summary>Falls back to the world Y=0 plane for a ray that missed every loaded chunk (e.g. no
+    /// terrain loaded there yet), so placement still works over bare ground.</summary>
+    public static bool TryGroundPlane(Vector3 origin, Vector3 dir, out Vector3 world)
+    {
+        if (Mathf.Abs(dir.Y) < 1e-6f)
+        {
+            world = default;
+            return false;
+        }
+
+        float t = -origin.Y / dir.Y;
+        if (t < 0.0f)
+        {
+            world = default;
+            return false;
+        }
+
+        world = origin + dir * t;
+        return true;
+    }
+
     private static bool TryHitChunk(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir, out float bestT, out Vector3 bestWorld)
     {
         bestT = float.PositiveInfinity;

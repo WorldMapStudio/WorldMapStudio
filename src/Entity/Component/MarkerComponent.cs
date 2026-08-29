@@ -25,6 +25,8 @@ public sealed class MarkerComponent : SceneComponent, ISceneBoundsProvider, ISce
 
     public Aabb LocalBounds => new(-MarkerSize * 0.5f, MarkerSize);
 
+    public override SceneComponent Clone() => new MarkerComponent { Shape = Shape };
+
     public Node3D BuildNode()
     {
         var node = new Node3D { Name = "MarkerComponent" };

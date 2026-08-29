@@ -140,6 +140,20 @@ public sealed class RoadComponent : SceneComponent, ISceneBoundsProvider, ITrans
         RebuildPath();
     }
 
+    public override SceneComponent Clone()
+    {
+        var clone = new RoadComponent
+        {
+            CentreWidth = CentreWidth,
+            ShoulderWidth = ShoulderWidth,
+            Falloff = Falloff,
+            CentreChannel = CentreChannel,
+            ShoulderChannel = ShoulderChannel,
+        };
+        clone.ReplaceNetwork(_network);
+        return clone;
+    }
+
     private void RebuildPath()
     {
         _path = RoadPath.Build(_network, _centreWidth, _shoulderWidth, _falloff);

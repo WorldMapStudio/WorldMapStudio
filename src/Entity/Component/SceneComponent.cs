@@ -13,6 +13,11 @@ public abstract class SceneComponent
     public virtual int ContentVersion => 0;
 
     protected SceneEntity Entity => Owner ?? throw new System.InvalidOperationException("Component is not attached to an entity.");
+
+    /// <summary>Creates an unattached, independent copy of this component's data (no <see cref="Owner"/>).
+    /// Used to duplicate a scene entity, e.g. for copy/paste, without the copy sharing any mutable state
+    /// (buffers, graphs) with the original.</summary>
+    public abstract SceneComponent Clone();
 }
 
 public interface ISceneBoundsProvider
