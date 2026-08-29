@@ -87,6 +87,13 @@ public sealed class NetworkEditTool : ITool
 
     public bool CapturesMouse => _gizmo.IsUsing || _mouseDown;
 
+    // While a network is being edited, Delete/Backspace must only ever remove selected vertices/
+    // edges/faces (HandleKeys below) — never fall through to the scene-wide "delete selected
+    // entity" shortcut, which runs earlier in the frame (ShortcutSystem.Update, before any tool's
+    // UpdateViewport) and would otherwise destroy the whole procedural mesh entity out from under
+    // this tool the instant the key is pressed, leaving it with no active component to edit.
+    public bool CapturesDelete => Active() != null;
+
     public void DrawToolbar()
     {
         if (ImGui.RadioButton("Vertex", _mode == NetworkSelectionMode.Vertex))
@@ -152,8 +159,16 @@ public sealed class NetworkEditTool : ITool
 
         HandleKeys(component, entity, viewport);
         DriveGizmo(component, entity, viewport);
-        HandlePointer(component, entity, viewport.Hovered && !_gizmo.IsUsing && !_gizmo.IsHovered, viewport);
+        HandlePointer(component, entity, viewport.Hovered && !GizmoBusy(component), viewport);
     }
+
+    // Mirrors ObjectTool.GizmoBusy: DriveGizmo only calls _gizmo.Manipulate (which is the only
+    // place IsUsing/IsHovered get recomputed) when there's an effective selection to move. Without
+    // this guard, hovering the gizmo right as the selection empties (Delete, clicking empty space,
+    // switching entities) freezes IsHovered at true forever, since nothing is left to select that
+    // would ever run Manipulate again to clear it — permanently blocking click- and box-select.
+    private bool GizmoBusy(INetworkEditable component) =>
+        EffectiveVertices(component).Any() && (_gizmo.IsUsing || _gizmo.IsHovered);
 
     private INetworkEditable? Active()
     {

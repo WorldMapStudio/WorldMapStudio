@@ -8,6 +8,11 @@ public interface ITool
     /// <summary>True while the tool owns the mouse (gizmo/marquee/modal), so the camera yields.</summary>
     bool CapturesMouse { get; }
 
+    /// <summary>True while the tool wants Delete/Backspace for itself (e.g. removing sub-object
+    /// data like vertices), so the global "delete selected entity" shortcut must not also fire on
+    /// the same keypress and destroy the whole entity out from under it.</summary>
+    bool CapturesDelete => false;
+
     /// <summary>Draws the tool's own controls into the viewport toolbar.</summary>
     void DrawToolbar();
 
