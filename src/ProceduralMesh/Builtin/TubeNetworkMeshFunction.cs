@@ -6,20 +6,16 @@ namespace WorldMapStudio;
 [Subsystem(nameof(ProceduralMeshSystem))]
 public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
 {
-    public static readonly ProceduralMeshParameter Radius =
-        ProceduralMeshParameter.Float("radius", "Radius", 0.25f, 0.01f, 128.0f, "Tube radius in local units.");
+    public static readonly MeshParameter Radius =
+        MeshParameter.Float("radius", "Radius", 0.25f, 0.01f, 128.0f, "Tube radius in local units.");
 
-    public static readonly ProceduralMeshParameter Segments =
-        ProceduralMeshParameter.Int("segments", "Segments", 8, 3, 64, "Radial segment count.");
+    public static readonly MeshParameter Segments =
+        MeshParameter.Int("segments", "Segments", 8, 3, 64, "Radial segment count.");
 
-    public static readonly ProceduralMeshParameter Texture =
-        ProceduralMeshParameter.Texture("texture", "Texture", "Albedo texture.");
+    public static readonly MeshParameter UvScale =
+        MeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
 
-    public static readonly ProceduralMeshParameter Tint =
-        ProceduralMeshParameter.Color("tint", "Tint", new Color(0.72f, 0.74f, 0.78f), "Fallback or texture tint.");
-
-    public static readonly ProceduralMeshParameter UvScale =
-        ProceduralMeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
+    public static readonly MeshMaterialSlot Surface = new("surface", "Surface", "Tube material.");
 
     public string Id => "builtin.mesh.tube_network";
 
@@ -27,7 +23,7 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
 
     public string Description => "Turns every network edge into a textured round tube.";
 
-    public int Version => 1;
+    public int Version => 2;
 
     public bool AllowsMultipleGraphs => true;
 
@@ -35,8 +31,10 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
 
     public float Priority => 0f;
 
-    public IReadOnlyList<ProceduralMeshParameter> Parameters { get; } =
-        ProceduralMeshParameter.List(Radius, Segments, Texture, Tint, UvScale);
+    public IReadOnlyList<MeshParameter> Parameters { get; } =
+        MeshParameter.List(Radius, Segments, UvScale);
+
+    public IReadOnlyList<MeshMaterialSlot> MaterialSlots { get; } = [Surface];
 
     public TubeNetworkMeshFunction(ProceduralMeshSystem system)
     {
@@ -65,7 +63,7 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
             AddTube(a.Position, b.Position, radius, segments, uvScale, vertices, normals, uvs, indices);
         }
 
-        output.AddSurface("Tubes", vertices, indices, normals, uvs, context.Texture(Texture), context.Color(Tint));
+        output.AddSurface("Tubes", vertices, indices, context.Material(Surface), normals, uvs);
     }
 
     private static void AddTube(

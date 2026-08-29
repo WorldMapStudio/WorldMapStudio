@@ -18,10 +18,12 @@ public sealed class SceneModelRendererComponentRecord
 public sealed class ModelRendererComponentPersistence : ISceneComponentPersistence
 {
     private readonly AssetSystem _assets;
+    private readonly MeshMaterialSystem _materials;
 
     public ModelRendererComponentPersistence(EditorStorage storage)
     {
         _assets = storage.Assets;
+        _materials = storage.MeshMaterials;
     }
 
     public float Priority => 0.0f;
@@ -52,7 +54,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
         {
             if (byId.TryGetValue(row.EntityId, out SceneEntity? entity))
             {
-                entity.LoadComponent(new ModelRendererComponent(_assets) { ModelPath = row.ModelPath });
+                entity.LoadComponent(new ModelRendererComponent(_assets, _materials) { ModelPath = row.ModelPath });
             }
         }
     }

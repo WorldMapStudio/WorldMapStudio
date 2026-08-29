@@ -221,7 +221,7 @@ f 1/1 2/2 3/3
         var model = new ModelAsset("offset.synthetic", [part]);
         var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_part_transform_test__" });
 
-        Node3D node = model.Instantiate(context.Assets);
+        Node3D node = model.Instantiate(context.MeshMaterials);
         var partNode = (Node3D)node.GetChild(0);
 
         Assert.IsTrue(partNode.Transform.Origin.IsEqualApprox(transform.Origin));
@@ -235,7 +235,7 @@ f 1/1 2/2 3/3
         var model = new ModelAsset("visibility.synthetic", [shown, hidden]);
         var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_visibility_test__" });
 
-        Node3D node = model.Instantiate(context.Assets);
+        Node3D node = model.Instantiate(context.MeshMaterials);
 
         Assert.AreEqual(1, node.GetChildCount());
         Assert.AreEqual("shown", node.GetChild(0).Name.ToString());
@@ -250,7 +250,7 @@ f 1/1 2/2 3/3
         var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_visibility_override_test__" });
         var options = new ModelInstantiateOptions { PartFilter = part => part.Name == "hidden" };
 
-        Node3D node = model.Instantiate(context.Assets, options);
+        Node3D node = model.Instantiate(context.MeshMaterials, options);
 
         Assert.AreEqual(1, node.GetChildCount());
         Assert.AreEqual("hidden", node.GetChild(0).Name.ToString());
@@ -260,7 +260,7 @@ f 1/1 2/2 3/3
     public static void Model_local_bounds_ignore_reference_only_parts()
     {
         ArrayMesh mesh = BuildTriangleMesh(new Vector3(10, 0, 0));
-        var geometryPart = new ModelPart("geometry", Transform3D.Identity, [new ModelSurface("tri", mesh, new ModelMaterial())], []);
+        var geometryPart = new ModelPart("geometry", Transform3D.Identity, [new ModelSurface("tri", mesh, StandardMeshMaterial.Describe())], []);
         var referencePart = new ModelPart("refs", Transform3D.Identity, [], [new ModelReference("child", "unused.synthetic", Transform3D.Identity)]);
         var model = new ModelAsset("bounds.synthetic", [geometryPart, referencePart]);
 
@@ -278,7 +278,7 @@ f 1/1 2/2 3/3
         var model = new ModelAsset("loop.synthetic", [part]);
         var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_cycle_test__" });
 
-        Node3D node = model.Instantiate(context.Assets);
+        Node3D node = model.Instantiate(context.MeshMaterials);
         var partNode = (Node3D)node.GetChild(0);
         var anchor = (Node3D)partNode.GetChild(0);
 

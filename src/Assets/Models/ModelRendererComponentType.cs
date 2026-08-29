@@ -6,6 +6,7 @@ namespace WorldMapStudio;
 public sealed class ModelRendererComponentType : ISceneComponentType
 {
     private readonly AssetSystem _assets;
+    private readonly MeshMaterialSystem _materials;
     private readonly ModelAssetPicker _picker;
 
     public float Priority => 4.0f;
@@ -13,14 +14,15 @@ public sealed class ModelRendererComponentType : ISceneComponentType
     public ModelRendererComponentType(SceneComponentRegistry registry)
     {
         _assets = registry.Context.Assets;
-        _picker = new ModelAssetPicker(_assets, registry.Context.Root);
+        _materials = registry.Context.MeshMaterials;
+        _picker = new ModelAssetPicker(_assets, _materials, registry.Context.Root);
     }
 
     public string TypeId => "model-renderer";
 
     public string DisplayName => "Model Renderer";
 
-    public SceneComponent Create() => new ModelRendererComponent(_assets);
+    public SceneComponent Create() => new ModelRendererComponent(_assets, _materials);
 
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {

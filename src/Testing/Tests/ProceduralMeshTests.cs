@@ -13,29 +13,29 @@ public static class ProceduralMeshTests
         public bool AllowsMultipleGraphs => false;
         public bool AllowsBranching => false;
         public float Priority => 0f;
-        public System.Collections.Generic.IReadOnlyList<ProceduralMeshParameter> Parameters { get; } = [];
+        public System.Collections.Generic.IReadOnlyList<MeshParameter> Parameters { get; } = [];
         public void Build(in ProceduralMeshBuildContext context, ProceduralMeshOutputBuilder output) { }
     }
 
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
     public static void Parameter_values_round_trip_and_keep_unknown_keys()
     {
-        var values = new ProceduralMeshParameterValues();
+        var values = new MeshParameterValues();
         values.Set(TubeNetworkMeshFunction.Radius, 1.25f);
         values.Set(TubeNetworkMeshFunction.Segments, 12);
-        values.Set(TubeNetworkMeshFunction.Texture, "textures/stone.png");
-        values.Set(TubeNetworkMeshFunction.Tint, new Color(0.1f, 0.2f, 0.3f, 0.4f));
+        values.Set(StandardMeshMaterial.Texture, "textures/stone.png");
+        values.Set(StandardMeshMaterial.Albedo, new Color(0.1f, 0.2f, 0.3f, 0.4f));
 
-        ProceduralMeshParameterValues parsed = ProceduralMeshParameterValues.Parse(values.Serialize());
+        MeshParameterValues parsed = MeshParameterValues.Parse(values.Serialize());
 
         Assert.AreApproximatelyEqual(1.25, parsed.GetFloat(TubeNetworkMeshFunction.Radius), 1e-5);
         Assert.AreEqual(12, parsed.GetInt(TubeNetworkMeshFunction.Segments));
-        Assert.AreEqual("textures/stone.png", parsed.GetTexture(TubeNetworkMeshFunction.Texture));
-        Assert.AreApproximatelyEqual(0.3, parsed.GetColor(TubeNetworkMeshFunction.Tint).B, 1e-5);
+        Assert.AreEqual("textures/stone.png", parsed.GetTexture(StandardMeshMaterial.Texture));
+        Assert.AreApproximatelyEqual(0.3, parsed.GetColor(StandardMeshMaterial.Albedo).B, 1e-5);
 
-        var retired = ProceduralMeshParameter.Float("retired", "Retired", 0.0f, 0.0f, 1.0f);
+        var retired = MeshParameter.Float("retired", "Retired", 0.0f, 0.0f, 1.0f);
         parsed.Set(retired, 9.0f);
-        Assert.IsTrue(ProceduralMeshParameterValues.Parse(parsed.Serialize()).Raw.ContainsKey("retired"));
+        Assert.IsTrue(MeshParameterValues.Parse(parsed.Serialize()).Raw.ContainsKey("retired"));
     }
 
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
@@ -129,13 +129,13 @@ public static class ProceduralMeshTests
         int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
         network.AddEdge(a, b);
 
-        var values = new ProceduralMeshParameterValues();
+        var values = new MeshParameterValues();
         values.Set(TubeNetworkMeshFunction.Segments, 6);
         values.Set(TubeNetworkMeshFunction.Radius, 0.5f);
         var output = new ProceduralMeshOutputBuilder();
         new TubeNetworkMeshFunction(null!).Build(new ProceduralMeshBuildContext(network, values, null!), output);
 
-        ProceduralMeshOutput built = output.Build();
+        ModelAsset built = output.Build(MeshModelFormat.FormatId);
         Assert.AreEqual(1, built.Surfaces.Count);
         Assert.AreEqual(1, built.Surfaces[0].Mesh.GetSurfaceCount());
         Assert.Greater(built.LocalBounds.Size.X, 1.9f);

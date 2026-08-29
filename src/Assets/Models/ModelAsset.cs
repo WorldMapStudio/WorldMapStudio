@@ -12,7 +12,7 @@ public sealed record ModelReference(string Name, string Path, Transform3D Transf
 public sealed record ModelSurface(
     string Name,
     ArrayMesh Mesh,
-    ModelMaterial Material)
+    MeshMaterial Material)
 {
     public Aabb LocalBounds => Mesh.GetAabb();
 }
@@ -51,20 +51,24 @@ public sealed class ModelAsset
         new(0.70f, 0.58f, 0.68f),
     ];
 
-    public ModelAsset(string path, IEnumerable<ModelPart> parts, Aabb? boundsHint = null)
+    public ModelAsset(string path, IEnumerable<ModelPart> parts, Aabb? boundsHint = null, string formatId = "")
     {
         Path = path;
+        FormatId = formatId;
         Parts = parts.Select(FilterEmptySurfaces).ToList();
         Surfaces = Parts.SelectMany(part => part.Surfaces).ToList();
         LocalBounds = boundsHint ?? CombineBounds(Parts.Where(part => part.Surfaces.Count > 0).Select(part => part.LocalBounds));
     }
 
-    public ModelAsset(string path, IEnumerable<ModelSurface> surfaces, Aabb? boundsHint = null)
-        : this(path, [new ModelPart("", Transform3D.Identity, surfaces.ToList(), [])], boundsHint)
+    public ModelAsset(string path, IEnumerable<ModelSurface> surfaces, Aabb? boundsHint = null, string formatId = "")
+        : this(path, [new ModelPart("", Transform3D.Identity, surfaces.ToList(), [])], boundsHint, formatId)
     {
     }
 
     public string Path { get; }
+
+    /// <summary>Which <see cref="IModelFormat"/> produced this asset. Empty for synthetic/test assets.</summary>
+    public string FormatId { get; }
 
     /// <summary>Rigid sub-groups making up this model. A flat-surface loader produces exactly one, identity-transformed part.</summary>
     public IReadOnlyList<ModelPart> Parts { get; }
@@ -78,11 +82,11 @@ public sealed class ModelAsset
     /// Builds the viewport node. References (e.g. WMO doodads) are resolved asynchronously: an empty
     /// anchor is added immediately at the reference's transform and populated once its target loads.
     /// </summary>
-    public Node3D Instantiate(AssetSystem assets, ModelInstantiateOptions? options = null)
+    public Node3D Instantiate(MeshMaterialSystem materials, ModelInstantiateOptions? options = null)
     {
         options ??= new ModelInstantiateOptions();
         var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path };
-        return Instantiate(assets, options, depth: 0, visited);
+        return Instantiate(materials, options, depth: 0, visited);
     }
 
     public static Aabb CombineBounds(IEnumerable<Aabb> bounds)
@@ -106,7 +110,7 @@ public sealed class ModelAsset
 
     public static Color FallbackColor(int index) => FallbackColours[Math.Abs(index) % FallbackColours.Length];
 
-    private Node3D Instantiate(AssetSystem assets, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
+    private Node3D Instantiate(MeshMaterialSystem materials, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         var root = new Node3D { Name = $"Model:{AssetPath.FileName(Path)}" };
         foreach (ModelPart part in Parts)
@@ -126,20 +130,20 @@ public sealed class ModelAsset
                 {
                     Name = surface.Name.Length == 0 ? $"Surface{i}" : surface.Name,
                     Mesh = surface.Mesh,
-                    MaterialOverride = ModelMaterialFactory.Build(assets, surface.Material),
+                    MaterialOverride = materials.Build(surface.Material),
                 });
             }
 
             foreach (ModelReference reference in part.References)
             {
-                AttachReference(assets, partNode, reference, options, depth, visited);
+                AttachReference(materials, partNode, reference, options, depth, visited);
             }
         }
 
         return root;
     }
 
-    private static void AttachReference(AssetSystem assets, Node3D parent, ModelReference reference, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
+    private static void AttachReference(MeshMaterialSystem materials, Node3D parent, ModelReference reference, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         var anchor = new Node3D { Name = reference.Name.Length == 0 ? "Reference" : reference.Name, Transform = reference.Transform };
         parent.AddChild(anchor);
@@ -153,10 +157,10 @@ public sealed class ModelAsset
 
         var branchVisited = new HashSet<string>(visited, StringComparer.OrdinalIgnoreCase) { reference.Path };
 
-        Task<ModelAsset?> task = assets.LoadModelAssetAsync(reference.Path);
+        Task<ModelAsset?> task = materials.Context.Assets.LoadModelAssetAsync(reference.Path);
         if (task.IsCompletedSuccessfully)
         {
-            AttachResolved(assets, anchor, task.Result, options, depth, branchVisited);
+            AttachResolved(materials, anchor, task.Result, options, depth, branchVisited);
             return;
         }
 
@@ -166,19 +170,19 @@ public sealed class ModelAsset
             await work.SwitchToMain();
             if (GodotObject.IsInstanceValid(anchor))
             {
-                AttachResolved(assets, anchor, resolved, options, depth, branchVisited);
+                AttachResolved(materials, anchor, resolved, options, depth, branchVisited);
             }
         });
     }
 
-    private static void AttachResolved(AssetSystem assets, Node3D anchor, ModelAsset? resolved, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
+    private static void AttachResolved(MeshMaterialSystem materials, Node3D anchor, ModelAsset? resolved, ModelInstantiateOptions options, int depth, IReadOnlySet<string> visited)
     {
         if (resolved == null)
         {
             return;
         }
 
-        anchor.AddChild(resolved.Instantiate(assets, options, depth + 1, visited));
+        anchor.AddChild(resolved.Instantiate(materials, options, depth + 1, visited));
     }
 
     private static ModelPart FilterEmptySurfaces(ModelPart part)

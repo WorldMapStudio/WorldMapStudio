@@ -63,8 +63,14 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
+    /// <summary>Registered model formats (what kind of model a path or a procedural mesh is).</summary>
+    public ModelFormatSystem ModelFormats { get; }
+
     /// <summary>Lists and loads project-configured assets.</summary>
     public AssetSystem Assets { get; }
+
+    /// <summary>Registered mesh material types, the built-material cache, and the saved material preset catalog.</summary>
+    public MeshMaterialSystem MeshMaterials { get; }
 
     /// <summary>The open map's landscape settings and the catalog chunks resolve against.</summary>
     public LandscapeSystem Landscape { get; }
@@ -104,7 +110,9 @@ public sealed partial class EditorContext : ISubsystemHost
         Focus = new ViewportFocus();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
+        ModelFormats = new ModelFormatSystem(this);
         Assets = new AssetSystem(this);
+        MeshMaterials = new MeshMaterialSystem(this);
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
         ProceduralMeshes = new ProceduralMeshSystem(this);
@@ -168,6 +176,9 @@ public sealed partial class EditorContext : ISubsystemHost
         // Needs the current map, so it follows the maps.
         onStep?.Invoke("Loading landscape");
         Landscape.Load();
+
+        onStep?.Invoke("Loading mesh materials");
+        MeshMaterials.LoadCatalog();
 
         // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
         foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())

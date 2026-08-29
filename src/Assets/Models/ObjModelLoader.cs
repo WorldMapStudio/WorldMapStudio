@@ -29,6 +29,8 @@ public sealed class ObjModelLoader : IModelLoader
 
     public float Priority => 0.0f;
 
+    public string FormatId => ObjModelFormat.FormatId;
+
     public bool CanLoad(string path) => string.Equals(AssetPath.Extension(path), ".obj", StringComparison.OrdinalIgnoreCase);
 
     public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path)
@@ -87,12 +89,12 @@ public sealed class ObjModelLoader : IModelLoader
 
             string texturePath = materials.TryGetValue(name, out ObjMaterial? material) ? material.TexturePath : "";
             Color color = material?.Color ?? ModelAsset.FallbackColor(index);
-            var modelMaterial = new ModelMaterial { TexturePath = texturePath, AlbedoColor = color, TwoSided = true };
-            modelSurfaces.Add(new ModelSurface(name, BuildMesh(builder), modelMaterial));
+            MeshMaterial meshMaterial = StandardMeshMaterial.Describe(texture: texturePath, albedo: color, twoSided: true);
+            modelSurfaces.Add(new ModelSurface(name, BuildMesh(builder), meshMaterial));
             index++;
         }
 
-        return modelSurfaces.Count == 0 ? null : new ModelAsset(path, modelSurfaces);
+        return modelSurfaces.Count == 0 ? null : new ModelAsset(path, modelSurfaces, formatId: FormatId);
     }
 
     private static SurfaceBuilder SurfaceFor(Dictionary<string, SurfaceBuilder> surfaces, string material)

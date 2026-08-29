@@ -15,6 +15,12 @@ public sealed class SceneProceduralMeshComponentRecord
 
     public string NetworkJson { get; set; } = "";
 
+    /// <summary>Empty on a row written before formats existed; the component resolves that the same
+    /// way as an unset value (defer to the bound function's default).</summary>
+    public string FormatId { get; set; } = "";
+
+    public string Materials { get; set; } = "";
+
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -63,6 +69,8 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
             {
                 FunctionId = row.FunctionId,
                 Parameters = row.Parameters,
+                FormatId = row.FormatId,
+                Materials = row.Materials,
             };
             mesh.ReplaceNetwork(VertexNetwork.Parse(row.NetworkJson));
             entity.LoadComponent(mesh);
@@ -89,6 +97,8 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
             FunctionId = proceduralMesh.FunctionId,
             Parameters = proceduralMesh.Parameters,
             NetworkJson = proceduralMesh.Network.Serialize(),
+            FormatId = proceduralMesh.FormatId,
+            Materials = proceduralMesh.Materials,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }

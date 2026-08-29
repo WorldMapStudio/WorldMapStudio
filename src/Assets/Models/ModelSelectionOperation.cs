@@ -26,7 +26,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
 
     public ModalOperationState Draw(ModelSelectionContext context)
     {
-        _preview ??= new ModelPreviewRenderer(context.Assets, context.PreviewOwner);
+        _preview ??= new ModelPreviewRenderer(context.Assets, context.Materials, context.PreviewOwner);
         if (_previewPath.Length == 0)
         {
             _previewPath = context.CurrentPath;

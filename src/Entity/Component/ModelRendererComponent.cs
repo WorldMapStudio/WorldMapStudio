@@ -12,12 +12,14 @@ namespace WorldMapStudio;
 public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy
 {
     private readonly AssetSystem _assets;
+    private readonly MeshMaterialSystem _materials;
     private string _modelPath = "";
     private string _pendingPath = "";
 
-    public ModelRendererComponent(AssetSystem assets)
+    public ModelRendererComponent(AssetSystem assets, MeshMaterialSystem materials)
     {
         _assets = assets;
+        _materials = materials;
     }
 
     public string ModelPath
@@ -53,17 +55,17 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
         ? Centered(model!.LocalBounds)
         : new Aabb(-Vector3.One * 0.5f, Vector3.One);
 
-    /// <summary>How this format may rotate, as declared by the <see cref="IModelLoader"/> that would load it.</summary>
-    public SelfRotation SelfRotation => _assets.FindModelLoader(_modelPath)?.SelfRotation ?? SelfRotation.Full;
+    /// <summary>How this format may rotate, as declared by the <see cref="IModelFormat"/> that would load it.</summary>
+    public SelfRotation SelfRotation => _assets.FindModelFormat(_modelPath)?.SelfRotation ?? SelfRotation.Full;
 
-    /// <summary>How this format may be scaled, as declared by the <see cref="IModelLoader"/> that would load it.</summary>
-    public SelfScale SelfScale => _assets.FindModelLoader(_modelPath)?.SelfScale ?? SelfScale.PerAxis;
+    /// <summary>How this format may be scaled, as declared by the <see cref="IModelFormat"/> that would load it.</summary>
+    public SelfScale SelfScale => _assets.FindModelFormat(_modelPath)?.SelfScale ?? SelfScale.PerAxis;
 
     public bool UsesTerrainHeight => false;
 
     public override SceneComponent Clone()
     {
-        var clone = new ModelRendererComponent(_assets) { ModelPath = ModelPath };
+        var clone = new ModelRendererComponent(_assets, _materials) { ModelPath = ModelPath };
         CopyExtraTo(clone);
         return clone;
     }
@@ -82,7 +84,7 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
         ConfigurePartFilter(model!, ref partFilter);
         ModelInstantiateOptions? options = partFilter == null ? null : new ModelInstantiateOptions { PartFilter = partFilter };
 
-        Node3D node = model!.Instantiate(_assets, options);
+        Node3D node = model!.Instantiate(_materials, options);
         node.Name = "ModelRendererComponent";
         node.Position = -model.LocalBounds.GetCenter();
         return node;
