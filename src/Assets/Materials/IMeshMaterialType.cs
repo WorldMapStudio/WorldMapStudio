@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 /// One material "language" a mesh surface can render through — the standard generic vocabulary, or a
 /// format's own (e.g. WoW's M2/WMO blend and flag semantics). Registered under
 /// <see cref="MeshMaterialSystem"/> via <c>[Subsystem(nameof(MeshMaterialSystem))]</c>, exactly like an
-/// <see cref="IProceduralMeshFunction"/> registers under <see cref="ProceduralMeshSystem"/>.
+/// <see cref="IProceduralFunction"/> registers under <see cref="ProceduralSystem"/>.
 /// </summary>
 public interface IMeshMaterialType : ISubsystem
 {

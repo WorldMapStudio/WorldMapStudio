@@ -39,4 +39,11 @@ public interface INetworkEditable
     /// shared model. Defaults to <see cref="Owner"/> alone.
     /// </summary>
     IEnumerable<SceneEntity> AffectedEntities => Owner is { } owner ? Enumerable.Repeat(owner, 1) : [];
+
+    /// <summary>
+    /// Immutable stroke snapshot the viewport tool draws as a shape preview instead of the raw graph
+    /// edges — a road's spline and width, for instance, which an edge-only preview would lie about.
+    /// Empty (the default) for a network whose edges already are the shape.
+    /// </summary>
+    ProceduralPaint Paint => ProceduralPaint.Empty;
 }

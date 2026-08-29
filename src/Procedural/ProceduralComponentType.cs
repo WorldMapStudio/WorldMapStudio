@@ -4,18 +4,18 @@ using NVector4 = System.Numerics.Vector4;
 namespace WorldMapStudio;
 
 [Subsystem(nameof(SceneComponentRegistry))]
-public sealed class ProceduralMeshComponentType : ISceneComponentType
+public sealed class ProceduralComponentType : ISceneComponentType
 {
-    private readonly ProceduralMeshSystem _system;
+    private readonly ProceduralSystem _system;
     private readonly ProceduralModelFieldEditor _fields;
     private readonly ProceduralModelPicker _picker;
 
     public float Priority => 5.0f;
 
-    public ProceduralMeshComponentType(SceneComponentRegistry registry)
+    public ProceduralComponentType(SceneComponentRegistry registry)
     {
-        _system = registry.Context.ProceduralMeshes;
-        _fields = new ProceduralModelFieldEditor(_system, new MeshParameterEditor(new TextureAssetPicker(registry.Context.Assets)));
+        _system = registry.Context.Procedural;
+        _fields = new ProceduralModelFieldEditor(_system, new MeshParameterEditor(new TextureAssetPicker(registry.Context.Assets), registry.Context.Landscape));
         _picker = new ProceduralModelPicker(_system, registry.Context.Root);
     }
 
@@ -23,11 +23,11 @@ public sealed class ProceduralMeshComponentType : ISceneComponentType
 
     public string DisplayName => "Procedural Mesh";
 
-    public SceneComponent Create() => new ProceduralMeshComponent(_system);
+    public SceneComponent Create() => new ProceduralComponent(_system);
 
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {
-        var procedural = (ProceduralMeshComponent)component;
+        var procedural = (ProceduralComponent)component;
 
         DrawModelReference(context, procedural);
 
@@ -52,7 +52,7 @@ public sealed class ProceduralMeshComponentType : ISceneComponentType
         _picker.Draw();
     }
 
-    private void DrawModelReference(InspectorContext context, ProceduralMeshComponent procedural)
+    private void DrawModelReference(InspectorContext context, ProceduralComponent procedural)
     {
         ProceduralModel? model = procedural.Model;
         string label = model != null

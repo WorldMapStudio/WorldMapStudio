@@ -13,6 +13,12 @@ public enum MeshParameterKind
 
     /// <summary>One of a fixed set of named string values, e.g. a blend mode or shader id.</summary>
     Choice,
+
+    /// <summary>A <see cref="LandscapeChannel"/> name a procedural function paints into. Stored as a
+    /// plain name rather than a catalog id — channels are per-map while procedural models are global,
+    /// so a name degrades to "paints nothing, reported as a problem" in a map that lacks it instead of
+    /// resolving to the wrong channel.</summary>
+    Channel,
 }
 
 /// <summary>One selectable value of a <see cref="MeshParameterKind.Choice"/> parameter.</summary>
@@ -104,6 +110,15 @@ public sealed class MeshParameter
             Kind = MeshParameterKind.Choice,
             Default = @default,
             Options = options,
+            Description = description,
+        };
+
+    public static MeshParameter Channel(string name, string displayName, string description = "") =>
+        new()
+        {
+            Name = name,
+            DisplayName = displayName,
+            Kind = MeshParameterKind.Channel,
             Description = description,
         };
 

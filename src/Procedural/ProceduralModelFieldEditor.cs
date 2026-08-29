@@ -8,16 +8,16 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Draws a <see cref="ProceduralModel"/>'s function/parameters/format/material-slot fields. Shared by
-/// <see cref="ProceduralMeshComponentType"/>'s inspector and <see cref="ProceduralModelsWindow"/> so
+/// <see cref="ProceduralComponentType"/>'s inspector and <see cref="ProceduralModelsWindow"/> so
 /// the two do not duplicate this block — they differ only in what surrounds it (a "which model"
 /// picker versus a catalog list), not in how a model's own fields are edited.
 /// </summary>
 public sealed class ProceduralModelFieldEditor
 {
-    private readonly ProceduralMeshSystem _system;
+    private readonly ProceduralSystem _system;
     private readonly MeshParameterEditor _parameterEditor;
 
-    public ProceduralModelFieldEditor(ProceduralMeshSystem system, MeshParameterEditor parameterEditor)
+    public ProceduralModelFieldEditor(ProceduralSystem system, MeshParameterEditor parameterEditor)
     {
         _system = system;
         _parameterEditor = parameterEditor;
@@ -29,7 +29,7 @@ public sealed class ProceduralModelFieldEditor
     {
         DrawFunction(sessions, model);
 
-        IProceduralMeshFunction? bound = _system.Find(model.FunctionId);
+        IProceduralFunction? bound = _system.Find(model.FunctionId);
         if (bound == null)
         {
             if (model.FunctionId.Length > 0)
@@ -49,8 +49,26 @@ public sealed class ProceduralModelFieldEditor
         }
 
         DrawParameters(sessions, model, bound);
-        DrawFormat(sessions, model, bound);
-        DrawMaterialSlots(sessions, model, bound);
+
+        foreach (ProceduralOutputSlot output in bound.Outputs)
+        {
+            ImGui.PushID(output.Name);
+            ImGui.Separator();
+            if (bound.Outputs.Count > 1)
+            {
+                ImGui.TextDisabled(output.DisplayName);
+            }
+
+            DrawFormat(sessions, model, output);
+            DrawMaterialSlots(sessions, model, output);
+            ImGui.PopID();
+        }
+
+        if (bound.Outputs.Count == 0)
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled("(no model outputs)");
+        }
 
         ImGui.Separator();
         ImGui.TextDisabled($"{model.Network.Vertices.Count} vertices, {model.Network.Edges.Count} edges");
@@ -58,7 +76,7 @@ public sealed class ProceduralModelFieldEditor
 
     private void DrawFunction(EditSessionManager sessions, ProceduralModel model)
     {
-        IProceduralMeshFunction? bound = _system.Find(model.FunctionId);
+        IProceduralFunction? bound = _system.Find(model.FunctionId);
         string label = bound?.DisplayName ?? (model.FunctionId.Length == 0 ? "(none)" : $"{model.FunctionId} (missing)");
 
         if (!ImGui.BeginCombo("Function", label))
@@ -66,7 +84,7 @@ public sealed class ProceduralModelFieldEditor
             return;
         }
 
-        foreach (IProceduralMeshFunction function in _system.All)
+        foreach (IProceduralFunction function in _system.All)
         {
             if (ImGui.Selectable($"{function.DisplayName}##{function.Id}", function.Id == model.FunctionId))
             {
@@ -82,7 +100,7 @@ public sealed class ProceduralModelFieldEditor
         ImGui.EndCombo();
     }
 
-    private void DrawParameters(EditSessionManager sessions, ProceduralModel model, IProceduralMeshFunction function)
+    private void DrawParameters(EditSessionManager sessions, ProceduralModel model, IProceduralFunction function)
     {
         string serialized = model.Parameters;
         MeshParameterValues values = MeshParameterValues.Parse(serialized);
@@ -91,17 +109,18 @@ public sealed class ProceduralModelFieldEditor
             RecordChange(sessions, model, $"{function.DisplayName} parameters", before, after, value => model.Parameters = value));
     }
 
-    private void DrawFormat(EditSessionManager sessions, ProceduralModel model, IProceduralMeshFunction function)
+    private void DrawFormat(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output)
     {
-        List<IModelFormat> available = AvailableFormats(function);
+        List<IModelFormat> available = AvailableFormats(output);
         if (available.Count <= 1)
         {
             return;
         }
 
-        ImGui.Separator();
-        IModelFormat? current = _system.Context.ModelFormats.Find(model.FormatId);
-        string label = current?.DisplayName ?? "(auto)";
+        ProceduralFormats formats = ProceduralFormats.Parse(model.Formats);
+        string? current = formats.Get(output);
+        IModelFormat? currentFormat = current is { Length: > 0 } ? _system.Context.ModelFormats.Find(current) : null;
+        string label = currentFormat?.DisplayName ?? "(auto)";
         if (!ImGui.BeginCombo("Format", label))
         {
             return;
@@ -109,51 +128,60 @@ public sealed class ProceduralModelFieldEditor
 
         foreach (IModelFormat format in available)
         {
-            if (ImGui.Selectable(format.DisplayName, format.Id == model.FormatId))
+            if (ImGui.Selectable(format.DisplayName, format.Id == current))
             {
-                RecordChange(sessions, model, "format", model.FormatId, format.Id, value => model.FormatId = value);
+                RecordFormatChange(sessions, model, output, format.Id);
             }
         }
 
         ImGui.EndCombo();
     }
 
-    private List<IModelFormat> AvailableFormats(IProceduralMeshFunction function)
+    private List<IModelFormat> AvailableFormats(ProceduralOutputSlot output)
     {
         ModelFormatSystem formats = _system.Context.ModelFormats;
-        IEnumerable<IModelFormat> candidates = function.SupportedFormats.Count == 0
+        IEnumerable<IModelFormat> candidates = output.SupportedFormats.Count == 0
             ? formats.All
-            : function.SupportedFormats.Select(formats.Find).OfType<IModelFormat>();
+            : output.SupportedFormats.Select(formats.Find).OfType<IModelFormat>();
         return candidates.Where(format => format.CanAuthor).ToList();
     }
 
-    private void DrawMaterialSlots(EditSessionManager sessions, ProceduralModel model, IProceduralMeshFunction function)
+    private static void RecordFormatChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, string formatId)
     {
-        if (function.MaterialSlots.Count == 0)
+        string before = model.Formats;
+        ProceduralFormats updated = ProceduralFormats.Parse(before);
+        updated.Set(output, formatId);
+        string after = updated.Serialize();
+        RecordChange(sessions, model, $"{output.DisplayName} format", before, after, value => model.Formats = value);
+    }
+
+    private void DrawMaterialSlots(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output)
+    {
+        if (output.MaterialSlots.Count == 0)
         {
             return;
         }
 
-        IModelFormat? format = _system.Context.ModelFormats.Find(_system.ResolveFormatId(model));
+        IModelFormat? format = _system.Context.ModelFormats.Find(_system.ResolveFormatId(model, output));
         IMeshMaterialType? materialType = format != null ? _system.Context.MeshMaterials.Find(format.MaterialTypeId) : null;
         string materialTypeId = materialType?.Id ?? StandardMeshMaterial.TypeId;
-        ProceduralMeshMaterialBindings bindings = ProceduralMeshMaterialBindings.Parse(model.Materials);
+        ProceduralBindings bindings = ProceduralBindings.Parse(model.Materials);
 
-        foreach (MeshMaterialSlot slot in function.MaterialSlots)
+        foreach (MeshMaterialSlot slot in output.MaterialSlots)
         {
             ImGui.PushID(slot.Name);
-            DrawSlot(sessions, model, slot, materialTypeId, bindings);
+            DrawSlot(sessions, model, output, slot, materialTypeId, bindings);
             ImGui.PopID();
         }
     }
 
-    private void DrawSlot(EditSessionManager sessions, ProceduralModel model, MeshMaterialSlot slot, string materialTypeId, ProceduralMeshMaterialBindings bindings)
+    private void DrawSlot(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, MeshMaterialSlot slot, string materialTypeId, ProceduralBindings bindings)
     {
         ImGui.Separator();
         ImGui.TextDisabled(slot.DisplayName);
 
         List<MeshMaterialPreset> candidates = _system.Context.MeshMaterials.Presets.Where(preset => preset.TypeId == materialTypeId).ToList();
-        int? boundPresetId = bindings.GetPresetId(slot);
+        int? boundPresetId = bindings.GetPresetId(output, slot);
         MeshMaterialPreset? bound = boundPresetId is { } id ? candidates.FirstOrDefault(preset => preset.RecordId == id) : null;
         string label = boundPresetId == null ? "(inline)" : bound?.Name ?? $"Preset #{boundPresetId} (missing)";
 
@@ -161,14 +189,14 @@ public sealed class ProceduralModelFieldEditor
         {
             if (ImGui.Selectable("(inline)", boundPresetId == null))
             {
-                RecordMaterialsChange(sessions, model, slot, b => b.Clear(slot));
+                RecordMaterialsChange(sessions, model, output, slot, b => b.Clear(output, slot));
             }
 
             foreach (MeshMaterialPreset preset in candidates)
             {
                 if (ImGui.Selectable(preset.Name, preset.RecordId == boundPresetId))
                 {
-                    RecordMaterialsChange(sessions, model, slot, b => b.BindPreset(slot, preset.RecordId!.Value));
+                    RecordMaterialsChange(sessions, model, output, slot, b => b.BindPreset(output, slot, preset.RecordId!.Value));
                 }
             }
 
@@ -186,23 +214,23 @@ public sealed class ProceduralModelFieldEditor
             return;
         }
 
-        MeshParameterValues inline = (bindings.GetInlineValues(slot) ?? materialType.Default.Values).Clone();
+        MeshParameterValues inline = (bindings.GetInlineValues(output, slot) ?? materialType.Default.Values).Clone();
         string inlineBaseline = inline.Serialize();
 
         _parameterEditor.Draw(materialType.Parameters, inline, inlineBaseline, (_, afterInline) =>
         {
             string before = model.Materials;
-            ProceduralMeshMaterialBindings updated = ProceduralMeshMaterialBindings.Parse(before);
-            updated.BindInline(slot, MeshParameterValues.Parse(afterInline));
+            ProceduralBindings updated = ProceduralBindings.Parse(before);
+            updated.BindInline(output, slot, MeshParameterValues.Parse(afterInline));
             string after = updated.Serialize();
             RecordChange(sessions, model, $"{slot.DisplayName} material", before, after, value => model.Materials = value);
         });
     }
 
-    private static void RecordMaterialsChange(EditSessionManager sessions, ProceduralModel model, MeshMaterialSlot slot, Action<ProceduralMeshMaterialBindings> mutate)
+    private static void RecordMaterialsChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, MeshMaterialSlot slot, Action<ProceduralBindings> mutate)
     {
         string before = model.Materials;
-        ProceduralMeshMaterialBindings updated = ProceduralMeshMaterialBindings.Parse(before);
+        ProceduralBindings updated = ProceduralBindings.Parse(before);
         mutate(updated);
         string after = updated.Serialize();
         RecordChange(sessions, model, $"{slot.DisplayName} material", before, after, value => model.Materials = value);

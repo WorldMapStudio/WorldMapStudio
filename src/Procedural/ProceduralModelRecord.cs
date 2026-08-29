@@ -11,7 +11,7 @@ public sealed class ProceduralModelRecord : IKeyedRecord
 
     public string Parameters { get; set; } = "";
 
-    public string FormatId { get; set; } = "";
+    public string Formats { get; set; } = "";
 
     public string Materials { get; set; } = "";
 

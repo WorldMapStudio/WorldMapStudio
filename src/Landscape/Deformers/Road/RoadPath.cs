@@ -11,7 +11,7 @@ public readonly record struct RoadSegment(Vector3 A, Vector3 B);
 /// Turns a <see cref="VertexNetwork"/> into flattened centreline segments and a coverage profile for
 /// a road's centre and shoulder textures — entirely in the network's own local space, with no Godot
 /// node, entity or chunk dependency. That is what lets it be built once on the main thread and read
-/// safely from a background chunk build (see <see cref="RoadComponent"/>), and what makes two chunks
+/// safely from a background chunk build (see <see cref="ProceduralComponent"/>), and what makes two chunks
 /// sharing a border agree on coverage: both read the same immutable segments.
 ///
 /// The network is a graph, not a sequence, so it is decomposed into <b>chains</b> first — runs of

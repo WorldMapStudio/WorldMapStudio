@@ -27,12 +27,13 @@ public enum NetworkModalMode
 
 /// <summary>
 /// Edits any <see cref="INetworkEditable"/>'s vertex/edge graph in the viewport: select, marquee,
-/// G/R/S modal transforms, extrude, duplicate, split, merge. One tool serves every network-editing
-/// component — which component kind it looks at is entirely decided by the <paramref name="selector"/>
-/// its owning <see cref="IToolFactory"/> hands it, so a procedural mesh and a road share every line of
-/// editing behaviour here and differ only in what they do with the resulting graph.
+/// G/R/S modal transforms, extrude, duplicate, split, merge. One tool serves every procedural mesh —
+/// which bound function it is (an ordinary mesh, a paint-only road) is entirely decided by
+/// <see cref="INetworkEditable.Paint"/> and <see cref="INetworkEditable.PlanarXZ"/>, so a mesh function
+/// and a paint function share every line of editing behaviour here and differ only in what they do
+/// with the resulting graph.
 ///
-/// <see cref="INetworkEditable.PlanarXZ"/> components (roads) get terrain-aware placement and display:
+/// <see cref="INetworkEditable.PlanarXZ"/> functions (a road) get terrain-aware placement and display:
 /// a new vertex is dropped onto the terrain under the cursor rather than the entity's local plane, and
 /// every drawn vertex is projected onto the terrain for display even though its stored position is
 /// flat. Rotation locks to the vertical axis, and every transform's result has its height zeroed —
@@ -786,9 +787,9 @@ public sealed class NetworkEditTool : ITool
         uint selectedColor = ImGui.GetColorU32(new NVector4(1.0f, 0.72f, 0.2f, 1.0f));
         uint vertexColor = ImGui.GetColorU32(new NVector4(0.92f, 0.94f, 0.96f, 1.0f));
 
-        if (component is RoadComponent road)
+        if (component.Paint.Strokes.Count > 0)
         {
-            DrawRoadSpline(road, entity, camera, imageMin);
+            DrawPaintOverlay(component, entity, camera, imageMin);
         }
         else
         {
@@ -818,46 +819,48 @@ public sealed class NetworkEditTool : ITool
         }
     }
 
-    /// <summary>Draws the actual flattened spline plus its centre and outer width, rather than the
-    /// raw straight edges between control vertices — an edge-only preview would lie about where the
-    /// road goes and how wide it is once splined.</summary>
-    private void DrawRoadSpline(RoadComponent road, SceneEntity entity, Camera3D camera, NVector2 imageMin)
+    /// <summary>Draws a network's published paint strokes — the flattened shape plus each stroke's
+    /// radius as an offset outline — rather than the raw straight edges between control vertices, which
+    /// would lie about where a spline-fed shape (e.g. a road) actually goes and how wide it is.</summary>
+    private void DrawPaintOverlay(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin)
     {
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         uint centreColor = ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 0.95f));
         uint widthColor = ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 0.35f));
 
-        RoadPath path = road.Path;
-        foreach (RoadSegment segment in path.Segments)
+        // Several strokes commonly share one (A, B) segment (a road's centre and shoulder strokes,
+        // for instance) — the centreline is drawn once per segment regardless of how many strokes
+        // touch it, and every distinct radius among them gets its own offset pair.
+        var drawnCentrelines = new HashSet<(GVector3 A, GVector3 B)>();
+        foreach (ProceduralStroke stroke in component.Paint.Strokes)
         {
-            DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, 0.0f, centreColor, 2.5f);
-            if (path.CentreHalf > 0.0f)
+            if (drawnCentrelines.Add((stroke.A, stroke.B)))
             {
-                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, path.CentreHalf, widthColor, 1.0f);
-                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, -path.CentreHalf, widthColor, 1.0f);
+                DrawOffsetSegment(component, entity, camera, imageMin, drawList, stroke.A, stroke.B, 0.0f, centreColor, 2.5f);
             }
 
-            if (path.OuterRadius > path.CentreHalf)
+            if (stroke.Radius > 0.0f)
             {
-                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, path.OuterRadius, widthColor, 1.0f);
-                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, -path.OuterRadius, widthColor, 1.0f);
+                DrawOffsetSegment(component, entity, camera, imageMin, drawList, stroke.A, stroke.B, stroke.Radius, widthColor, 1.0f);
+                DrawOffsetSegment(component, entity, camera, imageMin, drawList, stroke.A, stroke.B, -stroke.Radius, widthColor, 1.0f);
             }
         }
     }
 
     private void DrawOffsetSegment(
-        RoadComponent road,
+        INetworkEditable component,
         SceneEntity entity,
         Camera3D camera,
         NVector2 imageMin,
         ImDrawListPtr drawList,
-        RoadSegment segment,
+        GVector3 segA,
+        GVector3 segB,
         float offset,
         uint color,
         float thickness)
     {
-        GVector3 a = segment.A;
-        GVector3 b = segment.B;
+        GVector3 a = segA;
+        GVector3 b = segB;
         if (offset != 0.0f)
         {
             GVector2 direction = new(b.X - a.X, b.Z - a.Z);
@@ -869,8 +872,8 @@ public sealed class NetworkEditTool : ITool
             }
         }
 
-        if (Project(camera, imageMin, Display(road, entity, a), out NVector2 sa) &&
-            Project(camera, imageMin, Display(road, entity, b), out NVector2 sb))
+        if (Project(camera, imageMin, Display(component, entity, a), out NVector2 sa) &&
+            Project(camera, imageMin, Display(component, entity, b), out NVector2 sb))
         {
             drawList.AddLine(sa, sb, color, thickness);
         }

@@ -26,7 +26,7 @@ public sealed class MeshMaterialsWindow : Window
         : base("Mesh Materials", startOpen: false, defaultSize: new Vector2(560.0f, 520.0f))
     {
         _context = manager.Context;
-        _parameterEditor = new MeshParameterEditor(new TextureAssetPicker(_context.Assets));
+        _parameterEditor = new MeshParameterEditor(new TextureAssetPicker(_context.Assets), _context.Landscape);
     }
 
     private MeshMaterialSystem Materials => _context.MeshMaterials;

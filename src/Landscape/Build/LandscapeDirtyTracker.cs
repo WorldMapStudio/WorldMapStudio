@@ -30,8 +30,17 @@ public sealed class LandscapeDirtyTracker
 
         foreach (ILandscapeDeformer deformer in deformers)
         {
-            string key = deformer.DeformerKey;
             Aabb bounds = deformer.InfluenceBounds;
+            if (bounds.Size == Vector3.Zero)
+            {
+                // A degenerate influence box (e.g. a procedural mesh with nothing to paint) is
+                // skipped rather than tracked. If it was tracked with real bounds before (a paint
+                // model edited down to nothing), leaving its key out of `seen` below makes the "gone"
+                // sweep dirty its old region, which is exactly the invalidation that edit needs.
+                continue;
+            }
+
+            string key = deformer.DeformerKey;
             int version = deformer.ContentVersion;
             seen.Add(key);
 

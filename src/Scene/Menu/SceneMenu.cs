@@ -247,30 +247,39 @@ public sealed class SceneMenu : IMainMenu
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
     }
 
-    // Seeded from the catalog, and with a short starter edge, so a fresh road paints something
-    // visible instead of needing six fields filled in before it shows up at all.
+    // A road is an ordinary procedural mesh bound to the built-in road function — this just seeds a
+    // fresh model for it, from the catalog and a short starter edge, so it paints something visible
+    // instead of needing six fields filled in before it shows up at all.
     private void AddRoad()
     {
         LandscapeCatalog catalog = _context.Landscape.Catalog;
 
-        var road = new RoadComponent
-        {
-            CentreChannel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-        };
-        road.ShoulderChannel = catalog.Channels.Skip(1).FirstOrDefault()?.Name ?? road.CentreChannel;
+        var model = new ProceduralModel { Name = "Road", FunctionId = "builtin.procedural.road" };
+        _context.Catalog.AssignId(model);
+
+        var values = new MeshParameterValues();
+        string centreChannel = catalog.Channels.FirstOrDefault()?.Name ?? "";
+        string shoulderChannel = catalog.Channels.Skip(1).FirstOrDefault()?.Name ?? centreChannel;
+        values.Set(RoadNetworkFunction.CentreChannel, centreChannel);
+        values.Set(RoadNetworkFunction.ShoulderChannel, shoulderChannel);
+        model.Parameters = values.Serialize();
 
         var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(-5.0f, 0.0f, 0.0f));
         int b = network.AddVertex(new Vector3(5.0f, 0.0f, 0.0f));
         network.AddEdge(a, b);
-        road.ReplaceNetwork(network);
+        model.ReplaceNetwork(network);
+
+        var modelCommand = new CreateCatalogEntityCommand(_context.Catalog, model);
+        modelCommand.Apply();
+        _context.EditSessions.Record(modelCommand);
 
         var entity = new SceneEntity
         {
             Name = "Road",
             Map = _context.Maps.CurrentMap,
         };
-        entity.AddComponent(road);
+        entity.AddComponent(new ProceduralComponent(_context.Procedural) { ModelId = model.RecordId });
 
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);

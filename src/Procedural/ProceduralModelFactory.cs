@@ -17,7 +17,7 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
             Name = record.Name,
             FunctionId = record.FunctionId,
             Parameters = record.Parameters,
-            FormatId = record.FormatId,
+            Formats = record.Formats,
             Materials = record.Materials,
         };
         entity.ReplaceNetwork(VertexNetwork.Parse(record.NetworkJson));
@@ -29,7 +29,7 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
         record.Name = entity.Name;
         record.FunctionId = entity.FunctionId;
         record.Parameters = entity.Parameters;
-        record.FormatId = entity.FormatId;
+        record.Formats = entity.Formats;
         record.Materials = entity.Materials;
         record.NetworkJson = entity.Network.Serialize();
     }

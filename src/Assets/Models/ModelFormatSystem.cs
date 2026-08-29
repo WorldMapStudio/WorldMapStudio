@@ -5,7 +5,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-/// <summary>Registry of <see cref="IModelFormat"/>s, mirroring <see cref="ProceduralMeshSystem"/>'s shape.</summary>
+/// <summary>Registry of <see cref="IModelFormat"/>s, mirroring <see cref="ProceduralSystem"/>'s shape.</summary>
 public sealed partial class ModelFormatSystem : ISubsystemHost
 {
     private readonly Dictionary<string, IModelFormat> _byId = new(StringComparer.Ordinal);

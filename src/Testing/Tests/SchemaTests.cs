@@ -13,7 +13,7 @@ public static class SchemaTests
     {
         // Building the model does not connect, so a placeholder connection string is fine here.
         // A handful of persisters stand in for the full registered set (some need a live AssetSystem
-        // or ProceduralMeshSystem to construct, which this schema-only test has no reason to spin up);
+        // or ProceduralSystem to construct, which this schema-only test has no reason to spin up);
         // proving the persister-driven model wiring works generically for a couple of them is enough.
         var options = new DbContextOptionsBuilder<EditorDbContext>()
             .UseMySql("Server=localhost;Database=x;Uid=root", new MySqlServerVersion(new Version(8, 0, 0)))
