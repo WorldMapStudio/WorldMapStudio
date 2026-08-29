@@ -224,18 +224,14 @@ public sealed class NetworkEditTool : ITool
         else if (ImGui.IsKeyPressed(ImGuiKey.F, false) && _edges.Count >= 3 &&
                  TryComputeEdgeLoop(component.Network, _edges) is { } loop)
         {
-            Mutate(component, "Fill network face", network =>
-            {
-                int? face = network.AddFace(loop);
-                _vertices.Clear();
-                _edges.Clear();
-                _faces.Clear();
-                if (face is int id)
-                {
-                    _faces.Add(id);
-                    _mode = NetworkSelectionMode.Face;
-                }
-            });
+            FillFace(component, loop);
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.F, false) && _vertices.Count >= 3)
+        {
+            // No selected edges describe a boundary (or they don't form one simple loop) — connect
+            // the selected vertices in id/creation order, the same fallback Blender's own "Make
+            // Edge/Face" uses for a loose vertex selection with no existing connectivity to respect.
+            FillFace(component, _vertices.OrderBy(id => id).ToArray());
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _edges.Count > 0 && Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
@@ -312,6 +308,24 @@ public sealed class NetworkEditTool : ITool
             });
             BeginModal(component, entity, NetworkModalMode.Translate, before, "Duplicate network selection");
         }
+    }
+
+    /// <summary>Fills a face from an ordered vertex loop and selects it — the shared tail of both F
+    /// paths (an edge-loop boundary, or a loose vertex selection with no boundary to respect).</summary>
+    private void FillFace(INetworkEditable component, IReadOnlyList<int> loop)
+    {
+        Mutate(component, "Fill network face", network =>
+        {
+            int? face = network.AddFace(loop);
+            _vertices.Clear();
+            _edges.Clear();
+            _faces.Clear();
+            if (face is int id)
+            {
+                _faces.Add(id);
+                _mode = NetworkSelectionMode.Face;
+            }
+        });
     }
 
     private void BeginModal(
