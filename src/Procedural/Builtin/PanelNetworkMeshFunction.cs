@@ -1,14 +1,14 @@
 using System.Collections.Generic;
 using Godot;
+using NVector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
 /// <summary>
-/// Turns every authored network face into a flat, textured panel — a roof, wall or floor plate. Fan-
-/// triangulates each face's n-gon loop from its first vertex, which is exact for any planar convex
-/// face and a reasonable approximation otherwise (the common authored shapes: triangles and quads).
-/// Demonstrates that <see cref="VertexNetwork.Faces"/> reaches <see cref="Build"/> the same way
-/// <see cref="TubeNetworkMeshFunction"/> demonstrates edges.
+/// Turns every authored network face into a flat, textured panel — a roof, wall or floor plate. Ear-
+/// clips each face's n-gon loop (via <see cref="PolygonTriangulator"/>) in its own UV plane, correct
+/// for a concave n-gon and not just a convex one. Demonstrates that <see cref="VertexNetwork.Faces"/>
+/// reaches <see cref="Build"/> the same way <see cref="TubeNetworkMeshFunction"/> demonstrates edges.
 /// </summary>
 [Subsystem(nameof(ProceduralSystem))]
 public sealed class PanelNetworkMeshFunction : IProceduralFunction
@@ -89,18 +89,22 @@ public sealed class PanelNetworkMeshFunction : IProceduralFunction
         Vector3 vAxis = normal.Cross(uAxis).Normalized();
 
         int start = vertices.Count;
-        foreach (Vector3 position in positions)
+        var plane = new NVector2[loop.Count];
+        for (int i = 0; i < positions.Length; i++)
         {
+            Vector3 position = positions[i];
             vertices.Add(position);
             normals.Add(normal);
-            uvs.Add(new Vector2(position.Dot(uAxis) * uvScale, position.Dot(vAxis) * uvScale));
+            float u = position.Dot(uAxis) * uvScale;
+            float v = position.Dot(vAxis) * uvScale;
+            uvs.Add(new Vector2(u, v));
+            plane[i] = new NVector2(u, v);
         }
 
-        for (int i = 1; i < loop.Count - 1; i++)
+        List<int> triangles = PolygonTriangulator.Triangulate(plane);
+        for (int i = 0; i < triangles.Count; i++)
         {
-            indices.Add(start);
-            indices.Add(start + i);
-            indices.Add(start + i + 1);
+            indices.Add(start + triangles[i]);
         }
     }
 

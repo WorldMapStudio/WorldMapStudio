@@ -1083,9 +1083,9 @@ public sealed class NetworkEditTool : ITool
         return id != 0;
     }
 
-    /// <summary>Nearest-to-camera face whose projected loop contains the mouse, tested by fan-
-    /// triangulating the loop and point-in-triangle testing each fan segment — the same
-    /// triangulation <see cref="DrawFaceFan"/> renders with.</summary>
+    /// <summary>Nearest-to-camera face whose projected loop contains the mouse, tested against the
+    /// same ear-clipped triangulation <see cref="DrawFaceFan"/> renders with — correct for a concave
+    /// n-gon, unlike a naive vertex-0 fan.</summary>
     private bool TryPickFace(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
     {
         id = 0;
@@ -1094,7 +1094,7 @@ public sealed class NetworkEditTool : ITool
         foreach (NetworkFace face in component.Network.Faces)
         {
             if (!TryProjectFace(component, entity, camera, imageMin, face, out NVector2[] screen) ||
-                !PointInFan(screen, mouse))
+                !PointInTriangles(PolygonTriangulator.Triangulate(screen), screen, mouse))
             {
                 continue;
             }
@@ -1134,17 +1134,18 @@ public sealed class NetworkEditTool : ITool
 
     private static void DrawFaceFan(ImDrawListPtr drawList, NVector2[] screen, uint color)
     {
-        for (int i = 1; i < screen.Length - 1; i++)
+        List<int> triangles = PolygonTriangulator.Triangulate(screen);
+        for (int i = 0; i < triangles.Count; i += 3)
         {
-            drawList.AddTriangleFilled(screen[0], screen[i], screen[i + 1], color);
+            drawList.AddTriangleFilled(screen[triangles[i]], screen[triangles[i + 1]], screen[triangles[i + 2]], color);
         }
     }
 
-    private static bool PointInFan(NVector2[] screen, NVector2 point)
+    private static bool PointInTriangles(List<int> triangles, NVector2[] points, NVector2 point)
     {
-        for (int i = 1; i < screen.Length - 1; i++)
+        for (int i = 0; i < triangles.Count; i += 3)
         {
-            if (PointInTriangle(point, screen[0], screen[i], screen[i + 1]))
+            if (PointInTriangle(point, points[triangles[i]], points[triangles[i + 1]], points[triangles[i + 2]]))
             {
                 return true;
             }

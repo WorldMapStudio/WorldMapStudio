@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
+using NVector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
@@ -249,6 +251,57 @@ public static class ProceduralMeshTests
         Assert.AreEqual(1, built.Surfaces.Count);
         Assert.AreApproximatelyEqual(1.0, built.LocalBounds.Size.X, 1e-4);
         Assert.AreApproximatelyEqual(1.0, built.LocalBounds.Size.Y, 1e-4);
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Polygon_triangulator_handles_a_concave_ngon_correctly()
+    {
+        // An L-shaped hexagon (concave at (2,2)); a naive vertex-0 fan produces a triangle that pokes
+        // outside the shape here, so this is exactly the case that used to render/pick as "bugged."
+        NVector2[] loop =
+        [
+            new NVector2(0.0f, 0.0f), new NVector2(4.0f, 0.0f), new NVector2(4.0f, 2.0f),
+            new NVector2(2.0f, 2.0f), new NVector2(2.0f, 4.0f), new NVector2(0.0f, 4.0f),
+        ];
+
+        var triangles = PolygonTriangulator.Triangulate(loop);
+
+        Assert.AreEqual((loop.Length - 2) * 3, triangles.Count, "an n-gon triangulates into exactly n-2 triangles");
+
+        float area = 0.0f;
+        for (int i = 0; i < triangles.Count; i += 3)
+        {
+            NVector2 a = loop[triangles[i]];
+            NVector2 b = loop[triangles[i + 1]];
+            NVector2 c = loop[triangles[i + 2]];
+            area += System.Math.Abs((b.X - a.X) * (c.Y - a.Y) - (c.X - a.X) * (b.Y - a.Y)) * 0.5f;
+        }
+
+        Assert.AreApproximatelyEqual(12.0, area, 1e-3, "the triangles' combined area should match the L-shape's true area, not a fan that overshoots the concave corner");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
+    public static void Panel_network_triangulates_a_pentagon_face_without_overlap()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(2.0f, 2.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(1.0f, 3.0f, 0.0f));
+        int e = network.AddVertex(new Vector3(0.0f, 2.0f, 0.0f));
+        network.AddFace([a, b, c, d, e]);
+
+        var values = new MeshParameterValues();
+        var output = new ProceduralOutputBuilder();
+        new PanelNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
+
+        ProceduralBuildResult result = output.Build([PanelNetworkMeshFunction.Output], _ => MeshModelFormat.FormatId);
+        Assert.AreEqual(1, result.Models.Count);
+        ModelAsset built = result.Models[0].Asset;
+        Assert.AreEqual(1, built.Surfaces.Count);
+        Assert.AreEqual(1, built.Surfaces[0].Mesh.GetSurfaceCount());
+        Assert.AreApproximatelyEqual(2.0, built.LocalBounds.Size.X, 1e-4);
+        Assert.AreApproximatelyEqual(3.0, built.LocalBounds.Size.Y, 1e-4);
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
