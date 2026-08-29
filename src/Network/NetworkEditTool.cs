@@ -141,7 +141,7 @@ public sealed class NetworkEditTool : ITool
 
     public void UpdateViewport(in ViewportContext viewport)
     {
-        if (Active() is not { } component || viewport.CameraFlying)
+        if (Active() is not { } component)
         {
             _vertices.Clear();
             _edges.Clear();
@@ -151,6 +151,13 @@ public sealed class NetworkEditTool : ITool
 
         SceneEntity entity = component.Owner!;
         DrawNetwork(component, entity, viewport.Camera, viewport.ImageMin);
+        if (viewport.CameraFlying)
+        {
+            // Right-click-to-fly still owns the mouse; keep the overlay visible but let no
+            // selection/transform input run underneath it.
+            return;
+        }
+
         if (_modalMode != NetworkModalMode.None)
         {
             UpdateModal(component, entity, viewport);
