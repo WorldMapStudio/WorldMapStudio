@@ -6,17 +6,16 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The "Scene" menu: adds entities to the current scene. Adding an empty creates it at the origin,
-/// records the creation in the active edit session (so it can be undone and is persisted on commit).
+/// The "Scene" menu: adds entities to the current scene. Adding a scene entity creates it at the
+/// origin; adding a prefab spawns it under the pointer. Both record the creation in the active edit
+/// session (so it can be undone and is persisted on commit).
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
 public sealed class SceneMenu : IMainMenu
 {
     private readonly EditorContext _context;
-    private readonly ShortcutAction _addStamp;
-    private readonly ShortcutAction _addDrawingTarget;
-    private readonly ShortcutAction _addRoad;
-    private readonly ShortcutAction _addTerrainValue;
+    private readonly PrefabPicker _prefabPicker;
+    private readonly ShortcutAction _addSceneEntity;
     private readonly ShortcutAction _copySelected;
     private readonly ShortcutAction _paste;
     private readonly ShortcutAction _deleteSelected;
@@ -26,34 +25,13 @@ public sealed class SceneMenu : IMainMenu
     public SceneMenu(MenuBarManager manager)
     {
         _context = manager.Context;
-        _addStamp = _context.Shortcuts.Register(
-            "scene.add-landscape-stamp",
+        _prefabPicker = new PrefabPicker(_context.Prefabs, _context.EditSessions);
+        _addSceneEntity = _context.Shortcuts.Register(
+            "scene.add-entity",
             "Scene",
-            "Add Landscape Stamp",
-            new KeyboardShortcut(ImGuiKey.S, ShortcutModifiers.Alt),
-            AddStamp,
-            () => _context.Landscape.IsEnabled);
-        _addDrawingTarget = _context.Shortcuts.Register(
-            "scene.add-drawing-target",
-            "Scene",
-            "Add Drawing Target",
-            new KeyboardShortcut(ImGuiKey.D, ShortcutModifiers.Alt),
-            AddDrawingTarget,
-            () => _context.Landscape.IsEnabled);
-        _addRoad = _context.Shortcuts.Register(
-            "scene.add-road",
-            "Scene",
-            "Add Road",
-            new KeyboardShortcut(ImGuiKey.R, ShortcutModifiers.Alt),
-            AddRoad,
-            () => _context.Landscape.IsEnabled);
-        _addTerrainValue = _context.Shortcuts.Register(
-            "scene.add-terrain-value",
-            "Scene",
-            "Add Terrain Value",
-            new KeyboardShortcut(ImGuiKey.T, ShortcutModifiers.Alt),
-            AddTerrainValue,
-            () => _context.Landscape.IsEnabled);
+            "Add Scene Entity",
+            new KeyboardShortcut(ImGuiKey.A, ShortcutModifiers.Alt),
+            AddSceneEntity);
         _copySelected = _context.Shortcuts.Register(
             "scene.copy-selected",
             "Scene",
@@ -81,32 +59,14 @@ public sealed class SceneMenu : IMainMenu
     {
         ImGuiEx.Menu("Scene", () =>
         {
-            if (ImGui.BeginMenu("Add Empty"))
+            if (ImGui.MenuItem("Add Scene Entity", _addSceneEntity.ShortcutLabel))
             {
-                AddEmptyItem("Plain", MarkerShape.Plain);
-                AddEmptyItem("Cube", MarkerShape.Cube);
-                AddEmptyItem("Sphere", MarkerShape.Sphere);
-                ImGui.EndMenu();
+                AddSceneEntity();
             }
 
-            if (ImGui.MenuItem("Add Landscape Stamp", _addStamp.ShortcutLabel, false, _context.Landscape.IsEnabled))
+            if (ImGui.MenuItem("Add Prefab..."))
             {
-                AddStamp();
-            }
-
-            if (ImGui.MenuItem("Add Drawing Target", _addDrawingTarget.ShortcutLabel, false, _context.Landscape.IsEnabled))
-            {
-                AddDrawingTarget();
-            }
-
-            if (ImGui.MenuItem("Add Road", _addRoad.ShortcutLabel, false, _context.Landscape.IsEnabled))
-            {
-                AddRoad();
-            }
-
-            if (ImGui.MenuItem("Add Terrain Value", _addTerrainValue.ShortcutLabel, false, _context.Landscape.IsEnabled))
-            {
-                AddTerrainValue();
+                BrowsePrefabs();
             }
 
             ImGui.Separator();
@@ -130,6 +90,19 @@ public sealed class SceneMenu : IMainMenu
                 DeleteSelected();
             }
         });
+
+        // Drawn unconditionally, like a component type's DrawModals(): the popup must keep rendering
+        // every frame while open, independent of whether the "Scene" dropdown itself is open.
+        _prefabPicker.Draw();
+    }
+
+    // Spawns at the pointer's world position when hovering the viewport, else the origin — same
+    // fallback Paste() uses, since neither has a meaningful drop point without a hovered viewport.
+    private void BrowsePrefabs()
+    {
+        ViewportPointer pointer = _context.Pointer;
+        Vector3 at = pointer.Hovered && pointer.Valid ? pointer.WorldPoint : Vector3.Zero;
+        _prefabPicker.Browse(at);
     }
 
     private void DeleteSelected()
@@ -207,132 +180,11 @@ public sealed class SceneMenu : IMainMenu
         return sum / entities.Count;
     }
 
-    // Seeded from the catalog so a fresh stamp does something visible instead of needing four fields
-    // filled in before it shows up at all.
-    private void AddStamp()
+    private void AddSceneEntity()
     {
-        LandscapeCatalog catalog = _context.Landscape.Catalog;
-        var entity = new SceneEntity
-        {
-            Name = "Stamp",
-            Map = _context.Maps.CurrentMap,
-        };
-        entity.AddComponent(new StampComponent
-        {
-            Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-        });
-        entity.AddComponent(DefaultMaterialBind(catalog));
-
+        var entity = new SceneEntity { Name = "Entity", Map = _context.Maps.CurrentMap };
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
-    }
-
-    private void AddDrawingTarget()
-    {
-        LandscapeCatalog catalog = _context.Landscape.Catalog;
-        var entity = new SceneEntity
-        {
-            Name = "Drawing Target",
-            Map = _context.Maps.CurrentMap,
-        };
-        entity.AddComponent(new DrawingTargetComponent
-        {
-            Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
-        });
-        entity.AddComponent(DefaultMaterialBind(catalog));
-
-        _context.Scene.Add(entity);
-        _context.Selection.Set(entity);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
-    }
-
-    // A road is an ordinary procedural mesh bound to the built-in road function — this just seeds a
-    // fresh model for it, from the catalog and a short starter edge, so it paints something visible
-    // instead of needing six fields filled in before it shows up at all.
-    private void AddRoad()
-    {
-        LandscapeCatalog catalog = _context.Landscape.Catalog;
-
-        var model = new ProceduralModel { Name = "Road", FunctionId = "builtin.procedural.road" };
-        _context.Catalog.AssignId(model);
-
-        var values = new MeshParameterValues();
-        string centreChannel = catalog.Channels.FirstOrDefault()?.Name ?? "";
-        string shoulderChannel = catalog.Channels.Skip(1).FirstOrDefault()?.Name ?? centreChannel;
-        values.Set(RoadNetworkFunction.CentreChannel, centreChannel);
-        values.Set(RoadNetworkFunction.ShoulderChannel, shoulderChannel);
-        model.Parameters = values.Serialize();
-
-        var network = new VertexNetwork();
-        int a = network.AddVertex(new Vector3(-5.0f, 0.0f, 0.0f));
-        int b = network.AddVertex(new Vector3(5.0f, 0.0f, 0.0f));
-        network.AddEdge(a, b);
-        model.ReplaceNetwork(network);
-
-        var modelCommand = new CreateCatalogEntityCommand(_context.Catalog, model);
-        modelCommand.Apply();
-        _context.EditSessions.Record(modelCommand);
-
-        var entity = new SceneEntity
-        {
-            Name = "Road",
-            Map = _context.Maps.CurrentMap,
-        };
-        entity.AddComponent(new ProceduralComponent(_context.Procedural) { ModelId = model.RecordId });
-
-        _context.Scene.Add(entity);
-        _context.Selection.Set(entity);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
-    }
-
-    // Seeded from the catalog's first channel, like the other deformers, so a fresh terrain value
-    // does something visible instead of needing a channel picked before it shows up at all.
-    private void AddTerrainValue()
-    {
-        LandscapeCatalog catalog = _context.Landscape.Catalog;
-        var terrainValue = new TerrainValueComponent();
-        if (catalog.Channels.FirstOrDefault() is { } channel)
-        {
-            terrainValue.ReplaceChannels([channel.Name]);
-        }
-
-        var entity = new SceneEntity
-        {
-            Name = "Terrain Value",
-            Map = _context.Maps.CurrentMap,
-        };
-        entity.AddComponent(terrainValue);
-        entity.AddComponent(DefaultMaterialBind(catalog));
-
-        _context.Scene.Add(entity);
-        _context.Selection.Set(entity);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
-    }
-
-    private void AddEmptyItem(string label, MarkerShape shape)
-    {
-        if (!ImGui.MenuItem(label))
-        {
-            return;
-        }
-
-        var entity = new SceneEntity { Name = $"Empty ({shape})", Map = _context.Maps.CurrentMap };
-        entity.AddComponent(new MarkerComponent { Shape = shape });
-        _context.Scene.Add(entity);
-        _context.Selection.Set(entity);
-        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
-    }
-
-    private static LandscapeMaterialBindComponent DefaultMaterialBind(LandscapeCatalog catalog)
-    {
-        var bind = new LandscapeMaterialBindComponent();
-        bind.ReplaceBindings(
-        [
-            new LandscapeMaterialBinding(
-                catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId,
-                catalog.Materials.FirstOrDefault()?.RecordId),
-        ]);
-        return bind;
     }
 }
