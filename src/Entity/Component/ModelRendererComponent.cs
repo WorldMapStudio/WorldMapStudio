@@ -9,7 +9,7 @@ namespace WorldMapStudio;
 /// (compiled into the same assembly, e.g. the WoW plugin's WMO doodad-set picker) can extend it with
 /// format-specific state and inspector UI without this file needing to know about that format.
 /// </summary>
-public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent
+public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy
 {
     private readonly AssetSystem _assets;
     private string _modelPath = "";
@@ -52,6 +52,14 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
     public Aabb LocalBounds => TryGetModel(out ModelAsset? model)
         ? Centered(model!.LocalBounds)
         : new Aabb(-Vector3.One * 0.5f, Vector3.One);
+
+    /// <summary>How this format may rotate, as declared by the <see cref="IModelLoader"/> that would load it.</summary>
+    public SelfRotation SelfRotation => _assets.FindModelLoader(_modelPath)?.SelfRotation ?? SelfRotation.Full;
+
+    /// <summary>How this format may be scaled, as declared by the <see cref="IModelLoader"/> that would load it.</summary>
+    public SelfScale SelfScale => _assets.FindModelLoader(_modelPath)?.SelfScale ?? SelfScale.PerAxis;
+
+    public bool UsesTerrainHeight => false;
 
     public override SceneComponent Clone()
     {

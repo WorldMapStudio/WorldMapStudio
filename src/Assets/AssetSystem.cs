@@ -37,6 +37,9 @@ public sealed partial class AssetSystem : ISubsystemHost
     public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
     public IEnumerable<IModelLoader> ModelLoaders => Subsystems.OfType<IModelLoader>();
 
+    /// <summary>The loader that would handle <paramref name="path"/>, e.g. to query its transform capabilities.</summary>
+    public IModelLoader? FindModelLoader(string path) => ModelLoaders.FirstOrDefault(loader => loader.CanLoad(path));
+
     public IReadOnlyList<AssetRef> ListTextureAssets() => BuildAssetIndex().Textures;
 
     public IReadOnlyList<AssetRef> ListModelAssets() => BuildAssetIndex().Models;

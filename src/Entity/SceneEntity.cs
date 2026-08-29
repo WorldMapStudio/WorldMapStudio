@@ -77,6 +77,24 @@ public class SceneEntity : Entity
         }
     }
 
+    /// <summary>How the entity may be scaled about itself; the object tool honours this.</summary>
+    public virtual SelfScale SelfScale
+    {
+        get
+        {
+            SelfScale scale = SelfScale.PerAxis;
+            foreach (ITransformPolicy policy in Components.OfType<ITransformPolicy>())
+            {
+                if (policy.SelfScale < scale)
+                {
+                    scale = policy.SelfScale;
+                }
+            }
+
+            return scale;
+        }
+    }
+
     /// <summary>Selection bounds in the entity's local space (picking, outlines, marquee).</summary>
     public virtual Aabb LocalBounds => EffectiveLocalBounds;
 
@@ -268,16 +286,24 @@ public class SceneEntity : Entity
             transform.Origin = new Vector3(transform.Origin.X, 0.0f, transform.Origin.Z);
         }
 
+        Basis rotation = transform.Basis.Orthonormalized();
         if (SelfRotation == SelfRotation.HeightOnly)
         {
-            float yaw = transform.Basis.GetEuler().Y;
-            transform.Basis = new Basis(Vector3.Up, yaw);
+            rotation = new Basis(Vector3.Up, rotation.GetEuler().Y);
         }
         else if (SelfRotation == SelfRotation.None)
         {
-            transform.Basis = Basis.Identity;
+            rotation = Basis.Identity;
         }
 
+        Vector3 scale = SelfScale switch
+        {
+            SelfScale.None => Vector3.One,
+            SelfScale.Uniform => Vector3.One * (transform.Basis.Scale.X + transform.Basis.Scale.Y + transform.Basis.Scale.Z) / 3.0f,
+            _ => transform.Basis.Scale,
+        };
+
+        transform.Basis = rotation.ScaledLocal(scale);
         return transform;
     }
 

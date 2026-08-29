@@ -31,6 +31,12 @@ public sealed class SceneEntityRecord
 
     public double RotW { get; set; } = 1.0;
 
+    public double ScaleX { get; set; } = 1.0;
+
+    public double ScaleY { get; set; } = 1.0;
+
+    public double ScaleZ { get; set; } = 1.0;
+
     public double MinX { get; set; }
 
     public double MinY { get; set; }
@@ -145,7 +151,8 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
         var rotation = new Quaternion((float)record.RotX, (float)record.RotY, (float)record.RotZ, (float)record.RotW);
         var origin = new Vector3((float)record.PosX, (float)record.PosY, (float)record.PosZ);
-        entity.Transform = new Transform3D(new Basis(rotation.Normalized()), origin);
+        var scale = new Vector3((float)record.ScaleX, (float)record.ScaleY, (float)record.ScaleZ);
+        entity.Transform = new Transform3D(new Basis(rotation.Normalized()).ScaledLocal(scale), origin);
         return entity;
     }
 
@@ -153,6 +160,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
     {
         Transform3D transform = entity.Transform;
         Quaternion rotation = transform.Basis.GetRotationQuaternion();
+        Vector3 scale = transform.Basis.Scale;
         Aabb bounds = entity.WorldBounds;
 
         record.Name = entity.Name;
@@ -165,6 +173,9 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         record.RotY = rotation.Y;
         record.RotZ = rotation.Z;
         record.RotW = rotation.W;
+        record.ScaleX = scale.X;
+        record.ScaleY = scale.Y;
+        record.ScaleZ = scale.Z;
         record.MinX = bounds.Position.X;
         record.MinY = bounds.Position.Y;
         record.MinZ = bounds.Position.Z;

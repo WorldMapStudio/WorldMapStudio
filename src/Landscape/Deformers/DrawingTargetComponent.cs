@@ -51,6 +51,8 @@ public sealed class DrawingTargetComponent : SceneComponent, ISceneBoundsProvide
 
     public SelfRotation SelfRotation => SelfRotation.HeightOnly;
 
+    public SelfScale SelfScale => SelfScale.None;
+
     public bool UsesTerrainHeight => true;
 
     public Aabb LocalBounds => new(
