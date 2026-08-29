@@ -5,6 +5,8 @@ public sealed class LandscapeChannelRecord : IKeyedRecord
 {
     public int Id { get; set; }
 
+    public int MapId { get; set; }
+
     public string Name { get; set; } = "Channel";
 
     public int Resolution { get; set; } = 64;
@@ -16,6 +18,8 @@ public sealed class LandscapeChannelRecord : IKeyedRecord
 public sealed class LandscapeLayerRecord : IKeyedRecord
 {
     public int Id { get; set; }
+
+    public int MapId { get; set; }
 
     public string Name { get; set; } = "Layer";
 

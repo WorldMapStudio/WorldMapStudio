@@ -10,6 +10,9 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity
 {
+    /// <summary>The map this channel belongs to.</summary>
+    public MapId Map { get; set; } = new(0);
+
     public string Name { get; set; } = "Channel";
 
     /// <summary>Texels along a chunk edge. Independent of the map's alpha resolution: a mask feeding a

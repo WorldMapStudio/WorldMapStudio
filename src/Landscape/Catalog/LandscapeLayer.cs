@@ -11,11 +11,15 @@ namespace WorldMapStudio;
 /// paints and deforms at once. Declaring it here as well would be the same fact in two places, free
 /// to disagree.
 ///
-/// Layers are global to the project; entities reference them through instance parameters rather than
-/// hardcoding them, because which layers exist is the user's decision, not source code.
+/// Layers are scoped to the map they were authored for; entities reference them through instance
+/// parameters rather than hardcoding them, because which layers exist is the user's decision, not
+/// source code.
 /// </summary>
 public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
 {
+    /// <summary>The map this layer belongs to.</summary>
+    public MapId Map { get; set; } = new(0);
+
     public string Name { get; set; } = "Layer";
 
     /// <summary>
