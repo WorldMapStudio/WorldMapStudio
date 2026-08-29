@@ -12,8 +12,17 @@ public sealed record NetworkVertex(int Id, Vector3 Position);
 
 public sealed record NetworkEdge(int Id, int A, int B);
 
+/// <summary>An ordered loop of at least 3 vertex ids — an n-gon, not pre-triangulated, so a
+/// consuming function decides how to triangulate it (same freedom the flat index buffer already
+/// gives <see cref="ProceduralOutputBuilder.AddSurface(ProceduralOutputSlot, string, IReadOnlyList{Vector3}, IReadOnlyList{int}, MeshMaterial, IReadOnlyList{Vector3}, IReadOnlyList{Vector2})"/>).</summary>
+public sealed record NetworkFace(int Id, IReadOnlyList<int> Vertices);
+
+/// <summary>The vertex/face outcome of duplicating or extruding a subgraph — a selected face keeps
+/// being a face at the new vertices, rather than degrading into loose vertices/edges.</summary>
+public sealed record NetworkSubgraph(IReadOnlyList<int> VertexIds, IReadOnlyList<int> FaceIds);
+
 /// <summary>
-/// A plain vertex/edge graph in local space, with no notion of what it represents — a procedural
+/// A plain vertex/edge/face graph in local space, with no notion of what it represents — a procedural
 /// mesh's skeleton and a road's centreline are both just this. Shared so their editing tool, undo
 /// command and serialization are shared too.
 /// </summary>
@@ -21,13 +30,17 @@ public sealed class VertexNetwork
 {
     private readonly List<NetworkVertex> _vertices = [];
     private readonly List<NetworkEdge> _edges = [];
+    private readonly List<NetworkFace> _faces = [];
     private int _nextVertexId = 1;
     private int _nextEdgeId = 1;
+    private int _nextFaceId = 1;
     private int _version;
 
     public IReadOnlyList<NetworkVertex> Vertices => _vertices;
 
     public IReadOnlyList<NetworkEdge> Edges => _edges;
+
+    public IReadOnlyList<NetworkFace> Faces => _faces;
 
     public int Version => _version;
 
@@ -52,6 +65,46 @@ public sealed class VertexNetwork
         return id;
     }
 
+    /// <summary>Adds a face from an ordered loop of at least 3 distinct, existing vertices, creating
+    /// any missing boundary edges (consecutive pairs, wrapping last→first) so the face's boundary is
+    /// always backed by real edges. Rejects a loop that duplicates an existing face's vertex set,
+    /// regardless of starting point or winding direction.</summary>
+    public int? AddFace(IReadOnlyList<int> vertexIds)
+    {
+        int[] ids = vertexIds.Distinct().ToArray();
+        if (ids.Length < 3 || ids.Any(id => Vertex(id) == null))
+        {
+            return null;
+        }
+
+        HashSet<int> shape = ids.ToHashSet();
+        if (_faces.Any(face => face.Vertices.Count == shape.Count && face.Vertices.ToHashSet().SetEquals(shape)))
+        {
+            return null;
+        }
+
+        for (int i = 0; i < ids.Length; i++)
+        {
+            AddEdge(ids[i], ids[(i + 1) % ids.Length]);
+        }
+
+        int id = _nextFaceId++;
+        _faces.Add(new NetworkFace(id, ids));
+        _version++;
+        return id;
+    }
+
+    public bool RemoveFace(int id)
+    {
+        if (_faces.RemoveAll(face => face.Id == id) == 0)
+        {
+            return false;
+        }
+
+        _version++;
+        return true;
+    }
+
     public bool RemoveVertex(int id)
     {
         int removed = _vertices.RemoveAll(vertex => vertex.Id == id);
@@ -61,17 +114,20 @@ public sealed class VertexNetwork
         }
 
         _edges.RemoveAll(edge => edge.A == id || edge.B == id);
+        _faces.RemoveAll(face => face.Vertices.Contains(id));
         _version++;
         return true;
     }
 
     public bool RemoveEdge(int id)
     {
-        if (_edges.RemoveAll(edge => edge.Id == id) == 0)
+        NetworkEdge? edge = Edge(id);
+        if (edge == null || _edges.RemoveAll(e => e.Id == id) == 0)
         {
             return false;
         }
 
+        _faces.RemoveAll(face => FaceUsesEdge(face, edge.A, edge.B));
         _version++;
         return true;
     }
@@ -132,13 +188,22 @@ public sealed class VertexNetwork
             _edges[i] = edge with { A = a, B = b };
         }
 
+        for (int i = 0; i < _faces.Count; i++)
+        {
+            NetworkFace face = _faces[i];
+            int[] remapped = face.Vertices.Select(v => removed.Contains(v) ? kept : v).ToArray();
+            int[] collapsed = CollapseConsecutiveDuplicates(remapped);
+            _faces[i] = face with { Vertices = collapsed };
+        }
+
         _vertices.RemoveAll(vertex => removed.Contains(vertex.Id));
         RemoveInvalidAndDuplicateEdges();
+        RemoveInvalidAndDuplicateFaces();
         _version++;
         return kept;
     }
 
-    public IReadOnlyList<int> DuplicateSubgraph(IEnumerable<int> vertexIds, IEnumerable<int> edgeIds, Vector3 offset)
+    public NetworkSubgraph DuplicateSubgraph(IEnumerable<int> vertexIds, IEnumerable<int> edgeIds, IEnumerable<int> faceIds, Vector3 offset)
     {
         HashSet<int> selectedVertices = vertexIds.ToHashSet();
         foreach (int edgeId in edgeIds)
@@ -147,6 +212,15 @@ public sealed class VertexNetwork
             {
                 selectedVertices.Add(edge.A);
                 selectedVertices.Add(edge.B);
+            }
+        }
+
+        NetworkFace[] selectedFaces = faceIds.Select(Face).OfType<NetworkFace>().ToArray();
+        foreach (NetworkFace face in selectedFaces)
+        {
+            foreach (int v in face.Vertices)
+            {
+                selectedVertices.Add(v);
             }
         }
 
@@ -167,10 +241,23 @@ public sealed class VertexNetwork
             }
         }
 
-        return map.Values.ToList();
+        var newFaces = new List<int>();
+        foreach (NetworkFace face in selectedFaces)
+        {
+            if (face.Vertices.All(map.ContainsKey) && AddFace(face.Vertices.Select(v => map[v]).ToArray()) is int faceId)
+            {
+                newFaces.Add(faceId);
+            }
+        }
+
+        return new NetworkSubgraph(map.Values.ToList(), newFaces);
     }
 
-    public IReadOnlyList<int> Extrude(IEnumerable<int> vertexIds, IEnumerable<int> edgeIds, Vector3 offset)
+    /// <summary>Offsets a selection into a new, connected copy: new vertices linked to their sources
+    /// by fresh edges, and any selected face whose whole loop was extruded reproduced as a parallel
+    /// face at the new vertices. Does not fill the side walls between the old and new loop — connect
+    /// them with edges/faces afterward if a closed volume is wanted.</summary>
+    public NetworkSubgraph Extrude(IEnumerable<int> vertexIds, IEnumerable<int> edgeIds, IEnumerable<int> faceIds, Vector3 offset)
     {
         HashSet<int> source = vertexIds.ToHashSet();
         foreach (int edgeId in edgeIds)
@@ -179,6 +266,15 @@ public sealed class VertexNetwork
             {
                 source.Add(edge.A);
                 source.Add(edge.B);
+            }
+        }
+
+        NetworkFace[] selectedFaces = faceIds.Select(Face).OfType<NetworkFace>().ToArray();
+        foreach (NetworkFace face in selectedFaces)
+        {
+            foreach (int v in face.Vertices)
+            {
+                source.Add(v);
             }
         }
 
@@ -204,15 +300,61 @@ public sealed class VertexNetwork
             }
         }
 
-        return map.Values.ToList();
+        var newFaces = new List<int>();
+        foreach (NetworkFace face in selectedFaces)
+        {
+            if (face.Vertices.All(map.ContainsKey) && AddFace(face.Vertices.Select(v => map[v]).ToArray()) is int faceId)
+            {
+                newFaces.Add(faceId);
+            }
+        }
+
+        return new NetworkSubgraph(map.Values.ToList(), newFaces);
     }
 
     public NetworkVertex? Vertex(int id) => _vertices.FirstOrDefault(vertex => vertex.Id == id);
 
     public NetworkEdge? Edge(int id) => _edges.FirstOrDefault(edge => edge.Id == id);
 
+    public NetworkFace? Face(int id) => _faces.FirstOrDefault(face => face.Id == id);
+
     public bool HasEdge(int a, int b) =>
         _edges.Any(edge => (edge.A == a && edge.B == b) || (edge.A == b && edge.B == a));
+
+    private static bool FaceUsesEdge(NetworkFace face, int a, int b)
+    {
+        IReadOnlyList<int> vertices = face.Vertices;
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            int x = vertices[i];
+            int y = vertices[(i + 1) % vertices.Count];
+            if ((x == a && y == b) || (x == b && y == a))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static int[] CollapseConsecutiveDuplicates(IReadOnlyList<int> loop)
+    {
+        var result = new List<int>();
+        for (int i = 0; i < loop.Count; i++)
+        {
+            if (i == 0 || loop[i] != result[^1])
+            {
+                result.Add(loop[i]);
+            }
+        }
+
+        if (result.Count > 1 && result[0] == result[^1])
+        {
+            result.RemoveAt(result.Count - 1);
+        }
+
+        return result.ToArray();
+    }
 
     public int ConnectedGraphCount()
     {
@@ -254,18 +396,23 @@ public sealed class VertexNetwork
 
     /// <summary>Checks this network's topology against a consumer's requirements — e.g. a procedural
     /// mesh function that only knows how to build along a single, unbranched run of edges.</summary>
-    public IReadOnlyList<string> ValidateFor(string displayName, bool allowsMultipleGraphs, bool allowsBranching)
+    public IReadOnlyList<string> ValidateFor(string displayName, NetworkCapabilities capabilities)
     {
         var problems = new List<string>();
         int graphs = ConnectedGraphCount();
-        if (!allowsMultipleGraphs && graphs > 1)
+        if (!capabilities.AllowsMultipleGraphs && graphs > 1)
         {
             problems.Add($"{displayName} accepts only one connected graph, but this network has {graphs}.");
         }
 
-        if (!allowsBranching && HasBranches())
+        if (!capabilities.AllowsBranching && HasBranches())
         {
             problems.Add($"{displayName} accepts only linear graphs; one or more vertices have more than two connected edges.");
+        }
+
+        if (!capabilities.AllowsFaces && _faces.Count > 0)
+        {
+            problems.Add($"{displayName} does not use faces; {_faces.Count} authored face(s) will be ignored.");
         }
 
         return problems;
@@ -307,8 +454,10 @@ public sealed class VertexNetwork
         {
             NextVertexId = _nextVertexId,
             NextEdgeId = _nextEdgeId,
+            NextFaceId = _nextFaceId,
             Vertices = _vertices.Select(v => new VertexDto { Id = v.Id, X = v.Position.X, Y = v.Position.Y, Z = v.Position.Z }).ToList(),
             Edges = _edges.Select(e => new EdgeDto { Id = e.Id, A = e.A, B = e.B }).ToList(),
+            Faces = _faces.Select(f => new FaceDto { Id = f.Id, Vertices = f.Vertices.ToList() }).ToList(),
         };
         return JsonSerializer.Serialize(dto);
     }
@@ -331,9 +480,12 @@ public sealed class VertexNetwork
 
             network._vertices.AddRange(dto.Vertices.Select(v => new NetworkVertex(v.Id, new Vector3(v.X, v.Y, v.Z))));
             network._edges.AddRange(dto.Edges.Select(e => new NetworkEdge(e.Id, e.A, e.B)));
+            network._faces.AddRange(dto.Faces.Select(f => new NetworkFace(f.Id, f.Vertices)));
             network._nextVertexId = Math.Max(dto.NextVertexId, network._vertices.Select(v => v.Id).DefaultIfEmpty().Max() + 1);
             network._nextEdgeId = Math.Max(dto.NextEdgeId, network._edges.Select(e => e.Id).DefaultIfEmpty().Max() + 1);
+            network._nextFaceId = Math.Max(dto.NextFaceId, network._faces.Select(f => f.Id).DefaultIfEmpty().Max() + 1);
             network.RemoveInvalidAndDuplicateEdges();
+            network.RemoveInvalidAndDuplicateFaces();
             network._version++;
         }
         catch (JsonException)
@@ -359,6 +511,23 @@ public sealed class VertexNetwork
         });
     }
 
+    private void RemoveInvalidAndDuplicateFaces()
+    {
+        HashSet<int> vertices = _vertices.Select(vertex => vertex.Id).ToHashSet();
+        var seen = new HashSet<string>();
+        _faces.RemoveAll(face =>
+        {
+            HashSet<int> distinct = face.Vertices.ToHashSet();
+            if (distinct.Count < 3 || face.Vertices.Any(id => !vertices.Contains(id)))
+            {
+                return true;
+            }
+
+            string key = string.Join(',', distinct.OrderBy(id => id));
+            return !seen.Add(key);
+        });
+    }
+
     private Dictionary<int, List<int>> BuildAdjacency()
     {
         var adjacency = _vertices.ToDictionary(vertex => vertex.Id, _ => new List<int>());
@@ -380,8 +549,10 @@ public sealed class VertexNetwork
     {
         public int NextVertexId { get; set; } = 1;
         public int NextEdgeId { get; set; } = 1;
+        public int NextFaceId { get; set; } = 1;
         public List<VertexDto> Vertices { get; set; } = [];
         public List<EdgeDto> Edges { get; set; } = [];
+        public List<FaceDto> Faces { get; set; } = [];
     }
 
     private sealed class VertexDto
@@ -397,5 +568,11 @@ public sealed class VertexNetwork
         public int Id { get; set; }
         public int A { get; set; }
         public int B { get; set; }
+    }
+
+    private sealed class FaceDto
+    {
+        public int Id { get; set; }
+        public List<int> Vertices { get; set; } = [];
     }
 }

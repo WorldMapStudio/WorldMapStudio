@@ -40,10 +40,12 @@ public sealed class ProceduralModelFieldEditor
             return;
         }
 
-        string graphMode = bound.AllowsMultipleGraphs ? "multiple graphs" : "single graph";
-        string branchMode = bound.AllowsBranching ? "branching" : "linear";
-        ImGui.TextDisabled($"v{bound.Version}, {graphMode}, {branchMode}");
-        foreach (string problem in model.Network.ValidateFor(bound.DisplayName, bound.AllowsMultipleGraphs, bound.AllowsBranching))
+        NetworkCapabilities capabilities = bound.Capabilities;
+        string graphMode = capabilities.AllowsMultipleGraphs ? "multiple graphs" : "single graph";
+        string branchMode = capabilities.AllowsBranching ? "branching" : "linear";
+        string facesMode = capabilities.AllowsFaces ? ", faces" : string.Empty;
+        ImGui.TextDisabled($"v{bound.Version}, {graphMode}, {branchMode}{facesMode}");
+        foreach (string problem in model.Network.ValidateFor(bound.DisplayName, capabilities))
         {
             ImGui.TextColored(new NVector4(1.0f, 0.72f, 0.22f, 1.0f), problem);
         }
