@@ -254,9 +254,11 @@ public sealed class VertexNetwork
     }
 
     /// <summary>Offsets a selection into a new, connected copy: new vertices linked to their sources
-    /// by fresh edges, and any selected face whose whole loop was extruded reproduced as a parallel
-    /// face at the new vertices. Does not fill the side walls between the old and new loop — connect
-    /// them with edges/faces afterward if a closed volume is wanted.</summary>
+    /// by fresh edges. A selected face's cap moves to the new vertices (keeping its id) rather than
+    /// leaving a duplicate behind, and a new quad side wall fills the gap along every edge on the
+    /// selection's outer boundary — an edge shared by two selected faces is interior and gets no wall,
+    /// matching Blender's region extrude. Loose selected vertices/edges (no face) get only the
+    /// connecting edges, exactly as before.</summary>
     public NetworkSubgraph Extrude(IEnumerable<int> vertexIds, IEnumerable<int> edgeIds, IEnumerable<int> faceIds, Vector3 offset)
     {
         HashSet<int> source = vertexIds.ToHashSet();
@@ -301,15 +303,58 @@ public sealed class VertexNetwork
         }
 
         var newFaces = new List<int>();
-        foreach (NetworkFace face in selectedFaces)
+        if (selectedFaces.Length > 0)
         {
-            if (face.Vertices.All(map.ContainsKey) && AddFace(face.Vertices.Select(v => map[v]).ToArray()) is int faceId)
+            var boundaryUseCount = new Dictionary<(int, int), int>();
+            foreach (NetworkFace face in selectedFaces)
             {
-                newFaces.Add(faceId);
+                for (int i = 0; i < face.Vertices.Count; i++)
+                {
+                    (int, int) key = BoundaryKey(face.Vertices[i], face.Vertices[(i + 1) % face.Vertices.Count]);
+                    boundaryUseCount[key] = boundaryUseCount.GetValueOrDefault(key) + 1;
+                }
+            }
+
+            foreach (NetworkFace face in selectedFaces)
+            {
+                for (int i = 0; i < face.Vertices.Count; i++)
+                {
+                    int a = face.Vertices[i];
+                    int b = face.Vertices[(i + 1) % face.Vertices.Count];
+                    if (boundaryUseCount[BoundaryKey(a, b)] == 1 && map.TryGetValue(a, out int na) && map.TryGetValue(b, out int nb))
+                    {
+                        if (AddFace([a, b, nb, na]) is int wallId)
+                        {
+                            newFaces.Add(wallId);
+                        }
+                    }
+                }
+
+                if (face.Vertices.All(map.ContainsKey) && MoveFace(face.Id, face.Vertices.Select(v => map[v]).ToArray()))
+                {
+                    newFaces.Add(face.Id);
+                }
             }
         }
 
         return new NetworkSubgraph(map.Values.ToList(), newFaces);
+    }
+
+    private static (int, int) BoundaryKey(int a, int b) => a < b ? (a, b) : (b, a);
+
+    /// <summary>Repoints an existing face at a different vertex loop, keeping its id — used to "move"
+    /// a face's cap during an extrude rather than creating a new one at the offset position.</summary>
+    private bool MoveFace(int id, IReadOnlyList<int> vertices)
+    {
+        int index = _faces.FindIndex(face => face.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _faces[index] = _faces[index] with { Vertices = vertices };
+        _version++;
+        return true;
     }
 
     public NetworkVertex? Vertex(int id) => _vertices.FirstOrDefault(vertex => vertex.Id == id);

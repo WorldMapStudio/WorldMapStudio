@@ -111,7 +111,7 @@ public static class ProceduralMeshTests
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
-    public static void Merge_duplicate_and_extrude_carry_faces_along()
+    public static void Merge_and_duplicate_carry_faces_along()
     {
         var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
@@ -125,15 +125,53 @@ public static class ProceduralMeshTests
         Assert.AreEqual(1, duplicated.FaceIds.Count, "duplicating a face should reproduce it at the new vertices");
         Assert.AreEqual(2, network.Faces.Count);
 
-        var extruded = network.Extrude([], [], [face], new Vector3(0.0f, 0.0f, -1.0f));
-        Assert.AreEqual(1, extruded.FaceIds.Count, "extruding a face should reproduce it at the new vertices");
-        Assert.AreEqual(3, network.Faces.Count);
-
         int e = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
         int kept = network.MergeVertices([b, e])!.Value;
         NetworkFace merged = network.Face(face)!;
         Assert.AreEqual(4, merged.Vertices.Count, "merging an unrelated vertex into a face's vertex should not change the face's shape");
         Assert.IsTrue(merged.Vertices.Contains(kept));
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Extruding_a_face_creates_side_walls_and_moves_the_cap()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int face = network.AddFace([a, b, c, d])!.Value;
+
+        var extruded = network.Extrude([], [], [face], new Vector3(0.0f, 0.0f, 1.0f));
+
+        Assert.AreEqual(4, extruded.VertexIds.Count, "extruding a quad face should create 4 new vertices");
+        Assert.AreEqual(1, extruded.FaceIds.Count, "only the moved cap and no duplicate should be reported as new for the face itself");
+        Assert.AreEqual(face, extruded.FaceIds[0], "the cap should keep the original face's id rather than creating a new one");
+        Assert.AreEqual(5, network.Faces.Count, "4 side walls plus the moved cap");
+        Assert.AreEqual(8, network.Vertices.Count, "4 original vertices plus 4 extruded ones");
+
+        NetworkFace cap = network.Face(face)!;
+        Assert.IsFalse(cap.Vertices.Contains(a), "the cap should reference the new, extruded vertices rather than the originals");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Extruding_two_adjacent_faces_skips_the_shared_interior_edge()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int e = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        int f = network.AddVertex(new Vector3(2.0f, 1.0f, 0.0f));
+        int faceLeft = network.AddFace([a, b, c, d])!.Value;
+        int faceRight = network.AddFace([b, e, f, c])!.Value;
+
+        var extruded = network.Extrude([], [], [faceLeft, faceRight], new Vector3(0.0f, 0.0f, 1.0f));
+
+        // Two quads sharing one edge have 6 outer boundary edges total (8 minus the 2 halves of the
+        // shared one) — a wall per outer edge, no wall along the shared b-c edge.
+        Assert.AreEqual(6, extruded.FaceIds.Count - 2, "6 outer walls, not 8 — the shared edge gets none");
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
