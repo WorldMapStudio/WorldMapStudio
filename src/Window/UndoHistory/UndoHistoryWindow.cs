@@ -11,6 +11,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class UndoHistoryWindow : Window
 {
+    public override string? Category => "Debug";
+
     private static readonly Vector4 CurrentColor = new(0.42f, 0.85f, 0.46f, 1.0f);
 
     private readonly EditSessionManager _sessions;

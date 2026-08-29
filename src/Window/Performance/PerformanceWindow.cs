@@ -20,6 +20,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class PerformanceWindow : Window
 {
+    public override string? Category => "Debug";
+
     private static readonly NVector4 OkColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 WarnColor = new(1.0f, 0.72f, 0.22f, 1.0f);
     private static readonly NVector4 ErrorColor = new(1.0f, 0.45f, 0.40f, 1.0f);

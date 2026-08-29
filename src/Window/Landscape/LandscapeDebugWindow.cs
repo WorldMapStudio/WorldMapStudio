@@ -18,6 +18,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class LandscapeDebugWindow : Window
 {
+    public override string? Category => "Landscape";
+
     private const int PreviewSize = 128;
 
     private readonly EditorContext _context;

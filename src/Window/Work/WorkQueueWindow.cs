@@ -8,6 +8,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class WorkQueueWindow : Window
 {
+    public override string? Category => "Work Queue";
+
     private static readonly NVector4 QueuedColor = new(0.85f, 0.78f, 0.35f, 1.0f);
     private static readonly NVector4 ExecutingColor = new(0.42f, 0.72f, 1.0f, 1.0f);
     private static readonly NVector4 CompletedColor = new(0.42f, 0.85f, 0.46f, 1.0f);

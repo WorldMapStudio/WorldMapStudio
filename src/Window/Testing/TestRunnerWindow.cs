@@ -15,6 +15,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class TestRunnerWindow : Window
 {
+    public override string? Category => "Developer";
+
     private static readonly NVector4 PassedColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 FailedColor = new(1.0f, 0.45f, 0.40f, 1.0f);
     private static readonly NVector4 ErroredColor = new(1.0f, 0.62f, 0.28f, 1.0f);

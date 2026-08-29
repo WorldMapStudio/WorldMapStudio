@@ -8,6 +8,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ExportWindow : Window
 {
+    public override string? Category => "World";
+
     private readonly ExportSystem _exports;
     private int _selected;
     private ChunkExportScope _scope;

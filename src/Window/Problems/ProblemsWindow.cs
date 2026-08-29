@@ -19,6 +19,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ProblemsWindow : Window
 {
+    public override string? Category => "Debug";
+
     private static readonly NVector4 ErrorColour = new(1.0f, 0.45f, 0.4f, 1.0f);
     private static readonly NVector4 WarningColour = new(1.0f, 0.72f, 0.22f, 1.0f);
     private static readonly NVector4 InfoColour = new(0.6f, 0.75f, 0.9f, 1.0f);

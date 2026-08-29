@@ -13,6 +13,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class WorkTestWindow : Window
 {
+    public override string? Category => "Work Queue";
+
     private static readonly Random _rng = new();
 
     private int _burstCount = 20;
