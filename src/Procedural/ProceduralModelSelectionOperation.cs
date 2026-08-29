@@ -101,10 +101,12 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
 
         foreach (ProceduralModel model in models)
         {
-            string function = context.System.Find(model.FunctionId)?.DisplayName ?? "(missing function)";
+            IProceduralFunction? bound = context.System.Find(model.FunctionId);
+            string function = bound?.DisplayName ?? "(missing function)";
+            string outputs = bound == null ? "" : $" · {bound.Outputs.Count} outputs";
             int uses = context.System.UsageCount(model.RecordId ?? -1);
             bool selected = model.RecordId == _previewId;
-            if (ImGui.Selectable($"#{model.RecordId} · {model.Name} · {function} · {uses} uses##{model.RecordId}", selected))
+            if (ImGui.Selectable($"#{model.RecordId} · {model.Name} · {function}{outputs} · {uses} uses##{model.RecordId}", selected))
             {
                 _previewId = model.RecordId;
             }

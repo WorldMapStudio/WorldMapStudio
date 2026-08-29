@@ -48,6 +48,7 @@ public sealed class ProceduralModelFieldEditor
             ImGui.TextColored(new NVector4(1.0f, 0.72f, 0.22f, 1.0f), problem);
         }
 
+        DrawTransformPolicyWarning(model, bound);
         DrawParameters(sessions, model, bound);
 
         foreach (ProceduralOutputSlot output in bound.Outputs)
@@ -98,6 +99,36 @@ public sealed class ProceduralModelFieldEditor
         }
 
         ImGui.EndCombo();
+    }
+
+    /// <summary>
+    /// A bound function's transform policy (<see cref="IProceduralFunction.SelfRotation"/>,
+    /// <see cref="IProceduralFunction.SelfScale"/>, <see cref="IProceduralFunction.UsesTerrainHeight"/>,
+    /// <see cref="IProceduralFunction.PlanarNetwork"/>) applies to every placement of this model —
+    /// switching to a more restrictive function (e.g. picking the road function on a model that used
+    /// to be an unrestricted mesh) can silently change what an existing placement's transform means.
+    /// Shown whenever the bound function restricts anything and the model has placements, not only at
+    /// the moment the combo changes, so the risk is visible any time the model is reopened.
+    /// </summary>
+    private void DrawTransformPolicyWarning(ProceduralModel model, IProceduralFunction bound)
+    {
+        bool restricts = bound.SelfRotation != SelfRotation.Full
+            || bound.SelfScale != SelfScale.PerAxis
+            || bound.UsesTerrainHeight
+            || bound.PlanarNetwork;
+        if (!restricts)
+        {
+            return;
+        }
+
+        int uses = _system.UsageCount(model.RecordId ?? -1);
+        if (uses == 0)
+        {
+            return;
+        }
+
+        ImGui.TextColored(new NVector4(1.0f, 0.72f, 0.22f, 1.0f),
+            $"This function restricts placement (rotation/scale/terrain-following) — {uses} existing placement(s) may show a changed transform.");
     }
 
     private void DrawParameters(EditSessionManager sessions, ProceduralModel model, IProceduralFunction function)

@@ -53,9 +53,11 @@ Current examples:
 - `Landscape Stamp`: a circular world-space influence with radius and falloff.
 - `Drawing Target`: a paintable rectangle whose pixels are projected into the world.
 - `Landscape Material Bind`: a list of layer/material pairs claimed over the entity's full bounds.
-- `Road`: a vertex/edge network splined into a centre and shoulder mask along its length. See
-  [Roads](#roads) below for how its shape works; for claiming layers and materials it pairs with a
-  `Landscape Material Bind` exactly like a stamp or drawing target does.
+- **Procedural Mesh**, bound to the built-in `Road` function: a vertex/edge network splined into a
+  centre and shoulder mask along its length. See [Roads](#roads) below for how its shape works; for
+  claiming layers and materials it pairs with a `Landscape Material Bind` exactly like a stamp or
+  drawing target does. A procedural mesh is a deformer whenever its bound function paints channels —
+  the same entity kind that renders authored geometry, not a separate component.
 
 A deformer can do one or both jobs during a chunk build:
 
@@ -198,7 +200,8 @@ feed both alpha and height behavior.
 
 ## Roads
 
-A `Road`'s authored shape is a vertex/edge network, edited in the viewport with the same tool
+A road is a Procedural Mesh entity bound to the built-in `Road` function. Its authored shape is a
+vertex/edge network, edited in the viewport with the same tool
 (select, marquee, `G`/`R`/`S` modal move/rotate/scale, `E` extrude, `F` connect, `Ctrl+S` split, `M`
 merge, `Ctrl`+click to add) used for procedural meshes. The network is a graph, not a single path — it
 can branch, fork, and close into loops, and every case is handled the same way at build time.
