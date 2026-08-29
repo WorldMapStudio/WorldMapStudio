@@ -64,7 +64,7 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
                 FunctionId = row.FunctionId,
                 Parameters = row.Parameters,
             };
-            mesh.ReplaceNetwork(ProceduralMeshNetwork.Parse(row.NetworkJson));
+            mesh.ReplaceNetwork(VertexNetwork.Parse(row.NetworkJson));
             entity.LoadComponent(mesh);
         }
     }

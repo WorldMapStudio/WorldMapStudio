@@ -8,28 +8,33 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed record ProceduralMeshVertex(int Id, Vector3 Position);
+public sealed record NetworkVertex(int Id, Vector3 Position);
 
-public sealed record ProceduralMeshEdge(int Id, int A, int B);
+public sealed record NetworkEdge(int Id, int A, int B);
 
-public sealed class ProceduralMeshNetwork
+/// <summary>
+/// A plain vertex/edge graph in local space, with no notion of what it represents — a procedural
+/// mesh's skeleton and a road's centreline are both just this. Shared so their editing tool, undo
+/// command and serialization are shared too.
+/// </summary>
+public sealed class VertexNetwork
 {
-    private readonly List<ProceduralMeshVertex> _vertices = [];
-    private readonly List<ProceduralMeshEdge> _edges = [];
+    private readonly List<NetworkVertex> _vertices = [];
+    private readonly List<NetworkEdge> _edges = [];
     private int _nextVertexId = 1;
     private int _nextEdgeId = 1;
     private int _version;
 
-    public IReadOnlyList<ProceduralMeshVertex> Vertices => _vertices;
+    public IReadOnlyList<NetworkVertex> Vertices => _vertices;
 
-    public IReadOnlyList<ProceduralMeshEdge> Edges => _edges;
+    public IReadOnlyList<NetworkEdge> Edges => _edges;
 
     public int Version => _version;
 
     public int AddVertex(Vector3 position)
     {
         int id = _nextVertexId++;
-        _vertices.Add(new ProceduralMeshVertex(id, position));
+        _vertices.Add(new NetworkVertex(id, position));
         _version++;
         return id;
     }
@@ -42,7 +47,7 @@ public sealed class ProceduralMeshNetwork
         }
 
         int id = _nextEdgeId++;
-        _edges.Add(new ProceduralMeshEdge(id, a, b));
+        _edges.Add(new NetworkEdge(id, a, b));
         _version++;
         return id;
     }
@@ -86,9 +91,9 @@ public sealed class ProceduralMeshNetwork
 
     public int? SplitEdge(int edgeId)
     {
-        ProceduralMeshEdge? edge = Edge(edgeId);
-        ProceduralMeshVertex? a = edge == null ? null : Vertex(edge.A);
-        ProceduralMeshVertex? b = edge == null ? null : Vertex(edge.B);
+        NetworkEdge? edge = Edge(edgeId);
+        NetworkVertex? a = edge == null ? null : Vertex(edge.A);
+        NetworkVertex? b = edge == null ? null : Vertex(edge.B);
         if (edge == null || a == null || b == null)
         {
             return null;
@@ -121,7 +126,7 @@ public sealed class ProceduralMeshNetwork
         HashSet<int> removed = ids.Skip(1).ToHashSet();
         for (int i = 0; i < _edges.Count; i++)
         {
-            ProceduralMeshEdge edge = _edges[i];
+            NetworkEdge edge = _edges[i];
             int a = removed.Contains(edge.A) ? kept : edge.A;
             int b = removed.Contains(edge.B) ? kept : edge.B;
             _edges[i] = edge with { A = a, B = b };
@@ -154,7 +159,7 @@ public sealed class ProceduralMeshNetwork
             }
         }
 
-        foreach (ProceduralMeshEdge edge in _edges.ToArray())
+        foreach (NetworkEdge edge in _edges.ToArray())
         {
             if (map.TryGetValue(edge.A, out int a) && map.TryGetValue(edge.B, out int b))
             {
@@ -202,9 +207,9 @@ public sealed class ProceduralMeshNetwork
         return map.Values.ToList();
     }
 
-    public ProceduralMeshVertex? Vertex(int id) => _vertices.FirstOrDefault(vertex => vertex.Id == id);
+    public NetworkVertex? Vertex(int id) => _vertices.FirstOrDefault(vertex => vertex.Id == id);
 
-    public ProceduralMeshEdge? Edge(int id) => _edges.FirstOrDefault(edge => edge.Id == id);
+    public NetworkEdge? Edge(int id) => _edges.FirstOrDefault(edge => edge.Id == id);
 
     public bool HasEdge(int a, int b) =>
         _edges.Any(edge => (edge.A == a && edge.B == b) || (edge.A == b && edge.B == a));
@@ -219,7 +224,7 @@ public sealed class ProceduralMeshNetwork
         Dictionary<int, List<int>> adjacency = BuildAdjacency();
         HashSet<int> visited = [];
         int count = 0;
-        foreach (ProceduralMeshVertex vertex in _vertices)
+        foreach (NetworkVertex vertex in _vertices)
         {
             if (!visited.Add(vertex.Id))
             {
@@ -247,18 +252,20 @@ public sealed class ProceduralMeshNetwork
 
     public bool HasBranches() => BuildAdjacency().Values.Any(neighbours => neighbours.Count > 2);
 
-    public IReadOnlyList<string> ValidateFor(IProceduralMeshFunction function)
+    /// <summary>Checks this network's topology against a consumer's requirements — e.g. a procedural
+    /// mesh function that only knows how to build along a single, unbranched run of edges.</summary>
+    public IReadOnlyList<string> ValidateFor(string displayName, bool allowsMultipleGraphs, bool allowsBranching)
     {
         var problems = new List<string>();
         int graphs = ConnectedGraphCount();
-        if (!function.AllowsMultipleGraphs && graphs > 1)
+        if (!allowsMultipleGraphs && graphs > 1)
         {
-            problems.Add($"{function.DisplayName} accepts only one connected graph, but this network has {graphs}.");
+            problems.Add($"{displayName} accepts only one connected graph, but this network has {graphs}.");
         }
 
-        if (!function.AllowsBranching && HasBranches())
+        if (!allowsBranching && HasBranches())
         {
-            problems.Add($"{function.DisplayName} accepts only linear graphs; one or more vertices have more than two connected edges.");
+            problems.Add($"{displayName} accepts only linear graphs; one or more vertices have more than two connected edges.");
         }
 
         return problems;
@@ -273,7 +280,7 @@ public sealed class ProceduralMeshNetwork
 
         Vector3 min = _vertices[0].Position;
         Vector3 max = _vertices[0].Position;
-        foreach (ProceduralMeshVertex vertex in _vertices.Skip(1))
+        foreach (NetworkVertex vertex in _vertices.Skip(1))
         {
             min = new Vector3(Mathf.Min(min.X, vertex.Position.X), Mathf.Min(min.Y, vertex.Position.Y), Mathf.Min(min.Z, vertex.Position.Z));
             max = new Vector3(Mathf.Max(max.X, vertex.Position.X), Mathf.Max(max.Y, vertex.Position.Y), Mathf.Max(max.Z, vertex.Position.Z));
@@ -289,7 +296,7 @@ public sealed class ProceduralMeshNetwork
         return new Aabb(min, size);
     }
 
-    public ProceduralMeshNetwork Clone() => Parse(Serialize());
+    public VertexNetwork Clone() => Parse(Serialize());
 
     public string Fingerprint() =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Serialize()))).ToLowerInvariant();
@@ -306,9 +313,9 @@ public sealed class ProceduralMeshNetwork
         return JsonSerializer.Serialize(dto);
     }
 
-    public static ProceduralMeshNetwork Parse(string serialized)
+    public static VertexNetwork Parse(string serialized)
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         if (string.IsNullOrWhiteSpace(serialized))
         {
             return network;
@@ -322,8 +329,8 @@ public sealed class ProceduralMeshNetwork
                 return network;
             }
 
-            network._vertices.AddRange(dto.Vertices.Select(v => new ProceduralMeshVertex(v.Id, new Vector3(v.X, v.Y, v.Z))));
-            network._edges.AddRange(dto.Edges.Select(e => new ProceduralMeshEdge(e.Id, e.A, e.B)));
+            network._vertices.AddRange(dto.Vertices.Select(v => new NetworkVertex(v.Id, new Vector3(v.X, v.Y, v.Z))));
+            network._edges.AddRange(dto.Edges.Select(e => new NetworkEdge(e.Id, e.A, e.B)));
             network._nextVertexId = Math.Max(dto.NextVertexId, network._vertices.Select(v => v.Id).DefaultIfEmpty().Max() + 1);
             network._nextEdgeId = Math.Max(dto.NextEdgeId, network._edges.Select(e => e.Id).DefaultIfEmpty().Max() + 1);
             network.RemoveInvalidAndDuplicateEdges();
@@ -355,7 +362,7 @@ public sealed class ProceduralMeshNetwork
     private Dictionary<int, List<int>> BuildAdjacency()
     {
         var adjacency = _vertices.ToDictionary(vertex => vertex.Id, _ => new List<int>());
-        foreach (ProceduralMeshEdge edge in _edges)
+        foreach (NetworkEdge edge in _edges)
         {
             if (!adjacency.ContainsKey(edge.A) || !adjacency.ContainsKey(edge.B))
             {

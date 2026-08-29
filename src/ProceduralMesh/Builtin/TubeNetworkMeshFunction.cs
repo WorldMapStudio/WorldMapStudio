@@ -53,10 +53,10 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
         var uvs = new List<Vector2>();
         var indices = new List<int>();
 
-        foreach (ProceduralMeshEdge edge in context.Network.Edges)
+        foreach (NetworkEdge edge in context.Network.Edges)
         {
-            ProceduralMeshVertex? a = context.Network.Vertex(edge.A);
-            ProceduralMeshVertex? b = context.Network.Vertex(edge.B);
+            NetworkVertex? a = context.Network.Vertex(edge.A);
+            NetworkVertex? b = context.Network.Vertex(edge.B);
             if (a == null || b == null)
             {
                 continue;

@@ -3,7 +3,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent
+public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable
 {
     private readonly ProceduralMeshSystem _system;
     private ProceduralMeshOutput? _cached;
@@ -46,7 +46,9 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         }
     }
 
-    public ProceduralMeshNetwork Network { get; private set; } = new();
+    public VertexNetwork Network { get; private set; } = new();
+
+    public bool PlanarXZ => false;
 
     public override string TypeId => "procedural-mesh";
 
@@ -69,7 +71,7 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
     public override int ContentVersion =>
         HashCode.Combine(FunctionId, Parameters, _system.Find(FunctionId)?.Version ?? 0, Network.Fingerprint());
 
-    public void ReplaceNetwork(ProceduralMeshNetwork network)
+    public void ReplaceNetwork(VertexNetwork network)
     {
         Network = network.Clone();
         Invalidate();

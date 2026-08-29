@@ -11,13 +11,13 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
-public enum ProceduralMeshSelectionMode
+public enum NetworkSelectionMode
 {
     Vertex,
     Edge,
 }
 
-public enum ProceduralMeshModalMode
+public enum NetworkModalMode
 {
     None,
     Translate,
@@ -25,31 +25,33 @@ public enum ProceduralMeshModalMode
     Scale,
 }
 
-[Subsystem(nameof(ToolWindow))]
-public sealed class ProceduralMeshToolFactory : IToolFactory
-{
-    public float Priority => 20f;
-
-    public string Name => "Procedural Mesh";
-
-    public ProceduralMeshToolFactory(ToolWindow window)
-    {
-    }
-
-    public ITool Create(ToolContext context) => new ProceduralMeshTool(context);
-}
-
-public sealed class ProceduralMeshTool : ITool
+/// <summary>
+/// Edits any <see cref="INetworkEditable"/>'s vertex/edge graph in the viewport: select, marquee,
+/// G/R/S modal transforms, extrude, duplicate, split, merge. One tool serves every network-editing
+/// component — which component kind it looks at is entirely decided by the <paramref name="selector"/>
+/// its owning <see cref="IToolFactory"/> hands it, so a procedural mesh and a road share every line of
+/// editing behaviour here and differ only in what they do with the resulting graph.
+///
+/// <see cref="INetworkEditable.PlanarXZ"/> components (roads) get terrain-aware placement and display:
+/// a new vertex is dropped onto the terrain under the cursor rather than the entity's local plane, and
+/// every drawn vertex is projected onto the terrain for display even though its stored position is
+/// flat. Rotation locks to the vertical axis, and every transform's result has its height zeroed —
+/// the data is authored purely horizontal, so nothing is ever allowed to introduce a height component.
+/// </summary>
+public sealed class NetworkEditTool : ITool
 {
     private const float MarqueeThreshold = 5.0f;
     private const float VertexPickRadius = 9.0f;
     private const float EdgePickRadius = 6.0f;
 
     private readonly ToolContext _context;
+    private readonly TerrainProbe _terrain;
+    private readonly Func<SceneEntity, INetworkEditable?> _selector;
+    private readonly string _name;
     private readonly TransformGizmo _gizmo = new();
     private readonly HashSet<int> _vertices = [];
     private readonly HashSet<int> _edges = [];
-    private ProceduralMeshSelectionMode _mode;
+    private NetworkSelectionMode _mode;
 
     private bool _dragging;
     private Transform3D _dragStartPivot;
@@ -57,38 +59,41 @@ public sealed class ProceduralMeshTool : ITool
     private bool _mouseDown;
     private bool _marquee;
     private NVector2 _marqueeStart;
-    private ProceduralMeshModalMode _modalMode;
+    private NetworkModalMode _modalMode;
     private int _modalAxis = -1;
     private bool _modalAxisExclude;
     private NVector2 _modalStartMouse;
     private Transform3D _modalStartPivot;
-    private ProceduralMeshNetwork? _modalBefore;
+    private VertexNetwork? _modalBefore;
     private readonly Dictionary<int, GVector3> _modalStartPositions = [];
     private string _modalNumeric = string.Empty;
     private string _modalDescription = "";
 
-    public ProceduralMeshTool(ToolContext context)
+    public NetworkEditTool(ToolContext context, string name, Func<SceneEntity, INetworkEditable?> selector)
     {
         _context = context;
+        _name = name;
+        _selector = selector;
+        _terrain = new TerrainProbe(context.Scene);
         _gizmo.Axes = context.Axes;
         _gizmo.LocalSpace = false;
     }
 
-    public string Name => "Procedural Mesh";
+    public string Name => _name;
 
     public bool CapturesMouse => _gizmo.IsUsing || _mouseDown;
 
     public void DrawToolbar()
     {
-        if (ImGui.RadioButton("Vertex", _mode == ProceduralMeshSelectionMode.Vertex))
+        if (ImGui.RadioButton("Vertex", _mode == NetworkSelectionMode.Vertex))
         {
-            _mode = ProceduralMeshSelectionMode.Vertex;
+            _mode = NetworkSelectionMode.Vertex;
         }
 
         ImGui.SameLine();
-        if (ImGui.RadioButton("Edge", _mode == ProceduralMeshSelectionMode.Edge))
+        if (ImGui.RadioButton("Edge", _mode == NetworkSelectionMode.Edge))
         {
-            _mode = ProceduralMeshSelectionMode.Edge;
+            _mode = NetworkSelectionMode.Edge;
         }
 
         ImGui.SameLine();
@@ -119,61 +124,56 @@ public sealed class ProceduralMeshTool : ITool
 
     public void UpdateViewport(in ViewportContext viewport)
     {
-        if (Active() is not { } active || viewport.CameraFlying)
+        if (Active() is not { } component || viewport.CameraFlying)
         {
             _vertices.Clear();
             _edges.Clear();
             return;
         }
 
-        ProceduralMeshComponent component = active.Component;
-        DrawNetwork(active, viewport.Camera, viewport.ImageMin);
-        if (_modalMode != ProceduralMeshModalMode.None)
+        SceneEntity entity = component.Owner!;
+        DrawNetwork(component, entity, viewport.Camera, viewport.ImageMin);
+        if (_modalMode != NetworkModalMode.None)
         {
-            UpdateModal(component, active.Entity, viewport);
+            UpdateModal(component, entity, viewport);
             return;
         }
 
-        HandleKeys(component);
-        DriveGizmo(component, active.Entity, viewport);
-        HandlePointer(component, active.Entity, viewport.Hovered && !_gizmo.IsUsing && !_gizmo.IsHovered, viewport);
+        HandleKeys(component, entity);
+        DriveGizmo(component, entity, viewport);
+        HandlePointer(component, entity, viewport.Hovered && !_gizmo.IsUsing && !_gizmo.IsHovered, viewport);
     }
 
-    private (SceneEntity Entity, ProceduralMeshComponent Component)? Active()
+    private INetworkEditable? Active()
     {
         SceneEntity? entity = _context.Selection.Selected.OfType<SceneEntity>()
-            .FirstOrDefault(entity => _context.Scene.Contains(entity) && entity.Component<ProceduralMeshComponent>() != null);
-        return entity == null ? null : (entity, entity.Component<ProceduralMeshComponent>()!);
+            .FirstOrDefault(entity => _context.Scene.Contains(entity) && _selector(entity) != null);
+        return entity == null ? null : _selector(entity);
     }
 
-    private void HandleKeys(ProceduralMeshComponent component)
+    private void HandleKeys(INetworkEditable component, SceneEntity entity)
     {
-        if (Active() is not { } active)
-        {
-            return;
-        }
-
         if (ImGui.IsKeyPressed(ImGuiKey.G, false) && _vertices.Count > 0)
         {
-            BeginModal(component, active.Entity, ProceduralMeshModalMode.Translate, component.Network.Clone(), "Move procedural mesh vertices");
+            BeginModal(component, entity, NetworkModalMode.Translate, component.Network.Clone(), "Move network vertices");
             return;
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.R, false) && _vertices.Count > 0)
         {
-            BeginModal(component, active.Entity, ProceduralMeshModalMode.Rotate, component.Network.Clone(), "Rotate procedural mesh vertices");
+            BeginModal(component, entity, NetworkModalMode.Rotate, component.Network.Clone(), "Rotate network vertices");
             return;
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _vertices.Count > 0 && !Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
         {
-            BeginModal(component, active.Entity, ProceduralMeshModalMode.Scale, component.Network.Clone(), "Scale procedural mesh vertices");
+            BeginModal(component, entity, NetworkModalMode.Scale, component.Network.Clone(), "Scale network vertices");
             return;
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.Delete, false) || ImGui.IsKeyPressed(ImGuiKey.Backspace, false))
         {
-            Mutate(component, "Delete procedural mesh selection", network =>
+            Mutate(component, "Delete network selection", network =>
             {
                 foreach (int edgeId in _edges.ToArray())
                 {
@@ -192,7 +192,7 @@ public sealed class ProceduralMeshTool : ITool
 
         if (ImGui.IsKeyPressed(ImGuiKey.F, false) && _vertices.Count == 2)
         {
-            Mutate(component, "Connect procedural mesh vertices", network =>
+            Mutate(component, "Connect network vertices", network =>
             {
                 int[] ids = _vertices.ToArray();
                 int? edge = network.AddEdge(ids[0], ids[1]);
@@ -206,7 +206,7 @@ public sealed class ProceduralMeshTool : ITool
 
         if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _edges.Count > 0 && Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
         {
-            Mutate(component, "Split procedural mesh edges", network =>
+            Mutate(component, "Split network edges", network =>
             {
                 int[] selected = _edges.ToArray();
                 _edges.Clear();
@@ -223,7 +223,7 @@ public sealed class ProceduralMeshTool : ITool
 
         if (ImGui.IsKeyPressed(ImGuiKey.M, false) && _vertices.Count > 1)
         {
-            Mutate(component, "Merge procedural mesh vertices", network =>
+            Mutate(component, "Merge network vertices", network =>
             {
                 int? kept = network.MergeVertices(_vertices);
                 _vertices.Clear();
@@ -236,7 +236,7 @@ public sealed class ProceduralMeshTool : ITool
 
         if (ImGui.IsKeyPressed(ImGuiKey.E, false) && (_vertices.Count > 0 || _edges.Count > 0))
         {
-            ProceduralMeshNetwork before = component.Network.Clone();
+            VertexNetwork before = component.Network.Clone();
             PreviewMutate(component, network =>
             {
                 IReadOnlyList<int> extruded = network.Extrude(_vertices, _edges, GVector3.Zero);
@@ -247,13 +247,13 @@ public sealed class ProceduralMeshTool : ITool
                     _vertices.Add(id);
                 }
             });
-            BeginModal(component, active.Entity, ProceduralMeshModalMode.Translate, before, "Extrude procedural mesh selection");
+            BeginModal(component, entity, NetworkModalMode.Translate, before, "Extrude network selection");
             return;
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.D, false) && Godot.Input.IsPhysicalKeyPressed(Key.Shift) && (_vertices.Count > 0 || _edges.Count > 0))
         {
-            ProceduralMeshNetwork before = component.Network.Clone();
+            VertexNetwork before = component.Network.Clone();
             PreviewMutate(component, network =>
             {
                 IReadOnlyList<int> duplicated = network.DuplicateSubgraph(_vertices, _edges, GVector3.Zero);
@@ -264,15 +264,15 @@ public sealed class ProceduralMeshTool : ITool
                     _vertices.Add(id);
                 }
             });
-            BeginModal(component, active.Entity, ProceduralMeshModalMode.Translate, before, "Duplicate procedural mesh selection");
+            BeginModal(component, entity, NetworkModalMode.Translate, before, "Duplicate network selection");
         }
     }
 
     private void BeginModal(
-        ProceduralMeshComponent component,
+        INetworkEditable component,
         SceneEntity entity,
-        ProceduralMeshModalMode mode,
-        ProceduralMeshNetwork before,
+        NetworkModalMode mode,
+        VertexNetwork before,
         string description)
     {
         _modalMode = mode;
@@ -293,7 +293,7 @@ public sealed class ProceduralMeshTool : ITool
         }
     }
 
-    private void UpdateModal(ProceduralMeshComponent component, SceneEntity entity, in ViewportContext viewport)
+    private void UpdateModal(INetworkEditable component, SceneEntity entity, in ViewportContext viewport)
     {
         HandleModalAxisKey(ImGuiKey.X, 0);
         HandleModalAxisKey(ImGuiKey.Y, 1);
@@ -302,16 +302,16 @@ public sealed class ProceduralMeshTool : ITool
 
         Transform3D delta = _modalMode switch
         {
-            ProceduralMeshModalMode.Translate => ComputeModalTranslate(viewport.Camera, viewport.ImageMin),
-            ProceduralMeshModalMode.Rotate => ComputeModalRotate(viewport.Camera, viewport.ImageMin),
-            ProceduralMeshModalMode.Scale => ComputeModalScale(viewport.Camera, viewport.ImageMin),
+            NetworkModalMode.Translate => ComputeModalTranslate(viewport.Camera, viewport.ImageMin),
+            NetworkModalMode.Rotate => ComputeModalRotate(component, viewport.Camera, viewport.ImageMin),
+            NetworkModalMode.Scale => ComputeModalScale(viewport.Camera, viewport.ImageMin),
             _ => Transform3D.Identity,
         };
 
-        ProceduralMeshNetwork changed = component.Network.Clone();
+        VertexNetwork changed = component.Network.Clone();
         foreach ((int id, GVector3 local) in _modalStartPositions)
         {
-            changed.MoveVertex(id, entity.Transform.AffineInverse() * (delta * (entity.Transform * local)));
+            changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local));
         }
 
         component.ReplaceNetwork(changed);
@@ -329,18 +329,18 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
-        ProceduralMeshNetwork after = component.Network.Clone();
-        ProceduralMeshNetwork before = _modalBefore ?? after;
+        VertexNetwork after = component.Network.Clone();
+        VertexNetwork before = _modalBefore ?? after;
         if (cancel)
         {
             component.ReplaceNetwork(before);
         }
         else if (before.Fingerprint() != after.Fingerprint())
         {
-            _context.Sessions.Record(new SetProceduralMeshNetworkCommand(component, before, after, _modalDescription));
+            _context.Sessions.Record(new SetNetworkCommand(component, before, after, _modalDescription));
         }
 
-        _modalMode = ProceduralMeshModalMode.None;
+        _modalMode = NetworkModalMode.None;
         _modalAxisExclude = false;
         _modalBefore = null;
         _modalStartPositions.Clear();
@@ -354,7 +354,7 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
-        bool exclude = _modalMode != ProceduralMeshModalMode.Rotate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
+        bool exclude = _modalMode != NetworkModalMode.Rotate && Godot.Input.IsPhysicalKeyPressed(Key.Shift);
         if (_modalAxis != axis || _modalAxisExclude != exclude)
         {
             _modalAxis = axis;
@@ -404,10 +404,12 @@ public sealed class ProceduralMeshTool : ITool
         return new Transform3D(Basis.Identity, move);
     }
 
-    private Transform3D ComputeModalRotate(Camera3D camera, NVector2 imageMin)
+    private Transform3D ComputeModalRotate(INetworkEditable component, Camera3D camera, NVector2 imageMin)
     {
         GVector3 pivot = _modalStartPivot.Origin;
-        GVector3 axis = _modalAxis < 0 ? (camera.GlobalPosition - pivot).Normalized() : _context.Axes.UserAxis(_modalAxis);
+        GVector3 axis = component.PlanarXZ
+            ? GVector3.Up
+            : (_modalAxis < 0 ? (camera.GlobalPosition - pivot).Normalized() : _context.Axes.UserAxis(_modalAxis));
         float angle;
         if (TryModalNumeric(out float number))
         {
@@ -449,9 +451,9 @@ public sealed class ProceduralMeshTool : ITool
     {
         string op = _modalMode switch
         {
-            ProceduralMeshModalMode.Translate => "Move",
-            ProceduralMeshModalMode.Rotate => "Rotate",
-            ProceduralMeshModalMode.Scale => "Scale",
+            NetworkModalMode.Translate => "Move",
+            NetworkModalMode.Rotate => "Rotate",
+            NetworkModalMode.Scale => "Scale",
             _ => "Transform",
         };
         string axis = string.Empty;
@@ -461,7 +463,7 @@ public sealed class ProceduralMeshTool : ITool
             axis = $" {axisLabel}";
         }
         string value = _modalNumeric.Length > 0
-            ? $": {_modalNumeric}{(_modalMode == ProceduralMeshModalMode.Rotate ? " deg" : string.Empty)}"
+            ? $": {_modalNumeric}{(_modalMode == NetworkModalMode.Rotate ? " deg" : string.Empty)}"
             : string.Empty;
         ImGui.GetWindowDrawList().AddText(
             imageMin + new NVector2(8.0f, 6.0f),
@@ -513,7 +515,7 @@ public sealed class ProceduralMeshTool : ITool
         }
     }
 
-    private void DriveGizmo(ProceduralMeshComponent component, SceneEntity entity, in ViewportContext viewport)
+    private void DriveGizmo(INetworkEditable component, SceneEntity entity, in ViewportContext viewport)
     {
         if (_vertices.Count == 0)
         {
@@ -546,10 +548,10 @@ public sealed class ProceduralMeshTool : ITool
         if (_gizmo.IsUsing)
         {
             Transform3D delta = pivot * _dragStartPivot.AffineInverse();
-            ProceduralMeshNetwork changed = component.Network.Clone();
+            VertexNetwork changed = component.Network.Clone();
             foreach ((int id, GVector3 local) in _dragStartPositions)
             {
-                changed.MoveVertex(id, entity.Transform.AffineInverse() * (delta * (entity.Transform * local)));
+                changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local));
             }
 
             component.ReplaceNetwork(changed);
@@ -558,23 +560,36 @@ public sealed class ProceduralMeshTool : ITool
 
         if (wasUsing && !_gizmo.IsUsing && _dragging)
         {
-            ProceduralMeshNetwork before = component.Network.Clone();
+            VertexNetwork before = component.Network.Clone();
             foreach ((int id, GVector3 local) in _dragStartPositions)
             {
                 before.MoveVertex(id, local);
             }
 
-            ProceduralMeshNetwork after = component.Network.Clone();
+            VertexNetwork after = component.Network.Clone();
             if (before.Fingerprint() != after.Fingerprint())
             {
-                _context.Sessions.Record(new SetProceduralMeshNetworkCommand(component, before, after, "Transform procedural mesh vertices"));
+                _context.Sessions.Record(new SetNetworkCommand(component, before, after, "Transform network vertices"));
             }
 
             _dragging = false;
         }
     }
 
-    private Transform3D ComputePivot(ProceduralMeshComponent component, SceneEntity entity)
+    /// <summary>Applies a world-space delta to one vertex's local position, flattening the result for
+    /// planar networks so no transform can introduce a height component.</summary>
+    private static GVector3 ApplyDelta(INetworkEditable component, Transform3D entityTransform, Transform3D delta, GVector3 local)
+    {
+        GVector3 moved = entityTransform.AffineInverse() * (delta * (entityTransform * local));
+        if (component.PlanarXZ)
+        {
+            moved.Y = 0.0f;
+        }
+
+        return moved;
+    }
+
+    private Transform3D ComputePivot(INetworkEditable component, SceneEntity entity)
     {
         GVector3 origin = GVector3.Zero;
         int count = 0;
@@ -582,7 +597,7 @@ public sealed class ProceduralMeshTool : ITool
         {
             if (component.Network.Vertex(id) is { } vertex)
             {
-                origin += entity.Transform * vertex.Position;
+                origin += Display(component, entity, vertex.Position);
                 count++;
             }
         }
@@ -590,7 +605,16 @@ public sealed class ProceduralMeshTool : ITool
         return new Transform3D(Basis.Identity, count == 0 ? entity.Transform.Origin : origin / count);
     }
 
-    private void HandlePointer(ProceduralMeshComponent component, SceneEntity entity, bool canStartClick, in ViewportContext viewport)
+    /// <summary>World position to draw or pick a vertex at. Planar networks project onto the terrain
+    /// under the vertex even though the stored position is flat, so editing still reads as "on the
+    /// ground" without the data carrying a height nothing else would agree with.</summary>
+    private GVector3 Display(INetworkEditable component, SceneEntity entity, GVector3 local)
+    {
+        GVector3 world = entity.Transform * local;
+        return component.PlanarXZ ? _terrain.DropToHeight(world) : world;
+    }
+
+    private void HandlePointer(INetworkEditable component, SceneEntity entity, bool canStartClick, in ViewportContext viewport)
     {
         NVector2 mouse = ImGui.GetMousePos();
 
@@ -634,14 +658,14 @@ public sealed class ProceduralMeshTool : ITool
         _marquee = false;
     }
 
-    private void HandleClick(ProceduralMeshComponent component, SceneEntity entity, in ViewportContext viewport)
+    private void HandleClick(INetworkEditable component, SceneEntity entity, in ViewportContext viewport)
     {
         bool additive = Godot.Input.IsPhysicalKeyPressed(Key.Shift);
         bool ctrl = Godot.Input.IsPhysicalKeyPressed(Key.Ctrl);
 
-        if (ctrl && TryMouseOnLocalPlane(entity, viewport, out GVector3 local))
+        if (ctrl && TryPlacementPoint(component, entity, viewport, out GVector3 local))
         {
-            Mutate(component, "Add procedural mesh vertex", network =>
+            Mutate(component, "Add network vertex", network =>
             {
                 int id = network.AddVertex(local);
                 _vertices.Clear();
@@ -651,7 +675,7 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
-        if (_mode == ProceduralMeshSelectionMode.Vertex &&
+        if (_mode == NetworkSelectionMode.Vertex &&
             TryPickVertex(component, entity, viewport.Camera, viewport.ImageMin, out int vertexId))
         {
             ToggleOnly(_vertices, vertexId, additive);
@@ -663,7 +687,7 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
-        if (_mode == ProceduralMeshSelectionMode.Edge &&
+        if (_mode == NetworkSelectionMode.Edge &&
             TryPickEdge(component, entity, viewport.Camera, viewport.ImageMin, out int edgeId))
         {
             ToggleOnly(_edges, edgeId, additive);
@@ -683,7 +707,7 @@ public sealed class ProceduralMeshTool : ITool
     }
 
     private void ApplyBoxSelection(
-        ProceduralMeshComponent component,
+        INetworkEditable component,
         SceneEntity entity,
         NVector2 a,
         NVector2 b,
@@ -700,11 +724,11 @@ public sealed class ProceduralMeshTool : ITool
             _edges.Clear();
         }
 
-        if (_mode == ProceduralMeshSelectionMode.Vertex)
+        if (_mode == NetworkSelectionMode.Vertex)
         {
-            foreach (ProceduralMeshVertex vertex in component.Network.Vertices)
+            foreach (NetworkVertex vertex in component.Network.Vertices)
             {
-                if (Project(camera, imageMin, entity.Transform * vertex.Position, out NVector2 screen) && Inside(screen, min, max))
+                if (Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen) && Inside(screen, min, max))
                 {
                     _vertices.Add(vertex.Id);
                 }
@@ -713,7 +737,7 @@ public sealed class ProceduralMeshTool : ITool
             return;
         }
 
-        foreach (ProceduralMeshEdge edge in component.Network.Edges)
+        foreach (NetworkEdge edge in component.Network.Edges)
         {
             if (component.Network.Vertex(edge.A) is not { } va || component.Network.Vertex(edge.B) is not { } vb)
             {
@@ -721,7 +745,7 @@ public sealed class ProceduralMeshTool : ITool
             }
 
             GVector3 midpoint = (va.Position + vb.Position) * 0.5f;
-            if (Project(camera, imageMin, entity.Transform * midpoint, out NVector2 screen) && Inside(screen, min, max))
+            if (Project(camera, imageMin, Display(component, entity, midpoint), out NVector2 screen) && Inside(screen, min, max))
             {
                 _edges.Add(edge.Id);
             }
@@ -755,30 +779,37 @@ public sealed class ProceduralMeshTool : ITool
         drawList.AddRect(min, max, ImGui.GetColorU32(new NVector4(0.40f, 0.65f, 1.0f, 0.90f)));
     }
 
-    private void DrawNetwork((SceneEntity Entity, ProceduralMeshComponent Component) active, Camera3D camera, NVector2 imageMin)
+    private void DrawNetwork(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin)
     {
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
         uint edgeColor = ImGui.GetColorU32(new NVector4(0.35f, 0.78f, 1.0f, 0.85f));
         uint selectedColor = ImGui.GetColorU32(new NVector4(1.0f, 0.72f, 0.2f, 1.0f));
         uint vertexColor = ImGui.GetColorU32(new NVector4(0.92f, 0.94f, 0.96f, 1.0f));
 
-        foreach (ProceduralMeshEdge edge in active.Component.Network.Edges)
+        if (component is RoadComponent road)
         {
-            if (active.Component.Network.Vertex(edge.A) is not { } a || active.Component.Network.Vertex(edge.B) is not { } b)
+            DrawRoadSpline(road, entity, camera, imageMin);
+        }
+        else
+        {
+            foreach (NetworkEdge edge in component.Network.Edges)
             {
-                continue;
-            }
+                if (component.Network.Vertex(edge.A) is not { } a || component.Network.Vertex(edge.B) is not { } b)
+                {
+                    continue;
+                }
 
-            if (Project(camera, imageMin, active.Entity.Transform * a.Position, out NVector2 sa) &&
-                Project(camera, imageMin, active.Entity.Transform * b.Position, out NVector2 sb))
-            {
-                drawList.AddLine(sa, sb, _edges.Contains(edge.Id) ? selectedColor : edgeColor, _edges.Contains(edge.Id) ? 3.0f : 2.0f);
+                if (Project(camera, imageMin, Display(component, entity, a.Position), out NVector2 sa) &&
+                    Project(camera, imageMin, Display(component, entity, b.Position), out NVector2 sb))
+                {
+                    drawList.AddLine(sa, sb, _edges.Contains(edge.Id) ? selectedColor : edgeColor, _edges.Contains(edge.Id) ? 3.0f : 2.0f);
+                }
             }
         }
 
-        foreach (ProceduralMeshVertex vertex in active.Component.Network.Vertices)
+        foreach (NetworkVertex vertex in component.Network.Vertices)
         {
-            if (Project(camera, imageMin, active.Entity.Transform * vertex.Position, out NVector2 screen))
+            if (Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen))
             {
                 bool selected = _vertices.Contains(vertex.Id);
                 drawList.AddCircleFilled(screen, selected ? 6.0f : 4.5f, selected ? selectedColor : vertexColor, 16);
@@ -787,14 +818,72 @@ public sealed class ProceduralMeshTool : ITool
         }
     }
 
-    private static bool TryPickVertex(ProceduralMeshComponent component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
+    /// <summary>Draws the actual flattened spline plus its centre and outer width, rather than the
+    /// raw straight edges between control vertices — an edge-only preview would lie about where the
+    /// road goes and how wide it is once splined.</summary>
+    private void DrawRoadSpline(RoadComponent road, SceneEntity entity, Camera3D camera, NVector2 imageMin)
+    {
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        uint centreColor = ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 0.95f));
+        uint widthColor = ImGui.GetColorU32(new NVector4(1.0f, 0.85f, 0.35f, 0.35f));
+
+        RoadPath path = road.Path;
+        foreach (RoadSegment segment in path.Segments)
+        {
+            DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, 0.0f, centreColor, 2.5f);
+            if (path.CentreHalf > 0.0f)
+            {
+                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, path.CentreHalf, widthColor, 1.0f);
+                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, -path.CentreHalf, widthColor, 1.0f);
+            }
+
+            if (path.OuterRadius > path.CentreHalf)
+            {
+                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, path.OuterRadius, widthColor, 1.0f);
+                DrawOffsetSegment(road, entity, camera, imageMin, drawList, segment, -path.OuterRadius, widthColor, 1.0f);
+            }
+        }
+    }
+
+    private void DrawOffsetSegment(
+        RoadComponent road,
+        SceneEntity entity,
+        Camera3D camera,
+        NVector2 imageMin,
+        ImDrawListPtr drawList,
+        RoadSegment segment,
+        float offset,
+        uint color,
+        float thickness)
+    {
+        GVector3 a = segment.A;
+        GVector3 b = segment.B;
+        if (offset != 0.0f)
+        {
+            GVector2 direction = new(b.X - a.X, b.Z - a.Z);
+            if (direction.LengthSquared() > 1e-8f)
+            {
+                GVector2 normal = new GVector2(-direction.Y, direction.X).Normalized() * offset;
+                a = new GVector3(a.X + normal.X, a.Y, a.Z + normal.Y);
+                b = new GVector3(b.X + normal.X, b.Y, b.Z + normal.Y);
+            }
+        }
+
+        if (Project(camera, imageMin, Display(road, entity, a), out NVector2 sa) &&
+            Project(camera, imageMin, Display(road, entity, b), out NVector2 sb))
+        {
+            drawList.AddLine(sa, sb, color, thickness);
+        }
+    }
+
+    private bool TryPickVertex(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
     {
         id = 0;
         NVector2 mouse = ImGui.GetMousePos();
         float best = VertexPickRadius;
-        foreach (ProceduralMeshVertex vertex in component.Network.Vertices)
+        foreach (NetworkVertex vertex in component.Network.Vertices)
         {
-            if (!Project(camera, imageMin, entity.Transform * vertex.Position, out NVector2 screen))
+            if (!Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen))
             {
                 continue;
             }
@@ -810,20 +899,20 @@ public sealed class ProceduralMeshTool : ITool
         return id != 0;
     }
 
-    private static bool TryPickEdge(ProceduralMeshComponent component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
+    private bool TryPickEdge(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
     {
         id = 0;
         NVector2 mouse = ImGui.GetMousePos();
         float best = EdgePickRadius;
-        foreach (ProceduralMeshEdge edge in component.Network.Edges)
+        foreach (NetworkEdge edge in component.Network.Edges)
         {
             if (component.Network.Vertex(edge.A) is not { } a || component.Network.Vertex(edge.B) is not { } b)
             {
                 continue;
             }
 
-            if (!Project(camera, imageMin, entity.Transform * a.Position, out NVector2 sa) ||
-                !Project(camera, imageMin, entity.Transform * b.Position, out NVector2 sb))
+            if (!Project(camera, imageMin, Display(component, entity, a.Position), out NVector2 sa) ||
+                !Project(camera, imageMin, Display(component, entity, b.Position), out NVector2 sb))
             {
                 continue;
             }
@@ -839,12 +928,29 @@ public sealed class ProceduralMeshTool : ITool
         return id != 0;
     }
 
-    private bool TryMouseOnLocalPlane(SceneEntity entity, in ViewportContext viewport, out GVector3 local)
+    /// <summary>Where a new vertex lands for a Ctrl+click. Planar networks drop it onto the terrain
+    /// under the cursor (falling back to the world Y=0 plane where no terrain is loaded); others use
+    /// the entity's own local Y=0 plane, so a procedural mesh can still be built above or below it.</summary>
+    private bool TryPlacementPoint(INetworkEditable component, SceneEntity entity, in ViewportContext viewport, out GVector3 local)
     {
         NVector2 mouse = ImGui.GetMousePos();
         GVector2 inViewport = new(mouse.X - viewport.ImageMin.X, mouse.Y - viewport.ImageMin.Y);
         GVector3 origin = viewport.Camera.ProjectRayOrigin(inViewport);
         GVector3 dir = viewport.Camera.ProjectRayNormal(inViewport);
+
+        if (component.PlanarXZ)
+        {
+            if (!_terrain.TryHit(origin, dir, out GVector3 world) && !TryGroundPlane(origin, dir, out world))
+            {
+                local = default;
+                return false;
+            }
+
+            local = entity.Transform.AffineInverse() * world;
+            local.Y = 0.0f;
+            return true;
+        }
+
         GVector3 planeNormal = entity.Transform.Basis.Y.Normalized();
         float denom = dir.Dot(planeNormal);
         if (Mathf.Abs(denom) < 1e-6f)
@@ -853,22 +959,41 @@ public sealed class ProceduralMeshTool : ITool
             return false;
         }
 
-        GVector3 world = origin + dir * ((entity.Transform.Origin - origin).Dot(planeNormal) / denom);
-        local = entity.Transform.AffineInverse() * world;
+        GVector3 planeWorld = origin + dir * ((entity.Transform.Origin - origin).Dot(planeNormal) / denom);
+        local = entity.Transform.AffineInverse() * planeWorld;
         return true;
     }
 
-    private void Mutate(ProceduralMeshComponent component, string description, Action<ProceduralMeshNetwork> mutate)
+    private static bool TryGroundPlane(GVector3 origin, GVector3 dir, out GVector3 world)
     {
-        ProceduralMeshNetwork before = component.Network.Clone();
-        ProceduralMeshNetwork after = component.Network.Clone();
+        if (Mathf.Abs(dir.Y) < 1e-6f)
+        {
+            world = default;
+            return false;
+        }
+
+        float t = -origin.Y / dir.Y;
+        if (t < 0.0f)
+        {
+            world = default;
+            return false;
+        }
+
+        world = origin + dir * t;
+        return true;
+    }
+
+    private void Mutate(INetworkEditable component, string description, Action<VertexNetwork> mutate)
+    {
+        VertexNetwork before = component.Network.Clone();
+        VertexNetwork after = component.Network.Clone();
         mutate(after);
         if (before.Fingerprint() == after.Fingerprint())
         {
             return;
         }
 
-        var command = new SetProceduralMeshNetworkCommand(component, before, after, description);
+        var command = new SetNetworkCommand(component, before, after, description);
         command.Apply();
         _context.Sessions.Record(command);
         if (component.Owner is { } owner)
@@ -877,9 +1002,9 @@ public sealed class ProceduralMeshTool : ITool
         }
     }
 
-    private void PreviewMutate(ProceduralMeshComponent component, Action<ProceduralMeshNetwork> mutate)
+    private void PreviewMutate(INetworkEditable component, Action<VertexNetwork> mutate)
     {
-        ProceduralMeshNetwork after = component.Network.Clone();
+        VertexNetwork after = component.Network.Clone();
         mutate(after);
         component.ReplaceNetwork(after);
         if (component.Owner is { } owner)

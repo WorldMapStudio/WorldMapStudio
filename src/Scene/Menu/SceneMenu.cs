@@ -1,4 +1,5 @@
 using System.Linq;
+using Godot;
 using ImGuiNET;
 
 namespace WorldMapStudio;
@@ -13,6 +14,7 @@ public sealed class SceneMenu : IMainMenu
     private readonly EditorContext _context;
     private readonly ShortcutAction _addStamp;
     private readonly ShortcutAction _addDrawingTarget;
+    private readonly ShortcutAction _addRoad;
     private readonly ShortcutAction _deleteSelected;
 
     public float Priority => 0.75f;
@@ -33,6 +35,13 @@ public sealed class SceneMenu : IMainMenu
             "Add Drawing Target",
             new KeyboardShortcut(ImGuiKey.D, ShortcutModifiers.Alt),
             AddDrawingTarget,
+            () => _context.Landscape.IsEnabled);
+        _addRoad = _context.Shortcuts.Register(
+            "scene.add-road",
+            "Scene",
+            "Add Road",
+            new KeyboardShortcut(ImGuiKey.R, ShortcutModifiers.Alt),
+            AddRoad,
             () => _context.Landscape.IsEnabled);
         _deleteSelected = _context.Shortcuts.Register(
             "scene.delete-selected",
@@ -63,6 +72,11 @@ public sealed class SceneMenu : IMainMenu
             if (ImGui.MenuItem("Add Drawing Target", _addDrawingTarget.ShortcutLabel, false, _context.Landscape.IsEnabled))
             {
                 AddDrawingTarget();
+            }
+
+            if (ImGui.MenuItem("Add Road", _addRoad.ShortcutLabel, false, _context.Landscape.IsEnabled))
+            {
+                AddRoad();
             }
 
             ImGui.Separator();
@@ -121,6 +135,36 @@ public sealed class SceneMenu : IMainMenu
             Channel = catalog.Channels.FirstOrDefault()?.Name ?? "",
         });
         entity.AddComponent(DefaultMaterialBind(catalog));
+
+        _context.Scene.Add(entity);
+        _context.Selection.Set(entity);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
+    }
+
+    // Seeded from the catalog, and with a short starter edge, so a fresh road paints something
+    // visible instead of needing six fields filled in before it shows up at all.
+    private void AddRoad()
+    {
+        LandscapeCatalog catalog = _context.Landscape.Catalog;
+
+        var road = new RoadComponent
+        {
+            CentreChannel = catalog.Channels.FirstOrDefault()?.Name ?? "",
+        };
+        road.ShoulderChannel = catalog.Channels.Skip(1).FirstOrDefault()?.Name ?? road.CentreChannel;
+
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(-5.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(5.0f, 0.0f, 0.0f));
+        network.AddEdge(a, b);
+        road.ReplaceNetwork(network);
+
+        var entity = new SceneEntity
+        {
+            Name = "Road",
+            Map = _context.Maps.CurrentMap,
+        };
+        entity.AddComponent(road);
 
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
