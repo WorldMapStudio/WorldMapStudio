@@ -8,6 +8,8 @@ namespace WorldMapStudio;
 /// <summary>
 /// Lists the loaded scene entities and mirrors the shared selection: clicking an entry selects it
 /// (Ctrl/Shift to add or remove), and entities selected in the viewport show as highlighted here.
+/// Derived entities (landscape chunks) are excluded — they live in the <see cref="ChunksWindow"/>
+/// instead, since there can be many of them and they never parent or get parented.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class OutlineWindow : Window
@@ -29,7 +31,7 @@ public sealed class OutlineWindow : Window
 
     protected override void DrawContent()
     {
-        List<SceneEntity> entities = _scene.InView.ToList();
+        List<SceneEntity> entities = _scene.InView.Where(entity => entity is not IDerivedEntity).ToList();
         if (entities.Count == 0)
         {
             ImGui.TextDisabled("No entities loaded.");
