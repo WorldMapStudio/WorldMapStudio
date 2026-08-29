@@ -6,10 +6,12 @@ namespace WorldMapStudio;
 public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable
 {
     private readonly ProceduralMeshSystem _system;
-    private ProceduralMeshOutput? _cached;
+    private ModelAsset? _cached;
     private string _cacheKey = "";
     private string _functionId = "builtin.mesh.tube_network";
     private string _parameters = "";
+    private string _formatId = "";
+    private string _materials = "";
 
     public ProceduralMeshComponent(ProceduralMeshSystem system)
     {
@@ -46,6 +48,42 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         }
     }
 
+    /// <summary>
+    /// Which <see cref="IModelFormat"/> this procedural mesh authors, e.g. "wow.format.wmo" for a
+    /// plugin-defined format. Empty defers to the bound function's first supported format, or the
+    /// plain authorable mesh format if the function does not care.
+    /// </summary>
+    public string FormatId
+    {
+        get => _formatId;
+        set
+        {
+            if (_formatId == value)
+            {
+                return;
+            }
+
+            _formatId = value;
+            Invalidate();
+        }
+    }
+
+    /// <summary>Serialized <see cref="ProceduralMeshMaterialBindings"/> for the bound function's material slots.</summary>
+    public string Materials
+    {
+        get => _materials;
+        set
+        {
+            if (_materials == value)
+            {
+                return;
+            }
+
+            _materials = value;
+            Invalidate();
+        }
+    }
+
     public VertexNetwork Network { get; private set; } = new();
 
     public bool PlanarXZ => false;
@@ -58,7 +96,7 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
     {
         get
         {
-            ProceduralMeshOutput output = BuildOutput();
+            ModelAsset output = BuildOutput();
             if (output.Surfaces.Count > 0)
             {
                 return output.LocalBounds;
@@ -68,8 +106,9 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         }
     }
 
-    public override int ContentVersion =>
-        HashCode.Combine(FunctionId, Parameters, _system.Find(FunctionId)?.Version ?? 0, Network.Fingerprint());
+    public override int ContentVersion => HashCode.Combine(
+        FunctionId, Parameters, FormatId, Materials,
+        _system.Find(FunctionId)?.Version ?? 0, Network.Fingerprint(), _system.Context.MeshMaterials.PresetContentVersion);
 
     public void ReplaceNetwork(VertexNetwork network)
     {
@@ -79,7 +118,7 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
 
     public override SceneComponent Clone()
     {
-        var clone = new ProceduralMeshComponent(_system) { FunctionId = FunctionId, Parameters = Parameters };
+        var clone = new ProceduralMeshComponent(_system) { FunctionId = FunctionId, Parameters = Parameters, FormatId = FormatId, Materials = Materials };
         clone.ReplaceNetwork(Network);
         return clone;
     }
@@ -92,31 +131,22 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
 
     public Node3D BuildNode()
     {
-        var root = new Node3D { Name = "ProceduralMeshComponent" };
-        ProceduralMeshOutput output = BuildOutput();
+        ModelAsset output = BuildOutput();
         if (output.Surfaces.Count == 0)
         {
-            root.AddChild(Placeholder());
-            return root;
+            var placeholderRoot = new Node3D { Name = "ProceduralMeshComponent" };
+            placeholderRoot.AddChild(Placeholder());
+            return placeholderRoot;
         }
 
-        for (int i = 0; i < output.Surfaces.Count; i++)
-        {
-            ProceduralMeshSurface surface = output.Surfaces[i];
-            root.AddChild(new MeshInstance3D
-            {
-                Name = surface.Name.Length == 0 ? $"Surface{i}" : surface.Name,
-                Mesh = surface.Mesh,
-                MaterialOverride = ModelMaterialFactory.Build(_system.Context.Assets, surface.Material),
-            });
-        }
-
-        return root;
+        Node3D node = output.Instantiate(_system.Context.MeshMaterials);
+        node.Name = "ProceduralMeshComponent";
+        return node;
     }
 
-    private ProceduralMeshOutput BuildOutput()
+    private ModelAsset BuildOutput()
     {
-        string key = $"{FunctionId}|{Parameters}|{_system.Find(FunctionId)?.Version ?? 0}|{Network.Fingerprint()}";
+        string key = $"{FunctionId}|{Parameters}|{FormatId}|{Materials}|{_system.Find(FunctionId)?.Version ?? 0}|{Network.Fingerprint()}|{_system.Context.MeshMaterials.PresetContentVersion}";
         if (_cached != null && _cacheKey == key)
         {
             return _cached;

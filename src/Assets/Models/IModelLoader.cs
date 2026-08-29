@@ -5,6 +5,9 @@ namespace WorldMapStudio;
 /// <summary>Model format loader registered under <see cref="AssetSystem"/>.</summary>
 public interface IModelLoader : ISubsystem
 {
+    /// <summary>Which <see cref="IModelFormat"/> the assets this loader produces belong to.</summary>
+    public string FormatId { get; }
+
     public bool CanLoad(string path);
 
     /// <summary>
@@ -13,12 +16,6 @@ public interface IModelLoader : ISubsystem
     /// internal LOD or group files that are only ever loaded by reference from another file).
     /// </summary>
     public bool CanList(string path) => CanLoad(path);
-
-    /// <summary>How placed instances of this format may rotate about themselves. Default: unrestricted.</summary>
-    public SelfRotation SelfRotation => SelfRotation.Full;
-
-    /// <summary>How placed instances of this format may be scaled. Default: unrestricted per-axis.</summary>
-    public SelfScale SelfScale => SelfScale.PerAxis;
 
     public Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path);
 }

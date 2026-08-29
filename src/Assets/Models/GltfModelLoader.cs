@@ -29,6 +29,8 @@ public sealed class GltfModelLoader : IModelLoader
 
     public float Priority => 0.0f;
 
+    public string FormatId => GltfModelFormat.FormatId;
+
     public bool CanLoad(string path)
     {
         string extension = AssetPath.Extension(path);
@@ -100,12 +102,12 @@ public sealed class GltfModelLoader : IModelLoader
                 }
 
                 GltfMaterial material = MaterialFor(materials, Int(primitive, "material", -1), surfaces.Count);
-                var modelMaterial = new ModelMaterial { TexturePath = material.TexturePath, AlbedoColor = material.Color, TwoSided = true };
-                surfaces.Add(new ModelSurface($"{meshName}.{primitiveIndex}", BuildMesh(positions, normals, uvs, indices), modelMaterial));
+                MeshMaterial meshMaterial = StandardMeshMaterial.Describe(texture: material.TexturePath, albedo: material.Color, twoSided: true);
+                surfaces.Add(new ModelSurface($"{meshName}.{primitiveIndex}", BuildMesh(positions, normals, uvs, indices), meshMaterial));
             }
         }
 
-        return surfaces.Count == 0 ? null : new ModelAsset(path, surfaces);
+        return surfaces.Count == 0 ? null : new ModelAsset(path, surfaces, formatId: FormatId);
     }
 
     private static async Task<GltfSource?> LoadSourceAsync(AssetSystem assets, string path)

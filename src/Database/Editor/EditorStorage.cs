@@ -27,6 +27,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public AssetSystem Assets => _database.Context.Assets;
 
+    public MeshMaterialSystem MeshMaterials => _database.Context.MeshMaterials;
+
     public EditorContext Context => _database.Context;
 
     // Default to an editor-managed dolt instance so a new project works out of the box. Exposed

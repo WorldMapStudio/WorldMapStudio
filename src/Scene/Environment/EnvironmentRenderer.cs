@@ -34,6 +34,7 @@ public sealed class EnvironmentRenderer
 
     private readonly Camera3D _camera;
     private readonly AssetSystem _assets;
+    private readonly MeshMaterialSystem _materials;
     private readonly EnvironmentSystem _environments;
     private readonly ViewSettings _view;
 
@@ -47,10 +48,11 @@ public sealed class EnvironmentRenderer
 
     public Godot.Environment Environment { get; }
 
-    public EnvironmentRenderer(SubViewport viewport, Camera3D camera, AssetSystem assets, EnvironmentSystem environments, ViewSettings view)
+    public EnvironmentRenderer(SubViewport viewport, Camera3D camera, AssetSystem assets, MeshMaterialSystem materials, EnvironmentSystem environments, ViewSettings view)
     {
         _camera = camera;
         _assets = assets;
+        _materials = materials;
         _environments = environments;
         _view = view;
 
@@ -301,7 +303,7 @@ public sealed class EnvironmentRenderer
             return;
         }
 
-        Node3D node = model.Instantiate(_assets);
+        Node3D node = model.Instantiate(_materials);
         node.Name = $"SkyLayer_{path.GetHashCode():x8}";
 
         // A skybox needs the camera at the dome's true geometric middle, not wherever the model's own

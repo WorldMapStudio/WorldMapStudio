@@ -40,6 +40,10 @@ public sealed partial class AssetSystem : ISubsystemHost
     /// <summary>The loader that would handle <paramref name="path"/>, e.g. to query its transform capabilities.</summary>
     public IModelLoader? FindModelLoader(string path) => ModelLoaders.FirstOrDefault(loader => loader.CanLoad(path));
 
+    /// <summary>The format <paramref name="path"/> would load as, e.g. to query its placement constraints.</summary>
+    public IModelFormat? FindModelFormat(string path) =>
+        FindModelLoader(path) is { } loader ? _context.ModelFormats.Find(loader.FormatId) : null;
+
     public IReadOnlyList<AssetRef> ListTextureAssets() => BuildAssetIndex().Textures;
 
     public IReadOnlyList<AssetRef> ListModelAssets() => BuildAssetIndex().Models;

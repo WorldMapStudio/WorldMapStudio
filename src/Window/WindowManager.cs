@@ -200,6 +200,7 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         "Landscape" => Alt(ImGuiKey.H),
         "Landscape Debug" => Alt(ImGuiKey.B),
         "Landscape Materials" => Alt(ImGuiKey.M),
+        "Mesh Materials" => Alt(ImGuiKey.G),
         "Outline" => Alt(ImGuiKey.O),
         "Performance" => Alt(ImGuiKey.P),
         "Problems" => Alt(ImGuiKey.R),

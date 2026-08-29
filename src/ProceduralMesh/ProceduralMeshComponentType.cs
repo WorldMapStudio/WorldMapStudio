@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using ImGuiNET;
 
@@ -7,15 +9,14 @@ namespace WorldMapStudio;
 public sealed class ProceduralMeshComponentType : ISceneComponentType
 {
     private readonly ProceduralMeshSystem _system;
-    private readonly TextureAssetPicker _texturePicker;
-    private string? _parameterBefore;
+    private readonly MeshParameterEditor _parameterEditor;
 
     public float Priority => 5.0f;
 
     public ProceduralMeshComponentType(SceneComponentRegistry registry)
     {
         _system = registry.Context.ProceduralMeshes;
-        _texturePicker = new TextureAssetPicker(registry.Context.Assets);
+        _parameterEditor = new MeshParameterEditor(new TextureAssetPicker(registry.Context.Assets));
     }
 
     public string TypeId => "procedural-mesh";
@@ -74,138 +75,139 @@ public sealed class ProceduralMeshComponentType : ISceneComponentType
             }
 
             DrawParameters(context, procedural, bound);
+            DrawFormat(context, procedural, bound);
+            DrawMaterialSlots(context, procedural, bound);
         }
 
         ImGui.Separator();
         ImGui.TextDisabled($"{procedural.Network.Vertices.Count} vertices, {procedural.Network.Edges.Count} edges");
     }
 
-    public void DrawModals() => _texturePicker.Draw();
+    public void DrawModals() => _parameterEditor.DrawModals();
 
     private void DrawParameters(InspectorContext context, ProceduralMeshComponent component, IProceduralMeshFunction function)
     {
         string serialized = component.Parameters;
-        ProceduralMeshParameterValues values = ProceduralMeshParameterValues.Parse(serialized);
+        MeshParameterValues values = MeshParameterValues.Parse(serialized);
 
-        foreach (ProceduralMeshParameter parameter in function.Parameters)
-        {
-            ImGui.PushID(parameter.Name);
-
-            switch (parameter.Kind)
-            {
-                case ProceduralMeshParameterKind.Float:
-                {
-                    float value = values.GetFloat(parameter);
-                    if (ImGui.DragFloat(parameter.DisplayName, ref value, 0.01f, parameter.Min, parameter.Max))
-                    {
-                        values.Set(parameter, value);
-                    }
-
-                    TrackParameter(context, component, function, values);
-                    break;
-                }
-                case ProceduralMeshParameterKind.Int:
-                {
-                    int value = values.GetInt(parameter);
-                    if (ImGui.DragInt(parameter.DisplayName, ref value, 1.0f, (int)parameter.Min, (int)parameter.Max))
-                    {
-                        values.Set(parameter, value);
-                    }
-
-                    TrackParameter(context, component, function, values);
-                    break;
-                }
-                case ProceduralMeshParameterKind.Bool:
-                {
-                    bool value = values.GetBool(parameter);
-                    if (ImGui.Checkbox(parameter.DisplayName, ref value))
-                    {
-                        values.Set(parameter, value);
-                        ComponentFieldRecorder.Record(context, component, parameter.DisplayName, component.Parameters, values.Serialize(), v => component.Parameters = v);
-                    }
-
-                    break;
-                }
-                case ProceduralMeshParameterKind.Texture:
-                {
-                    string texture = values.GetTexture(parameter);
-                    DrawAssetPath(parameter.DisplayName, texture);
-                    ImGui.SameLine();
-                    if (ImGui.Button($"Browse##{parameter.Name}"))
-                    {
-                        _texturePicker.Browse(texture, selected =>
-                        {
-                            ProceduralMeshParameterValues changed = ProceduralMeshParameterValues.Parse(component.Parameters);
-                            changed.Set(parameter, selected);
-                            ComponentFieldRecorder.Record(context, component, parameter.DisplayName, component.Parameters, changed.Serialize(), v => component.Parameters = v);
-                        });
-                    }
-
-                    if (texture.Length > 0)
-                    {
-                        ImGui.SameLine();
-                        if (ImGui.SmallButton($"Clear##{parameter.Name}"))
-                        {
-                            values.Set(parameter, "");
-                            ComponentFieldRecorder.Record(context, component, parameter.DisplayName, component.Parameters, values.Serialize(), v => component.Parameters = v);
-                        }
-                    }
-
-                    break;
-                }
-                case ProceduralMeshParameterKind.Color:
-                {
-                    Color color = values.GetColor(parameter);
-                    var value = new System.Numerics.Vector4(color.R, color.G, color.B, color.A);
-                    if (ImGui.ColorEdit4(parameter.DisplayName, ref value))
-                    {
-                        values.Set(parameter, new Color(value.X, value.Y, value.Z, value.W));
-                    }
-
-                    TrackParameter(context, component, function, values);
-                    break;
-                }
-            }
-
-            if (parameter.Description.Length > 0 && ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip(parameter.Description);
-            }
-
-            ImGui.PopID();
-        }
+        _parameterEditor.Draw(function.Parameters, values, serialized, (before, after) =>
+            ComponentFieldRecorder.Record(context, component, $"{function.DisplayName} parameters", before, after, value => component.Parameters = value));
     }
 
-    private void TrackParameter(
-        InspectorContext context,
-        ProceduralMeshComponent component,
-        IProceduralMeshFunction function,
-        ProceduralMeshParameterValues values)
+    private void DrawFormat(InspectorContext context, ProceduralMeshComponent component, IProceduralMeshFunction function)
     {
-        if (ImGui.IsItemActivated())
-        {
-            _parameterBefore = component.Parameters;
-        }
-
-        if (!ImGui.IsItemDeactivatedAfterEdit() || _parameterBefore == null)
+        List<IModelFormat> available = AvailableFormats(function);
+        if (available.Count <= 1)
         {
             return;
         }
 
-        string before = _parameterBefore;
-        _parameterBefore = null;
-        string after = values.Serialize();
-        if (before != after)
+        ImGui.Separator();
+        IModelFormat? current = _system.Context.ModelFormats.Find(component.FormatId);
+        string label = current?.DisplayName ?? "(auto)";
+        if (!ImGui.BeginCombo("Format", label))
         {
-            ComponentFieldRecorder.Record(context, component, $"{function.DisplayName} parameters", before, after, value => component.Parameters = value);
+            return;
+        }
+
+        foreach (IModelFormat format in available)
+        {
+            if (ImGui.Selectable(format.DisplayName, format.Id == component.FormatId))
+            {
+                ComponentFieldRecorder.Record(context, component, "format", component.FormatId, format.Id, value => component.FormatId = value);
+            }
+        }
+
+        ImGui.EndCombo();
+    }
+
+    private List<IModelFormat> AvailableFormats(IProceduralMeshFunction function)
+    {
+        ModelFormatSystem formats = _system.Context.ModelFormats;
+        IEnumerable<IModelFormat> candidates = function.SupportedFormats.Count == 0
+            ? formats.All
+            : function.SupportedFormats.Select(formats.Find).OfType<IModelFormat>();
+        return candidates.Where(format => format.CanAuthor).ToList();
+    }
+
+    private void DrawMaterialSlots(InspectorContext context, ProceduralMeshComponent component, IProceduralMeshFunction function)
+    {
+        if (function.MaterialSlots.Count == 0)
+        {
+            return;
+        }
+
+        IModelFormat? format = _system.Context.ModelFormats.Find(_system.ResolveFormatId(component));
+        IMeshMaterialType? materialType = format != null ? _system.Context.MeshMaterials.Find(format.MaterialTypeId) : null;
+        string materialTypeId = materialType?.Id ?? StandardMeshMaterial.TypeId;
+        ProceduralMeshMaterialBindings bindings = ProceduralMeshMaterialBindings.Parse(component.Materials);
+
+        foreach (MeshMaterialSlot slot in function.MaterialSlots)
+        {
+            ImGui.PushID(slot.Name);
+            DrawSlot(context, component, slot, materialTypeId, bindings);
+            ImGui.PopID();
         }
     }
 
-    private static void DrawAssetPath(string label, string path)
+    private void DrawSlot(InspectorContext context, ProceduralMeshComponent component, MeshMaterialSlot slot, string materialTypeId, ProceduralMeshMaterialBindings bindings)
     {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text($"{label}:");
-        ImGui.SameLine();
-        ImGui.TextDisabled(path.Length == 0 ? "(none)" : path);
+        ImGui.Separator();
+        ImGui.TextDisabled(slot.DisplayName);
+
+        List<MeshMaterialPreset> candidates = _system.Context.MeshMaterials.Presets.Where(preset => preset.TypeId == materialTypeId).ToList();
+        int? boundPresetId = bindings.GetPresetId(slot);
+        MeshMaterialPreset? bound = boundPresetId is { } id ? candidates.FirstOrDefault(preset => preset.RecordId == id) : null;
+        string label = boundPresetId == null ? "(inline)" : bound?.Name ?? $"Preset #{boundPresetId} (missing)";
+
+        if (ImGui.BeginCombo("Preset", label))
+        {
+            if (ImGui.Selectable("(inline)", boundPresetId == null))
+            {
+                RecordMaterialsChange(context, component, slot, b => b.Clear(slot));
+            }
+
+            foreach (MeshMaterialPreset preset in candidates)
+            {
+                if (ImGui.Selectable(preset.Name, preset.RecordId == boundPresetId))
+                {
+                    RecordMaterialsChange(context, component, slot, b => b.BindPreset(slot, preset.RecordId!.Value));
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (boundPresetId != null)
+        {
+            return;
+        }
+
+        IMeshMaterialType? materialType = _system.Context.MeshMaterials.Find(materialTypeId);
+        if (materialType == null)
+        {
+            return;
+        }
+
+        MeshParameterValues inline = (bindings.GetInlineValues(slot) ?? materialType.Default.Values).Clone();
+        string inlineBaseline = inline.Serialize();
+
+        _parameterEditor.Draw(materialType.Parameters, inline, inlineBaseline, (_, afterInline) =>
+        {
+            string before = component.Materials;
+            ProceduralMeshMaterialBindings updated = ProceduralMeshMaterialBindings.Parse(before);
+            updated.BindInline(slot, MeshParameterValues.Parse(afterInline));
+            string after = updated.Serialize();
+            ComponentFieldRecorder.Record(context, component, $"{slot.DisplayName} material", before, after, value => component.Materials = value);
+        });
+    }
+
+    private static void RecordMaterialsChange(InspectorContext context, ProceduralMeshComponent component, MeshMaterialSlot slot, System.Action<ProceduralMeshMaterialBindings> mutate)
+    {
+        string before = component.Materials;
+        ProceduralMeshMaterialBindings updated = ProceduralMeshMaterialBindings.Parse(before);
+        mutate(updated);
+        string after = updated.Serialize();
+        ComponentFieldRecorder.Record(context, component, $"{slot.DisplayName} material", before, after, value => component.Materials = value);
     }
 }

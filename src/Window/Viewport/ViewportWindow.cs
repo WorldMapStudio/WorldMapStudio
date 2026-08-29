@@ -120,10 +120,9 @@ public sealed class ViewportWindow : Window
         _viewport.AddChild(_camera);
         _viewport.AddChild(_grid);
         _viewport.AddChild(_upAxisLine);
-        CreateDemoScene();
         owner.AddChild(_viewport);
 
-        _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, _environments, _view);
+        _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _view);
         _camera.Environment = _environmentRenderer.Environment;
         _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _scene, _view);
 
@@ -147,22 +146,6 @@ public sealed class ViewportWindow : Window
 
         _flyCamera.MoveTo(target + (direction * FocusDistance));
         _flyCamera.LookAt(target);
-    }
-
-    // A handful of lit boxes scattered on the grid, some rotated so local vs. world space
-    // is visible. Picking is analytic (ray vs. box), so no physics body is needed.
-    private void CreateDemoScene()
-    {
-        AddBox(new GVector3(-6.0f, 1.0f, -2.0f), new Color(0.85f, 0.55f, 0.28f), 0.0f);
-        AddBox(new GVector3(0.0f, 1.0f, 0.0f), new Color(0.45f, 0.70f, 0.85f), 0.6f);
-        AddBox(new GVector3(5.0f, 1.0f, 2.0f), new Color(0.60f, 0.80f, 0.45f), -0.3f);
-        AddBox(new GVector3(3.0f, 1.0f, -5.0f), new Color(0.82f, 0.45f, 0.62f), 1.1f);
-        AddBox(new GVector3(-3.0f, 1.0f, 5.0f), new Color(0.80f, 0.75f, 0.35f), 0.0f);
-    }
-
-    private void AddBox(GVector3 position, Color color, float yaw)
-    {
-        _scene.Add(new DemoBoxEntity(position, color, yaw));
     }
 
     // Creates a viewport representation for every loaded entity that lacks one, and tears down the

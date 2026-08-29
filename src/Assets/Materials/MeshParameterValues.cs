@@ -6,37 +6,44 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed class ProceduralMeshParameterValues
+/// <summary>
+/// A serialized bag of <see cref="MeshParameter"/> values, keyed by parameter name. Shared by
+/// <see cref="IMeshMaterialType"/> materials and <see cref="IProceduralMeshFunction"/> parameters —
+/// both are "declared parameter -> stored value" the same way, so one storage format serves both.
+/// </summary>
+public sealed class MeshParameterValues
 {
     private readonly Dictionary<string, string> _values;
 
-    public ProceduralMeshParameterValues()
+    public MeshParameterValues()
     {
         _values = new Dictionary<string, string>(StringComparer.Ordinal);
     }
 
-    private ProceduralMeshParameterValues(Dictionary<string, string> values)
+    private MeshParameterValues(Dictionary<string, string> values)
     {
         _values = values;
     }
 
     public IReadOnlyDictionary<string, string> Raw => _values;
 
-    public string GetRaw(ProceduralMeshParameter parameter) =>
+    public string GetRaw(MeshParameter parameter) =>
         _values.TryGetValue(parameter.Name, out string? value) ? value : parameter.Default;
 
-    public float GetFloat(ProceduralMeshParameter parameter) =>
+    public float GetFloat(MeshParameter parameter) =>
         float.TryParse(GetRaw(parameter), NumberStyles.Float, CultureInfo.InvariantCulture, out float value) ? value : 0.0f;
 
-    public int GetInt(ProceduralMeshParameter parameter) =>
+    public int GetInt(MeshParameter parameter) =>
         int.TryParse(GetRaw(parameter), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : 0;
 
-    public bool GetBool(ProceduralMeshParameter parameter) =>
+    public bool GetBool(MeshParameter parameter) =>
         GetRaw(parameter).Equals("true", StringComparison.OrdinalIgnoreCase);
 
-    public string GetTexture(ProceduralMeshParameter parameter) => GetRaw(parameter);
+    public string GetTexture(MeshParameter parameter) => GetRaw(parameter);
 
-    public Color GetColor(ProceduralMeshParameter parameter)
+    public string GetChoice(MeshParameter parameter) => GetRaw(parameter);
+
+    public Color GetColor(MeshParameter parameter)
     {
         string[] parts = GetRaw(parameter).Split(',');
         if (parts.Length != 4)
@@ -52,19 +59,19 @@ public sealed class ProceduralMeshParameterValues
             : Colors.White;
     }
 
-    public void Set(ProceduralMeshParameter parameter, float value) =>
+    public void Set(MeshParameter parameter, float value) =>
         _values[parameter.Name] = value.ToString(CultureInfo.InvariantCulture);
 
-    public void Set(ProceduralMeshParameter parameter, int value) =>
+    public void Set(MeshParameter parameter, int value) =>
         _values[parameter.Name] = value.ToString(CultureInfo.InvariantCulture);
 
-    public void Set(ProceduralMeshParameter parameter, bool value) =>
+    public void Set(MeshParameter parameter, bool value) =>
         _values[parameter.Name] = value ? "true" : "false";
 
-    public void Set(ProceduralMeshParameter parameter, string value) =>
+    public void Set(MeshParameter parameter, string value) =>
         _values[parameter.Name] = value;
 
-    public void Set(ProceduralMeshParameter parameter, Color value) =>
+    public void Set(MeshParameter parameter, Color value) =>
         _values[parameter.Name] = $"{value.R.ToString(CultureInfo.InvariantCulture)},{value.G.ToString(CultureInfo.InvariantCulture)},{value.B.ToString(CultureInfo.InvariantCulture)},{value.A.ToString(CultureInfo.InvariantCulture)}";
 
     public string Serialize()
@@ -78,23 +85,25 @@ public sealed class ProceduralMeshParameterValues
         return JsonSerializer.Serialize(ordered);
     }
 
-    public static ProceduralMeshParameterValues Parse(string serialized)
+    public MeshParameterValues Clone() => new(new Dictionary<string, string>(_values, StringComparer.Ordinal));
+
+    public static MeshParameterValues Parse(string serialized)
     {
         if (string.IsNullOrWhiteSpace(serialized))
         {
-            return new ProceduralMeshParameterValues();
+            return new MeshParameterValues();
         }
 
         try
         {
             Dictionary<string, string>? parsed = JsonSerializer.Deserialize<Dictionary<string, string>>(serialized);
             return parsed == null
-                ? new ProceduralMeshParameterValues()
-                : new ProceduralMeshParameterValues(new Dictionary<string, string>(parsed, StringComparer.Ordinal));
+                ? new MeshParameterValues()
+                : new MeshParameterValues(new Dictionary<string, string>(parsed, StringComparer.Ordinal));
         }
         catch (JsonException)
         {
-            return new ProceduralMeshParameterValues();
+            return new MeshParameterValues();
         }
     }
 }

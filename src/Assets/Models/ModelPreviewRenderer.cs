@@ -9,6 +9,7 @@ namespace WorldMapStudio;
 public sealed class ModelPreviewRenderer : IDisposable
 {
     private readonly AssetSystem _assets;
+    private readonly MeshMaterialSystem _materials;
     private readonly Node _owner;
     private readonly SubViewport _viewport;
     private readonly Camera3D _camera;
@@ -18,9 +19,10 @@ public sealed class ModelPreviewRenderer : IDisposable
     private string _path = "";
     private string _loadedPath = "";
 
-    public ModelPreviewRenderer(AssetSystem assets, Node owner)
+    public ModelPreviewRenderer(AssetSystem assets, MeshMaterialSystem materials, Node owner)
     {
         _assets = assets;
+        _materials = materials;
         _owner = owner;
         _viewport = new SubViewport
         {
@@ -107,7 +109,7 @@ public sealed class ModelPreviewRenderer : IDisposable
     private void ShowModel(ModelAsset model)
     {
         ClearModel();
-        _modelNode = model.Instantiate(_assets);
+        _modelNode = model.Instantiate(_materials);
         _viewport.AddChild(_modelNode);
         Frame(model.LocalBounds);
     }
