@@ -27,8 +27,9 @@ public enum NetworkModalMode
 }
 
 /// <summary>
-/// Edits any <see cref="INetworkEditable"/>'s vertex/edge graph in the viewport: select, marquee,
-/// G/R/S modal transforms, extrude, duplicate, split, merge. One tool serves every procedural mesh —
+/// Edits any <see cref="INetworkEditable"/>'s vertex/edge/face graph in the viewport: select, marquee,
+/// G/R/S modal transforms, extrude, duplicate, split, merge, subdivide (W) and loop cut (Ctrl+R). One
+/// tool serves every procedural mesh —
 /// which bound function it is (an ordinary mesh, a paint-only road) is entirely decided by
 /// <see cref="INetworkEditable.Paint"/> and <see cref="INetworkEditable.PlanarXZ"/>, so a mesh function
 /// and a paint function share every line of editing behaviour here and differ only in what they do
@@ -149,7 +150,7 @@ public sealed class NetworkEditTool : ITool
             return;
         }
 
-        HandleKeys(component, entity);
+        HandleKeys(component, entity, viewport);
         DriveGizmo(component, entity, viewport);
         HandlePointer(component, entity, viewport.Hovered && !_gizmo.IsUsing && !_gizmo.IsHovered, viewport);
     }
@@ -161,8 +162,9 @@ public sealed class NetworkEditTool : ITool
         return entity == null ? null : _selector(entity);
     }
 
-    private void HandleKeys(INetworkEditable component, SceneEntity entity)
+    private void HandleKeys(INetworkEditable component, SceneEntity entity, in ViewportContext viewport)
     {
+        bool ctrl = Godot.Input.IsPhysicalKeyPressed(Key.Ctrl);
         bool hasEffectiveSelection = EffectiveVertices(component).Any();
 
         if (ImGui.IsKeyPressed(ImGuiKey.G, false) && hasEffectiveSelection)
@@ -171,10 +173,44 @@ public sealed class NetworkEditTool : ITool
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.R, false) && hasEffectiveSelection)
+        if (ImGui.IsKeyPressed(ImGuiKey.R, false) && hasEffectiveSelection && !ctrl)
         {
             BeginModal(component, entity, NetworkModalMode.Rotate, component.Network.Clone(), "Rotate network vertices");
             return;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.R, false) && ctrl &&
+            TryPickEdge(component, entity, viewport.Camera, viewport.ImageMin, out int hoveredEdgeId))
+        {
+            // Blender's Ctrl+R: always cuts at the ring's centre — there is no interactive
+            // slide-to-reposition phase (see VertexNetwork.LoopCut's doc comment for the scope note).
+            Mutate(component, "Loop cut", network =>
+            {
+                NetworkSubgraph cut = network.LoopCut(hoveredEdgeId);
+                _vertices.Clear();
+                _edges.Clear();
+                _faces.Clear();
+                foreach (int id in cut.FaceIds)
+                {
+                    _faces.Add(id);
+                }
+            });
+            return;
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.W, false) && (_edges.Count > 0 || _faces.Count > 0))
+        {
+            Mutate(component, "Subdivide network selection", network =>
+            {
+                NetworkSubgraph subdivided = network.Subdivide(_edges, _faces);
+                _vertices.Clear();
+                _edges.Clear();
+                _faces.Clear();
+                foreach (int id in subdivided.FaceIds)
+                {
+                    _faces.Add(id);
+                }
+            });
         }
 
         if (ImGui.IsKeyPressed(ImGuiKey.S, false) && hasEffectiveSelection && !Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
