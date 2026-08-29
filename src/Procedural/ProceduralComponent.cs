@@ -163,16 +163,6 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
         _publishedPaint = result.Paint;
         _publishedBounds = PaintBounds(result.Paint);
 
-        // A dangling/unbound reference and a bound model that built literally nothing (unknown
-        // function, or a mesh function fed an empty network) both get the placeholder. A bound model
-        // that builds paint but no model outputs (a paint-only function) does not: it renders nothing
-        // in the viewport by design, and showing the placeholder over it would look like a bug.
-        if (Model == null || (result.Models.Count == 0 && result.Paint.Strokes.Count == 0))
-        {
-            root.AddChild(Placeholder());
-            return root;
-        }
-
         foreach (ProceduralModelOutput output in result.Models)
         {
             Node3D node = output.Asset.Instantiate(_system.Context.MeshMaterials);
@@ -201,16 +191,4 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
             new Vector3(flat.Position.X, -LandscapeGrid.NominalHeightExtent, flat.Position.Z),
             new Vector3(flat.Size.X, LandscapeGrid.NominalHeightExtent * 2.0f, flat.Size.Z));
     }
-
-    private static MeshInstance3D Placeholder() => new()
-    {
-        Name = "MissingProcedural",
-        Mesh = new BoxMesh { Size = Vector3.One },
-        MaterialOverride = new StandardMaterial3D
-        {
-            AlbedoColor = new Color(0.72f, 0.42f, 0.85f),
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
-        },
-    };
 }

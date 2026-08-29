@@ -550,7 +550,7 @@ public static class ProceduralMeshTests
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
-    public static void Dangling_model_id_renders_the_placeholder_instead_of_throwing()
+    public static void Dangling_model_id_builds_an_empty_node_instead_of_throwing()
     {
         EditorContext context = NewContext("__wms_procedural_model_dangling_test__");
         var component = new ProceduralComponent(context.Procedural) { ModelId = 999 };
@@ -558,7 +558,7 @@ public static class ProceduralMeshTests
         entity.AddComponent(component);
 
         Node3D node = component.BuildNode();
-        Assert.IsNotNull(node.GetNodeOrNull("MissingProcedural"));
+        Assert.AreEqual(0, node.GetChildCount());
     }
 
     private static EditorContext NewContext(string name) =>
