@@ -75,8 +75,21 @@ public sealed class ScriptEngineHost
             // "this object wraps to nothing", which silently turns every other bound value (including
             // the "wms" global itself) into undefined. Confirmed against the real package: a handler
             // that unconditionally returns null breaks `engine.SetValue("wms", ...)` outright.
+            // The proxy target itself must carry the CLR handle, not an empty JS object: Jint's
+            // argument binder recovers a JS value's CLR representation via JsValue.ToObject(), and
+            // JsProxy.ToObject() forwards to its *target's* ToObject() (ObjectWrapper.ToObject()
+            // returns the wrapped instance) rather than going through the proxy's get trap. An empty
+            // {} target made that ToObject() call yield a generic object with no relation to the
+            // handle, so a handle returned from one [ScriptFunction] and passed as an argument into
+            // another — the exact case ViewportScriptApi.Focus/SceneScriptApi.Delete rely on — failed
+            // overload resolution with "No public methods with the specified arguments were found."
+            // Verified against the real package: swapping in an ObjectWrapper-backed target fixes the
+            // round trip without changing any Get/Set/method-call behavior, since EntityProxyHandler's
+            // traps still intercept every access before the target is ever consulted.
             options.Interop.WrapObjectHandler = (engine, target, type) => target is ScriptEntityHandle handle
-                ? engine.Advanced.CreateProxy((ObjectInstance)engine.Evaluate("({})"), new EntityProxyHandler(engine, handle))
+                ? engine.Advanced.CreateProxy(
+                    (ObjectInstance)ObjectWrapper.Create(engine, handle, typeof(ScriptEntityHandle)),
+                    new EntityProxyHandler(engine, handle))
                 : ObjectWrapper.Create(engine, target, type);
         });
 
