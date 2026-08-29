@@ -222,11 +222,16 @@ public static class LandscapeResolver
         // also won a texture slot.
         List<LandscapeClaim> heights = ordered.Where(claim => claim.Material!.DeformsHeight).ToList();
 
+        // Holes are independent of the slot budget too, and unlike height the claims never even need
+        // to be ordered against each other — cutting a hole is a union, not a transform.
+        List<LandscapeClaim> holes = ordered.Where(claim => claim.Material!.CutsHole).ToList();
+
         return new LandscapeResolution
         {
             Base = baseSlot,
             AlphaSlots = alphaSlots,
             HeightClaims = heights,
+            HoleClaims = holes,
             DroppedGroups = dropped.ToList(),
             Problems = problems.ToList(),
         };

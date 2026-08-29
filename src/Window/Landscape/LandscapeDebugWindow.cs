@@ -22,6 +22,7 @@ public sealed class LandscapeDebugWindow : Window
 
     private readonly EditorContext _context;
     private readonly List<ImageTexture> _textures = [];
+    private ImageTexture? _holeTexture;
 
     private LandscapeChunk? _inspected;
     private int _shownVersion = -1;
@@ -91,6 +92,12 @@ public sealed class LandscapeDebugWindow : Window
             ImGui.Text($"Slot {i} alpha — {layer.Material?.Name ?? "(none)"}");
             Preview(_textures[i]);
         }
+
+        if (_holeTexture != null)
+        {
+            ImGui.Text("Holes");
+            Preview(_holeTexture);
+        }
     }
 
     // ImGui takes the Godot RID as its texture handle, the same way map thumbnails do.
@@ -133,6 +140,8 @@ public sealed class LandscapeDebugWindow : Window
                 ? Grayscale(1, (_, _) => 0.0f)
                 : Grayscale(resolution, (x, y) => alpha[(y * resolution) + x] / 255.0f));
         }
+
+        _holeTexture = Grayscale(output.HoleResolution, (x, y) => output.IsHole(x, y) ? 1.0f : 0.0f);
     }
 
     private static ImageTexture Grayscale(int resolution, System.Func<int, int, float> value)

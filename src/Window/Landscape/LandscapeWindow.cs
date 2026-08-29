@@ -135,6 +135,7 @@ public sealed class LandscapeWindow : Window
 
         int height = _draft.ChunkHeightResolution;
         int alpha = _draft.ChunkAlphaResolution;
+        int holes = _draft.ChunkHoleResolution;
         int textures = _draft.TextureLimit;
         int chunkLimit = _draft.ChunkLimit;
         float worldSize = _draft.ChunkWorldSize;
@@ -145,6 +146,9 @@ public sealed class LandscapeWindow : Window
         if (ImGui.DragFloat("World size", ref worldSize, 1.0f, 1.0f, 4096.0f)) { _draft.ChunkWorldSize = worldSize; }
         if (ImGui.DragInt("Height resolution", ref height, 1.0f, 2, 1024)) { _draft.ChunkHeightResolution = height; }
         if (ImGui.DragInt("Alpha resolution", ref alpha, 1.0f, 1, 4096)) { _draft.ChunkAlphaResolution = alpha; }
+        if (ImGui.DragInt("Hole resolution", ref holes, 1.0f, 1, 256)) { _draft.ChunkHoleResolution = holes; }
+        ImGui.SameLine();
+        ImGui.TextDisabled("(independent of height/alpha; coarse like an export target's own hole grid)");
 
         Heading("Budget");
         if (ImGui.DragInt("Texture limit", ref textures, 1.0f, 1, 64)) { _draft.TextureLimit = textures; }
@@ -383,6 +387,13 @@ public sealed class LandscapeWindow : Window
                     material.HeightParameters, value => material.HeightParameters = value,
                     optional: true);
 
+                Heading("Hole");
+                DrawFunctionBinding(
+                    material, "hole", Landscape.Functions.Hole,
+                    material.HoleFunction, value => material.HoleFunction = value,
+                    material.HoleParameters, value => material.HoleParameters = value,
+                    optional: true);
+
                 DrawDelete(material);
             }
 
@@ -594,7 +605,13 @@ public sealed class LandscapeWindow : Window
 
         foreach (ILandscapeFunction function in functions.All)
         {
-            string kind = function is ILandscapeAlphaFunction ? "alpha" : "height";
+            string kind = function switch
+            {
+                ILandscapeAlphaFunction => "alpha",
+                ILandscapeHeightFunction => "height",
+                ILandscapeHoleFunction => "hole",
+                _ => "?",
+            };
             if (!ImGui.CollapsingHeader($"{function.DisplayName} ({kind})##{function.Id}"))
             {
                 continue;

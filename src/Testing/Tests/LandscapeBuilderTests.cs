@@ -77,6 +77,9 @@ public static class LandscapeBuilderTests
         public required LandscapeLayer Base { get; init; }
         public required LandscapeLayer Detail { get; init; }
         public required LandscapeMaterial Material { get; init; }
+        public required LandscapeLayer HoleLayerA { get; init; }
+        public required LandscapeLayer HoleLayerB { get; init; }
+        public required LandscapeMaterial HoleMaterial { get; init; }
 
         public LandscapeBuilder Builder() => new(Settings, Catalog, Functions);
     }
@@ -108,13 +111,28 @@ public static class LandscapeBuilderTests
 
         var baseLayer = new LandscapeLayer { Name = "ground", RecordId = 1, DrawOrder = 0, IsBase = true };
         var detail = new LandscapeLayer { Name = "detail", RecordId = 2, DrawOrder = 1 };
+        var holeLayerA = new LandscapeLayer { Name = "cave_a", RecordId = 3, DrawOrder = 2 };
+        var holeLayerB = new LandscapeLayer { Name = "cave_b", RecordId = 4, DrawOrder = 3 };
         var channel = new LandscapeChannel { Name = MaskChannel, RecordId = 1, Resolution = 32 };
+
+        var holeValues = new LandscapeParameterValues();
+        holeValues.Set(ChannelMaskHole.Mask, MaskChannel);
+        holeValues.Set(ChannelMaskHole.Threshold, 0.5f);
+
+        var holeMaterial = new LandscapeMaterial
+        {
+            Name = "cave",
+            RecordId = 2,
+            HoleFunction = "builtin.hole.channel_mask",
+            HoleParameters = holeValues.Serialize(),
+        };
 
         var settings = new LandscapeSettings
         {
             ChunkWorldSize = 64.0f,
             ChunkHeightResolution = 17,
             ChunkAlphaResolution = 32,
+            ChunkHoleResolution = 8,
             TextureLimit = textureLimit,
             FallbackMaterialId = 1,
         };
@@ -122,11 +140,15 @@ public static class LandscapeBuilderTests
         return new Fixture
         {
             Settings = settings,
-            Catalog = new LandscapeCatalog([channel], [baseLayer, detail], [material], functions),
+            Catalog = new LandscapeCatalog(
+                [channel], [baseLayer, detail, holeLayerA, holeLayerB], [material, holeMaterial], functions),
             Functions = functions,
             Base = baseLayer,
             Detail = detail,
             Material = material,
+            HoleLayerA = holeLayerA,
+            HoleLayerB = holeLayerB,
+            HoleMaterial = holeMaterial,
         };
     }
 
@@ -139,6 +161,16 @@ public static class LandscapeBuilderTests
             Radius = radius,
             Layer = fixture.Detail,
             Material = fixture.Material,
+        };
+
+    private static Disc HoleDiscAt(Fixture fixture, string key, LandscapeLayer layer, Vector3 centre, float radius) =>
+        new()
+        {
+            Key = key,
+            Centre = centre,
+            Radius = radius,
+            Layer = layer,
+            Material = fixture.HoleMaterial,
         };
 
     [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
@@ -156,6 +188,26 @@ public static class LandscapeBuilderTests
         byte[] alpha = output.Layers[1].Alpha!;
         Assert.IsTrue(alpha.Any(a => a > 200), "covered texels");
         Assert.IsTrue(alpha.Any(a => a == 0), "uncovered texels");
+    }
+
+    [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
+    public static void Hole_claims_on_different_layers_union_into_one_grid()
+    {
+        // Two discs, two different hole layers, overlapping in the middle — the result should be the
+        // union of both, not a conflict and not one overriding the other.
+        Fixture fixture = Build();
+        Disc discA = HoleDiscAt(fixture, "hole_a", fixture.HoleLayerA, new Vector3(16.0f, 0.0f, 32.0f), 12.0f);
+        Disc discB = HoleDiscAt(fixture, "hole_b", fixture.HoleLayerB, new Vector3(48.0f, 0.0f, 32.0f), 12.0f);
+
+        LandscapeChunkOutput output = fixture.Builder().BuildOne(new ChunkCoord(0, 0), [discA, discB]);
+
+        Assert.AreEqual(8, output.HoleResolution);
+        Assert.IsTrue(output.IsHole(1, 4), "near the left disc's centre");
+        Assert.IsTrue(output.IsHole(6, 4), "near the right disc's centre");
+        Assert.IsFalse(output.IsHole(0, 0), "corner is outside both discs");
+
+        // Holes cost no slot and leave the height/alpha pipeline untouched.
+        Assert.AreEqual(1, output.Layers.Count, "neither hole material paints, so only the base slot is used");
     }
 
     [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
@@ -279,6 +331,7 @@ public static class LandscapeBuilderTests
         {
             LandscapeChunkOutput output = result.Chunks[coord];
             parts.Add($"{coord}:h[{string.Join(",", output.Heights.Select(h => h.ToString("F6")))}]");
+            parts.Add($"{coord}:hole[{string.Join(",", output.Holes.Select(h => h ? "1" : "0"))}]");
             foreach (LandscapeChunkLayer layer in output.Layers)
             {
                 parts.Add($"{layer.Material?.Name}:{(layer.Alpha == null ? "base" : Convert.ToBase64String(layer.Alpha))}");

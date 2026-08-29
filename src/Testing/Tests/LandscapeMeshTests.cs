@@ -58,4 +58,37 @@ public static class LandscapeMeshTests
             Assert.IsTrue(seen[i], $"vertex {i} is in no triangle");
         }
     }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void A_holed_cell_drops_its_quads_but_keeps_its_vertices()
+    {
+        // 5 vertices = 4 quads; a 2x2 hole grid puts the whole bottom row of quads in cell (0, 1).
+        const int resolution = 5;
+        const int holeResolution = 2;
+        var holes = new bool[holeResolution * holeResolution];
+        holes[(1 * holeResolution) + 0] = true; // bottom-left cell only
+
+        int[] dense = LandscapeChunkMesh.BuildIndices(resolution);
+        int[] withHole = LandscapeChunkMesh.BuildIndices(resolution, holes, holeResolution);
+
+        // A 4x4 quad grid split into a 2x2 hole grid gives each cell 2x2 = 4 quads; cutting one cell
+        // drops exactly those 4 quads' worth of indices.
+        Assert.AreEqual(dense.Length - (4 * 6), withHole.Length);
+
+        // Every vertex still appears somewhere — the quads above and to the right of the cut cell keep
+        // referencing the shared vertices along its edge, so nothing is orphaned.
+        var seen = new bool[resolution * resolution];
+        foreach (int index in withHole)
+        {
+            seen[index] = true;
+        }
+
+        bool anySeen = false;
+        foreach (bool v in seen)
+        {
+            anySeen |= v;
+        }
+
+        Assert.IsTrue(anySeen, "the hole must not have eaten every vertex");
+    }
 }

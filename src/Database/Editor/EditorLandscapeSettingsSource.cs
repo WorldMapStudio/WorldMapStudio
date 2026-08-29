@@ -59,6 +59,7 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource
         ChunkWorldSize = (float)record.ChunkWorldSize,
         ChunkHeightResolution = record.ChunkHeightResolution,
         ChunkAlphaResolution = record.ChunkAlphaResolution,
+        ChunkHoleResolution = record.ChunkHoleResolution,
         HeightEncoding = (HeightEncoding)record.HeightEncoding,
         HeightOffset = (float)record.HeightOffset,
         HeightScale = (float)record.HeightScale,
@@ -77,6 +78,7 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource
         record.ChunkWorldSize = settings.ChunkWorldSize;
         record.ChunkHeightResolution = settings.ChunkHeightResolution;
         record.ChunkAlphaResolution = settings.ChunkAlphaResolution;
+        record.ChunkHoleResolution = settings.ChunkHoleResolution;
         record.HeightEncoding = (int)settings.HeightEncoding;
         record.HeightOffset = settings.HeightOffset;
         record.HeightScale = settings.HeightScale;

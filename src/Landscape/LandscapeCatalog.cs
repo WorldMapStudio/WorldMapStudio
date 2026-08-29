@@ -85,6 +85,8 @@ public sealed class LandscapeCatalog
                 hash.Add(material.AlphaParameters);
                 hash.Add(material.HeightFunction);
                 hash.Add(material.HeightParameters);
+                hash.Add(material.HoleFunction);
+                hash.Add(material.HoleParameters);
             }
 
             return hash.ToHashCode();
@@ -128,6 +130,11 @@ public sealed class LandscapeCatalog
         if (Functions.Find(material.HeightFunction) is { } height)
         {
             yield return height;
+        }
+
+        if (Functions.Find(material.HoleFunction) is { } hole)
+        {
+            yield return hole;
         }
     }
 
@@ -197,10 +204,10 @@ public sealed class LandscapeCatalog
             // Which half a material needs depends on the layer it is bound to, and that binding is
             // made per entity and per chunk — so the only thing checkable here is that it does
             // something at all. The builder reports a material missing the half its layer needed.
-            if (!material.PaintsTexture && !material.DeformsHeight)
+            if (!material.PaintsTexture && !material.DeformsHeight && !material.CutsHole)
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
-                    $"Material '{material.Name}' has neither an alpha nor a height function, so it does nothing."));
+                    $"Material '{material.Name}' has no alpha, height or hole function, so it does nothing."));
             }
 
             if (material.PaintsTexture && material.TexturePath.Length == 0)
@@ -211,6 +218,7 @@ public sealed class LandscapeCatalog
 
             ValidateBinding(issues, material, material.AlphaFunction, material.AlphaParameters, "alpha");
             ValidateBinding(issues, material, material.HeightFunction, material.HeightParameters, "height");
+            ValidateBinding(issues, material, material.HoleFunction, material.HoleParameters, "hole");
         }
     }
 

@@ -44,7 +44,7 @@ public static class LandscapeChunkMesh
             }
         }
 
-        int[] indices = BuildIndices(resolution);
+        int[] indices = BuildIndices(resolution, output.Holes, output.HoleResolution);
 
         var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
@@ -59,7 +59,8 @@ public static class LandscapeChunkMesh
     }
 
     /// <summary>
-    /// The triangle indices of a chunk grid, wound so the surface faces up.
+    /// The triangle indices of a chunk grid, wound so the surface faces up. Fully dense — no quad is
+    /// skipped. Kept for callers with no hole grid to test against.
     ///
     /// <b>Godot's front face is the one whose vertices are clockwise as seen from the front</b>, the
     /// opposite of the OpenGL habit. Getting this backwards produces a mesh that builds, reports
@@ -68,7 +69,16 @@ public static class LandscapeChunkMesh
     ///
     /// Separated from <see cref="BuildMesh"/> so it can be checked without a live engine.
     /// </summary>
-    public static int[] BuildIndices(int resolution)
+    public static int[] BuildIndices(int resolution) => BuildIndices(resolution, null, 0);
+
+    /// <summary>
+    /// As above, but skipping the 6 indices of any quad whose owning hole cell is set. A hole cell may
+    /// be coarser than the vertex grid — several quads then share one cell, matching how export targets
+    /// like WoW's ADT format keep holes at a fixed, low resolution independent of the vertex count.
+    /// Vertices themselves are never dropped: the height data under a hole still exists, so a
+    /// neighbouring closed quad keeps a clean normal across the cut edge.
+    /// </summary>
+    public static int[] BuildIndices(int resolution, bool[]? holes, int holeResolution)
     {
         int quads = resolution - 1;
         var indices = new int[quads * quads * 6];
@@ -78,6 +88,11 @@ public static class LandscapeChunkMesh
         {
             for (int x = 0; x < quads; x++)
             {
+                if (IsHoledQuad(holes, holeResolution, quads, x, y))
+                {
+                    continue;
+                }
+
                 int topLeft = (y * resolution) + x;
                 int topRight = topLeft + 1;
                 int bottomLeft = topLeft + resolution;
@@ -93,7 +108,20 @@ public static class LandscapeChunkMesh
             }
         }
 
+        System.Array.Resize(ref indices, next);
         return indices;
+    }
+
+    private static bool IsHoledQuad(bool[]? holes, int holeResolution, int quads, int x, int y)
+    {
+        if (holes == null || holeResolution <= 0 || quads <= 0)
+        {
+            return false;
+        }
+
+        int cellX = Mathf.Clamp((x * holeResolution) / quads, 0, holeResolution - 1);
+        int cellY = Mathf.Clamp((y * holeResolution) / quads, 0, holeResolution - 1);
+        return holes[(cellY * holeResolution) + cellX];
     }
 
     /// <summary>Whether chunk borders are drawn on the terrain. Set from the view settings.</summary>

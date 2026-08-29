@@ -156,6 +156,7 @@ public sealed class LandscapeBuilder
     {
         int heightResolution = Mathf.Max(2, _settings.ChunkHeightResolution);
         int alphaResolution = Mathf.Max(1, _settings.ChunkAlphaResolution);
+        int holeResolution = Mathf.Max(1, _settings.ChunkHoleResolution);
 
         var heights = new float[heightResolution * heightResolution];
         foreach (LandscapeClaim claim in resolution.HeightClaims)
@@ -189,6 +190,35 @@ public sealed class LandscapeBuilder
             function.Evaluate(context, heights);
         }
 
+        // Holes are a union: every surviving claim just marks the cells it wants cut, and the order
+        // they run in cannot change the result, unlike height's accumulate-and-transform shape.
+        var holes = new bool[holeResolution * holeResolution];
+        foreach (LandscapeClaim claim in resolution.HoleClaims)
+        {
+            if (claim.Material is not { } material)
+            {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingMaterial,
+                    $"Hole layer '{claim.Layer.Name}' was claimed without a material, so nothing cuts.")));
+                continue;
+            }
+
+            if (_functions.FindHole(material.HoleFunction) is not { } function)
+            {
+                string reason = material.HoleFunction.Length == 0
+                    ? "binds no hole function"
+                    : $"binds hole function '{material.HoleFunction}', which nothing provides";
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingHoleFunction,
+                    $"Hole layer '{claim.Layer.Name}' uses material '{material.Name}', which {reason}, so nothing cuts.")));
+                continue;
+            }
+
+            var values = LandscapeParameterValues.Parse(material.HoleParameters);
+            var context = new LandscapeEvalContext(coord, _pool, _settings, values, holeResolution);
+            function.Evaluate(context, holes);
+        }
+
         var layers = new List<LandscapeChunkLayer>();
         foreach (LandscapeSlot slot in resolution.Slots)
         {
@@ -214,6 +244,8 @@ public sealed class LandscapeBuilder
             Heights = heights,
             AlphaResolution = alphaResolution,
             Layers = layers,
+            HoleResolution = holeResolution,
+            Holes = holes,
         };
     }
 

@@ -20,6 +20,10 @@ public static class LandscapeResolverTests
     private static LandscapeMaterial HeightMaterial(string name, int id) =>
         new() { Name = name, RecordId = id, HeightFunction = "test.height" };
 
+    /// <summary>A material that only cuts holes — no texture, no alpha function, so it costs no slot.</summary>
+    private static LandscapeMaterial HoleMaterial(string name, int id) =>
+        new() { Name = name, RecordId = id, HoleFunction = "test.hole" };
+
     private static LandscapeClaimGroup Group(
         string key,
         int priority,
@@ -261,6 +265,49 @@ public static class LandscapeResolverTests
     }
 
     [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
+    public static void Hole_claims_cost_no_slot_and_union_across_layers()
+    {
+        // Two different layers each cutting their own hole is not a conflict — holes are a union
+        // across layers, not a transform one claim can override another's.
+        LandscapeLayer ground = Layer("ground", 0, isBase: true);
+        LandscapeLayer caveA = Layer("cave_a", 1);
+        LandscapeLayer caveB = Layer("cave_b", 2);
+
+        LandscapeResolution resolution = Resolve(
+        [
+            Group("terrain", 0, (ground, Material("grass", 1))),
+            Group("a", 0, (caveA, HoleMaterial("hole_a", 2))),
+            Group("b", 0, (caveB, HoleMaterial("hole_b", 3))),
+        ],
+            textureLimit: 1);
+
+        Assert.IsTrue(resolution.IsClean, "hole-only claims are not subject to the texture budget");
+        Assert.AreEqual(1, resolution.UsedSlots);
+        Assert.AreEqual(2, resolution.HoleClaims.Count);
+    }
+
+    [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
+    public static void Conflicts_are_caught_on_layers_that_only_cut_holes()
+    {
+        // A layer is one responsibility whatever its material does — two entities binding different
+        // hole materials to the same layer is the same class of mistake as disagreeing about height.
+        LandscapeLayer cave = Layer("cave", 1);
+
+        LandscapeResolution resolution = Resolve(
+        [
+            Group("a", 1, (cave, HoleMaterial("hole_a", 5))),
+            Group("b", 9, (cave, HoleMaterial("hole_b", 6))),
+        ],
+            textureLimit: 4,
+            materials: [Material("fallback", 1)],
+            fallbackId: 1);
+
+        Assert.IsTrue(Has(resolution, LandscapeProblemKind.LayerConflict));
+        Assert.IsTrue(resolution.IsDropped("a"));
+        Assert.AreEqual("hole_b", resolution.HoleClaims.Single().Material!.Name);
+    }
+
+    [EditorTest(Category = "LandscapeResolver", Thread = TestThread.Background)]
     public static void One_claim_can_paint_and_deform_at_once()
     {
         // The point of dropping the layer kind: a road that paints gravel and cuts its bed is one
@@ -412,6 +459,7 @@ public static class LandscapeResolverTests
         string.Join(" | ",
             string.Join(", ", resolution.Slots.Select(slot => slot.ToString())),
             string.Join(", ", resolution.HeightClaims.Select(claim => claim.Layer.Name)),
+            string.Join(", ", resolution.HoleClaims.Select(claim => claim.Layer.Name)),
             string.Join(", ", resolution.DroppedGroups),
             string.Join(", ", resolution.Problems.Select(problem => problem.ToString())));
 }

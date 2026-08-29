@@ -82,6 +82,7 @@ public static class LandscapeFunctionTests
 
         Assert.IsNotNull(functions.FindAlpha("builtin.alpha.channel_mask"));
         Assert.IsNotNull(functions.FindHeight("builtin.height.channel_flatten"));
+        Assert.IsNotNull(functions.FindHole("builtin.hole.channel_mask"));
         Assert.IsNull(functions.Find("test.fake"), "private nested doubles must not reach the real registry");
     }
 
