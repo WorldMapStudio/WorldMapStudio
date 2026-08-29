@@ -191,6 +191,7 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 
     private static KeyboardShortcut DefaultWindowShortcut(string title) => title switch
     {
+        "Chunks" => Alt(ImGuiKey.Z),
         "Compute Materials" => Alt(ImGuiKey.N),
         "Environment" => Alt(ImGuiKey.Y),
         "Export" => Alt(ImGuiKey.X),
