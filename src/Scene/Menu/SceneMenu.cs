@@ -16,6 +16,7 @@ public sealed class SceneMenu : IMainMenu
     private readonly ShortcutAction _addStamp;
     private readonly ShortcutAction _addDrawingTarget;
     private readonly ShortcutAction _addRoad;
+    private readonly ShortcutAction _addTerrainValue;
     private readonly ShortcutAction _copySelected;
     private readonly ShortcutAction _paste;
     private readonly ShortcutAction _deleteSelected;
@@ -45,6 +46,13 @@ public sealed class SceneMenu : IMainMenu
             "Add Road",
             new KeyboardShortcut(ImGuiKey.R, ShortcutModifiers.Alt),
             AddRoad,
+            () => _context.Landscape.IsEnabled);
+        _addTerrainValue = _context.Shortcuts.Register(
+            "scene.add-terrain-value",
+            "Scene",
+            "Add Terrain Value",
+            new KeyboardShortcut(ImGuiKey.T, ShortcutModifiers.Alt),
+            AddTerrainValue,
             () => _context.Landscape.IsEnabled);
         _copySelected = _context.Shortcuts.Register(
             "scene.copy-selected",
@@ -94,6 +102,11 @@ public sealed class SceneMenu : IMainMenu
             if (ImGui.MenuItem("Add Road", _addRoad.ShortcutLabel, false, _context.Landscape.IsEnabled))
             {
                 AddRoad();
+            }
+
+            if (ImGui.MenuItem("Add Terrain Value", _addTerrainValue.ShortcutLabel, false, _context.Landscape.IsEnabled))
+            {
+                AddTerrainValue();
             }
 
             ImGui.Separator();
@@ -258,6 +271,30 @@ public sealed class SceneMenu : IMainMenu
             Map = _context.Maps.CurrentMap,
         };
         entity.AddComponent(road);
+
+        _context.Scene.Add(entity);
+        _context.Selection.Set(entity);
+        _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));
+    }
+
+    // Seeded from the catalog's first channel, like the other deformers, so a fresh terrain value
+    // does something visible instead of needing a channel picked before it shows up at all.
+    private void AddTerrainValue()
+    {
+        LandscapeCatalog catalog = _context.Landscape.Catalog;
+        var terrainValue = new TerrainValueComponent();
+        if (catalog.Channels.FirstOrDefault() is { } channel)
+        {
+            terrainValue.ReplaceChannels([channel.Name]);
+        }
+
+        var entity = new SceneEntity
+        {
+            Name = "Terrain Value",
+            Map = _context.Maps.CurrentMap,
+        };
+        entity.AddComponent(terrainValue);
+        entity.AddComponent(DefaultMaterialBind(catalog));
 
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
