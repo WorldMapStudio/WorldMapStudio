@@ -74,7 +74,7 @@ public sealed class SceneMenu : IMainMenu
             "Delete Selected",
             new KeyboardShortcut(ImGuiKey.Delete, ShortcutModifiers.None),
             DeleteSelected,
-            () => _context.Selection.Selected.Count > 0);
+            () => _context.Selection.Selected.Count > 0 && _context.Tools.Active?.CapturesDelete != true);
     }
 
     public void Draw()

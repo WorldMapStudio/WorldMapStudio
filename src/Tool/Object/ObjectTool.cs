@@ -36,8 +36,12 @@ public sealed class ObjectTool : ITool
     public bool CapturesMouse => GizmoBusy || _objectSelection.IsDragging || _modalTransform.IsActive;
 
     // The gizmo only claims the mouse when something is selected; guarding on the selection
-    // count keeps stale hover/use state from ever locking out fly and selection input.
-    private bool GizmoBusy => _objectSelection.Selection.Count > 0 && (_gizmo.IsUsing || _gizmo.IsHovered);
+    // count keeps stale hover/use state from ever locking out fly and selection input. Must be
+    // Movable, not Selection: DriveGizmo (the only place IsUsing/IsHovered get recomputed) skips
+    // _gizmo.Manipulate whenever nothing movable is selected, e.g. a landscape chunk selected on
+    // its own — checking Selection here would let a stale IsHovered from an earlier, movable
+    // selection freeze true forever once the selection changes to chunks only.
+    private bool GizmoBusy => _objectSelection.Movable.Count > 0 && (_gizmo.IsUsing || _gizmo.IsHovered);
 
     // Toolbar across the top of the viewport: gizmo mode and coordinate space.
     public void DrawToolbar()
