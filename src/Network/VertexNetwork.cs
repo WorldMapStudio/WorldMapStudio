@@ -8,7 +8,11 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed record NetworkVertex(int Id, Vector3 Position);
+/// <summary>A vertex in local space. <see cref="StickToTerrain"/> marks it as not authoring its own
+/// height at all — the editing tool locks its Y on every move and displays it dropped onto the
+/// terrain under it, for vertices (a road's centreline, a mesh's foundation line) whose real height
+/// should always come from the ground rather than from anything the user drags.</summary>
+public sealed record NetworkVertex(int Id, Vector3 Position, bool StickToTerrain = false);
 
 public sealed record NetworkEdge(int Id, int A, int B);
 
@@ -44,10 +48,10 @@ public sealed class VertexNetwork
 
     public int Version => _version;
 
-    public int AddVertex(Vector3 position)
+    public int AddVertex(Vector3 position, bool stickToTerrain = false)
     {
         int id = _nextVertexId++;
-        _vertices.Add(new NetworkVertex(id, position));
+        _vertices.Add(new NetworkVertex(id, position, stickToTerrain));
         _version++;
         return id;
     }
@@ -145,6 +149,19 @@ public sealed class VertexNetwork
         return true;
     }
 
+    public bool SetStickToTerrain(int id, bool stickToTerrain)
+    {
+        int index = _vertices.FindIndex(vertex => vertex.Id == id);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        _vertices[index] = _vertices[index] with { StickToTerrain = stickToTerrain };
+        _version++;
+        return true;
+    }
+
     public int? SplitEdge(int edgeId)
     {
         NetworkEdge? edge = Edge(edgeId);
@@ -156,7 +173,7 @@ public sealed class VertexNetwork
         }
 
         RemoveEdge(edge.Id);
-        int middle = AddVertex((a.Position + b.Position) * 0.5f);
+        int middle = AddVertex((a.Position + b.Position) * 0.5f, a.StickToTerrain && b.StickToTerrain);
         AddEdge(a.Id, middle);
         AddEdge(middle, b.Id);
         return middle;
@@ -229,7 +246,7 @@ public sealed class VertexNetwork
         {
             if (Vertex(oldId) is { } vertex)
             {
-                map[oldId] = AddVertex(vertex.Position + offset);
+                map[oldId] = AddVertex(vertex.Position + offset, vertex.StickToTerrain);
             }
         }
 
@@ -285,7 +302,7 @@ public sealed class VertexNetwork
         {
             if (Vertex(id) is { } vertex)
             {
-                map[id] = AddVertex(vertex.Position + offset);
+                map[id] = AddVertex(vertex.Position + offset, vertex.StickToTerrain);
             }
         }
 
@@ -425,12 +442,15 @@ public sealed class VertexNetwork
 
             int n = loop.Count / 2;
             Vector3 centre = Vector3.Zero;
+            bool allStick = true;
             for (int i = 0; i < n; i++)
             {
-                centre += Vertex(loop[i * 2])!.Position;
+                NetworkVertex corner = Vertex(loop[i * 2])!;
+                centre += corner.Position;
+                allStick &= corner.StickToTerrain;
             }
 
-            int ctr = AddVertex(centre / n);
+            int ctr = AddVertex(centre / n, allStick);
             newVertices.Add(ctr);
             RemoveFace(faceId);
             for (int i = 0; i < n; i++)
@@ -624,7 +644,7 @@ public sealed class VertexNetwork
             return null;
         }
 
-        int mid = AddVertex((a.Position + b.Position) * 0.5f);
+        int mid = AddVertex((a.Position + b.Position) * 0.5f, a.StickToTerrain && b.StickToTerrain);
         for (int i = 0; i < _faces.Count; i++)
         {
             NetworkFace face = _faces[i];
@@ -810,7 +830,7 @@ public sealed class VertexNetwork
             NextVertexId = _nextVertexId,
             NextEdgeId = _nextEdgeId,
             NextFaceId = _nextFaceId,
-            Vertices = _vertices.Select(v => new VertexDto { Id = v.Id, X = v.Position.X, Y = v.Position.Y, Z = v.Position.Z }).ToList(),
+            Vertices = _vertices.Select(v => new VertexDto { Id = v.Id, X = v.Position.X, Y = v.Position.Y, Z = v.Position.Z, StickToTerrain = v.StickToTerrain }).ToList(),
             Edges = _edges.Select(e => new EdgeDto { Id = e.Id, A = e.A, B = e.B }).ToList(),
             Faces = _faces.Select(f => new FaceDto { Id = f.Id, Vertices = f.Vertices.ToList() }).ToList(),
         };
@@ -833,7 +853,7 @@ public sealed class VertexNetwork
                 return network;
             }
 
-            network._vertices.AddRange(dto.Vertices.Select(v => new NetworkVertex(v.Id, new Vector3(v.X, v.Y, v.Z))));
+            network._vertices.AddRange(dto.Vertices.Select(v => new NetworkVertex(v.Id, new Vector3(v.X, v.Y, v.Z), v.StickToTerrain)));
             network._edges.AddRange(dto.Edges.Select(e => new NetworkEdge(e.Id, e.A, e.B)));
             network._faces.AddRange(dto.Faces.Select(f => new NetworkFace(f.Id, f.Vertices)));
             network._nextVertexId = Math.Max(dto.NextVertexId, network._vertices.Select(v => v.Id).DefaultIfEmpty().Max() + 1);
@@ -916,6 +936,7 @@ public sealed class VertexNetwork
         public float X { get; set; }
         public float Y { get; set; }
         public float Z { get; set; }
+        public bool StickToTerrain { get; set; }
     }
 
     private sealed class EdgeDto

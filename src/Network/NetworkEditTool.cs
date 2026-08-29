@@ -40,6 +40,13 @@ public enum NetworkModalMode
 /// every drawn vertex is projected onto the terrain for display even though its stored position is
 /// flat. Rotation locks to the vertical axis, and every transform's result has its height zeroed —
 /// the data is authored purely horizontal, so nothing is ever allowed to introduce a height component.
+///
+/// The same "no meaningful height" treatment is also available per vertex, via
+/// <see cref="NetworkVertex.StickToTerrain"/> — for an otherwise ordinary (non-planar) mesh whose some
+/// vertices should still ride the ground (e.g. a foundation line) rather than carry an authored Y. A
+/// road's <see cref="INetworkEditable.PlanarXZ"/> is really just this same flag set network-wide: every
+/// vertex it creates is stamped with it too, so it behaves identically even where code inspects the
+/// vertex flag instead of the whole-network one.
 /// </summary>
 public sealed class NetworkEditTool : ITool
 {
@@ -136,7 +143,36 @@ public sealed class NetworkEditTool : ITool
         ImGui.SameLine();
         ImGui.TextDisabled("|");
         ImGui.SameLine();
+        DrawStickToTerrainToggle();
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("|");
+        ImGui.SameLine();
         ImGui.TextDisabled($"{_vertices.Count} vertices, {_edges.Count} edges, {_faces.Count} faces");
+    }
+
+    /// <summary>Toggles <see cref="NetworkVertex.StickToTerrain"/> on every effectively-selected vertex
+    /// — checked when they all already stick, unchecked otherwise, so clicking always sets a single
+    /// consistent state across the selection rather than toggling each vertex independently.</summary>
+    private void DrawStickToTerrainToggle()
+    {
+        INetworkEditable? component = Active();
+        int[] selected = component != null ? EffectiveVertices(component).ToArray() : [];
+        bool allStick = component != null && selected.Length > 0 &&
+                        selected.All(id => component.Network.Vertex(id)?.StickToTerrain ?? false);
+        ImGui.BeginDisabled(selected.Length == 0);
+        if (ImGui.Checkbox("Stick to Terrain", ref allStick) && component != null)
+        {
+            Mutate(component, "Toggle stick to terrain", network =>
+            {
+                foreach (int id in selected)
+                {
+                    network.SetStickToTerrain(id, allStick);
+                }
+            });
+        }
+
+        ImGui.EndDisabled();
     }
 
     public void UpdateViewport(in ViewportContext viewport)
@@ -430,7 +466,8 @@ public sealed class NetworkEditTool : ITool
         VertexNetwork changed = component.Network.Clone();
         foreach ((int id, GVector3 local) in _modalStartPositions)
         {
-            changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local));
+            bool stick = component.Network.Vertex(id)?.StickToTerrain ?? false;
+            changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local, stick));
         }
 
         component.ReplaceNetwork(changed);
@@ -670,7 +707,8 @@ public sealed class NetworkEditTool : ITool
             VertexNetwork changed = component.Network.Clone();
             foreach ((int id, GVector3 local) in _dragStartPositions)
             {
-                changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local));
+                bool stick = component.Network.Vertex(id)?.StickToTerrain ?? false;
+                changed.MoveVertex(id, ApplyDelta(component, entity.Transform, delta, local, stick));
             }
 
             component.ReplaceNetwork(changed);
@@ -696,11 +734,12 @@ public sealed class NetworkEditTool : ITool
     }
 
     /// <summary>Applies a world-space delta to one vertex's local position, flattening the result for
-    /// planar networks so no transform can introduce a height component.</summary>
-    private static GVector3 ApplyDelta(INetworkEditable component, Transform3D entityTransform, Transform3D delta, GVector3 local)
+    /// planar networks — or for any individual vertex marked <see cref="NetworkVertex.StickToTerrain"/>
+    /// — so no transform can introduce a height component it doesn't own.</summary>
+    private static GVector3 ApplyDelta(INetworkEditable component, Transform3D entityTransform, Transform3D delta, GVector3 local, bool stickToTerrain)
     {
         GVector3 moved = entityTransform.AffineInverse() * (delta * (entityTransform * local));
-        if (component.PlanarXZ)
+        if (component.PlanarXZ || stickToTerrain)
         {
             moved.Y = 0.0f;
         }
@@ -716,7 +755,7 @@ public sealed class NetworkEditTool : ITool
         {
             if (component.Network.Vertex(id) is { } vertex)
             {
-                origin += Display(component, entity, vertex.Position);
+                origin += Display(component, entity, vertex.Position, vertex.StickToTerrain);
                 count++;
             }
         }
@@ -753,14 +792,21 @@ public sealed class NetworkEditTool : ITool
         return result;
     }
 
-    /// <summary>World position to draw or pick a vertex at. Planar networks project onto the terrain
-    /// under the vertex even though the stored position is flat, so editing still reads as "on the
-    /// ground" without the data carrying a height nothing else would agree with.</summary>
-    private GVector3 Display(INetworkEditable component, SceneEntity entity, GVector3 local)
+    /// <summary>World position to draw or pick a vertex at. Planar networks — and any vertex marked
+    /// <see cref="NetworkVertex.StickToTerrain"/> — project onto the terrain under the vertex even
+    /// though the stored position is flat, so editing still reads as "on the ground" without the data
+    /// carrying a height nothing else would agree with.</summary>
+    private GVector3 Display(INetworkEditable component, SceneEntity entity, GVector3 local, bool stickToTerrain = false)
     {
         GVector3 world = entity.Transform * local;
-        return component.PlanarXZ ? _terrain.DropToHeight(world) : world;
+        return (component.PlanarXZ || stickToTerrain) ? _terrain.DropToHeight(world) : world;
     }
+
+    /// <summary>Whether every one of these vertices sticks to terrain — used to decide whether a
+    /// derived point (an edge midpoint, a face centroid) that isn't itself a stored vertex should also
+    /// be terrain-projected for display/picking.</summary>
+    private static bool AllStickToTerrain(INetworkEditable component, IEnumerable<int> vertexIds) =>
+        vertexIds.All(id => component.Network.Vertex(id)?.StickToTerrain ?? false);
 
     private void HandlePointer(INetworkEditable component, SceneEntity entity, bool canStartClick, in ViewportContext viewport)
     {
@@ -815,7 +861,7 @@ public sealed class NetworkEditTool : ITool
         {
             Mutate(component, "Add network vertex", network =>
             {
-                int id = network.AddVertex(local);
+                int id = network.AddVertex(local, component.PlanarXZ);
                 _vertices.Clear();
                 _edges.Clear();
                 _faces.Clear();
@@ -894,7 +940,7 @@ public sealed class NetworkEditTool : ITool
         {
             foreach (NetworkVertex vertex in component.Network.Vertices)
             {
-                if (Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen) && Inside(screen, min, max))
+                if (Project(camera, imageMin, Display(component, entity, vertex.Position, vertex.StickToTerrain), out NVector2 screen) && Inside(screen, min, max))
                 {
                     _vertices.Add(vertex.Id);
                 }
@@ -912,7 +958,7 @@ public sealed class NetworkEditTool : ITool
                     continue;
                 }
 
-                if (Project(camera, imageMin, Display(component, entity, centroid), out NVector2 screen) && Inside(screen, min, max))
+                if (Project(camera, imageMin, Display(component, entity, centroid, AllStickToTerrain(component, face.Vertices)), out NVector2 screen) && Inside(screen, min, max))
                 {
                     _faces.Add(face.Id);
                 }
@@ -929,7 +975,7 @@ public sealed class NetworkEditTool : ITool
             }
 
             GVector3 midpoint = (va.Position + vb.Position) * 0.5f;
-            if (Project(camera, imageMin, Display(component, entity, midpoint), out NVector2 screen) && Inside(screen, min, max))
+            if (Project(camera, imageMin, Display(component, entity, midpoint, va.StickToTerrain && vb.StickToTerrain), out NVector2 screen) && Inside(screen, min, max))
             {
                 _edges.Add(edge.Id);
             }
@@ -986,6 +1032,7 @@ public sealed class NetworkEditTool : ITool
         uint edgeColor = ImGui.GetColorU32(new NVector4(0.35f, 0.78f, 1.0f, 0.85f));
         uint selectedColor = ImGui.GetColorU32(new NVector4(1.0f, 0.72f, 0.2f, 1.0f));
         uint vertexColor = ImGui.GetColorU32(new NVector4(0.92f, 0.94f, 0.96f, 1.0f));
+        uint stickToTerrainColor = ImGui.GetColorU32(new NVector4(0.35f, 0.95f, 0.45f, 0.9f));
 
         if (component.Paint.Strokes.Count > 0)
         {
@@ -1010,8 +1057,8 @@ public sealed class NetworkEditTool : ITool
                     continue;
                 }
 
-                if (Project(camera, imageMin, Display(component, entity, a.Position), out NVector2 sa) &&
-                    Project(camera, imageMin, Display(component, entity, b.Position), out NVector2 sb))
+                if (Project(camera, imageMin, Display(component, entity, a.Position, a.StickToTerrain), out NVector2 sa) &&
+                    Project(camera, imageMin, Display(component, entity, b.Position, b.StickToTerrain), out NVector2 sb))
                 {
                     drawList.AddLine(sa, sb, _edges.Contains(edge.Id) ? selectedColor : edgeColor, _edges.Contains(edge.Id) ? 3.0f : 2.0f);
                 }
@@ -1020,11 +1067,18 @@ public sealed class NetworkEditTool : ITool
 
         foreach (NetworkVertex vertex in component.Network.Vertices)
         {
-            if (Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen))
+            if (Project(camera, imageMin, Display(component, entity, vertex.Position, vertex.StickToTerrain), out NVector2 screen))
             {
                 bool selected = _vertices.Contains(vertex.Id);
-                drawList.AddCircleFilled(screen, selected ? 6.0f : 4.5f, selected ? selectedColor : vertexColor, 16);
-                drawList.AddCircle(screen, selected ? 6.0f : 4.5f, ImGui.GetColorU32(new NVector4(0.05f, 0.06f, 0.07f, 0.95f)), 16, 1.3f);
+                float radius = selected ? 6.0f : 4.5f;
+                uint fillColor = selected ? selectedColor : vertexColor;
+                if (vertex.StickToTerrain)
+                {
+                    drawList.AddCircleFilled(screen, radius + 3.0f, stickToTerrainColor, 16);
+                }
+
+                drawList.AddCircleFilled(screen, radius, fillColor, 16);
+                drawList.AddCircle(screen, radius, ImGui.GetColorU32(new NVector4(0.05f, 0.06f, 0.07f, 0.95f)), 16, 1.3f);
             }
         }
     }
@@ -1096,7 +1150,7 @@ public sealed class NetworkEditTool : ITool
         float best = VertexPickRadius;
         foreach (NetworkVertex vertex in component.Network.Vertices)
         {
-            if (!Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen))
+            if (!Project(camera, imageMin, Display(component, entity, vertex.Position, vertex.StickToTerrain), out NVector2 screen))
             {
                 continue;
             }
@@ -1124,8 +1178,8 @@ public sealed class NetworkEditTool : ITool
                 continue;
             }
 
-            if (!Project(camera, imageMin, Display(component, entity, a.Position), out NVector2 sa) ||
-                !Project(camera, imageMin, Display(component, entity, b.Position), out NVector2 sb))
+            if (!Project(camera, imageMin, Display(component, entity, a.Position, a.StickToTerrain), out NVector2 sa) ||
+                !Project(camera, imageMin, Display(component, entity, b.Position, b.StickToTerrain), out NVector2 sb))
             {
                 continue;
             }
@@ -1162,7 +1216,7 @@ public sealed class NetworkEditTool : ITool
                 continue;
             }
 
-            float distance = (Display(component, entity, centroid) - camera.GlobalPosition).LengthSquared();
+            float distance = (Display(component, entity, centroid, AllStickToTerrain(component, face.Vertices)) - camera.GlobalPosition).LengthSquared();
             if (distance < bestDistance)
             {
                 bestDistance = distance;
@@ -1181,7 +1235,7 @@ public sealed class NetworkEditTool : ITool
         for (int i = 0; i < face.Vertices.Count; i++)
         {
             if (component.Network.Vertex(face.Vertices[i]) is not { } vertex ||
-                !Project(camera, imageMin, Display(component, entity, vertex.Position), out screen[i]))
+                !Project(camera, imageMin, Display(component, entity, vertex.Position, vertex.StickToTerrain), out screen[i]))
             {
                 return false;
             }
