@@ -45,8 +45,12 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
         }
     }
 
-    /// <summary>Launches managed dolt servers and ensures each storage's database exists.</summary>
-    public void Startup()
+    /// <summary>
+    /// Launches managed dolt servers and ensures each storage's database exists.
+    /// <paramref name="confirmKillStray"/> is forwarded to <see cref="DoltServer.Start"/> so a caller on
+    /// the main thread can prompt the user before killing a leftover server from a previous session.
+    /// </summary>
+    public void Startup(Func<string, bool>? confirmKillStray = null)
     {
         foreach (Storage storage in Storages)
         {
@@ -59,7 +63,7 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
                 }
 
                 var server = new DoltServer(connection.RepositoryPath, connection.Host, connection.Port);
-                if (!server.Start(StartTimeout))
+                if (!server.Start(StartTimeout, confirmKillStray))
                 {
                     GD.PushError($"[Database] Storage '{storage.Name}' server failed to start.");
                     continue;
