@@ -310,8 +310,10 @@ public sealed class NetworkEditTool : ITool
         }
     }
 
-    /// <summary>Fills a face from an ordered vertex loop and selects it — the shared tail of both F
-    /// paths (an edge-loop boundary, or a loose vertex selection with no boundary to respect).</summary>
+    /// <summary>Fills a face from an ordered vertex loop and selects it (without changing select
+    /// mode — the user may still be clicking in Vertex/Edge mode right after) — the shared tail of
+    /// both F paths (an edge-loop boundary, or a loose vertex selection with no boundary to
+    /// respect).</summary>
     private void FillFace(INetworkEditable component, IReadOnlyList<int> loop)
     {
         Mutate(component, "Fill network face", network =>
@@ -323,7 +325,6 @@ public sealed class NetworkEditTool : ITool
             if (face is int id)
             {
                 _faces.Add(id);
-                _mode = NetworkSelectionMode.Face;
             }
         });
     }
