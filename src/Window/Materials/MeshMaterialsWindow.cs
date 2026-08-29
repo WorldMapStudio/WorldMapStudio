@@ -14,6 +14,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class MeshMaterialsWindow : Window
 {
+    public override string? Category => "Materials";
+
     private const uint NameMaxLength = 128;
 
     private readonly EditorContext _context;

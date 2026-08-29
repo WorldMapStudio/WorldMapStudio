@@ -12,6 +12,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ComputeMaterialWindow : Window
 {
+    public override string? Category => "Materials";
+
     private const uint ShaderNameMaxLength = 128;
     private const uint MaterialNameMaxLength = 128;
     private const uint ShaderSourceMaxLength = 64 * 1024;

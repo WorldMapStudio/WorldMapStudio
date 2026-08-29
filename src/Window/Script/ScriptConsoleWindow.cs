@@ -20,6 +20,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ScriptConsoleWindow : Window
 {
+    public override string? Category => "Developer";
+
     private sealed class Entry(string input, Task<ScriptResult> pending)
     {
         public string Input { get; } = input;

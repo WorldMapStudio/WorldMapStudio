@@ -16,6 +16,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class LandscapeWindow : Window
 {
+    public override string? Category => "Landscape";
+
     private const uint NameMaxLength = 128;
 
     private readonly EditorContext _context;

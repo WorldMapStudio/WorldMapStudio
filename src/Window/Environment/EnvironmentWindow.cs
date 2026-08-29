@@ -12,6 +12,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class EnvironmentWindow : Window
 {
+    public override string? Category => "World";
+
     private readonly WorldClock _clock;
     private readonly EnvironmentSystem _environments;
     private readonly SelectionSystem _selection;

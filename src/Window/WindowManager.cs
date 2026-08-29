@@ -61,10 +61,23 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 
     public void DrawMenuItems()
     {
-        foreach (Window window in Windows)
+        foreach (Window window in Windows.Where(window => window.Category is null))
         {
-            _windowShortcuts.TryGetValue(window, out ShortcutAction? shortcut);
-            window.DrawMenuItem(shortcut?.ShortcutLabel);
+            DrawWindowMenuItem(window);
+        }
+
+        foreach (IGrouping<string, Window> category in Windows
+            .Where(window => window.Category is not null)
+            .GroupBy(window => window.Category!)
+            .OrderBy(category => category.Key))
+        {
+            ImGuiEx.Menu(category.Key, () =>
+            {
+                foreach (Window window in category)
+                {
+                    DrawWindowMenuItem(window);
+                }
+            });
         }
 
         ImGui.Separator();
@@ -72,6 +85,12 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         {
             _layoutProfilesOpen = true;
         }
+    }
+
+    private void DrawWindowMenuItem(Window window)
+    {
+        _windowShortcuts.TryGetValue(window, out ShortcutAction? shortcut);
+        window.DrawMenuItem(shortcut?.ShortcutLabel);
     }
 
     void IMainMenu.Draw() => ImGuiEx.Menu("Window", DrawMenuItems);

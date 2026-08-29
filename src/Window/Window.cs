@@ -10,6 +10,12 @@ public abstract class Window : ISubsystem
 
     public virtual float Priority => 0f;
 
+    /// <summary>
+    /// Optional submenu name to nest this window's "Window" menu entry under. Windows that leave this
+    /// null stay at the top level of the menu.
+    /// </summary>
+    public virtual string? Category => null;
+
     private readonly Vector2? _defaultSize;
     private readonly Vector2? _defaultPosition;
 
