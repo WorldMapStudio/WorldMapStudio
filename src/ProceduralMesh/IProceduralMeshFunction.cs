@@ -25,7 +25,7 @@ public interface IProceduralMeshFunction : ISubsystem
 public readonly struct ProceduralMeshBuildContext
 {
     public ProceduralMeshBuildContext(
-        ProceduralMeshNetwork network,
+        VertexNetwork network,
         ProceduralMeshParameterValues values,
         AssetSystem assets)
     {
@@ -34,7 +34,7 @@ public readonly struct ProceduralMeshBuildContext
         Assets = assets;
     }
 
-    public ProceduralMeshNetwork Network { get; }
+    public VertexNetwork Network { get; }
 
     public ProceduralMeshParameterValues Values { get; }
 

@@ -68,7 +68,7 @@ public sealed class ProceduralMeshComponentType : ISceneComponentType
             string graphMode = bound.AllowsMultipleGraphs ? "multiple graphs" : "single graph";
             string branchMode = bound.AllowsBranching ? "branching" : "linear";
             ImGui.TextDisabled($"v{bound.Version}, {graphMode}, {branchMode}");
-            foreach (string problem in procedural.Network.ValidateFor(bound))
+            foreach (string problem in procedural.Network.ValidateFor(bound.DisplayName, bound.AllowsMultipleGraphs, bound.AllowsBranching))
             {
                 ImGui.TextColored(new System.Numerics.Vector4(1.0f, 0.72f, 0.22f, 1.0f), problem);
             }

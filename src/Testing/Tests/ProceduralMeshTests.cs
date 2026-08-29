@@ -41,7 +41,7 @@ public static class ProceduralMeshTests
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
     public static void Network_serializes_and_rejects_invalid_edges()
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
         int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
 
@@ -50,7 +50,7 @@ public static class ProceduralMeshTests
         Assert.IsNull(network.AddEdge(a, a), "self edges should be ignored");
         Assert.IsNull(network.AddEdge(a, 999), "edges to missing vertices should be ignored");
 
-        ProceduralMeshNetwork parsed = ProceduralMeshNetwork.Parse(network.Serialize());
+        VertexNetwork parsed = VertexNetwork.Parse(network.Serialize());
         Assert.AreEqual(2, parsed.Vertices.Count);
         Assert.AreEqual(1, parsed.Edges.Count);
         Assert.AreEqual(network.Fingerprint(), parsed.Fingerprint());
@@ -59,7 +59,7 @@ public static class ProceduralMeshTests
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
     public static void Split_merge_duplicate_and_extrude_update_the_graph()
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
         int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
         int edge = network.AddEdge(a, b)!.Value;
@@ -85,7 +85,7 @@ public static class ProceduralMeshTests
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
     public static void Network_bounds_follow_off_origin_vertices()
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         network.AddVertex(new Vector3(10.0f, -1.0f, 2.0f));
         network.AddVertex(new Vector3(15.0f, 3.0f, 8.0f));
 
@@ -100,7 +100,7 @@ public static class ProceduralMeshTests
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
     public static void Function_topology_capabilities_validate_network_shape()
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
         int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
         int c = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
@@ -113,7 +113,8 @@ public static class ProceduralMeshTests
         Assert.AreEqual(2, network.ConnectedGraphCount(), "the isolated vertex counts as its own graph");
         Assert.IsTrue(network.HasBranches());
 
-        var problems = network.ValidateFor(new SingleLinearFunction());
+        var function = new SingleLinearFunction();
+        var problems = network.ValidateFor(function.DisplayName, function.AllowsMultipleGraphs, function.AllowsBranching);
         Assert.AreEqual(2, problems.Count);
         Assert.IsTrue(problems[0].Contains("only one connected graph"));
         Assert.IsTrue(problems[1].Contains("only linear graphs"));
@@ -123,7 +124,7 @@ public static class ProceduralMeshTests
     [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
     public static void Tube_network_builds_valid_surface()
     {
-        var network = new ProceduralMeshNetwork();
+        var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
         int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
         network.AddEdge(a, b);

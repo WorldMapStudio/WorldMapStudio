@@ -2,14 +2,16 @@ using System.Collections.Generic;
 
 namespace WorldMapStudio;
 
-public sealed class SetProceduralMeshNetworkCommand : IEditCommand, IChunkChangeCommand
+/// <summary>Replaces an <see cref="INetworkEditable"/>'s network wholesale. One command for every
+/// network-editing component — procedural mesh, road — since the edit is always "swap the graph".</summary>
+public sealed class SetNetworkCommand : IEditCommand, IChunkChangeCommand
 {
     private readonly SceneEntity _entity;
-    private readonly ProceduralMeshComponent _component;
-    private readonly ProceduralMeshNetwork _before;
-    private readonly ProceduralMeshNetwork _after;
+    private readonly INetworkEditable _component;
+    private readonly VertexNetwork _before;
+    private readonly VertexNetwork _after;
 
-    public SetProceduralMeshNetworkCommand(ProceduralMeshComponent component, ProceduralMeshNetwork before, ProceduralMeshNetwork after, string description)
+    public SetNetworkCommand(INetworkEditable component, VertexNetwork before, VertexNetwork after, string description)
     {
         _component = component;
         _entity = component.Owner ?? throw new System.InvalidOperationException("Component is not attached.");

@@ -53,6 +53,9 @@ Current examples:
 - `Landscape Stamp`: a circular world-space influence with radius and falloff.
 - `Drawing Target`: a paintable rectangle whose pixels are projected into the world.
 - `Landscape Material Bind`: a list of layer/material pairs claimed over the entity's full bounds.
+- `Road`: a vertex/edge network splined into a centre and shoulder mask along its length. See
+  [Roads](#roads) below for how its shape works; for claiming layers and materials it pairs with a
+  `Landscape Material Bind` exactly like a stamp or drawing target does.
 
 A deformer can do one or both jobs during a chunk build:
 
@@ -69,7 +72,7 @@ For example:
 
 - a stamp writes a radial mask;
 - a painted drawing target writes a brush-painted mask;
-- a future road spline might write a road-center mask and a shoulder mask.
+- a road writes a centre mask and a shoulder mask along its spline.
 
 Masks are not the final terrain. They are intermediate evidence that functions can read later.
 
@@ -193,6 +196,35 @@ The reason this is split up is reuse. The same stamp shape can drive different m
 material can be used by stamps, painted drawing targets, or future road entities. The same channel can
 feed both alpha and height behavior.
 
+## Roads
+
+A `Road`'s authored shape is a vertex/edge network, edited in the viewport with the same tool
+(select, marquee, `G`/`R`/`S` modal move/rotate/scale, `E` extrude, `F` connect, `Ctrl+S` split, `M`
+merge, `Ctrl`+click to add) used for procedural meshes. The network is a graph, not a single path — it
+can branch, fork, and close into loops, and every case is handled the same way at build time.
+
+What makes a road different from the other deformers is how it is authored: it is authored **flat**.
+A vertex's stored position carries no meaningful height; only its X/Z position matters. Placing a
+vertex drops it onto the terrain under the cursor, and every vertex is drawn projected onto the
+terrain, but the network itself never stores a height. This is what lets a road follow whatever the
+terrain under it already does without needing its own height data to stay in sync as the terrain
+changes.
+
+At build time, the network is decomposed into chains — runs of edges between junctions (vertices
+where more than two, or fewer than two, edges meet) — and each chain becomes one centripetal
+Catmull-Rom spline. Coverage at any point is simply the profile of the *nearest* spline segment across
+every chain, so a fork or a crossing blends smoothly without anything having to special-case a
+junction.
+
+The road itself knows nothing about layers or materials — like a stamp or drawing target, it only
+picks which channels it writes. It writes two masks along the spline: a centre channel (full width the
+centre texture should show) and a shoulder channel (the full centre-plus-shoulder width, so the
+shoulder shows as an unbroken band under the centre rather than a ring with a seam where the two fades
+meet). Turning those channels into terrain is a `Landscape Material Bind`'s job — add one bound to the
+centre layer/material and one to the shoulder layer/material, with materials whose alpha functions
+read the road's channels, and give the centre layer the higher draw order so the shoulder doesn't
+paint over it.
+
 ## Authoring Flow
 
 Use the **Landscape** window to configure the terrain catalog:
@@ -206,7 +238,7 @@ Use the **Landscape** window to configure the terrain catalog:
 
 Then use deformer components and material bind components to bind authored geometry to the catalog:
 
-- on stamps and drawing targets, pick the channel they write;
+- on stamps, drawing targets, and roads, pick the channel(s) they write;
 - on landscape material binds, add layer/material pairs;
 - set the bind priority.
 
