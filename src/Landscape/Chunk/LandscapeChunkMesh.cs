@@ -160,53 +160,77 @@ public static class LandscapeChunkMesh
         return new Vector3(left - right, 2.0f * step, back - front).Normalized();
     }
 
+    // Chunks streamed from disjoint parts of the map routinely share a slot's material, and every
+    // rebuild (streaming a new chunk in, or an edit marking one dirty) otherwise pays for decoding,
+    // resizing and converting that material's source texture again from scratch. Keyed on the path
+    // rather than the material instance so materials that happen to reference the same texture also
+    // share one decode. Never invalidated: a texture path is immutable once authored, and reassigning
+    // a slot's material entirely produces a new path to key on.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Image> AlbedoCache = new();
+
     private static Image LoadAlbedo(LandscapeMaterial? material, int slot, AssetSystem assets)
     {
-        if (material is { TexturePath.Length: > 0 } &&
-            assets.LoadTextureAsset(material.TexturePath) is { } texture)
+        if (material is not { TexturePath.Length: > 0 } materialWithTexture)
         {
-            Image image = texture.GetImage();
-            image.Resize(PlaceholderSize, PlaceholderSize);
-            image.Convert(Image.Format.Rgba8);
-            return image;
+            return Placeholder(slot);
         }
 
-        return Placeholder(slot);
+        if (AlbedoCache.TryGetValue(materialWithTexture.TexturePath, out Image? cached))
+        {
+            return cached;
+        }
+
+        if (assets.LoadTextureAsset(materialWithTexture.TexturePath) is not { } texture)
+        {
+            return Placeholder(slot);
+        }
+
+        Image image = texture.GetImage();
+        image.Resize(PlaceholderSize, PlaceholderSize);
+        image.Convert(Image.Format.Rgba8);
+
+        // Texture2DArray.CreateFromImages only reads pixels at upload time, so a shared, never-mutated
+        // Image is safe to hand to every chunk that resolves to this slot.
+        return AlbedoCache.GetOrAdd(materialWithTexture.TexturePath, image);
     }
 
     // A per-slot checker so an unassigned material is obviously unassigned rather than plausibly grey.
+    // Built as a raw pixel buffer rather than per-pixel SetPixel calls: each SetPixel is a marshaled
+    // native call, and there are PlaceholderSize^2 of them — thousands of icalls for what is otherwise
+    // a few microseconds of managed array writes.
     private static Image Placeholder(int slot)
     {
-        var image = Image.CreateEmpty(PlaceholderSize, PlaceholderSize, false, Image.Format.Rgba8);
         Color light = Color.FromHsv((slot * 0.17f) % 1.0f, 0.25f, 0.62f);
         Color dark = Color.FromHsv((slot * 0.17f) % 1.0f, 0.35f, 0.48f);
+        byte[] lightBytes = ToRgba8(light);
+        byte[] darkBytes = ToRgba8(dark);
 
+        var pixels = new byte[PlaceholderSize * PlaceholderSize * 4];
         for (int y = 0; y < PlaceholderSize; y++)
         {
             for (int x = 0; x < PlaceholderSize; x++)
             {
                 bool even = ((x / 8) + (y / 8)) % 2 == 0;
-                image.SetPixel(x, y, even ? light : dark);
+                (even ? lightBytes : darkBytes).CopyTo(pixels, ((y * PlaceholderSize) + x) * 4);
             }
         }
 
-        return image;
+        return Image.CreateFromData(PlaceholderSize, PlaceholderSize, false, Image.Format.Rgba8, pixels);
     }
 
-    private static Image AlphaImage(byte[] alpha, int resolution)
-    {
-        var image = Image.CreateEmpty(resolution, resolution, false, Image.Format.R8);
-        for (int y = 0; y < resolution; y++)
-        {
-            for (int x = 0; x < resolution; x++)
-            {
-                float value = alpha[(y * resolution) + x] / 255.0f;
-                image.SetPixel(x, y, new Color(value, value, value));
-            }
-        }
+    private static byte[] ToRgba8(Color color) =>
+    [
+        (byte)Mathf.Clamp(Mathf.RoundToInt(color.R * 255.0f), 0, 255),
+        (byte)Mathf.Clamp(Mathf.RoundToInt(color.G * 255.0f), 0, 255),
+        (byte)Mathf.Clamp(Mathf.RoundToInt(color.B * 255.0f), 0, 255),
+        255,
+    ];
 
-        return image;
-    }
+    // The alpha buffer is already row-major R8 coverage in [0, 255] — exactly what an R8 Image needs —
+    // so this hands it straight to the image instead of unpacking each byte through a Color and back
+    // via a per-pixel SetPixel call.
+    private static Image AlphaImage(byte[] alpha, int resolution) =>
+        Image.CreateFromData(resolution, resolution, false, Image.Format.R8, alpha);
 
     private static Shader SplatShader() => _shader ??= new Shader { Code = SplatShaderCode };
 

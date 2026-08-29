@@ -180,17 +180,32 @@ public sealed class LandscapeRebuilder
             var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
             LandscapeBuildResult result = builder.Build(coords, snapshot.Deformers);
 
+            // Still on the worker: each chunk's mesh and material is real Godot resource construction
+            // (texture decode, mesh upload), and building it here means the main-thread slice below
+            // only has to attach it to a node, not build it.
+            ctx.Step("Building visuals");
+            var visuals = new Dictionary<ChunkCoord, (ArrayMesh Mesh, ShaderMaterial Material)>();
+            foreach (KeyValuePair<ChunkCoord, LandscapeChunkOutput> built in result.Chunks)
+            {
+                visuals[built.Key] = (
+                    LandscapeChunkMesh.BuildMesh(built.Value, grid.ChunkSize),
+                    LandscapeChunkMesh.BuildMaterial(built.Value, _context.Assets));
+            }
+
             await ctx.SwitchToMain();
             ctx.Step("Applying");
-            await ApplyAsync(ctx, result);
+            await ApplyAsync(ctx, result, visuals);
 
             landscape.Reporter.Report(result, grid, snapshot.Deformers);
         });
     }
 
-    // Main thread. Each chunk rebuilds a mesh and a material, so this yields between small batches
-    // rather than doing a whole block inside one frame's pump budget.
-    private async System.Threading.Tasks.Task ApplyAsync(WorkContext ctx, LandscapeBuildResult result)
+    // Main thread. Attaching an already-built mesh and material is cheap, but this still yields
+    // between small batches so a very large rebuild's node churn never fills a whole frame budget.
+    private async System.Threading.Tasks.Task ApplyAsync(
+        WorkContext ctx,
+        LandscapeBuildResult result,
+        IReadOnlyDictionary<ChunkCoord, (ArrayMesh Mesh, ShaderMaterial Material)> visuals)
     {
         int applied = 0;
         foreach (KeyValuePair<ChunkCoord, LandscapeChunkOutput> built in result.Chunks)
@@ -200,7 +215,8 @@ public sealed class LandscapeRebuilder
                 .OfType<LandscapeChunk>()
                 .FirstOrDefault(candidate => candidate.Coord == built.Key);
 
-            chunk?.Rebuild(built.Value);
+            (ArrayMesh mesh, ShaderMaterial material) = visuals[built.Key];
+            chunk?.Rebuild(built.Value, mesh, material);
 
             if (++applied % ApplyBatch == 0)
             {
