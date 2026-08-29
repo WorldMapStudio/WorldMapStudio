@@ -32,6 +32,13 @@ public sealed class LandscapeSettings
     /// <summary>Alpha texels along a chunk edge.</summary>
     public int ChunkAlphaResolution { get; set; } = 64;
 
+    /// <summary>
+    /// Hole cells along a chunk edge. Deliberately independent of <see cref="ChunkHeightResolution"/>
+    /// and <see cref="ChunkAlphaResolution"/> — a hole is a coarse "is this quad missing" grid, matching
+    /// how export targets like WoW's ADT format encode holes at a fixed, low resolution.
+    /// </summary>
+    public int ChunkHoleResolution { get; set; } = 8;
+
     public HeightEncoding HeightEncoding { get; set; } = HeightEncoding.Float32;
 
     /// <summary>World height that encoded zero represents. Only used by <see cref="HeightEncoding.UInt16"/>.</summary>
@@ -90,6 +97,11 @@ public sealed class LandscapeSettings
             problems.Add("Chunk alpha resolution needs at least 1 texel per edge.");
         }
 
+        if (ChunkHoleResolution < 1)
+        {
+            problems.Add("Chunk hole resolution needs at least 1 cell per edge.");
+        }
+
         if (AlphaBitDepth is not (8 or 16))
         {
             problems.Add("Alpha bit depth must be 8 or 16.");
@@ -124,6 +136,7 @@ public sealed class LandscapeSettings
             previous.ChunkWorldSize != next.ChunkWorldSize ||
             previous.ChunkHeightResolution != next.ChunkHeightResolution ||
             previous.ChunkAlphaResolution != next.ChunkAlphaResolution ||
+            previous.ChunkHoleResolution != next.ChunkHoleResolution ||
             previous.HeightEncoding != next.HeightEncoding ||
             previous.HeightOffset != next.HeightOffset ||
             previous.HeightScale != next.HeightScale ||

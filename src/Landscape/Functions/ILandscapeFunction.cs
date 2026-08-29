@@ -70,6 +70,25 @@ public interface ILandscapeHeightFunction : ILandscapeFunction
     void Evaluate(in LandscapeEvalContext context, float[] heights);
 }
 
+/// <summary>
+/// Marks cells of a chunk as holes — cut out of the mesh entirely. Unlike height, this is
+/// <b>write-only and order-independent</b>: an implementation may only set entries of
+/// <paramref name="holes"/> to <see langword="true"/>, never clear one another material set. A hole,
+/// once claimed by any surviving material, cannot be un-claimed by a different one — there is no
+/// "flatten" equivalent for holes. The builder relies on this to accumulate every claim into one
+/// shared buffer rather than resolving conflicts between them.
+/// </summary>
+public interface ILandscapeHoleFunction : ILandscapeFunction
+{
+    /// <summary>
+    /// Sets entries of <paramref name="holes"/> to <see langword="true"/> for cells this claim wants
+    /// cut out — row-major, <see cref="LandscapeEvalContext.Resolution"/> squared. Must never set an
+    /// entry to <see langword="false"/>; the buffer may already carry <see langword="true"/> entries
+    /// from another surviving claim.
+    /// </summary>
+    void Evaluate(in LandscapeEvalContext context, bool[] holes);
+}
+
 /// <summary>Shared helpers over a function's declared parameters.</summary>
 public static class LandscapeFunctionExtensions
 {

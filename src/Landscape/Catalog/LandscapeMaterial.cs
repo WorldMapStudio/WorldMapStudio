@@ -6,7 +6,8 @@ namespace WorldMapStudio;
 ///
 /// <list type="bullet">
 /// <item>a texture and the alpha function deciding where it shows, used when bound to a texture layer;</item>
-/// <item>a height function, used when bound to a height layer.</item>
+/// <item>a height function, used when bound to a height layer;</item>
+/// <item>a hole function, marking cells of a bound layer as cut out of the mesh entirely.</item>
 /// </list>
 ///
 /// A material may be texture-only, height-only, or both — a road that paints gravel <em>and</em>
@@ -40,6 +41,12 @@ public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Serialized parameter values for <see cref="HeightFunction"/>.</summary>
     public string HeightParameters { get; set; } = "";
 
+    /// <summary>Id of the hole function. Required only on a layer whose claim wants to cut holes.</summary>
+    public string HoleFunction { get; set; } = "";
+
+    /// <summary>Serialized parameter values for <see cref="HoleFunction"/>.</summary>
+    public string HoleParameters { get; set; } = "";
+
     /// <inheritdoc />
     public int? RecordId { get; set; }
 
@@ -57,4 +64,7 @@ public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
 
     /// <summary>Whether this material can deform a height layer.</summary>
     public bool DeformsHeight => HeightFunction.Length > 0;
+
+    /// <summary>Whether this material can cut holes where it is bound.</summary>
+    public bool CutsHole => HoleFunction.Length > 0;
 }

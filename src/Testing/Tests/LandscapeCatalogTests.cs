@@ -58,6 +58,18 @@ public static class LandscapeCatalogTests
     }
 
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
+    public static void A_hole_only_material_is_valid()
+    {
+        // Same reasoning as the height-only case: which half a material needs is a property of the
+        // layer it ends up bound to, not something checkable in the catalog alone.
+        LandscapeCatalog catalog = Catalog(
+            layers: [Layer("ground", 0, isBase: true)],
+            materials: [new LandscapeMaterial { Name = "cave", HoleFunction = "test.hole" }]);
+
+        Assert.AreEqual(0, catalog.Validate().Count(issue => issue.Severity == LandscapeIssueSeverity.Error));
+    }
+
+    [EditorTest(Category = "Landscape", Thread = TestThread.Background)]
     public static void A_material_that_does_nothing_at_all_is_flagged()
     {
         // A texture alone is enough to fill a base slot, so "does nothing" means neither half.
@@ -126,6 +138,10 @@ public static class LandscapeCatalogTests
         int afterFunction = catalog.ContentVersion;
         material.AlphaParameters = "{\"threshold\":\"0.8\"}";
         Assert.AreNotEqual(afterFunction, catalog.ContentVersion, "so must a parameter value");
+
+        int afterAlphaParameters = catalog.ContentVersion;
+        material.HoleFunction = "test.hole";
+        Assert.AreNotEqual(afterAlphaParameters, catalog.ContentVersion, "binding a hole function must be noticed too");
     }
 
     [EditorTest(Category = "Landscape", Thread = TestThread.Background)]

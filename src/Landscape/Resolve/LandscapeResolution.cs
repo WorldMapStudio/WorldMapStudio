@@ -42,6 +42,13 @@ public sealed class LandscapeResolution
     /// <summary>Surviving height claims in evaluation order — the layer draw order, never scan order.</summary>
     public required IReadOnlyList<LandscapeClaim> HeightClaims { get; init; }
 
+    /// <summary>
+    /// Surviving hole claims. Order does not affect the result — hole claims only ever add cells to
+    /// the union — but they are carried in draw order anyway, matching height, so a missing-function
+    /// problem is reported in a stable order.
+    /// </summary>
+    public required IReadOnlyList<LandscapeClaim> HoleClaims { get; init; }
+
     /// <summary>Keys of the groups that did not survive, in the order they were dropped.</summary>
     public required IReadOnlyList<string> DroppedGroups { get; init; }
 

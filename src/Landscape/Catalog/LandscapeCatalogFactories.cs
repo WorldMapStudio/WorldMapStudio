@@ -72,6 +72,8 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         AlphaParameters = record.AlphaParameters,
         HeightFunction = record.HeightFunction,
         HeightParameters = record.HeightParameters,
+        HoleFunction = record.HoleFunction,
+        HoleParameters = record.HoleParameters,
     };
 
     protected override void WriteRecord(LandscapeMaterial entity, LandscapeMaterialRecord record)
@@ -82,5 +84,7 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         record.AlphaParameters = entity.AlphaParameters;
         record.HeightFunction = entity.HeightFunction;
         record.HeightParameters = entity.HeightParameters;
+        record.HoleFunction = entity.HoleFunction;
+        record.HoleParameters = entity.HoleParameters;
     }
 }

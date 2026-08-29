@@ -31,6 +31,10 @@ public enum LandscapeProblemKind
     /// <summary>A texture slot's material binds no alpha function, so nothing decides where it shows.</summary>
     MissingAlphaFunction,
 
+    /// <summary>A hole layer was claimed with a material that binds no hole function, so nothing cuts.
+    /// Silent otherwise: the claim resolves fine and simply does nothing.</summary>
+    MissingHoleFunction,
+
     /// <summary>A layer that paints sorts below the chunk's base, which is opaque, so it is never seen.</summary>
     BelowBase,
 

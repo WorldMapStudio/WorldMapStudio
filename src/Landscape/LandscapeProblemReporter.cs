@@ -114,6 +114,7 @@ public sealed class LandscapeProblemReporter
         // A binding that quietly does nothing — wrong, but only for that contribution.
         LandscapeProblemKind.MissingHeightFunction => ProblemSeverity.Warning,
         LandscapeProblemKind.MissingAlphaFunction => ProblemSeverity.Warning,
+        LandscapeProblemKind.MissingHoleFunction => ProblemSeverity.Warning,
 
         _ => ProblemSeverity.Error,
     };

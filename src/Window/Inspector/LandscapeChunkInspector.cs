@@ -40,7 +40,18 @@ public sealed class LandscapeChunkInspector : EntityInspector<LandscapeChunk>
             : new Vector4(0.42f, 0.85f, 0.46f, 1.0f);
         ImGui.TextColored(colour, $"{output.Layers.Count} / {limit} texture slots");
 
-        ImGui.TextDisabled($"{output.HeightResolution}² vertices · {output.AlphaResolution}² alpha texels");
+        int holeCells = 0;
+        foreach (bool hole in output.Holes)
+        {
+            if (hole)
+            {
+                holeCells++;
+            }
+        }
+
+        ImGui.TextDisabled(
+            $"{output.HeightResolution}² vertices · {output.AlphaResolution}² alpha texels · " +
+            $"{holeCells} / {output.Holes.Length} hole cells cut");
         ImGui.Separator();
 
         for (int i = 0; i < output.Layers.Count; i++)

@@ -38,5 +38,16 @@ public sealed class LandscapeChunkOutput
     /// <summary>Slots in compositing order; the first is the base when one exists.</summary>
     public required IReadOnlyList<LandscapeChunkLayer> Layers { get; init; }
 
+    /// <summary>
+    /// Hole cells along a chunk edge. Independent of <see cref="HeightResolution"/> and
+    /// <see cref="AlphaResolution"/> — see <see cref="LandscapeSettings.ChunkHoleResolution"/>.
+    /// </summary>
+    public required int HoleResolution { get; init; }
+
+    /// <summary>Row-major hole flags, <see cref="HoleResolution"/> squared. True cuts the cell out of the mesh.</summary>
+    public required bool[] Holes { get; init; }
+
     public float HeightAt(int x, int y) => Heights[(y * HeightResolution) + x];
+
+    public bool IsHole(int x, int y) => Holes[(y * HoleResolution) + x];
 }

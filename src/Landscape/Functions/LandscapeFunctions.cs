@@ -27,6 +27,8 @@ public sealed class LandscapeFunctions
 
     public IEnumerable<ILandscapeHeightFunction> Height => All.OfType<ILandscapeHeightFunction>();
 
+    public IEnumerable<ILandscapeHoleFunction> Hole => All.OfType<ILandscapeHoleFunction>();
+
     /// <summary>Types that looked like functions but could not be used, with the reason.</summary>
     public IReadOnlyList<string> Warnings => _warnings;
 
@@ -40,6 +42,8 @@ public sealed class LandscapeFunctions
     public ILandscapeAlphaFunction? FindAlpha(string id) => Find(id) as ILandscapeAlphaFunction;
 
     public ILandscapeHeightFunction? FindHeight(string id) => Find(id) as ILandscapeHeightFunction;
+
+    public ILandscapeHoleFunction? FindHole(string id) => Find(id) as ILandscapeHoleFunction;
 
     /// <summary>
     /// (Re)scans for functions. Safe to call again after loading an assembly; existing materials keep

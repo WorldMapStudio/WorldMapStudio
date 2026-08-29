@@ -42,6 +42,10 @@ public sealed class LandscapeMaterialRecord : IKeyedRecord
     public string HeightFunction { get; set; } = "";
 
     public string HeightParameters { get; set; } = "";
+
+    public string HoleFunction { get; set; } = "";
+
+    public string HoleParameters { get; set; } = "";
 }
 
 /// <summary>
@@ -59,6 +63,8 @@ public sealed class LandscapeSettingsRecord
     public int ChunkHeightResolution { get; set; }
 
     public int ChunkAlphaResolution { get; set; }
+
+    public int ChunkHoleResolution { get; set; }
 
     public int HeightEncoding { get; set; }
 
