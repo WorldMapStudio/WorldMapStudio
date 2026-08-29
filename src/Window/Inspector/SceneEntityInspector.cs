@@ -39,6 +39,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
         DrawPosition(context, targets);
         DrawRotation(context, targets);
+        DrawScale(context, targets);
 
         if (targets.Count == 1)
         {
@@ -116,15 +117,63 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
     private void DrawRotation(InspectorContext context, IReadOnlyList<SceneEntity> targets)
     {
-        bool uniform = AllEqual(targets, t => t.Transform.Basis.GetEuler(), out GVec3 euler);
+        bool uniform = AllEqual(targets, t => t.Transform.Basis.Orthonormalized().GetEuler(), out GVec3 euler);
         NVec3 degrees = new(Mathf.RadToDeg(euler.X), Mathf.RadToDeg(euler.Y), Mathf.RadToDeg(euler.Z));
         if (ImGui.DragFloat3("Rotation", ref degrees, 0.5f))
         {
             var radians = new GVec3(Mathf.DegToRad(degrees.X), Mathf.DegToRad(degrees.Y), Mathf.DegToRad(degrees.Z));
-            Basis basis = Basis.FromEuler(radians);
+            Basis rotation = Basis.FromEuler(radians);
             foreach (SceneEntity target in targets)
             {
-                target.Transform = new Transform3D(basis, target.Transform.Origin);
+                Transform3D xform = target.Transform;
+                xform.Basis = rotation.ScaledLocal(xform.Basis.Scale);
+                target.Transform = xform;
+            }
+        }
+
+        MarkMultiple(uniform);
+        HandleEditLifecycle(context, targets);
+    }
+
+    private void DrawScale(InspectorContext context, IReadOnlyList<SceneEntity> targets)
+    {
+        SelfScale mode = targets[0].SelfScale;
+        for (int i = 1; i < targets.Count; i++)
+        {
+            if (targets[i].SelfScale < mode)
+            {
+                mode = targets[i].SelfScale;
+            }
+        }
+
+        if (mode == SelfScale.None)
+        {
+            return;
+        }
+
+        bool uniform = AllEqual(targets, t => t.Transform.Basis.Scale, out GVec3 shared);
+        bool changed;
+        GVec3 scale;
+        if (mode == SelfScale.Uniform)
+        {
+            float value = shared.X;
+            changed = ImGui.DragFloat("Scale", ref value, 0.02f);
+            scale = GVec3.One * value;
+        }
+        else
+        {
+            NVec3 value = new(shared.X, shared.Y, shared.Z);
+            changed = ImGui.DragFloat3("Scale", ref value, 0.02f);
+            scale = new GVec3(value.X, value.Y, value.Z);
+        }
+
+        if (changed)
+        {
+            foreach (SceneEntity target in targets)
+            {
+                Transform3D xform = target.Transform;
+                xform.Basis = xform.Basis.Orthonormalized().ScaledLocal(scale);
+                target.Transform = xform;
             }
         }
 
@@ -134,7 +183,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
     private static void DrawSize(SceneEntity target)
     {
-        Vector3 size = target.LocalBounds.Size;
+        Vector3 size = target.LocalBounds.Size * target.Transform.Basis.Scale;
         ImGui.TextDisabled($"Effective size: {size.X:0.##} x {size.Y:0.##} x {size.Z:0.##}");
     }
 

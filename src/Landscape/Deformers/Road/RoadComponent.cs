@@ -100,6 +100,8 @@ public sealed class RoadComponent : SceneComponent, ISceneBoundsProvider, ITrans
 
     public SelfRotation SelfRotation => SelfRotation.HeightOnly;
 
+    public SelfScale SelfScale => SelfScale.None;
+
     public bool UsesTerrainHeight => true;
 
     public Aabb LocalBounds

@@ -42,8 +42,10 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
 
     public override string DisplayName => $"Chunk {Coord}";
 
-    /// <summary>Chunks sit on the grid; rotating one would be meaningless.</summary>
+    /// <summary>Chunks sit on the grid; rotating or scaling one would be meaningless.</summary>
     public override SelfRotation SelfRotation => SelfRotation.None;
+
+    public override SelfScale SelfScale => SelfScale.None;
 
     public override Aabb LocalBounds => new(
         new Vector3(0.0f, -LandscapeGrid.NominalHeightExtent, 0.0f),

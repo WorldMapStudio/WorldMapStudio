@@ -14,5 +14,11 @@ public interface IModelLoader : ISubsystem
     /// </summary>
     public bool CanList(string path) => CanLoad(path);
 
+    /// <summary>How placed instances of this format may rotate about themselves. Default: unrestricted.</summary>
+    public SelfRotation SelfRotation => SelfRotation.Full;
+
+    /// <summary>How placed instances of this format may be scaled. Default: unrestricted per-axis.</summary>
+    public SelfScale SelfScale => SelfScale.PerAxis;
+
     public Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path);
 }

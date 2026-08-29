@@ -19,6 +19,8 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
 
     public SelfRotation SelfRotation => SelfRotation.None;
 
+    public SelfScale SelfScale => SelfScale.None;
+
     public bool UsesTerrainHeight => false;
 
     public Aabb LocalBounds => new(
