@@ -1,3 +1,4 @@
+using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
@@ -10,8 +11,7 @@ public static class ProceduralMeshTests
         public string DisplayName => "Single Linear";
         public string Description => "";
         public int Version => 1;
-        public bool AllowsMultipleGraphs => false;
-        public bool AllowsBranching => false;
+        public NetworkCapabilities Capabilities => new(AllowsMultipleGraphs: false, AllowsBranching: false);
         public float Priority => 0f;
         public System.Collections.Generic.IReadOnlyList<MeshParameter> Parameters { get; } = [];
         public void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output) { }
@@ -73,13 +73,67 @@ public static class ProceduralMeshTests
         Assert.AreEqual(2, network.Vertices.Count);
         Assert.IsNotNull(network.Vertex(kept));
 
-        var duplicated = network.DuplicateSubgraph([kept], [], new Vector3(0.0f, 1.0f, 0.0f));
-        Assert.AreEqual(1, duplicated.Count);
+        var duplicated = network.DuplicateSubgraph([kept], [], [], new Vector3(0.0f, 1.0f, 0.0f));
+        Assert.AreEqual(1, duplicated.VertexIds.Count);
         Assert.AreEqual(3, network.Vertices.Count);
 
-        var extruded = network.Extrude(duplicated, [], new Vector3(0.0f, 0.0f, 1.0f));
-        Assert.AreEqual(1, extruded.Count);
+        var extruded = network.Extrude(duplicated.VertexIds, [], [], new Vector3(0.0f, 0.0f, 1.0f));
+        Assert.AreEqual(1, extruded.VertexIds.Count);
         Assert.IsTrue(network.Edges.Count >= 2, "extrusion should connect old and new vertices");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Faces_create_boundary_edges_cascade_on_removal_and_round_trip()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+
+        Assert.IsNull(network.AddFace([a, b]), "a face needs at least 3 vertices");
+
+        network.AddFace([a, b, c, d]);
+        Assert.AreEqual(4, network.Edges.Count, "AddFace should create its missing boundary edges");
+        Assert.IsNull(network.AddFace([c, d, a, b]), "a rotated duplicate of an existing face should be rejected");
+
+        VertexNetwork parsed = VertexNetwork.Parse(network.Serialize());
+        Assert.AreEqual(1, parsed.Faces.Count);
+        Assert.AreEqual(network.Fingerprint(), parsed.Fingerprint());
+
+        NetworkEdge boundaryEdge = network.Edges.First(e => (e.A == a && e.B == b) || (e.A == b && e.B == a));
+        network.RemoveEdge(boundaryEdge.Id);
+        Assert.AreEqual(0, network.Faces.Count, "removing a boundary edge should drop the face it supports");
+
+        network.AddFace([a, b, c, d]);
+        network.RemoveVertex(c);
+        Assert.AreEqual(0, network.Faces.Count, "removing a vertex should drop faces that reference it");
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Merge_duplicate_and_extrude_carry_faces_along()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        int face = network.AddFace([a, b, c, d])!.Value;
+
+        var duplicated = network.DuplicateSubgraph([], [], [face], new Vector3(0.0f, 0.0f, 1.0f));
+        Assert.AreEqual(4, duplicated.VertexIds.Count);
+        Assert.AreEqual(1, duplicated.FaceIds.Count, "duplicating a face should reproduce it at the new vertices");
+        Assert.AreEqual(2, network.Faces.Count);
+
+        var extruded = network.Extrude([], [], [face], new Vector3(0.0f, 0.0f, -1.0f));
+        Assert.AreEqual(1, extruded.FaceIds.Count, "extruding a face should reproduce it at the new vertices");
+        Assert.AreEqual(3, network.Faces.Count);
+
+        int e = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        int kept = network.MergeVertices([b, e])!.Value;
+        NetworkFace merged = network.Face(face)!;
+        Assert.AreEqual(4, merged.Vertices.Count, "merging an unrelated vertex into a face's vertex should not change the face's shape");
+        Assert.IsTrue(merged.Vertices.Contains(kept));
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
@@ -114,11 +168,49 @@ public static class ProceduralMeshTests
         Assert.IsTrue(network.HasBranches());
 
         var function = new SingleLinearFunction();
-        var problems = network.ValidateFor(function.DisplayName, function.AllowsMultipleGraphs, function.AllowsBranching);
+        var problems = network.ValidateFor(function.DisplayName, function.Capabilities);
         Assert.AreEqual(2, problems.Count);
         Assert.IsTrue(problems[0].Contains("only one connected graph"));
         Assert.IsTrue(problems[1].Contains("only linear graphs"));
         Assert.IsNotNull(network.Vertex(separate));
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
+    public static void Validate_for_reports_faces_ignored_by_a_function_that_does_not_use_them()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        network.AddFace([a, b, c]);
+
+        var problems = network.ValidateFor("Tube Network", NetworkCapabilities.Default);
+        Assert.AreEqual(1, problems.Count);
+        Assert.IsTrue(problems[0].Contains("will be ignored"));
+
+        Assert.AreEqual(0, network.ValidateFor("Panel Network", new NetworkCapabilities(AllowsFaces: true)).Count);
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
+    public static void Panel_network_builds_a_triangulated_surface_per_face()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int c = network.AddVertex(new Vector3(1.0f, 1.0f, 0.0f));
+        int d = network.AddVertex(new Vector3(0.0f, 1.0f, 0.0f));
+        network.AddFace([a, b, c, d]);
+
+        var values = new MeshParameterValues();
+        var output = new ProceduralOutputBuilder();
+        new PanelNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
+
+        ProceduralBuildResult result = output.Build([PanelNetworkMeshFunction.Output], _ => MeshModelFormat.FormatId);
+        Assert.AreEqual(1, result.Models.Count);
+        ModelAsset built = result.Models[0].Asset;
+        Assert.AreEqual(1, built.Surfaces.Count);
+        Assert.AreApproximatelyEqual(1.0, built.LocalBounds.Size.X, 1e-4);
+        Assert.AreApproximatelyEqual(1.0, built.LocalBounds.Size.Y, 1e-4);
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Main)]

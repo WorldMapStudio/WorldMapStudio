@@ -7,6 +7,20 @@ namespace WorldMapStudio;
 /// <summary>A material slot a procedural function declares, filled from a preset or authored inline.</summary>
 public sealed record MeshMaterialSlot(string Name, string DisplayName, string Description = "");
 
+/// <summary>
+/// The network topology shapes a function knows how to build from, checked against an authored
+/// network by <see cref="VertexNetwork.ValidateFor"/>. Bundled into one record rather than a growing
+/// list of bool properties on <see cref="IProceduralFunction"/> so a new capability (like
+/// <see cref="AllowsFaces"/>) does not have to touch every call site's signature.
+/// </summary>
+public sealed record NetworkCapabilities(
+    bool AllowsMultipleGraphs = true,
+    bool AllowsBranching = true,
+    bool AllowsFaces = false)
+{
+    public static readonly NetworkCapabilities Default = new();
+}
+
 public interface IProceduralFunction : ISubsystem
 {
     string Id { get; }
@@ -17,9 +31,7 @@ public interface IProceduralFunction : ISubsystem
 
     int Version { get; }
 
-    bool AllowsMultipleGraphs => true;
-
-    bool AllowsBranching => true;
+    NetworkCapabilities Capabilities => NetworkCapabilities.Default;
 
     IReadOnlyList<MeshParameter> Parameters { get; }
 

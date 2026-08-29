@@ -27,10 +27,6 @@ public sealed class TubeNetworkMeshFunction : IProceduralFunction
 
     public int Version => 2;
 
-    public bool AllowsMultipleGraphs => true;
-
-    public bool AllowsBranching => true;
-
     public float Priority => 0f;
 
     public IReadOnlyList<MeshParameter> Parameters { get; } =

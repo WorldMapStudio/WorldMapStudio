@@ -15,6 +15,7 @@ public enum NetworkSelectionMode
 {
     Vertex,
     Edge,
+    Face,
 }
 
 public enum NetworkModalMode
@@ -52,6 +53,7 @@ public sealed class NetworkEditTool : ITool
     private readonly TransformGizmo _gizmo = new();
     private readonly HashSet<int> _vertices = [];
     private readonly HashSet<int> _edges = [];
+    private readonly HashSet<int> _faces = [];
     private NetworkSelectionMode _mode;
 
     private bool _dragging;
@@ -98,6 +100,12 @@ public sealed class NetworkEditTool : ITool
         }
 
         ImGui.SameLine();
+        if (ImGui.RadioButton("Face", _mode == NetworkSelectionMode.Face))
+        {
+            _mode = NetworkSelectionMode.Face;
+        }
+
+        ImGui.SameLine();
         ImGui.TextDisabled("|");
         ImGui.SameLine();
         if (ImGui.RadioButton("Move", _gizmo.Operation == GizmoOperation.Translate))
@@ -120,7 +128,7 @@ public sealed class NetworkEditTool : ITool
         ImGui.SameLine();
         ImGui.TextDisabled("|");
         ImGui.SameLine();
-        ImGui.TextDisabled($"{_vertices.Count} vertices, {_edges.Count} edges");
+        ImGui.TextDisabled($"{_vertices.Count} vertices, {_edges.Count} edges, {_faces.Count} faces");
     }
 
     public void UpdateViewport(in ViewportContext viewport)
@@ -129,6 +137,7 @@ public sealed class NetworkEditTool : ITool
         {
             _vertices.Clear();
             _edges.Clear();
+            _faces.Clear();
             return;
         }
 
@@ -154,19 +163,21 @@ public sealed class NetworkEditTool : ITool
 
     private void HandleKeys(INetworkEditable component, SceneEntity entity)
     {
-        if (ImGui.IsKeyPressed(ImGuiKey.G, false) && _vertices.Count > 0)
+        bool hasEffectiveSelection = EffectiveVertices(component).Any();
+
+        if (ImGui.IsKeyPressed(ImGuiKey.G, false) && hasEffectiveSelection)
         {
             BeginModal(component, entity, NetworkModalMode.Translate, component.Network.Clone(), "Move network vertices");
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.R, false) && _vertices.Count > 0)
+        if (ImGui.IsKeyPressed(ImGuiKey.R, false) && hasEffectiveSelection)
         {
             BeginModal(component, entity, NetworkModalMode.Rotate, component.Network.Clone(), "Rotate network vertices");
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.S, false) && _vertices.Count > 0 && !Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
+        if (ImGui.IsKeyPressed(ImGuiKey.S, false) && hasEffectiveSelection && !Godot.Input.IsPhysicalKeyPressed(Key.Ctrl))
         {
             BeginModal(component, entity, NetworkModalMode.Scale, component.Network.Clone(), "Scale network vertices");
             return;
@@ -176,6 +187,11 @@ public sealed class NetworkEditTool : ITool
         {
             Mutate(component, "Delete network selection", network =>
             {
+                foreach (int faceId in _faces.ToArray())
+                {
+                    network.RemoveFace(faceId);
+                }
+
                 foreach (int edgeId in _edges.ToArray())
                 {
                     network.RemoveEdge(edgeId);
@@ -186,6 +202,7 @@ public sealed class NetworkEditTool : ITool
                     network.RemoveVertex(vertexId);
                 }
 
+                _faces.Clear();
                 _edges.Clear();
                 _vertices.Clear();
             });
@@ -201,6 +218,22 @@ public sealed class NetworkEditTool : ITool
                 if (edge is int id)
                 {
                     _edges.Add(id);
+                }
+            });
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.F, false) && _edges.Count >= 3 &&
+                 TryComputeEdgeLoop(component.Network, _edges) is { } loop)
+        {
+            Mutate(component, "Fill network face", network =>
+            {
+                int? face = network.AddFace(loop);
+                _vertices.Clear();
+                _edges.Clear();
+                _faces.Clear();
+                if (face is int id)
+                {
+                    _faces.Add(id);
+                    _mode = NetworkSelectionMode.Face;
                 }
             });
         }
@@ -235,34 +268,46 @@ public sealed class NetworkEditTool : ITool
             });
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.E, false) && (_vertices.Count > 0 || _edges.Count > 0))
+        if (ImGui.IsKeyPressed(ImGuiKey.E, false) && (_vertices.Count > 0 || _edges.Count > 0 || _faces.Count > 0))
         {
             VertexNetwork before = component.Network.Clone();
             PreviewMutate(component, network =>
             {
-                IReadOnlyList<int> extruded = network.Extrude(_vertices, _edges, GVector3.Zero);
+                NetworkSubgraph extruded = network.Extrude(_vertices, _edges, _faces, GVector3.Zero);
                 _vertices.Clear();
                 _edges.Clear();
-                foreach (int id in extruded)
+                _faces.Clear();
+                foreach (int id in extruded.VertexIds)
                 {
                     _vertices.Add(id);
+                }
+
+                foreach (int id in extruded.FaceIds)
+                {
+                    _faces.Add(id);
                 }
             });
             BeginModal(component, entity, NetworkModalMode.Translate, before, "Extrude network selection");
             return;
         }
 
-        if (ImGui.IsKeyPressed(ImGuiKey.D, false) && Godot.Input.IsPhysicalKeyPressed(Key.Shift) && (_vertices.Count > 0 || _edges.Count > 0))
+        if (ImGui.IsKeyPressed(ImGuiKey.D, false) && Godot.Input.IsPhysicalKeyPressed(Key.Shift) && (_vertices.Count > 0 || _edges.Count > 0 || _faces.Count > 0))
         {
             VertexNetwork before = component.Network.Clone();
             PreviewMutate(component, network =>
             {
-                IReadOnlyList<int> duplicated = network.DuplicateSubgraph(_vertices, _edges, GVector3.Zero);
+                NetworkSubgraph duplicated = network.DuplicateSubgraph(_vertices, _edges, _faces, GVector3.Zero);
                 _vertices.Clear();
                 _edges.Clear();
-                foreach (int id in duplicated)
+                _faces.Clear();
+                foreach (int id in duplicated.VertexIds)
                 {
                     _vertices.Add(id);
+                }
+
+                foreach (int id in duplicated.FaceIds)
+                {
+                    _faces.Add(id);
                 }
             });
             BeginModal(component, entity, NetworkModalMode.Translate, before, "Duplicate network selection");
@@ -285,7 +330,7 @@ public sealed class NetworkEditTool : ITool
         _modalNumeric = string.Empty;
         _modalDescription = description;
         _modalStartPositions.Clear();
-        foreach (int id in _vertices)
+        foreach (int id in EffectiveVertices(component))
         {
             if (component.Network.Vertex(id) is { } vertex)
             {
@@ -518,7 +563,7 @@ public sealed class NetworkEditTool : ITool
 
     private void DriveGizmo(INetworkEditable component, SceneEntity entity, in ViewportContext viewport)
     {
-        if (_vertices.Count == 0)
+        if (!EffectiveVertices(component).Any())
         {
             return;
         }
@@ -537,7 +582,7 @@ public sealed class NetworkEditTool : ITool
             _dragging = true;
             _dragStartPivot = ComputePivot(component, entity);
             _dragStartPositions.Clear();
-            foreach (int id in _vertices)
+            foreach (int id in EffectiveVertices(component))
             {
                 if (component.Network.Vertex(id) is { } vertex)
                 {
@@ -594,7 +639,7 @@ public sealed class NetworkEditTool : ITool
     {
         GVector3 origin = GVector3.Zero;
         int count = 0;
-        foreach (int id in _vertices)
+        foreach (int id in EffectiveVertices(component))
         {
             if (component.Network.Vertex(id) is { } vertex)
             {
@@ -604,6 +649,35 @@ public sealed class NetworkEditTool : ITool
         }
 
         return new Transform3D(Basis.Identity, count == 0 ? entity.Transform.Origin : origin / count);
+    }
+
+    /// <summary>Every vertex a transform (G/R/S, the gizmo) should move: the raw vertex selection,
+    /// plus the endpoints of selected edges, plus the loop of every selected face — Blender resolves
+    /// a transform to vertices the same way regardless of which select mode picked them.</summary>
+    private IEnumerable<int> EffectiveVertices(INetworkEditable component)
+    {
+        var result = new HashSet<int>(_vertices);
+        foreach (int edgeId in _edges)
+        {
+            if (component.Network.Edge(edgeId) is { } edge)
+            {
+                result.Add(edge.A);
+                result.Add(edge.B);
+            }
+        }
+
+        foreach (int faceId in _faces)
+        {
+            if (component.Network.Face(faceId) is { } face)
+            {
+                foreach (int id in face.Vertices)
+                {
+                    result.Add(id);
+                }
+            }
+        }
+
+        return result;
     }
 
     /// <summary>World position to draw or pick a vertex at. Planar networks project onto the terrain
@@ -671,6 +745,7 @@ public sealed class NetworkEditTool : ITool
                 int id = network.AddVertex(local);
                 _vertices.Clear();
                 _edges.Clear();
+                _faces.Clear();
                 _vertices.Add(id);
             });
             return;
@@ -683,6 +758,7 @@ public sealed class NetworkEditTool : ITool
             if (!additive)
             {
                 _edges.Clear();
+                _faces.Clear();
             }
 
             return;
@@ -695,6 +771,20 @@ public sealed class NetworkEditTool : ITool
             if (!additive)
             {
                 _vertices.Clear();
+                _faces.Clear();
+            }
+
+            return;
+        }
+
+        if (_mode == NetworkSelectionMode.Face &&
+            TryPickFace(component, entity, viewport.Camera, viewport.ImageMin, out int faceId))
+        {
+            ToggleOnly(_faces, faceId, additive);
+            if (!additive)
+            {
+                _vertices.Clear();
+                _edges.Clear();
             }
 
             return;
@@ -704,6 +794,7 @@ public sealed class NetworkEditTool : ITool
         {
             _vertices.Clear();
             _edges.Clear();
+            _faces.Clear();
         }
     }
 
@@ -723,6 +814,7 @@ public sealed class NetworkEditTool : ITool
         {
             _vertices.Clear();
             _edges.Clear();
+            _faces.Clear();
         }
 
         if (_mode == NetworkSelectionMode.Vertex)
@@ -732,6 +824,24 @@ public sealed class NetworkEditTool : ITool
                 if (Project(camera, imageMin, Display(component, entity, vertex.Position), out NVector2 screen) && Inside(screen, min, max))
                 {
                     _vertices.Add(vertex.Id);
+                }
+            }
+
+            return;
+        }
+
+        if (_mode == NetworkSelectionMode.Face)
+        {
+            foreach (NetworkFace face in component.Network.Faces)
+            {
+                if (FaceCentroid(component, face) is not { } centroid)
+                {
+                    continue;
+                }
+
+                if (Project(camera, imageMin, Display(component, entity, centroid), out NVector2 screen) && Inside(screen, min, max))
+                {
+                    _faces.Add(face.Id);
                 }
             }
 
@@ -751,6 +861,23 @@ public sealed class NetworkEditTool : ITool
                 _edges.Add(edge.Id);
             }
         }
+    }
+
+    /// <summary>The average of a face's authored vertex positions, or null if any vertex is missing.</summary>
+    private static GVector3? FaceCentroid(INetworkEditable component, NetworkFace face)
+    {
+        GVector3 sum = GVector3.Zero;
+        foreach (int id in face.Vertices)
+        {
+            if (component.Network.Vertex(id) is not { } vertex)
+            {
+                return null;
+            }
+
+            sum += vertex.Position;
+        }
+
+        return face.Vertices.Count == 0 ? null : sum / face.Vertices.Count;
     }
 
     private static bool Inside(NVector2 point, NVector2 min, NVector2 max) =>
@@ -793,6 +920,16 @@ public sealed class NetworkEditTool : ITool
         }
         else
         {
+            uint faceColor = ImGui.GetColorU32(new NVector4(0.35f, 0.78f, 1.0f, 0.12f));
+            uint selectedFaceColor = ImGui.GetColorU32(new NVector4(1.0f, 0.72f, 0.2f, 0.35f));
+            foreach (NetworkFace face in component.Network.Faces)
+            {
+                if (TryProjectFace(component, entity, camera, imageMin, face, out NVector2[] screen))
+                {
+                    DrawFaceFan(drawList, screen, _faces.Contains(face.Id) ? selectedFaceColor : faceColor);
+                }
+            }
+
             foreach (NetworkEdge edge in component.Network.Edges)
             {
                 if (component.Network.Vertex(edge.A) is not { } a || component.Network.Vertex(edge.B) is not { } b)
@@ -929,6 +1066,139 @@ public sealed class NetworkEditTool : ITool
         }
 
         return id != 0;
+    }
+
+    /// <summary>Nearest-to-camera face whose projected loop contains the mouse, tested by fan-
+    /// triangulating the loop and point-in-triangle testing each fan segment — the same
+    /// triangulation <see cref="DrawFaceFan"/> renders with.</summary>
+    private bool TryPickFace(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin, out int id)
+    {
+        id = 0;
+        NVector2 mouse = ImGui.GetMousePos();
+        float bestDistance = float.MaxValue;
+        foreach (NetworkFace face in component.Network.Faces)
+        {
+            if (!TryProjectFace(component, entity, camera, imageMin, face, out NVector2[] screen) ||
+                !PointInFan(screen, mouse))
+            {
+                continue;
+            }
+
+            if (FaceCentroid(component, face) is not { } centroid)
+            {
+                continue;
+            }
+
+            float distance = (Display(component, entity, centroid) - camera.GlobalPosition).LengthSquared();
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                id = face.Id;
+            }
+        }
+
+        return id != 0;
+    }
+
+    /// <summary>Projects every vertex of a face's loop, failing entirely if any vertex is behind the
+    /// camera — a partially-projected face has no sensible screen-space fill.</summary>
+    private bool TryProjectFace(INetworkEditable component, SceneEntity entity, Camera3D camera, NVector2 imageMin, NetworkFace face, out NVector2[] screen)
+    {
+        screen = new NVector2[face.Vertices.Count];
+        for (int i = 0; i < face.Vertices.Count; i++)
+        {
+            if (component.Network.Vertex(face.Vertices[i]) is not { } vertex ||
+                !Project(camera, imageMin, Display(component, entity, vertex.Position), out screen[i]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static void DrawFaceFan(ImDrawListPtr drawList, NVector2[] screen, uint color)
+    {
+        for (int i = 1; i < screen.Length - 1; i++)
+        {
+            drawList.AddTriangleFilled(screen[0], screen[i], screen[i + 1], color);
+        }
+    }
+
+    private static bool PointInFan(NVector2[] screen, NVector2 point)
+    {
+        for (int i = 1; i < screen.Length - 1; i++)
+        {
+            if (PointInTriangle(point, screen[0], screen[i], screen[i + 1]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool PointInTriangle(NVector2 p, NVector2 a, NVector2 b, NVector2 c)
+    {
+        float d1 = Cross(p - a, b - a);
+        float d2 = Cross(p - b, c - b);
+        float d3 = Cross(p - c, a - c);
+        bool hasNegative = d1 < 0.0f || d2 < 0.0f || d3 < 0.0f;
+        bool hasPositive = d1 > 0.0f || d2 > 0.0f || d3 > 0.0f;
+        return !(hasNegative && hasPositive);
+    }
+
+    private static float Cross(NVector2 a, NVector2 b) => a.X * b.Y - a.Y * b.X;
+
+    /// <summary>Walks a selected set of edges and returns their vertices in loop order if — and only
+    /// if — they form exactly one simple closed cycle (every touched vertex has exactly two of the
+    /// selected edges, and following them visits every selected edge exactly once). Any other shape
+    /// (an open chain, a branch, more than one loop) fails rather than guessing an order.</summary>
+    private static IReadOnlyList<int>? TryComputeEdgeLoop(VertexNetwork network, IReadOnlySet<int> edgeIds)
+    {
+        var edges = edgeIds.Select(network.Edge).OfType<NetworkEdge>().ToList();
+        if (edges.Count < 3 || edges.Count != edgeIds.Count)
+        {
+            return null;
+        }
+
+        var adjacency = new Dictionary<int, List<int>>();
+        foreach (NetworkEdge edge in edges)
+        {
+            AddAdjacency(adjacency, edge.A, edge.B);
+            AddAdjacency(adjacency, edge.B, edge.A);
+        }
+
+        if (adjacency.Values.Any(neighbours => neighbours.Count != 2))
+        {
+            return null;
+        }
+
+        var loop = new List<int>();
+        int start = adjacency.Keys.First();
+        int previous = -1;
+        int current = start;
+        do
+        {
+            loop.Add(current);
+            int next = adjacency[current][0] == previous ? adjacency[current][1] : adjacency[current][0];
+            previous = current;
+            current = next;
+        }
+        while (current != start && loop.Count <= adjacency.Count);
+
+        return current == start && loop.Count == adjacency.Count ? loop : null;
+    }
+
+    private static void AddAdjacency(Dictionary<int, List<int>> adjacency, int from, int to)
+    {
+        if (!adjacency.TryGetValue(from, out List<int>? neighbours))
+        {
+            neighbours = [];
+            adjacency[from] = neighbours;
+        }
+
+        neighbours.Add(to);
     }
 
     /// <summary>Where a new vertex lands for a Ctrl+click. Planar networks drop it onto the terrain
