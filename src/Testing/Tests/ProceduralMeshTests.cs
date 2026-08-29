@@ -141,7 +141,10 @@ public static class ProceduralMeshTests
         Assert.AreEqual(1, built.Surfaces.Count);
         Assert.AreEqual(1, built.Surfaces[0].Mesh.GetSurfaceCount());
         Assert.Greater(built.LocalBounds.Size.X, 1.9f);
-        Assert.Greater(built.LocalBounds.Size.Y, 0.9f);
+
+        // A 6-segment hexagonal cross-section doesn't fill its full 1.0 diameter on every axis: with
+        // vertices at 0/60/120/180/240/300 degrees, the Y extent is radius * sqrt(3) ~= 0.866, not 1.0.
+        Assert.Greater(built.LocalBounds.Size.Y, 0.85f);
     }
 
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]

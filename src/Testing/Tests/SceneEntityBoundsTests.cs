@@ -65,7 +65,7 @@ public static class SceneEntityBoundsTests
     {
         // The case the point-based scan got wrong: the origin sits outside the region while the
         // entity itself reaches into it.
-        var entity = new BoxEntity { Local = new Aabb(new Vector3(-20.0f, -1.0f, -1.0f), new Vector3(40.0f, 2.0f, 2.0f)) };
+        var entity = new BoxEntity { Local = new Aabb(new Vector3(-50.0f, -1.0f, -1.0f), new Vector3(40.0f, 2.0f, 2.0f)) };
         entity.Transform = new Transform3D(Basis.Identity, new Vector3(30.0f, 0.0f, 0.0f));
 
         var region = new Aabb(new Vector3(-5.0f, -5.0f, -5.0f), new Vector3(10.0f, 10.0f, 10.0f));

@@ -51,7 +51,9 @@ public static class ChunkChangeRegistryTests
         var ranges = ChunkChangeRegistry.ReduceImpacts([command], _ => true);
 
         Assert.AreEqual(1, ranges.Count);
-        Assert.AreEqual(0.0f, ranges[0].Before!.Bounds.Position.X);
+        // A componentless SceneEntity's default bounds are a unit box centered on its origin (see
+        // SceneEntity.EffectiveLocalBounds), so at the identity transform the span starts at -0.5, not 0.
+        Assert.AreEqual(-0.5f, ranges[0].Before!.Bounds.Position.X);
         Assert.IsTrue(ranges[0].After!.Bounds.Position.X > ranges[0].Before!.Bounds.Position.X);
     }
 
