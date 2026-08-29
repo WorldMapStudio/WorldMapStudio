@@ -67,8 +67,12 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
 
     public bool TryRefresh(SceneEntity loaded, SceneEntity rescanned)
     {
-        // The rebuilt output is the new truth; the loaded chunk keeps its identity and selection.
-        ((LandscapeChunk)loaded).Rebuild(((LandscapeChunk)rescanned).Output);
+        // The rebuilt output is the new truth; the loaded chunk keeps its identity and selection. Its
+        // mesh and material were already built off the main thread while the scan was still running,
+        // so this — running on the main thread inside StreamingSystem.Reconcile — only swaps a node's
+        // children rather than building a mesh and a material for every chunk that just streamed in.
+        var rescannedChunk = (LandscapeChunk)rescanned;
+        ((LandscapeChunk)loaded).Rebuild(rescannedChunk.Output, rescannedChunk.Mesh, rescannedChunk.Material);
         return true;
     }
 
@@ -94,9 +98,19 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
 
         _landscape.Reporter.Report(result, builder.Grid, snapshot.Deformers);
 
+        // Still off the main thread here (ConfigureAwait(false) throughout keeps the continuation on
+        // the worker), so building each chunk's mesh and material — real Godot resource construction —
+        // happens where the heightmap build already ran, instead of stalling the frame that streams it in.
+        AssetSystem assets = _landscape.Context.Assets;
         return coords
             .Where(coord => result.Chunks.ContainsKey(coord))
-            .Select(coord => (SceneEntity)new LandscapeChunk(result.Chunks[coord], builder.Grid, map, _landscape.Context.Assets))
+            .Select(coord =>
+            {
+                LandscapeChunkOutput output = result.Chunks[coord];
+                ArrayMesh mesh = LandscapeChunkMesh.BuildMesh(output, builder.Grid.ChunkSize);
+                ShaderMaterial material = LandscapeChunkMesh.BuildMaterial(output, assets);
+                return (SceneEntity)new LandscapeChunk(output, mesh, material, builder.Grid, map);
+            })
             .ToList();
     }
 }
