@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// A serialized bag of <see cref="MeshParameter"/> values, keyed by parameter name. Shared by
-/// <see cref="IMeshMaterialType"/> materials and <see cref="IProceduralMeshFunction"/> parameters —
+/// <see cref="IMeshMaterialType"/> materials and <see cref="IProceduralFunction"/> parameters —
 /// both are "declared parameter -> stored value" the same way, so one storage format serves both.
 /// </summary>
 public sealed class MeshParameterValues
@@ -42,6 +42,9 @@ public sealed class MeshParameterValues
     public string GetTexture(MeshParameter parameter) => GetRaw(parameter);
 
     public string GetChoice(MeshParameter parameter) => GetRaw(parameter);
+
+    /// <summary>The channel name a <see cref="MeshParameterKind.Channel"/> parameter holds, or "" when unset.</summary>
+    public string GetChannel(MeshParameter parameter) => GetRaw(parameter);
 
     public Color GetColor(MeshParameter parameter)
     {

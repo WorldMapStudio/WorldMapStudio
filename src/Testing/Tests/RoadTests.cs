@@ -5,10 +5,11 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Covers <see cref="RoadPath"/>'s pure maths (chain extraction, the spline, the coverage profile)
-/// and <see cref="RoadComponent"/>'s integration with the landscape builder. The chunk-continuity and
-/// determinism tests mirror <see cref="LandscapeBuilderTests"/>'s two keeper tests, applied to the
-/// channel-scatter path a road rasterizes through instead of the disc it uses there.
+/// Covers <see cref="RoadPath"/>'s pure maths (chain extraction, the spline, the coverage profile) and
+/// the built-in road function's integration with the landscape builder through an ordinary
+/// <see cref="ProceduralComponent"/>. The chunk-continuity and determinism tests mirror
+/// <see cref="LandscapeBuilderTests"/>'s two keeper tests, applied to the channel-scatter path a road
+/// rasterizes through instead of the disc it uses there.
 /// </summary>
 public static class RoadTests
 {
@@ -247,26 +248,37 @@ public static class RoadTests
         };
     }
 
-    // Mirrors how the editor actually wires a road: the network/channel component carries no layer or
+    private static EditorContext NewContext(string name) =>
+        new(new Node3D(), new Project { Name = name });
+
+    // Mirrors how the editor actually wires a road: the network/channel model carries no layer or
     // material knowledge of its own, and a sibling LandscapeMaterialBindComponent on the same entity is
-    // what claims the centre and shoulder layers — see DrawingTargetTests for the same pattern.
-    private static (RoadComponent Road, List<ILandscapeDeformer> Deformers) RoadAt(
-        Fixture fixture, Transform3D transform, Vector3 localA, Vector3 localB, int priority = 0)
+    // what claims the centre and shoulder layers — see DrawingTargetTests for the same pattern. The
+    // road is now an ordinary ProceduralComponent bound to a model on the built-in road function, so
+    // its published paint (what Rasterize/InfluenceBounds actually read) only exists once the entity's
+    // representation has been built — hence CreateRepresentation below, unlike the old RoadComponent
+    // which computed its RoadPath eagerly in its own setters.
+    private static (ProceduralComponent Road, List<ILandscapeDeformer> Deformers) RoadAt(
+        EditorContext context, Fixture fixture, Transform3D transform, Vector3 localA, Vector3 localB, int modelId, int priority = 0)
     {
-        var road = new RoadComponent
-        {
-            CentreWidth = 8.0f,
-            ShoulderWidth = 6.0f,
-            Falloff = 0.3f,
-            CentreChannel = CentreChannel,
-            ShoulderChannel = ShoulderChannel,
-        };
+        var model = new ProceduralModel { RecordId = modelId, FunctionId = "builtin.procedural.road" };
+
+        var values = new MeshParameterValues();
+        values.Set(RoadNetworkFunction.CentreWidth, 8.0f);
+        values.Set(RoadNetworkFunction.ShoulderWidth, 6.0f);
+        values.Set(RoadNetworkFunction.Falloff, 0.3f);
+        values.Set(RoadNetworkFunction.CentreChannel, CentreChannel);
+        values.Set(RoadNetworkFunction.ShoulderChannel, ShoulderChannel);
+        model.Parameters = values.Serialize();
 
         var network = new VertexNetwork();
         int a = network.AddVertex(localA);
         int b = network.AddVertex(localB);
         network.AddEdge(a, b);
-        road.ReplaceNetwork(network);
+        model.ReplaceNetwork(network);
+        context.Catalog.Add(model);
+
+        var road = new ProceduralComponent(context.Procedural) { ModelId = model.RecordId };
 
         var bind = new LandscapeMaterialBindComponent { Priority = priority };
         bind.ReplaceBindings(
@@ -280,21 +292,27 @@ public static class RoadTests
         entity.AddComponent(bind);
         entity.Transform = transform;
 
+        context.Scene.Add(entity);
+        entity.CreateRepresentation(context.Root);
+
         return (road, entity.Components.OfType<ILandscapeDeformer>().ToList());
     }
 
-    [EditorTest(Category = "Road", Thread = TestThread.Background)]
+    [EditorTest(Category = "Road", Thread = TestThread.Main)]
     public static void Neighbouring_chunks_agree_on_the_shared_alpha_edge()
     {
         Fixture fixture = BuildFixture();
+        EditorContext context = NewContext("__wms_road_edge_test__");
 
         // A road straddling the border between chunk (0,0) [x in 0..64) and (1,0) [x in 64..128),
         // running parallel to it so it clearly reaches the shared edge.
         (_, List<ILandscapeDeformer> deformers) = RoadAt(
+            context,
             fixture,
             new Transform3D(Basis.Identity, new Vector3(64.0f, 0.0f, 32.0f)),
             new Vector3(-40.0f, 0.0f, 0.0f),
-            new Vector3(40.0f, 0.0f, 0.0f));
+            new Vector3(40.0f, 0.0f, 0.0f),
+            modelId: 1);
 
         LandscapeBuildResult result = fixture.Builder().Build([new ChunkCoord(0, 0), new ChunkCoord(1, 0)], deformers);
 
@@ -324,25 +342,30 @@ public static class RoadTests
         Assert.IsTrue(sawCoverage, "the road must actually reach the shared edge for this to prove anything");
     }
 
-    [EditorTest(Category = "Road", Thread = TestThread.Background)]
+    [EditorTest(Category = "Road", Thread = TestThread.Main)]
     public static void Building_the_same_block_twice_gives_identical_bytes()
     {
         // Guards against any dependence on iteration order or leftover pool state, same as the
         // builder-level version of this test — applied here to the per-segment scatter path a road
         // rasterizes through instead of a whole-chunk scan.
         Fixture fixture = BuildFixture();
+        EditorContext context = NewContext("__wms_road_determinism_test__");
         List<ChunkCoord> block = [new(0, 0), new(1, 0), new(0, 1), new(1, 1)];
 
         (_, List<ILandscapeDeformer> deformersA) = RoadAt(
+            context,
             fixture,
             new Transform3D(Basis.Identity, new Vector3(32.0f, 0.0f, 32.0f)),
             new Vector3(-20.0f, 0.0f, -10.0f),
-            new Vector3(20.0f, 0.0f, 10.0f));
+            new Vector3(20.0f, 0.0f, 10.0f),
+            modelId: 1);
         (_, List<ILandscapeDeformer> deformersB) = RoadAt(
+            context,
             fixture,
             new Transform3D(Basis.Identity, new Vector3(96.0f, 0.0f, 96.0f)),
             new Vector3(-15.0f, 0.0f, 5.0f),
             new Vector3(15.0f, 0.0f, -5.0f),
+            modelId: 2,
             priority: 1);
         List<ILandscapeDeformer> deformers = deformersA.Concat(deformersB).ToList();
 
@@ -354,49 +377,59 @@ public static class RoadTests
         Assert.AreEqual(first, Describe(fixture.Builder().Build(block, deformers.AsEnumerable().Reverse().ToList())));
     }
 
-    [EditorTest(Category = "Road", Thread = TestThread.Background)]
+    [EditorTest(Category = "Road", Thread = TestThread.Main)]
     public static void Road_claims_nothing_itself()
     {
         Fixture fixture = BuildFixture();
-        (RoadComponent road, _) = RoadAt(
+        EditorContext editorContext = NewContext("__wms_road_claim_test__");
+        (ProceduralComponent road, _) = RoadAt(
+            editorContext,
             fixture,
             new Transform3D(Basis.Identity, new Vector3(32.0f, 0.0f, 32.0f)),
             new Vector3(-5.0f, 0.0f, 0.0f),
-            new Vector3(5.0f, 0.0f, 0.0f));
+            new Vector3(5.0f, 0.0f, 0.0f),
+            modelId: 1);
 
-        var context = new LandscapeClaimContext(new ChunkCoord(0, 0), new LandscapeGrid(fixture.Settings), fixture.Catalog);
+        var claimContext = new LandscapeClaimContext(new ChunkCoord(0, 0), new LandscapeGrid(fixture.Settings), fixture.Catalog);
 
-        Assert.AreEqual(0, road.Claim(context).Count(),
+        Assert.AreEqual(0, road.Claim(claimContext).Count(),
             "a road only writes channels — claiming the layer/material is LandscapeMaterialBindComponent's job");
     }
 
-    [EditorTest(Category = "Road", Thread = TestThread.Background)]
+    [EditorTest(Category = "Road", Thread = TestThread.Main)]
     public static void Content_version_moves_for_shape_and_width_and_channel_but_not_for_position()
     {
         Fixture fixture = BuildFixture();
-        (RoadComponent road, _) = RoadAt(
+        EditorContext context = NewContext("__wms_road_contentversion_test__");
+        (ProceduralComponent road, _) = RoadAt(
+            context,
             fixture,
             new Transform3D(Basis.Identity, new Vector3(32.0f, 0.0f, 32.0f)),
             new Vector3(-5.0f, 0.0f, 0.0f),
-            new Vector3(5.0f, 0.0f, 0.0f));
+            new Vector3(5.0f, 0.0f, 0.0f),
+            modelId: 1);
 
+        ProceduralModel model = road.Model!;
         int original = road.ContentVersion;
 
         road.Owner!.Transform = new Transform3D(Basis.Identity, new Vector3(50.0f, 0.0f, 50.0f));
         Assert.AreEqual(original, road.ContentVersion,
             "moving the entity must not change ContentVersion — InfluenceBounds is compared separately");
 
-        road.CentreWidth += 1.0f;
+        MeshParameterValues values = MeshParameterValues.Parse(model.Parameters);
+        values.Set(RoadNetworkFunction.CentreWidth, values.GetFloat(RoadNetworkFunction.CentreWidth) + 1.0f);
+        model.Parameters = values.Serialize();
         int afterWidth = road.ContentVersion;
         Assert.AreNotEqual(original, afterWidth, "a width change must be visible");
 
-        road.CentreChannel = "some_other_channel";
+        values.Set(RoadNetworkFunction.CentreChannel, "some_other_channel");
+        model.Parameters = values.Serialize();
         int afterChannel = road.ContentVersion;
         Assert.AreNotEqual(afterWidth, afterChannel, "a channel rebind must be visible");
 
-        VertexNetwork changed = road.Network.Clone();
-        changed.MoveVertex(road.Network.Vertices[0].Id, new Vector3(-6.0f, 0.0f, 0.0f));
-        road.ReplaceNetwork(changed);
+        VertexNetwork changed = model.Network.Clone();
+        changed.MoveVertex(model.Network.Vertices[0].Id, new Vector3(-6.0f, 0.0f, 0.0f));
+        model.ReplaceNetwork(changed);
         Assert.AreNotEqual(afterChannel, road.ContentVersion, "moving a vertex must be visible");
     }
 

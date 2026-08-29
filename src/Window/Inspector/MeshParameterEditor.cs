@@ -5,7 +5,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Draws a <see cref="MeshParameter"/> list against a <see cref="MeshParameterValues"/> bag, the way
-/// <c>ProceduralMeshComponentType</c> and <c>LandscapeMaterialsWindow</c> each used to do inline —
+/// <c>ProceduralComponentType</c> and <c>LandscapeMaterialsWindow</c> each used to do inline —
 /// shared here so the Mesh Materials window and the procedural inspector's material-slot editor are
 /// not a third and fourth copy of the same drag/undo bracketing.
 ///
@@ -16,11 +16,13 @@ namespace WorldMapStudio;
 public sealed class MeshParameterEditor
 {
     private readonly TextureAssetPicker _texturePicker;
+    private readonly LandscapeSystem _landscape;
     private string? _dragBefore;
 
-    public MeshParameterEditor(TextureAssetPicker texturePicker)
+    public MeshParameterEditor(TextureAssetPicker texturePicker, LandscapeSystem landscape)
     {
         _texturePicker = texturePicker;
+        _landscape = landscape;
     }
 
     public void DrawModals() => _texturePicker.Draw();
@@ -153,6 +155,34 @@ public sealed class MeshParameterEditor
                         if (option.Description.Length > 0 && ImGui.IsItemHovered())
                         {
                             ImGui.SetTooltip(option.Description);
+                        }
+                    }
+
+                    ImGui.EndCombo();
+                }
+
+                break;
+            }
+
+            case MeshParameterKind.Channel:
+            {
+                string bound = values.GetChannel(parameter);
+                string label = bound.Length == 0 ? "(none)" : bound;
+
+                if (ImGui.BeginCombo(parameter.DisplayName, label))
+                {
+                    if (ImGui.Selectable("(none)", bound.Length == 0))
+                    {
+                        values.Set(parameter, "");
+                        onChanged(serialized, values.Serialize());
+                    }
+
+                    foreach (LandscapeChannel channel in _landscape.Catalog.Channels)
+                    {
+                        if (ImGui.Selectable(channel.Name, channel.Name == bound))
+                        {
+                            values.Set(parameter, channel.Name);
+                            onChanged(serialized, values.Serialize());
                         }
                     }
 

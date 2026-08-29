@@ -10,14 +10,14 @@ namespace WorldMapStudio;
 /// <summary>
 /// Picks an existing <see cref="ProceduralModel"/> (searchable popup, modelled on
 /// <see cref="ModelAssetPicker"/>) or creates a new one with a user-chosen id (small form popup).
-/// One instance is shared by every <see cref="ProceduralMeshComponentType"/> inspector draw and by
+/// One instance is shared by every <see cref="ProceduralComponentType"/> inspector draw and by
 /// <see cref="ProceduralModelsWindow"/>.
 /// </summary>
 public sealed class ProceduralModelPicker
 {
     private const string CreatePopupId = "Create Procedural Model";
 
-    private readonly ProceduralMeshSystem _system;
+    private readonly ProceduralSystem _system;
     private readonly Node _previewOwner;
     private readonly ModalOperator<ProceduralModelSelectionOperation, ProceduralModelSelectionContext> _modal =
         new("SelectProceduralModel", () => new ProceduralModelSelectionOperation(), new Vector2(940, 0));
@@ -33,7 +33,7 @@ public sealed class ProceduralModelPicker
     private string _createName = "Model";
     private string _createFunctionId = "";
 
-    public ProceduralModelPicker(ProceduralMeshSystem system, Node previewOwner)
+    public ProceduralModelPicker(ProceduralSystem system, Node previewOwner)
     {
         _system = system;
         _previewOwner = previewOwner;
@@ -130,14 +130,14 @@ public sealed class ProceduralModelPicker
 
     private void DrawFunctionCombo()
     {
-        IProceduralMeshFunction? bound = _system.Find(_createFunctionId);
+        IProceduralFunction? bound = _system.Find(_createFunctionId);
         string label = bound?.DisplayName ?? "(none)";
         if (!ImGui.BeginCombo("Function", label))
         {
             return;
         }
 
-        foreach (IProceduralMeshFunction function in _system.All)
+        foreach (IProceduralFunction function in _system.All)
         {
             if (ImGui.Selectable(function.DisplayName, function.Id == _createFunctionId))
             {
@@ -193,7 +193,7 @@ public sealed class ProceduralModelPicker
         return probe.RecordId ?? 1;
     }
 
-    /// <summary>A single edge to start from, the same seed <c>ProceduralMeshComponentType.Create</c> used
+    /// <summary>A single edge to start from, the same seed <c>ProceduralComponentType.Create</c> used
     /// to give before models existed separately from components.</summary>
     private static VertexNetwork DefaultNetwork()
     {

@@ -4,7 +4,7 @@ namespace WorldMapStudio;
 
 public static class ProceduralMeshTests
 {
-    private sealed class SingleLinearFunction : IProceduralMeshFunction
+    private sealed class SingleLinearFunction : IProceduralFunction
     {
         public string Id => "test.single_linear";
         public string DisplayName => "Single Linear";
@@ -14,10 +14,10 @@ public static class ProceduralMeshTests
         public bool AllowsBranching => false;
         public float Priority => 0f;
         public System.Collections.Generic.IReadOnlyList<MeshParameter> Parameters { get; } = [];
-        public void Build(in ProceduralMeshBuildContext context, ProceduralMeshOutputBuilder output) { }
+        public void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output) { }
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Parameter_values_round_trip_and_keep_unknown_keys()
     {
         var values = new MeshParameterValues();
@@ -38,7 +38,7 @@ public static class ProceduralMeshTests
         Assert.IsTrue(MeshParameterValues.Parse(parsed.Serialize()).Raw.ContainsKey("retired"));
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Network_serializes_and_rejects_invalid_edges()
     {
         var network = new VertexNetwork();
@@ -56,7 +56,7 @@ public static class ProceduralMeshTests
         Assert.AreEqual(network.Fingerprint(), parsed.Fingerprint());
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Split_merge_duplicate_and_extrude_update_the_graph()
     {
         var network = new VertexNetwork();
@@ -82,7 +82,7 @@ public static class ProceduralMeshTests
         Assert.IsTrue(network.Edges.Count >= 2, "extrusion should connect old and new vertices");
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Network_bounds_follow_off_origin_vertices()
     {
         var network = new VertexNetwork();
@@ -97,7 +97,7 @@ public static class ProceduralMeshTests
         Assert.AreApproximatelyEqual(6.0, bounds.Size.Z, 1e-5);
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Function_topology_capabilities_validate_network_shape()
     {
         var network = new VertexNetwork();
@@ -121,7 +121,7 @@ public static class ProceduralMeshTests
         Assert.IsNotNull(network.Vertex(separate));
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
     public static void Tube_network_builds_valid_surface()
     {
         var network = new VertexNetwork();
@@ -132,17 +132,19 @@ public static class ProceduralMeshTests
         var values = new MeshParameterValues();
         values.Set(TubeNetworkMeshFunction.Segments, 6);
         values.Set(TubeNetworkMeshFunction.Radius, 0.5f);
-        var output = new ProceduralMeshOutputBuilder();
-        new TubeNetworkMeshFunction(null!).Build(new ProceduralMeshBuildContext(network, values, null!), output);
+        var output = new ProceduralOutputBuilder();
+        new TubeNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
 
-        ModelAsset built = output.Build(MeshModelFormat.FormatId);
+        ProceduralBuildResult result = output.Build([TubeNetworkMeshFunction.Output], _ => MeshModelFormat.FormatId);
+        Assert.AreEqual(1, result.Models.Count);
+        ModelAsset built = result.Models[0].Asset;
         Assert.AreEqual(1, built.Surfaces.Count);
         Assert.AreEqual(1, built.Surfaces[0].Mesh.GetSurfaceCount());
         Assert.Greater(built.LocalBounds.Size.X, 1.9f);
         Assert.Greater(built.LocalBounds.Size.Y, 0.9f);
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Model_revision_bumps_on_authored_changes_but_not_on_no_ops()
     {
         var model = new ProceduralModel();
@@ -156,7 +158,7 @@ public static class ProceduralMeshTests
 
         model.FunctionId = "other.function";
         model.Parameters = "p";
-        model.FormatId = "f";
+        model.Formats = "f";
         model.Materials = "m";
         Assert.AreEqual(baseline + 5, model.Revision, "each distinct authored-field write should bump once");
 
@@ -166,7 +168,7 @@ public static class ProceduralMeshTests
         Assert.AreEqual(baseline + 6, model.Revision, "ReplaceNetwork should bump the revision too");
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Model_content_version_and_fingerprint_are_cached_against_revision()
     {
         var model = new ProceduralModel();
@@ -185,25 +187,25 @@ public static class ProceduralMeshTests
         Assert.AreNotEqual(version0, model.ContentVersion, "a network replacement should invalidate the cached content version");
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
     public static void Two_placements_of_one_model_share_bounds_content_version_and_the_build_cache()
     {
         EditorContext context = NewContext("__wms_procedural_model_sharing_test__");
-        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
         var entityA = new SceneEntity();
         var entityB = new SceneEntity();
-        var componentA = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
-        var componentB = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
+        var componentA = new ProceduralComponent(system) { ModelId = model.RecordId };
+        var componentB = new ProceduralComponent(system) { ModelId = model.RecordId };
         entityA.AddComponent(componentA);
         entityB.AddComponent(componentB);
 
         Assert.AreEqual(componentA.ContentVersion, componentB.ContentVersion);
         Assert.IsTrue(componentA.LocalBounds.Size.IsEqualApprox(componentB.LocalBounds.Size));
 
-        ModelAsset builtA = system.Build(model);
-        ModelAsset builtB = system.Build(model);
+        ProceduralBuildResult builtA = system.Build(model);
+        ProceduralBuildResult builtB = system.Build(model);
         Assert.IsTrue(ReferenceEquals(builtA, builtB), "one model should build once and be shared by every placement");
 
         int revisionBefore = model.Revision;
@@ -212,29 +214,29 @@ public static class ProceduralMeshTests
         model.ReplaceNetwork(moved);
         Assert.Greater(model.Revision, revisionBefore);
 
-        ModelAsset builtAfterEdit = system.Build(model);
+        ProceduralBuildResult builtAfterEdit = system.Build(model);
         Assert.IsFalse(ReferenceEquals(builtA, builtAfterEdit), "a revision bump should invalidate the cached build");
         Assert.AreEqual(componentA.ContentVersion, componentB.ContentVersion, "both placements should still agree after the shared model changed");
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
     public static void System_update_refreshes_every_other_placement_when_one_edits_the_shared_model()
     {
         EditorContext context = NewContext("__wms_procedural_model_update_test__");
-        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
         var entityA = new SceneEntity();
         var entityB = new SceneEntity();
-        entityA.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
-        entityB.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
+        entityA.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
+        entityB.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
         context.Scene.Add(entityA);
         context.Scene.Add(entityB);
         entityA.CreateRepresentation(context.Root);
         entityB.CreateRepresentation(context.Root);
 
-        var componentA = entityA.Component<ProceduralMeshComponent>()!;
-        var componentB = entityB.Component<ProceduralMeshComponent>()!;
+        var componentA = entityA.Component<ProceduralComponent>()!;
+        var componentB = entityB.Component<ProceduralComponent>()!;
         system.Update();
         Assert.IsFalse(componentA.NeedsRefresh);
         Assert.IsFalse(componentB.NeedsRefresh);
@@ -250,18 +252,18 @@ public static class ProceduralMeshTests
         Assert.IsFalse(componentB.NeedsRefresh, "the guarded sweep should have refreshed every other placement");
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
     public static void Set_network_command_pins_the_model_and_emits_one_chunk_impact_per_placement()
     {
         EditorContext context = NewContext("__wms_procedural_model_setnetwork_test__");
-        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
         var entityA = new SceneEntity { Map = new MapId(1) };
         var entityB = new SceneEntity { Map = new MapId(1) };
-        var componentA = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
+        var componentA = new ProceduralComponent(system) { ModelId = model.RecordId };
         entityA.AddComponent(componentA);
-        entityB.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
+        entityB.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
         context.Scene.Add(entityA);
         context.Scene.Add(entityB);
 
@@ -282,16 +284,16 @@ public static class ProceduralMeshTests
         Assert.IsTrue(model.Network.Vertex(before.Vertices[1].Id)!.Position.IsEqualApprox(before.Vertices[1].Position));
     }
 
-    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
     public static void Dangling_model_id_renders_the_placeholder_instead_of_throwing()
     {
         EditorContext context = NewContext("__wms_procedural_model_dangling_test__");
-        var component = new ProceduralMeshComponent(context.ProceduralMeshes) { ModelId = 999 };
+        var component = new ProceduralComponent(context.Procedural) { ModelId = 999 };
         var entity = new SceneEntity();
         entity.AddComponent(component);
 
         Node3D node = component.BuildNode();
-        Assert.IsNotNull(node.GetNodeOrNull("MissingProceduralMesh"));
+        Assert.IsNotNull(node.GetNodeOrNull("MissingProcedural"));
     }
 
     private static EditorContext NewContext(string name) =>

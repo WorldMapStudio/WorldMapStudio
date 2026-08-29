@@ -145,7 +145,10 @@ public sealed class LandscapeBuilder
     {
         Aabb bounds = Grid.BoundsOf(coord);
         return deformers
-            .Where(deformer => deformer.InfluenceBounds.Intersects(bounds))
+            // A zero-size influence box (e.g. a procedural mesh with nothing to paint) still
+            // satisfies Aabb.Intersects at its own position, which would otherwise make every such
+            // deformer "touch" whatever chunk contains that point for no reason.
+            .Where(deformer => deformer.InfluenceBounds.Size != Vector3.Zero && deformer.InfluenceBounds.Intersects(bounds))
             .OrderBy(deformer => deformer.DeformerKey, System.StringComparer.Ordinal);
     }
 

@@ -76,7 +76,7 @@ public sealed partial class EditorContext : ISubsystemHost
     public LandscapeSystem Landscape { get; }
 
     /// <summary>Builds scene procedural meshes from authored graph components.</summary>
-    public ProceduralMeshSystem ProceduralMeshes { get; }
+    public ProceduralSystem Procedural { get; }
 
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
@@ -115,9 +115,9 @@ public sealed partial class EditorContext : ISubsystemHost
         MeshMaterials = new MeshMaterialSystem(this);
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
-        ProceduralMeshes = new ProceduralMeshSystem(this);
+        Procedural = new ProceduralSystem(this);
 
-        // Built after Assets/Landscape/ProceduralMeshes: the built-in component types capture them.
+        // Built after Assets/Landscape/Procedural: the built-in component types capture them.
         ComponentTypes = new SceneComponentRegistry(this);
 
         Streaming = new StreamingSystem(this);
@@ -182,7 +182,7 @@ public sealed partial class EditorContext : ISubsystemHost
 
         // Models bind material presets, so presets load first.
         onStep?.Invoke("Loading procedural models");
-        ProceduralMeshes.LoadCatalog();
+        Procedural.LoadCatalog();
 
         // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
         foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())

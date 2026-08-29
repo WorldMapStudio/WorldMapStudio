@@ -42,7 +42,7 @@ public sealed class Editor : IScene
 
         // Notices a procedural model edited from one placement (or a window, script, or undo) and
         // rebuilds every other placement referencing it.
-        _context.ProceduralMeshes.Update();
+        _context.Procedural.Update();
 
         // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
         // since last frame (never blocks, mirrors WorkQueue's own per-frame main-thread pump), and

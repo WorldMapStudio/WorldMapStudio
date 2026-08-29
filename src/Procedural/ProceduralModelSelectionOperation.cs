@@ -137,7 +137,7 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
         ImGui.TextDisabled($"Preview: {current}");
 
         string cacheKey = model == null ? "" : $"{model.RecordId}|{model.Revision}|{context.System.Context.MeshMaterials.PresetContentVersion}";
-        ModelAsset? built = model != null ? context.System.Build(model) : null;
+        ModelAsset? built = model != null ? context.System.Build(model).ToPreviewAsset() : null;
         _preview!.DrawAsset(cacheKey, built, PreviewSize);
 
         ProceduralModel? currentModel = context.CurrentId is int currentId ? context.System.FindModel(currentId) : null;

@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Authors <see cref="ProceduralModel"/>s — the catalog of procedural meshes a
-/// <see cref="ProceduralMeshComponent"/> references by id. Structured like
+/// <see cref="ProceduralComponent"/> references by id. Structured like
 /// <see cref="MeshMaterialsWindow"/>: catalog edits go through the edit session, so they undo and
 /// commit with everything else. Field editing itself is shared with the component inspector via
 /// <see cref="ProceduralModelFieldEditor"/>.
@@ -28,12 +28,12 @@ public sealed class ProceduralModelsWindow : Window
         : base("Procedural Models", startOpen: false, defaultSize: new Vector2(560.0f, 560.0f))
     {
         _context = manager.Context;
-        ProceduralMeshSystem system = _context.ProceduralMeshes;
-        _fields = new ProceduralModelFieldEditor(system, new MeshParameterEditor(new TextureAssetPicker(_context.Assets)));
+        ProceduralSystem system = _context.Procedural;
+        _fields = new ProceduralModelFieldEditor(system, new MeshParameterEditor(new TextureAssetPicker(_context.Assets), _context.Landscape));
         _picker = new ProceduralModelPicker(system, _context.Root);
     }
 
-    private ProceduralMeshSystem Models => _context.ProceduralMeshes;
+    private ProceduralSystem Models => _context.Procedural;
 
     protected override void DrawContent()
     {
@@ -111,7 +111,7 @@ public sealed class ProceduralModelsWindow : Window
             Name = UniqueName($"{model.Name} Copy", Models.Models.Select(m => m.Name)),
             FunctionId = model.FunctionId,
             Parameters = model.Parameters,
-            FormatId = model.FormatId,
+            Formats = model.Formats,
             Materials = model.Materials,
         };
         clone.ReplaceNetwork(model.Network);

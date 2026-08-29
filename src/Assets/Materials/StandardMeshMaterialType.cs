@@ -25,7 +25,7 @@ public sealed class StandardMeshMaterialType : IMeshMaterialType
     public IReadOnlyList<MeshParameter> Parameters => StandardMeshMaterial.Parameters;
 
     // Matches the hardcoded default a procedural mesh surface rendered with before material slots
-    // existed (see ProceduralMeshOutputBuilder's old texture/tint overload) — most procedural output
+    // existed (see ProceduralOutputBuilder's old texture/tint overload) — most procedural output
     // is a thin, open surface (a tube, a ribbon) that looks wrong back-face-culled.
     public MeshMaterial Default => StandardMeshMaterial.Describe(albedo: new Color(0.72f, 0.74f, 0.78f), twoSided: true);
 

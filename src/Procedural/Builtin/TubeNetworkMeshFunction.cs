@@ -3,8 +3,8 @@ using Godot;
 
 namespace WorldMapStudio;
 
-[Subsystem(nameof(ProceduralMeshSystem))]
-public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
+[Subsystem(nameof(ProceduralSystem))]
+public sealed class TubeNetworkMeshFunction : IProceduralFunction
 {
     public static readonly MeshParameter Radius =
         MeshParameter.Float("radius", "Radius", 0.25f, 0.01f, 128.0f, "Tube radius in local units.");
@@ -16,6 +16,8 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
         MeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
 
     public static readonly MeshMaterialSlot Surface = new("surface", "Surface", "Tube material.");
+
+    public static readonly ProceduralOutputSlot Output = new("mesh", "Mesh", [], [Surface]);
 
     public string Id => "builtin.mesh.tube_network";
 
@@ -34,13 +36,13 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
     public IReadOnlyList<MeshParameter> Parameters { get; } =
         MeshParameter.List(Radius, Segments, UvScale);
 
-    public IReadOnlyList<MeshMaterialSlot> MaterialSlots { get; } = [Surface];
+    public IReadOnlyList<ProceduralOutputSlot> Outputs { get; } = [Output];
 
-    public TubeNetworkMeshFunction(ProceduralMeshSystem system)
+    public TubeNetworkMeshFunction(ProceduralSystem system)
     {
     }
 
-    public void Build(in ProceduralMeshBuildContext context, ProceduralMeshOutputBuilder output)
+    public void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output)
     {
         float radius = Mathf.Max(0.001f, context.Float(Radius));
         int segments = Mathf.Clamp(context.Int(Segments), 3, 64);
@@ -63,7 +65,7 @@ public sealed class TubeNetworkMeshFunction : IProceduralMeshFunction
             AddTube(a.Position, b.Position, radius, segments, uvScale, vertices, normals, uvs, indices);
         }
 
-        output.AddSurface("Tubes", vertices, indices, context.Material(Surface), normals, uvs);
+        output.AddSurface(Output, "Tubes", vertices, indices, context.Material(Output, Surface), normals, uvs);
     }
 
     private static void AddTube(

@@ -4,7 +4,7 @@ using Godot;
 namespace WorldMapStudio;
 
 public sealed record ProceduralModelSelectionContext(
-    ProceduralMeshSystem System,
+    ProceduralSystem System,
     Node PreviewOwner,
     int? CurrentId,
     Action<int?> Select);

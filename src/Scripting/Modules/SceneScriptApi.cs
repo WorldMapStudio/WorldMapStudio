@@ -115,7 +115,7 @@ public sealed class SceneScriptApi : IScriptModule
         "landscape-stamp" => new StampComponent(),
         "drawing-target" => new DrawingTargetComponent(),
         "landscape-material-bind" => new LandscapeMaterialBindComponent(),
-        "procedural-mesh" => new ProceduralMeshComponent(_context.ProceduralMeshes),
+        "procedural-mesh" => new ProceduralComponent(_context.Procedural),
         _ => throw new InvalidOperationException($"No scene component type named '{typeId}'."),
     };
 
