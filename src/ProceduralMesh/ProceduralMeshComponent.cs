@@ -1,17 +1,28 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
 
+/// <summary>
+/// Places a <see cref="ProceduralModel"/> in the scene. The component owns no authored data itself —
+/// function, parameters, network and all — only which model it references, so many placements can
+/// share one model and editing it from any of them (or a window, or a script) updates every placement.
+/// See <see cref="ProceduralMeshSystem.Update"/> for how a placement notices the model changed under it.
+/// </summary>
 public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable
 {
+    private static readonly VertexNetwork EmptyNetwork = new();
+
     private readonly ProceduralMeshSystem _system;
-    private ModelAsset? _cached;
-    private string _cacheKey = "";
-    private string _functionId = "builtin.mesh.tube_network";
-    private string _parameters = "";
-    private string _formatId = "";
-    private string _materials = "";
+    private int? _modelId;
+
+    // What the representation was last built from. Compared by ProceduralMeshSystem.Update against
+    // the live (ModelId, Model.Revision) pair every frame, so a model edited from a different entity
+    // (or a window, or a script) still rebuilds this placement.
+    private int? _representedModelId;
+    private int _representedRevision = -1;
 
     public ProceduralMeshComponent(ProceduralMeshSystem system)
     {
@@ -22,73 +33,26 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         _system = system;
     }
 
-    public string FunctionId
+    public int? ModelId
     {
-        get => _functionId;
+        get => _modelId;
         set
         {
-            if (_functionId == value)
+            if (_modelId == value)
             {
                 return;
             }
 
-            _functionId = value;
-            Invalidate();
+            _modelId = value;
+            Owner?.RefreshRepresentation();
         }
     }
 
-    public string Parameters
-    {
-        get => _parameters;
-        set
-        {
-            if (_parameters == value)
-            {
-                return;
-            }
+    /// <summary>The bound model, or null if <see cref="ModelId"/> is unset or dangling.</summary>
+    public ProceduralModel? Model => _system.FindModel(_modelId);
 
-            _parameters = value;
-            Invalidate();
-        }
-    }
-
-    /// <summary>
-    /// Which <see cref="IModelFormat"/> this procedural mesh authors, e.g. "wow.format.wmo" for a
-    /// plugin-defined format. Empty defers to the bound function's first supported format, or the
-    /// plain authorable mesh format if the function does not care.
-    /// </summary>
-    public string FormatId
-    {
-        get => _formatId;
-        set
-        {
-            if (_formatId == value)
-            {
-                return;
-            }
-
-            _formatId = value;
-            Invalidate();
-        }
-    }
-
-    /// <summary>Serialized <see cref="ProceduralMeshMaterialBindings"/> for the bound function's material slots.</summary>
-    public string Materials
-    {
-        get => _materials;
-        set
-        {
-            if (_materials == value)
-            {
-                return;
-            }
-
-            _materials = value;
-            Invalidate();
-        }
-    }
-
-    public VertexNetwork Network { get; private set; } = new();
+    /// <summary>The bound model's network, or an empty one while unbound.</summary>
+    public VertexNetwork Network => Model?.Network ?? EmptyNetwork;
 
     public bool PlanarXZ => false;
 
@@ -110,31 +74,37 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         }
     }
 
-    public override int ContentVersion => HashCode.Combine(
-        FunctionId, Parameters, FormatId, Materials,
-        _system.Find(FunctionId)?.Version ?? 0, Network.Fingerprint(), _system.Context.MeshMaterials.PresetContentVersion);
+    public override int ContentVersion => HashCode.Combine(ModelId, Model?.ContentVersion ?? 0);
 
+    /// <summary>Whether the bound model has moved on since this placement's representation was last built.</summary>
+    public bool NeedsRefresh => _representedModelId != ModelId || _representedRevision != (Model?.Revision ?? -1);
+
+    /// <summary>What a network edit pins and persists against — the bound model, not this placement,
+    /// since the network lives there and may be shared.</summary>
+    public IEntity EditTarget => Model ?? throw new InvalidOperationException("Procedural mesh has no bound model.");
+
+    /// <summary>Every loaded placement referencing the same model.</summary>
+    public IEnumerable<SceneEntity> AffectedEntities => _modelId is int id
+        ? _system.Context.Scene.Entities.Where(entity => entity.Component<ProceduralMeshComponent>()?.ModelId == id)
+        : Owner is { } owner ? [owner] : [];
+
+    /// <summary>Replaces the bound model's network wholesale. A no-op while unbound.</summary>
     public void ReplaceNetwork(VertexNetwork network)
     {
-        Network = network.Clone();
-        Invalidate();
-    }
-
-    public override SceneComponent Clone()
-    {
-        var clone = new ProceduralMeshComponent(_system) { FunctionId = FunctionId, Parameters = Parameters, FormatId = FormatId, Materials = Materials };
-        clone.ReplaceNetwork(Network);
-        return clone;
-    }
-
-    public void Invalidate()
-    {
-        _cacheKey = "";
+        Model?.ReplaceNetwork(network);
         Owner?.RefreshRepresentation();
     }
 
+    /// <summary>An independent placement of the same model — cloning a component shares its bound
+    /// model rather than forking the geometry, the same way cloning a <see cref="ModelRendererComponent"/>
+    /// shares the referenced asset path.</summary>
+    public override SceneComponent Clone() => new ProceduralMeshComponent(_system) { ModelId = ModelId };
+
     public Node3D BuildNode()
     {
+        _representedModelId = ModelId;
+        _representedRevision = Model?.Revision ?? -1;
+
         ModelAsset output = BuildOutput();
         if (output.Surfaces.Count == 0)
         {
@@ -148,18 +118,7 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         return node;
     }
 
-    private ModelAsset BuildOutput()
-    {
-        string key = $"{FunctionId}|{Parameters}|{FormatId}|{Materials}|{_system.Find(FunctionId)?.Version ?? 0}|{Network.Fingerprint()}|{_system.Context.MeshMaterials.PresetContentVersion}";
-        if (_cached != null && _cacheKey == key)
-        {
-            return _cached;
-        }
-
-        _cached = _system.Build(this);
-        _cacheKey = key;
-        return _cached;
-    }
+    private ModelAsset BuildOutput() => Model is { } model ? _system.Build(model) : ProceduralMeshSystem.EmptyOutput;
 
     private static MeshInstance3D Placeholder() => new()
     {

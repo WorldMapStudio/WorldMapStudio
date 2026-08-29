@@ -16,8 +16,8 @@ public sealed class ModelPreviewRenderer : IDisposable
     private readonly DirectionalLight3D _light;
     private Node3D? _modelNode;
     private Task<ModelAsset?>? _load;
-    private string _path = "";
-    private string _loadedPath = "";
+    private string _key = "";
+    private string _loadedKey = "";
 
     public ModelPreviewRenderer(AssetSystem assets, MeshMaterialSystem materials, Node owner)
     {
@@ -63,25 +63,22 @@ public sealed class ModelPreviewRenderer : IDisposable
 
     public void Draw(string path, NVector2 size)
     {
-        if (_viewport.Size.X != (int)size.X || _viewport.Size.Y != (int)size.Y)
-        {
-            _viewport.Size = new Vector2I(Math.Max(1, (int)size.X), Math.Max(1, (int)size.Y));
-        }
+        ResizeViewport(size);
 
-        if (_path != path)
+        if (_key != path)
         {
-            _path = path;
+            _key = path;
             _load = path.Length == 0 ? null : _assets.LoadModelAssetAsync(path);
             ClearModel();
         }
 
-        if (_load is { IsCompletedSuccessfully: true, Result: { } model } && _loadedPath != _path)
+        if (_load is { IsCompletedSuccessfully: true, Result: { } model } && _loadedKey != _key)
         {
             ShowModel(model);
-            _loadedPath = _path;
+            _loadedKey = _key;
         }
 
-        ImGui.Image((IntPtr)_viewport.GetTexture().GetRid().Id, size);
+        DrawViewportImage(size);
         if (_load == null)
         {
             Overlay(size, "No model");
@@ -100,11 +97,49 @@ public sealed class ModelPreviewRenderer : IDisposable
         }
     }
 
+    /// <summary>Previews an already-built model (e.g. a procedural one being authored, with no asset
+    /// path of its own) rather than loading one from a path. <paramref name="cacheKey"/> stands in for
+    /// the path as what tells the renderer "still the same thing, do not re-instantiate".</summary>
+    public void DrawAsset(string cacheKey, ModelAsset? model, NVector2 size)
+    {
+        ResizeViewport(size);
+
+        if (_key != cacheKey)
+        {
+            _key = cacheKey;
+            _load = null;
+            ClearModel();
+        }
+
+        if (model != null && _loadedKey != _key)
+        {
+            ShowModel(model);
+            _loadedKey = _key;
+        }
+
+        DrawViewportImage(size);
+        if (model == null)
+        {
+            Overlay(size, "No preview");
+        }
+    }
+
     public void Dispose()
     {
         ClearModel();
         _viewport.QueueFree();
     }
+
+    private void ResizeViewport(NVector2 size)
+    {
+        if (_viewport.Size.X != (int)size.X || _viewport.Size.Y != (int)size.Y)
+        {
+            _viewport.Size = new Vector2I(Math.Max(1, (int)size.X), Math.Max(1, (int)size.Y));
+        }
+    }
+
+    private void DrawViewportImage(NVector2 size) =>
+        ImGui.Image((IntPtr)_viewport.GetTexture().GetRid().Id, size);
 
     private void ShowModel(ModelAsset model)
     {
@@ -122,7 +157,7 @@ public sealed class ModelPreviewRenderer : IDisposable
             _modelNode = null;
         }
 
-        _loadedPath = "";
+        _loadedKey = "";
     }
 
     private void Frame(Aabb bounds)

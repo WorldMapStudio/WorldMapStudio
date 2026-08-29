@@ -40,6 +40,10 @@ public sealed class Editor : IScene
         // Entering another map swaps to that map's landscape settings.
         _context.Landscape.Update();
 
+        // Notices a procedural model edited from one placement (or a window, script, or undo) and
+        // rebuilds every other placement referencing it.
+        _context.ProceduralMeshes.Update();
+
         // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
         // since last frame (never blocks, mirrors WorkQueue's own per-frame main-thread pump), and
         // fires any registered wms.events handlers for what changed since last frame.

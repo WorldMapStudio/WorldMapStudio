@@ -180,6 +180,10 @@ public sealed partial class EditorContext : ISubsystemHost
         onStep?.Invoke("Loading mesh materials");
         MeshMaterials.LoadCatalog();
 
+        // Models bind material presets, so presets load first.
+        onStep?.Invoke("Loading procedural models");
+        ProceduralMeshes.LoadCatalog();
+
         // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
         foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())
         {

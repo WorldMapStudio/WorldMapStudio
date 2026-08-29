@@ -38,6 +38,8 @@ public sealed class EditorDbContext : DbContext
 
     public DbSet<MeshMaterialPresetRecord> MeshMaterialPresets => Set<MeshMaterialPresetRecord>();
 
+    public DbSet<ProceduralModelRecord> ProceduralModels => Set<ProceduralModelRecord>();
+
     public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
 
     public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
@@ -95,6 +97,15 @@ public sealed class EditorDbContext : DbContext
         model.Entity<MeshMaterialPresetRecord>(entity =>
         {
             entity.ToTable("mesh_material_presets");
+            entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+
+        model.Entity<ProceduralModelRecord>(entity =>
+        {
+            entity.ToTable("procedural_models");
             entity.HasKey(record => record.Id);
 
             // The editor assigns catalog ids so entities can reference each other before a commit.

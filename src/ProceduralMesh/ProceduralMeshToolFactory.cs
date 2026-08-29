@@ -12,5 +12,6 @@ public sealed class ProceduralMeshToolFactory : IToolFactory
     }
 
     public ITool Create(ToolContext context) =>
-        new NetworkEditTool(context, "Procedural Mesh", entity => entity.Component<ProceduralMeshComponent>());
+        new NetworkEditTool(context, "Procedural Mesh", entity =>
+            entity.Component<ProceduralMeshComponent>() is { ModelId: not null } component ? component : null);
 }

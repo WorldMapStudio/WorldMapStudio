@@ -141,4 +141,171 @@ public static class ProceduralMeshTests
         Assert.Greater(built.LocalBounds.Size.X, 1.9f);
         Assert.Greater(built.LocalBounds.Size.Y, 0.9f);
     }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    public static void Model_revision_bumps_on_authored_changes_but_not_on_no_ops()
+    {
+        var model = new ProceduralModel();
+        int baseline = model.Revision;
+
+        model.Name = model.Name;
+        Assert.AreEqual(baseline, model.Revision, "setting the same value should not bump the revision");
+
+        model.Name = "Changed";
+        Assert.AreEqual(baseline + 1, model.Revision);
+
+        model.FunctionId = "other.function";
+        model.Parameters = "p";
+        model.FormatId = "f";
+        model.Materials = "m";
+        Assert.AreEqual(baseline + 5, model.Revision, "each distinct authored-field write should bump once");
+
+        var network = new VertexNetwork();
+        network.AddVertex(Vector3.Zero);
+        model.ReplaceNetwork(network);
+        Assert.AreEqual(baseline + 6, model.Revision, "ReplaceNetwork should bump the revision too");
+    }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Background)]
+    public static void Model_content_version_and_fingerprint_are_cached_against_revision()
+    {
+        var model = new ProceduralModel();
+        int version0 = model.ContentVersion;
+        string fingerprint0 = model.NetworkFingerprint;
+
+        Assert.AreEqual(version0, model.ContentVersion, "reading twice without a revision bump should hit the cache");
+
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(1.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        network.AddEdge(a, b);
+        model.ReplaceNetwork(network);
+
+        Assert.AreNotEqual(fingerprint0, model.NetworkFingerprint, "a network replacement should invalidate the cached fingerprint");
+        Assert.AreNotEqual(version0, model.ContentVersion, "a network replacement should invalidate the cached content version");
+    }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    public static void Two_placements_of_one_model_share_bounds_content_version_and_the_build_cache()
+    {
+        EditorContext context = NewContext("__wms_procedural_model_sharing_test__");
+        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralModel model = NewTubeModel(context, id: 1);
+
+        var entityA = new SceneEntity();
+        var entityB = new SceneEntity();
+        var componentA = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
+        var componentB = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
+        entityA.AddComponent(componentA);
+        entityB.AddComponent(componentB);
+
+        Assert.AreEqual(componentA.ContentVersion, componentB.ContentVersion);
+        Assert.IsTrue(componentA.LocalBounds.Size.IsEqualApprox(componentB.LocalBounds.Size));
+
+        ModelAsset builtA = system.Build(model);
+        ModelAsset builtB = system.Build(model);
+        Assert.IsTrue(ReferenceEquals(builtA, builtB), "one model should build once and be shared by every placement");
+
+        int revisionBefore = model.Revision;
+        VertexNetwork moved = model.Network.Clone();
+        moved.MoveVertex(moved.Vertices[1].Id, new Vector3(5.0f, 0.0f, 0.0f));
+        model.ReplaceNetwork(moved);
+        Assert.Greater(model.Revision, revisionBefore);
+
+        ModelAsset builtAfterEdit = system.Build(model);
+        Assert.IsFalse(ReferenceEquals(builtA, builtAfterEdit), "a revision bump should invalidate the cached build");
+        Assert.AreEqual(componentA.ContentVersion, componentB.ContentVersion, "both placements should still agree after the shared model changed");
+    }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    public static void System_update_refreshes_every_other_placement_when_one_edits_the_shared_model()
+    {
+        EditorContext context = NewContext("__wms_procedural_model_update_test__");
+        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralModel model = NewTubeModel(context, id: 1);
+
+        var entityA = new SceneEntity();
+        var entityB = new SceneEntity();
+        entityA.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
+        entityB.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
+        context.Scene.Add(entityA);
+        context.Scene.Add(entityB);
+        entityA.CreateRepresentation(context.Root);
+        entityB.CreateRepresentation(context.Root);
+
+        var componentA = entityA.Component<ProceduralMeshComponent>()!;
+        var componentB = entityB.Component<ProceduralMeshComponent>()!;
+        system.Update();
+        Assert.IsFalse(componentA.NeedsRefresh);
+        Assert.IsFalse(componentB.NeedsRefresh);
+
+        VertexNetwork moved = model.Network.Clone();
+        moved.MoveVertex(moved.Vertices[1].Id, new Vector3(5.0f, 0.0f, 0.0f));
+        componentA.ReplaceNetwork(moved);
+
+        Assert.IsFalse(componentA.NeedsRefresh, "editing through a placement should rebuild its own representation immediately");
+        Assert.IsTrue(componentB.NeedsRefresh, "the other placement has not rebuilt yet");
+
+        system.Update();
+        Assert.IsFalse(componentB.NeedsRefresh, "the guarded sweep should have refreshed every other placement");
+    }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    public static void Set_network_command_pins_the_model_and_emits_one_chunk_impact_per_placement()
+    {
+        EditorContext context = NewContext("__wms_procedural_model_setnetwork_test__");
+        ProceduralMeshSystem system = context.ProceduralMeshes;
+        ProceduralModel model = NewTubeModel(context, id: 1);
+
+        var entityA = new SceneEntity { Map = new MapId(1) };
+        var entityB = new SceneEntity { Map = new MapId(1) };
+        var componentA = new ProceduralMeshComponent(system) { ModelId = model.RecordId };
+        entityA.AddComponent(componentA);
+        entityB.AddComponent(new ProceduralMeshComponent(system) { ModelId = model.RecordId });
+        context.Scene.Add(entityA);
+        context.Scene.Add(entityB);
+
+        VertexNetwork before = model.Network.Clone();
+        VertexNetwork after = before.Clone();
+        after.MoveVertex(after.Vertices[1].Id, new Vector3(9.0f, 0.0f, 0.0f));
+
+        var command = new SetNetworkCommand(componentA, before, after, "Move network vertices");
+
+        Assert.AreEqual(1, command.Targets.Count);
+        Assert.IsTrue(ReferenceEquals(model, command.Targets[0]), "the command should pin the model, not the placement entity");
+        Assert.AreEqual(2, command.ChunkImpacts.Count, "one impact per loaded entity referencing the model");
+
+        command.Apply();
+        Assert.IsTrue(model.Network.Vertex(after.Vertices[1].Id)!.Position.IsEqualApprox(new Vector3(9.0f, 0.0f, 0.0f)));
+
+        command.Revert();
+        Assert.IsTrue(model.Network.Vertex(before.Vertices[1].Id)!.Position.IsEqualApprox(before.Vertices[1].Position));
+    }
+
+    [EditorTest(Category = "ProceduralMesh", Thread = TestThread.Main)]
+    public static void Dangling_model_id_renders_the_placeholder_instead_of_throwing()
+    {
+        EditorContext context = NewContext("__wms_procedural_model_dangling_test__");
+        var component = new ProceduralMeshComponent(context.ProceduralMeshes) { ModelId = 999 };
+        var entity = new SceneEntity();
+        entity.AddComponent(component);
+
+        Node3D node = component.BuildNode();
+        Assert.IsNotNull(node.GetNodeOrNull("MissingProceduralMesh"));
+    }
+
+    private static EditorContext NewContext(string name) =>
+        new(new Node3D(), new Project { Name = name });
+
+    private static ProceduralModel NewTubeModel(EditorContext context, int id)
+    {
+        var model = new ProceduralModel { RecordId = id, Name = $"Model {id}" };
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(2.0f, 0.0f, 0.0f));
+        network.AddEdge(a, b);
+        model.ReplaceNetwork(network);
+        context.Catalog.Add(model);
+        return model;
+    }
 }
