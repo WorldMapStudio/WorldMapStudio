@@ -124,26 +124,31 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     private LandscapeCatalog? _catalog;
     private int _catalogVersion = -1;
     private int _functionVersion = -1;
+    private MapId _catalogMap = new(-1);
 
     /// <summary>
-    /// The loaded catalog, as the resolver sees it. Rebuilt only when entities are added or removed —
-    /// edits to an entity's fields show through the references, and the window reads this several
-    /// times a frame.
+    /// The loaded catalog, as the resolver sees it. Channels and layers are scoped to the open map;
+    /// materials are global. Rebuilt only when entities are added or removed, functions change, or the
+    /// open map changes — edits to an entity's fields show through the references, and the window
+    /// reads this several times a frame.
     /// </summary>
     public LandscapeCatalog Catalog
     {
         get
         {
-            if (_catalog != null && _catalogVersion == _context.Catalog.Version && _functionVersion == Functions.Version)
+            MapId map = _context.Maps.CurrentMap;
+            if (_catalog != null && _catalogVersion == _context.Catalog.Version
+                && _functionVersion == Functions.Version && _catalogMap.Equals(map))
             {
                 return _catalog;
             }
 
             _catalogVersion = _context.Catalog.Version;
             _functionVersion = Functions.Version;
+            _catalogMap = map;
             _catalog = new LandscapeCatalog(
-                _context.Catalog.OfType<LandscapeChannel>().ToList(),
-                _context.Catalog.OfType<LandscapeLayer>().ToList(),
+                _context.Catalog.OfType<LandscapeChannel>().Where(channel => channel.Map.Equals(map)).ToList(),
+                _context.Catalog.OfType<LandscapeLayer>().Where(layer => layer.Map.Equals(map)).ToList(),
                 _context.Catalog.OfType<LandscapeMaterial>().ToList(),
                 Functions);
             return _catalog;

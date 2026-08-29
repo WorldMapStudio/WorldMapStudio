@@ -14,6 +14,7 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
     protected override LandscapeChannel ToEntity(LandscapeChannelRecord record) => new()
     {
         RecordId = record.Id,
+        Map = new MapId(record.MapId),
         Name = record.Name,
         Resolution = record.Resolution,
         BitDepth = record.BitDepth,
@@ -21,6 +22,7 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
 
     protected override void WriteRecord(LandscapeChannel entity, LandscapeChannelRecord record)
     {
+        record.MapId = entity.Map.Value;
         record.Name = entity.Name;
         record.Resolution = entity.Resolution;
         record.BitDepth = entity.BitDepth;
@@ -39,6 +41,7 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
     protected override LandscapeLayer ToEntity(LandscapeLayerRecord record) => new()
     {
         RecordId = record.Id,
+        Map = new MapId(record.MapId),
         Name = record.Name,
         IsBase = record.IsBase,
         Priority = record.Priority,
@@ -47,6 +50,7 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
 
     protected override void WriteRecord(LandscapeLayer entity, LandscapeLayerRecord record)
     {
+        record.MapId = entity.Map.Value;
         record.Name = entity.Name;
         record.IsBase = entity.IsBase;
         record.Priority = entity.Priority;
