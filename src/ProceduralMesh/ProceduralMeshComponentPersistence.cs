@@ -27,12 +27,22 @@ public sealed class SceneProceduralMeshComponentRecord
 [Subsystem(nameof(EditorStorage))]
 public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersistence
 {
-    private readonly ProceduralMeshSystem _proceduralMeshes;
+    private readonly EditorStorage _storage;
 
     public ProceduralMeshComponentPersistence(EditorStorage storage)
     {
-        _proceduralMeshes = storage.Context.ProceduralMeshes;
+        _storage = storage;
     }
+
+    /// <summary>
+    /// Resolved on use rather than captured in the constructor. This persister is constructed from
+    /// <see cref="EditorStorage"/>'s subsystem init, which runs inside <c>new DatabaseSystem(this)</c>
+    /// — and <see cref="EditorContext"/> only assigns <see cref="EditorContext.ProceduralMeshes"/>
+    /// two lines later, so capturing it here would store null for the lifetime of the editor and give
+    /// every loaded component a null system. <see cref="EditorStorage.Assets"/> and
+    /// <see cref="EditorStorage.MeshMaterials"/> are forwarding properties for the same reason.
+    /// </summary>
+    private ProceduralMeshSystem ProceduralMeshes => _storage.Context.ProceduralMeshes;
 
     public float Priority => 0.0f;
 
@@ -65,7 +75,7 @@ public sealed class ProceduralMeshComponentPersistence : ISceneComponentPersiste
                 continue;
             }
 
-            var mesh = new ProceduralMeshComponent(_proceduralMeshes)
+            var mesh = new ProceduralMeshComponent(ProceduralMeshes)
             {
                 FunctionId = row.FunctionId,
                 Parameters = row.Parameters,

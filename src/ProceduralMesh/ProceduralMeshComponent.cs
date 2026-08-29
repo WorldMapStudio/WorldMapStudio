@@ -15,6 +15,10 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
 
     public ProceduralMeshComponent(ProceduralMeshSystem system)
     {
+        // Guarded because a null here is otherwise invisible until the component is first built, and
+        // then surfaces as a per-frame NullReferenceException from deep inside the viewport's draw
+        // loop with no hint that the real mistake was made back at construction time.
+        ArgumentNullException.ThrowIfNull(system);
         _system = system;
     }
 
