@@ -78,6 +78,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Builds scene procedural meshes from authored graph components.</summary>
     public ProceduralSystem Procedural { get; }
 
+    /// <summary>Owns the saved prefab library: catalog rows plus their scene-entity templates.</summary>
+    public PrefabSystem Prefabs { get; }
+
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
@@ -116,6 +119,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
         Procedural = new ProceduralSystem(this);
+        Prefabs = new PrefabSystem(this);
 
         // Built after Assets/Landscape/Procedural: the built-in component types capture them.
         ComponentTypes = new SceneComponentRegistry(this);
@@ -183,6 +187,10 @@ public sealed partial class EditorContext : ISubsystemHost
         // Models bind material presets, so presets load first.
         onStep?.Invoke("Loading procedural models");
         Procedural.LoadCatalog();
+
+        onStep?.Invoke("Loading prefabs");
+        Prefabs.LoadCatalog();
+        Prefabs.LoadLibrary();
 
         // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
         foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())

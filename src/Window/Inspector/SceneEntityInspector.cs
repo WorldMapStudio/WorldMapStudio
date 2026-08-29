@@ -20,10 +20,12 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
     private readonly EditorContext _editor;
     private Transform3D[]? _before;
     private readonly FieldEditTracker _entityTracker = new();
+    private readonly SavePrefabPopup _savePrefabPopup;
 
     public SceneEntityInspector(InspectorWindow window)
     {
         _editor = window.Context;
+        _savePrefabPopup = new SavePrefabPopup(_editor.Prefabs, _editor.EditSessions);
     }
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)
@@ -47,12 +49,19 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             DrawSize(targets[0]);
             ImGui.Separator();
             DrawComponents(context, targets[0]);
+            ImGui.Separator();
+            if (ImGui.Button("Save as Prefab"))
+            {
+                _savePrefabPopup.Open(targets[0]);
+            }
         }
 
         foreach (ISceneComponentType type in _editor.ComponentTypes.All)
         {
             type.DrawModals();
         }
+
+        _savePrefabPopup.Draw();
     }
 
     private void DrawName(InspectorContext context, SceneEntity target)
