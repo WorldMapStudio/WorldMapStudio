@@ -19,6 +19,13 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Shared selection, constructed before the subsystem tree so windows can capture it.</summary>
     public SelectionSystem Selection { get; }
 
+    /// <summary>Last copied scene entities, ready to paste. Shared by every tool, since selection is too.</summary>
+    public SceneClipboard Clipboard { get; }
+
+    /// <summary>Where the mouse currently projects into the world within the viewport, updated by the
+    /// viewport every frame it draws. Paste reads this to place entities under the cursor.</summary>
+    public ViewportPointer Pointer { get; }
+
     /// <summary>Editor-wide keyboard shortcuts, shared by menus, windows, and tools.</summary>
     public ShortcutSystem Shortcuts { get; }
 
@@ -87,6 +94,8 @@ public sealed partial class EditorContext : ISubsystemHost
         Project = project;
         Shortcuts = new ShortcutSystem();
         Selection = new SelectionSystem();
+        Clipboard = new SceneClipboard();
+        Pointer = new ViewportPointer();
         View = new ViewSettings();
         EditSessions = new EditSessionManager();
         Scene = new SceneEntityRegistry();

@@ -16,6 +16,8 @@ public static class SceneEntityBoundsTests
         public override string DisplayName => "Test Bounds";
 
         public Aabb LocalBounds { get; } = bounds;
+
+        public override SceneComponent Clone() => new BoundsComponent(bounds);
     }
 
     private sealed class BoxEntity : SceneEntity

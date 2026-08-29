@@ -940,7 +940,7 @@ public sealed class NetworkEditTool : ITool
 
         if (component.PlanarXZ)
         {
-            if (!_terrain.TryHit(origin, dir, out GVector3 world) && !TryGroundPlane(origin, dir, out world))
+            if (!_terrain.TryHit(origin, dir, out GVector3 world) && !TerrainProbe.TryGroundPlane(origin, dir, out world))
             {
                 local = default;
                 return false;
@@ -961,25 +961,6 @@ public sealed class NetworkEditTool : ITool
 
         GVector3 planeWorld = origin + dir * ((entity.Transform.Origin - origin).Dot(planeNormal) / denom);
         local = entity.Transform.AffineInverse() * planeWorld;
-        return true;
-    }
-
-    private static bool TryGroundPlane(GVector3 origin, GVector3 dir, out GVector3 world)
-    {
-        if (Mathf.Abs(dir.Y) < 1e-6f)
-        {
-            world = default;
-            return false;
-        }
-
-        float t = -origin.Y / dir.Y;
-        if (t < 0.0f)
-        {
-            world = default;
-            return false;
-        }
-
-        world = origin + dir * t;
         return true;
     }
 

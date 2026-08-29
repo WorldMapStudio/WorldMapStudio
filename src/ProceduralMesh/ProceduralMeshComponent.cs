@@ -77,6 +77,13 @@ public sealed class ProceduralMeshComponent : SceneComponent, ISceneBoundsProvid
         Invalidate();
     }
 
+    public override SceneComponent Clone()
+    {
+        var clone = new ProceduralMeshComponent(_system) { FunctionId = FunctionId, Parameters = Parameters };
+        clone.ReplaceNetwork(Network);
+        return clone;
+    }
+
     public void Invalidate()
     {
         _cacheKey = "";

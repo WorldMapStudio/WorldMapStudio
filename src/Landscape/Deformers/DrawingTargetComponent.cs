@@ -79,6 +79,19 @@ public sealed class DrawingTargetComponent : SceneComponent, ISceneBoundsProvide
         }
     }
 
+    public override SceneComponent Clone()
+    {
+        var clone = new DrawingTargetComponent
+        {
+            WorldSizeX = WorldSizeX,
+            WorldSizeZ = WorldSizeZ,
+            Strength = Strength,
+            Channel = Channel,
+        };
+        clone.LoadPixels(Width, Height, CopyPixels());
+        return clone;
+    }
+
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
     public void Rasterize(in LandscapeRasterContext context)
