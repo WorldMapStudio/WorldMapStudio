@@ -33,7 +33,13 @@ public sealed record EnvironmentValues
 
     public Color SunColor { get; init; } = Godot.Colors.White;
 
-    public Vector3 SunDirection { get; init; } = new(0.0f, -1.0f, 0.0f);
+    /// <summary>
+    /// A generic overhead-daylight angle (not derived from any WoW time-of-day formula — that lives in
+    /// a plugin's own global <see cref="IEnvironmentSource"/>, e.g. a WoW light). Used whenever nothing
+    /// overrides it, so a scene with no environment source placed still reads as lit from an angle
+    /// rather than flat-shaded by a straight-down or absent sun.
+    /// </summary>
+    public Vector3 SunDirection { get; init; } = new(0.35f, -0.85f, 0.4f);
 
     public float SunEnergy { get; init; } = 1.0f;
 
