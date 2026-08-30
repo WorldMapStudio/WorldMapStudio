@@ -16,18 +16,20 @@ namespace WorldMapStudio;
 /// load region actually moved:
 /// <list type="bullet">
 /// <item>Evict — any resident, clean chunk that fell outside every placement's (load-region-grown)
-/// footprint gets dropped from memory once total resident bytes exceed <see cref="BudgetBytes"/>. Its
-/// pixels are untouched in storage, so it simply becomes "stored but not resident" — see
+/// footprint is dropped from memory <em>unconditionally</em>, the same way <c>LandscapeChunkLoader</c>
+/// drops terrain the moment it leaves the load region — an image's memory footprint must never outlive
+/// the view it was loaded for, regardless of how small the image is or how far under budget the editor
+/// happens to be. <see cref="BudgetBytes"/> is a second, independent pass on top of that: a backstop
+/// for the rarer case where what is currently wanted, on its own, is still too much. A chunk's pixels
+/// are untouched in storage either way, so it simply becomes "stored but not resident" — see
 /// <see cref="PaintImage.IsStored"/>.</item>
 /// <item>Reload — any chunk in the target set that is stored but not resident (typically one evicted
 /// earlier, now needed again) gets fetched back off the main thread, one batched query per image.</item>
 /// </list>
 ///
-/// This is useful today even though every image is still loaded whole at catalog-open time (see
-/// <see cref="PaintImageFactory.LoadAllAsync"/>) and the per-image size cap has not moved: eviction
-/// bounds total resident image memory across a project with many images, and reload transparently
-/// brings evicted chunks back. Lazy <em>initial</em> loading — the other half of what makes a
-/// 100k-canvas image practical — is deferred to a later phase; see <c>.godot/ImageChunkPlan.md</c>.
+/// This is what makes a canvas far larger than any single view genuinely practical: only the chunks
+/// under a streamed-in placement's footprint are ever resident, regardless of how many chunks the image
+/// holds in storage. See <c>.godot/ImageChunkPlan.md</c>.
 /// </summary>
 public sealed class ImageResidencySystem
 {
@@ -114,7 +116,10 @@ public sealed class ImageResidencySystem
         return targets;
     }
 
-    private void Evict(Dictionary<PaintImage, HashSet<ImageChunkCoord>> targets)
+    /// <summary>Exposed at <c>internal</c> rather than <c>private</c> so a test can drive the eviction
+    /// pass directly against a hand-built target set, without needing a live streaming scan to produce
+    /// one — see <see cref="ImageTests"/>.</summary>
+    internal void Evict(Dictionary<PaintImage, HashSet<ImageChunkCoord>> targets)
     {
         _generation++;
         foreach ((PaintImage image, HashSet<ImageChunkCoord> coords) in targets)
@@ -125,6 +130,23 @@ public sealed class ImageResidencySystem
             }
         }
 
+        // Unconditional: nothing keeps a chunk resident just because there happens to be budget to
+        // spare. EvictChunk itself refuses a dirty one, so unsaved work is never at risk here.
+        foreach (PaintImage image in _images.Images)
+        {
+            HashSet<ImageChunkCoord> wanted = targets.TryGetValue(image, out HashSet<ImageChunkCoord>? set) ? set : [];
+            foreach (ImageChunkCoord coord in image.ChunkCoords.ToList())
+            {
+                if (!wanted.Contains(coord))
+                {
+                    image.EvictChunk(coord);
+                }
+            }
+        }
+
+        // Backstop: everything still resident at this point is in some placement's current target, so
+        // this only fires when that target alone is too large — trims the least-recently-wanted of it,
+        // accepting that it may reload again the moment it is still wanted next scan.
         long total = 0;
         foreach (PaintImage image in _images.Images)
         {
@@ -136,10 +158,9 @@ public sealed class ImageResidencySystem
             var candidates = new List<(PaintImage Image, ImageChunkCoord Coord, int LastWanted, long Bytes)>();
             foreach (PaintImage image in _images.Images)
             {
-                HashSet<ImageChunkCoord> wanted = targets.TryGetValue(image, out HashSet<ImageChunkCoord>? set) ? set : [];
                 foreach (ImageChunkCoord coord in image.ChunkCoords.ToList())
                 {
-                    if (wanted.Contains(coord) || image.IsDirty(coord))
+                    if (image.IsDirty(coord))
                     {
                         continue;
                     }

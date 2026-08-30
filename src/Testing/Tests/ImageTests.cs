@@ -597,6 +597,51 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Residency_evicts_chunks_outside_the_target_even_deeply_under_budget()
+    {
+        // Regression: eviction used to only run once total resident bytes crossed the budget, so a
+        // small image (nowhere near 512MB) never dropped anything, no matter how far a chunk was from
+        // every placement that actually needed it.
+        EditorContext context = NewContext("__wms_image_residency_evict_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks(
+        [
+            (new ImageChunkCoord(0, 0), new byte[16 * 16]),
+            (new ImageChunkCoord(3, 3), new byte[16 * 16]),
+        ]);
+
+        var wanted = new ImageChunkCoord(0, 0);
+        var unwanted = new ImageChunkCoord(3, 3);
+        var targets = new Dictionary<PaintImage, HashSet<ImageChunkCoord>>
+        {
+            [image] = [wanted],
+        };
+
+        context.Images.Residency.Evict(targets);
+
+        Assert.IsTrue(image.IsResident(wanted), "still wanted, so it must stay resident");
+        Assert.IsFalse(image.IsResident(unwanted), "no longer wanted, so it must be dropped regardless of budget");
+        Assert.IsTrue(image.IsStored(unwanted), "eviction drops the in-memory copy only, never storage");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Residency_eviction_never_drops_a_dirty_chunk_even_when_unwanted()
+    {
+        EditorContext context = NewContext("__wms_image_residency_evict_dirty_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.Paint(60.0f / 64.0f, 60.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false); // chunk (3,3), unsaved
+
+        var dirty = new ImageChunkCoord(3, 3);
+        Assert.IsTrue(image.IsDirty(dirty));
+
+        context.Images.Residency.Evict(new Dictionary<PaintImage, HashSet<ImageChunkCoord>>());
+
+        Assert.IsTrue(image.IsResident(dirty), "unsaved work must survive eviction even when nothing wants it");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");
