@@ -109,6 +109,11 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         {
             image.IsSaved = true;
             image.SetPersistedChunkCoords(current);
+
+            // Every chunk just staged now matches storage — clears the way for ImageResidencySystem
+            // to evict it again once nothing needs it resident. Without this, a chunk that was ever
+            // painted would stay dirty (and so pinned in memory) forever, even after being saved.
+            image.MarkChunksClean(current);
         };
     }
 

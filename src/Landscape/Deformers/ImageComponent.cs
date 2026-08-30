@@ -329,6 +329,42 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         return image.ChunkRectForUv(uMin, uMax, vMin, vMax, headroomChunks: 1);
     }
 
+    /// <summary>The world-space AABB covering a set of the bound image's chunk coordinates — the
+    /// inverse of the mapping <see cref="ChunksNeededFor"/> uses. What a paint stroke's undo command
+    /// narrows <see cref="ChunkChangeSnapshot"/> bounds to, so a small stroke on a huge image marks
+    /// only the terrain under it dirty rather than this placement's whole footprint. Null if unbound
+    /// or given no coordinates.</summary>
+    public Aabb? WorldBoundsForChunks(IReadOnlyCollection<ImageChunkCoord> coords)
+    {
+        if (Image is not { } image || coords.Count == 0)
+        {
+            return null;
+        }
+
+        float minU = float.MaxValue, maxU = float.MinValue;
+        float minV = float.MaxValue, maxV = float.MinValue;
+
+        foreach (ImageChunkCoord coord in coords)
+        {
+            int baseX = coord.X * image.ChunkSize;
+            int baseY = coord.Y * image.ChunkSize;
+            minU = Mathf.Min(minU, (float)baseX / image.Width);
+            maxU = Mathf.Max(maxU, (float)Mathf.Min(baseX + image.ChunkSize, image.Width) / image.Width);
+            minV = Mathf.Min(minV, (float)baseY / image.Height);
+            maxV = Mathf.Max(maxV, (float)Mathf.Min(baseY + image.ChunkSize, image.Height) / image.Height);
+        }
+
+        float loX = (minU - 0.5f) * WorldSizeX;
+        float hiX = (maxU - 0.5f) * WorldSizeX;
+        float loZ = (minV - 0.5f) * WorldSizeZ;
+        float hiZ = (maxV - 0.5f) * WorldSizeZ;
+
+        var local = new Aabb(
+            new Vector3(loX, -BoundsHeight * 0.5f, loZ),
+            new Vector3(hiX - loX, BoundsHeight, hiZ - loZ));
+        return Entity.Transform * local;
+    }
+
     private bool TryLocalToUv(Vector3 local, out float u, out float v)
     {
         u = (local.X / WorldSizeX) + 0.5f;
