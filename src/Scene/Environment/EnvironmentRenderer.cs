@@ -260,6 +260,21 @@ public sealed class EnvironmentRenderer
         }
     }
 
+    /// <summary>Frees every sky layer node and forgets what was last applied, so a world reload
+    /// leaves nothing behind and the next real <see cref="Update"/> rebuilds from scratch. A layer
+    /// still loading when this runs simply has nowhere to attach once it completes — <see cref="AttachSkyLayer"/>
+    /// checks the slot is still the one it started with before touching it.</summary>
+    public void Unload()
+    {
+        foreach (SkyLayerSlot slot in _skyLayerSlots.Values)
+        {
+            slot.Node?.QueueFree();
+        }
+
+        _skyLayerSlots.Clear();
+        _appliedVersion = -1;
+    }
+
     /// <summary>
     /// Sizes the dome to sit just inside the camera's far plane, so ordinary depth testing puts it
     /// behind every bit of world geometry. A sky model's own native size is arbitrary — the WotLK

@@ -29,7 +29,7 @@ namespace WorldMapStudio;
 /// edge are loaded. Entities that fall in the margin but not the view are marked peripheral — loaded
 /// as inputs, but not drawn, listed or picked.
 /// </summary>
-public sealed class StreamingSystem
+public sealed class StreamingSystem : IWorldParticipant
 {
     private const float Range = 160.0f;         // horizontal half-extent of the view box
     private const float RescanDistance = 32.0f; // focus travel before a re-scan
@@ -75,6 +75,33 @@ public sealed class StreamingSystem
     /// stream chunks, which are generated from the grid rather than read from a table.
     /// </summary>
     public void AddLoader(ISceneEntityLoader loader) => _loaders.Add(loader);
+
+    /// <summary>Whether a scan is in flight — a reload's quiescence wait gates on this so an unload
+    /// never runs while a background scan is about to write results into what it just dropped.</summary>
+    bool IWorldParticipant.IsBusy => _pendingScan != null;
+
+    /// <summary>
+    /// Observes and applies a landed scan without starting a new one. <see cref="Update"/> normally
+    /// does this as a side effect of its own per-frame call, but that only runs while the editor scene
+    /// is active — a <see cref="WorldReload"/> quiescing on <see cref="IWorldParticipant.IsBusy"/>
+    /// needs to keep draining this itself, or a scan that was in flight the instant the reload started
+    /// would sit "busy" forever: nothing else would ever notice it finished.
+    /// </summary>
+    public void PumpCompletion() => ApplyCompletedScan();
+
+    /// <summary>
+    /// Forgets everything read from the database: the last landed scan, what is present, and the
+    /// pending one if there was one — quiescence should already guarantee there wasn't. Does not
+    /// touch <see cref="ScanVersion"/>, which stays monotonic so a version comparison elsewhere
+    /// (image chunk residency) never sees it go backwards.
+    /// </summary>
+    void IWorldParticipant.UnloadWorld()
+    {
+        _pendingScan = null;
+        _present.Clear();
+        _scanStarted = false;
+        _reconciled = false;
+    }
 
     /// <summary>Whether any scan has landed yet. <see cref="LoadRegion"/> and <see cref="ScanMap"/> are
     /// meaningless (a default, zero-sized box; a default map) before this is true.</summary>

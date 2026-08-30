@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// kind of per-frame <see cref="Update"/> sweep to notice a shared image or display layer changed
 /// under a placement built from it.
 /// </summary>
-public sealed class ImageSystem
+public sealed class ImageSystem : IWorldParticipant
 {
     private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
 
@@ -55,6 +55,24 @@ public sealed class ImageSystem
         Context.Database.LoadCatalog<PaintImage>();
         Context.Database.LoadCatalog<ImageDisplayLayer>();
     }
+
+    float IWorldParticipant.LoadPriority => 4f;
+
+    string? IWorldParticipant.LoadStep => "Loading images";
+
+    void IWorldParticipant.LoadWorld() => LoadCatalog();
+
+    // A resident chunk's pixel data lives on the PaintImage catalog entity itself, so dropping the
+    // catalog already drops it — nothing here needs its own eviction pass.
+    void IWorldParticipant.UnloadWorld()
+    {
+        Context.Database.UnloadCatalog<PaintImage>();
+        Context.Database.UnloadCatalog<ImageDisplayLayer>();
+        _lastUpdateTick = (-1, -1, -1);
+        Residency.UnloadWorld();
+    }
+
+    bool IWorldParticipant.IsBusy => Residency.IsBusy;
 
     /// <summary>
     /// Notices an image or display layer changed since a loaded placement last built its viewport

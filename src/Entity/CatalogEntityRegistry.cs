@@ -72,4 +72,16 @@ public sealed class CatalogEntityRegistry
             Version++;
         }
     }
+
+    /// <summary>Drops every loaded entity of every type.</summary>
+    public void Clear()
+    {
+        if (_entities.Count == 0)
+        {
+            return;
+        }
+
+        _entities.Clear();
+        Version++;
+    }
 }

@@ -21,7 +21,7 @@ namespace WorldMapStudio;
 /// referencing the <see cref="Prefab"/> afterward, so editing the template later never changes an
 /// instance already placed.
 /// </summary>
-public sealed class PrefabSystem
+public sealed class PrefabSystem : IWorldParticipant
 {
     /// <summary>Never a real, created map: <see cref="MapId"/> carries no DB/FK constraint, and the
     /// map-creation UI (<c>MapSelectOperation</c>) clamps new ids to non-negative, so this can never
@@ -58,6 +58,33 @@ public sealed class PrefabSystem
             _context.Scene.SetPeripheral(entity, true);
             _context.Scene.SetResident(entity, true);
         }
+    }
+
+    // After images (channel/material catalogs a template might reference don't have to exist, but
+    // loading after them keeps the same relative order LoadContent used).
+    float IWorldParticipant.LoadPriority => 5f;
+
+    string? IWorldParticipant.LoadStep => "Loading prefabs";
+
+    void IWorldParticipant.LoadWorld()
+    {
+        LoadCatalog();
+        LoadLibrary();
+    }
+
+    // Resident entities are exempt from streaming, so nothing else ever removes them from the scene
+    // registry — unlike an ordinary streamed entity, which simply stops being re-added once streaming
+    // stops scanning, a template left behind here would look like a leak the verification pass has to
+    // report every single reload.
+    void IWorldParticipant.UnloadWorld()
+    {
+        foreach (SceneEntity entity in _context.Scene.Entities.Where(entity => entity.Map == LibraryMap).ToList())
+        {
+            entity.DestroyRepresentation();
+            _context.Scene.Remove(entity);
+        }
+
+        _context.Database.UnloadCatalog<Prefab>();
     }
 
     /// <summary>The template's root entity, or null if the prefab's row exists but its subtree isn't

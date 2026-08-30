@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
@@ -100,6 +99,37 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts chunk-oriented export scripts and the committed chunk change registry.</summary>
     public ExportSystem Exports { get; }
 
+    /// <summary>Collects every <see cref="IWorldParticipant"/> and drives loading/unloading the
+    /// project's data as one ordered operation, in both directions.</summary>
+    public WorldLifecycle Lifecycle { get; }
+
+    /// <summary>The gate exclusive, world-rewriting operations (a batch import, a migration) run
+    /// behind, and ordinary editing is refused while one is active.</summary>
+    public WorldOperations Operations { get; }
+
+    /// <summary>A reload requested by something that has already reverted in memory (an aborted edit
+    /// session, so far) and now wants the guarantee a database re-read gives on top — see
+    /// <see cref="EditSessionManager"/>. Consumed once by <see cref="Editor.Update"/>, which is what
+    /// actually owns scene transitions.</summary>
+    public string? PendingReloadReason { get; private set; }
+
+    /// <summary>Requests a full world reload. Idempotent within one pending request: the first reason
+    /// wins until <see cref="Editor"/> consumes it.</summary>
+    public void RequestReload(string reason) => PendingReloadReason ??= reason;
+
+    /// <summary>Called by <see cref="Editor"/> once it starts acting on a pending reload.</summary>
+    public void ClearPendingReload() => PendingReloadReason = null;
+
+    /// <summary>Whether a <see cref="WorldReload"/> is currently in progress — true from the moment
+    /// it starts acting on <see cref="PendingReloadReason"/> until it hands control back to
+    /// <see cref="Editor"/>, which is longer than <see cref="PendingReloadReason"/> stays set. What
+    /// <c>wms.editor.reload()</c> polls to know when to resolve.</summary>
+    public bool IsReloading { get; private set; }
+
+    public void BeginReload() => IsReloading = true;
+
+    public void EndReload() => IsReloading = false;
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
@@ -144,6 +174,11 @@ public sealed partial class EditorContext : ISubsystemHost
         // entities that only stayed loaded for the edit can unload.
         EditSessions.BindStore(Database);
         EditSessions.BindStreaming(Streaming);
+        EditSessions.BindReload(() => RequestReload("Edit session aborted"));
+
+        Lifecycle = new WorldLifecycle(this);
+        Operations = new WorldOperations(this);
+        EditSessions.BindOperations(Operations);
 
         InitializeSubsystems();
     }
@@ -169,42 +204,15 @@ public sealed partial class EditorContext : ISubsystemHost
     }
 
     /// <summary>
-    /// Reads the project's content: the maps, then the open map's landscape settings and catalog.
-    /// Kept out of <see cref="Startup"/> because the migration gate runs between the two, and these
-    /// tables may not exist until it has.
+    /// Reads the project's content: every <see cref="IWorldParticipant"/>, in <see cref="IWorldParticipant.LoadPriority"/>
+    /// order — maps, then the open map's landscape settings and catalog, then everything that resolves
+    /// against it. Kept out of <see cref="Startup"/> because the migration gate runs between the two,
+    /// and these tables may not exist until it has.
     ///
     /// Off the main thread, like <see cref="Startup"/> and for the same reason — these are the two
     /// largest reads in the open sequence, and running them from <c>Editor.Start()</c> froze the
     /// window for as long as they took. Nothing here touches a Godot node, and the editor scene is not
     /// running yet, so nothing else is reading what this fills in.
     /// </summary>
-    public void LoadContent(Action<string>? onStep = null)
-    {
-        onStep?.Invoke("Loading maps");
-        Maps.Load();
-
-        // Needs the current map, so it follows the maps.
-        onStep?.Invoke("Loading landscape");
-        Landscape.Load();
-
-        onStep?.Invoke("Loading mesh materials");
-        MeshMaterials.LoadCatalog();
-
-        // Models bind material presets, so presets load first.
-        onStep?.Invoke("Loading procedural models");
-        Procedural.LoadCatalog();
-
-        onStep?.Invoke("Loading images");
-        Images.LoadCatalog();
-
-        onStep?.Invoke("Loading prefabs");
-        Prefabs.LoadCatalog();
-        Prefabs.LoadLibrary();
-
-        // Plugin-owned catalogs (e.g. the WoW plugin's light param sets) the core has no field for.
-        foreach (ICatalogAutoLoader loader in Subsystems.OfType<ICatalogAutoLoader>())
-        {
-            loader.Load();
-        }
-    }
+    public void LoadContent(Action<string>? onStep = null) => Lifecycle.Load(onStep);
 }

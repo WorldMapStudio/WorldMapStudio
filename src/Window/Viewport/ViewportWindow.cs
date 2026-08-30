@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 /// interaction to the active <see cref="ITool"/> from the shared <see cref="ToolSystem"/>.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
-public sealed class ViewportWindow : Window
+public sealed class ViewportWindow : Window, IWorldParticipant
 {
     // Dim red/green/blue for the grid's axis lines, indexed by *user* axis (0 = X, 1 = Y, 2 = Z)
     // so the line for whichever Godot axis a user axis is mapped onto always reads as that color.
@@ -172,6 +172,22 @@ public sealed class ViewportWindow : Window
             entity.DestroyRepresentation();
             return true;
         });
+    }
+
+    // Destroys the Godot node of every entity this window has represented and forgets the sky/gizmo
+    // state derived from them. Explicit rather than left to the per-frame sync in SyncRepresentations:
+    // a reload leaves the editor scene entirely while it runs, so this window draws no frames for it
+    // to piggyback on.
+    void IWorldParticipant.UnloadWorld()
+    {
+        foreach (SceneEntity entity in _represented)
+        {
+            entity.DestroyRepresentation();
+        }
+
+        _represented.Clear();
+        _environmentRenderer.Unload();
+        _environmentVolumes.Unload();
     }
 
     protected override ImGuiWindowFlags Flags => ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse;

@@ -32,6 +32,14 @@ public sealed class Editor : IScene
 
     public IScene? Update()
     {
+        // Checked first, before any subsystem's own per-frame Update runs: once something has asked
+        // for a reload (an aborted session, a batch operation), nothing here should keep acting on
+        // state that is about to be dropped.
+        if (_context.PendingReloadReason != null)
+        {
+            return new WorldReload(_context, this);
+        }
+
         MenuBarManager menuBar = _context.MenuBarManager;
 
         // Regardless of which windows are open, the same way the viewport's fly camera keeps moving.

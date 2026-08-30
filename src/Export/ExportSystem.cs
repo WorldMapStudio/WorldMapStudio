@@ -46,8 +46,18 @@ public sealed partial class ExportSystem : ISubsystemHost
         return null;
     }
 
-    public WorkHandle Run(IChunkExportScript exporter, ChunkExportScope scope)
+    /// <summary>Schedules an export, or refuses (returning null) while an exclusive world operation
+    /// (see <see cref="WorldOperations"/>) is rewriting the database an export would read from. Not
+    /// gated on the edit session being dirty — an export only ever reads *committed* chunk changes,
+    /// so mid-edit is not a reason to refuse one.</summary>
+    public WorkHandle? Run(IChunkExportScript exporter, ChunkExportScope scope)
     {
+        if (Context.Operations.ActiveOperation is { } operation)
+        {
+            GD.PushWarning($"[Export] Refused to start '{exporter.DisplayName}': '{operation}' is running.");
+            return null;
+        }
+
         IReadOnlyList<ChunkChange> chunks = Changes.DirtyFor(exporter.Id, scope);
         LandscapeCatalog catalog = Context.Landscape.Catalog;
         LandscapeFunctions functions = Context.Landscape.Functions;

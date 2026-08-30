@@ -15,12 +15,15 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 {
     public float Priority => 0f;
 
+    public EditorContext Context { get; }
+
     public ShortcutSystem Shortcuts { get; }
 
     public bool ExitRequested { get; private set; }
 
     public FileMenuManager(MenuBarManager manager)
     {
+        Context = manager.Context;
         Shortcuts = manager.Context.Shortcuts;
         InitializeSubsystems();
     }
@@ -37,5 +40,14 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
                 item.Draw();
             }
         });
+    }
+
+    /// <summary>Forwards to every item's own overlay, mirroring <see cref="MenuBarManager.DrawOverlay"/>.</summary>
+    public void DrawOverlay()
+    {
+        foreach (IFileMenuItem item in Subsystems.Cast<IFileMenuItem>())
+        {
+            item.DrawOverlay();
+        }
     }
 }

@@ -27,6 +27,10 @@ public sealed class SceneClipboard
     /// </summary>
     public IReadOnlyList<SceneEntity> Paste(MapId map) => CloneBatch(_entries, map);
 
+    /// <summary>Drops the copied entities, e.g. across a world reload — they may reference components
+    /// (a bound image, a procedural model) that no longer resolve once the catalogs reload.</summary>
+    public void Clear() => _entries = [];
+
     private static IReadOnlyList<SceneEntity> CloneBatch(IReadOnlyList<SceneEntity> source, MapId? map)
     {
         var clones = new Dictionary<SceneEntity, SceneEntity>();

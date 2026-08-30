@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 /// nothing builds. Enabling one is a deliberate act (pick a profile), because the settings decide how
 /// terrain is represented for the life of the map.
 /// </summary>
-public sealed partial class LandscapeSystem : ISubsystemHost
+public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
 {
     private readonly EditorContext _context;
 
@@ -177,6 +177,42 @@ public sealed partial class LandscapeSystem : ISubsystemHost
         _context.Database.LoadCatalog<LandscapeChannel>();
         _context.Database.LoadCatalog<LandscapeLayer>();
         _context.Database.LoadCatalog<LandscapeMaterial>();
+        Version++;
+    }
+
+    // Landscape has to load after maps (settings are per current-map) and before everything that
+    // resolves against its catalog (mesh materials, procedural models, images all bind channels).
+    float IWorldParticipant.LoadPriority => 1f;
+
+    string? IWorldParticipant.LoadStep => "Loading landscape";
+
+    void IWorldParticipant.LoadWorld() => Load();
+
+    // A rebuild in flight is background work applying chunk meshes into the scene registry — exactly
+    // what a reload's quiescence wait exists to not race, the same reasoning as StreamingSystem's own
+    // pending scan.
+    bool IWorldParticipant.IsBusy => Rebuilder.IsBuilding;
+
+    void IWorldParticipant.UnloadWorld()
+    {
+        _context.Database.UnloadCatalog<LandscapeChannel>();
+        _context.Database.UnloadCatalog<LandscapeLayer>();
+        _context.Database.UnloadCatalog<LandscapeMaterial>();
+
+        Settings = null;
+        FallbackMaterial = null;
+        Error = null;
+        _loadedMap = new MapId(-1);
+        _catalog = null;
+        _catalogVersion = -1;
+        _functionVersion = -1;
+        _catalogMap = new MapId(-1);
+        _reportedCatalog = (-1, -1);
+        _reportedScene = -1;
+        _fallbackKey = (-1, -1);
+
+        Rebuilder.Reset();
+        Reporter.ClearAll();
         Version++;
     }
 

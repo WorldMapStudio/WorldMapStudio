@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// (the core spine, not an extension point), mirroring how <see cref="LandscapeSystem"/> collects
 /// <see cref="ILandscapeDeformer"/>s from the same scene registry.
 /// </summary>
-public sealed class EnvironmentSystem
+public sealed class EnvironmentSystem : IWorldParticipant
 {
     // How far the focus must move before a re-blend is worth it. A moving camera's exact position
     // changes practically every frame; comparing it exactly (rather than within this radius) meant
@@ -84,5 +84,16 @@ public sealed class EnvironmentSystem
         _current = result.Current;
         _active = result.Active;
         Version++;
+    }
+
+    // Sources come from the scene registry, which a reload clears out from under this — the blended
+    // result has to be forgotten too, or it goes on reporting sources that no longer exist until the
+    // focus happens to move far enough to force a recompute.
+    void IWorldParticipant.UnloadWorld()
+    {
+        _current = new();
+        _active = [];
+        _forceUpdate = true;
+        _lastSceneVersion = -1;
     }
 }

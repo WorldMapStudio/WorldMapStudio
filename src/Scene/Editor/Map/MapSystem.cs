@@ -13,7 +13,7 @@ namespace WorldMapStudio;
 /// are placed in it, while entities from other maps stay loaded for as long as the edit session pins
 /// them (see <see cref="StreamingSystem"/>).
 /// </summary>
-public sealed class MapSystem
+public sealed class MapSystem : IWorldParticipant
 {
     private readonly EditorContext _context;
     private readonly List<Map> _maps = [];
@@ -85,6 +85,20 @@ public sealed class MapSystem
 
         Sort();
         Current = _maps.FirstOrDefault(map => map.Id == Current.Id) ?? _maps.FirstOrDefault() ?? Current;
+        Version++;
+    }
+
+    // Maps have to be the first thing loaded (and the last thing unloaded): the current map id is
+    // what LandscapeSystem's own load reads.
+    string? IWorldParticipant.LoadStep => "Loading maps";
+
+    void IWorldParticipant.LoadWorld() => Load();
+
+    void IWorldParticipant.UnloadWorld()
+    {
+        _maps.Clear();
+        Current = new Map(new MapId(0), "Default");
+        Error = null;
         Version++;
     }
 
@@ -185,9 +199,9 @@ public sealed class MapSystem
             return "The project must keep at least one map.";
         }
 
-        if (_context.EditSessions.Active.IsDirty)
+        if (_context.Operations.Blocker is { } blocker)
         {
-            return "Commit or abort the edit session first.";
+            return blocker;
         }
 
         return null;
