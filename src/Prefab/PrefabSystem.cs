@@ -84,9 +84,9 @@ public sealed class PrefabSystem
     /// <summary>
     /// Builds (but does not apply or record) the command that spawns an independent copy of
     /// <paramref name="prefab"/>'s template into the current map, with its root placed at
-    /// <paramref name="at"/>.
+    /// <paramref name="at"/>. Also returns every spawned entity, so the caller can select them.
     /// </summary>
-    public IEditCommand BuildSpawnCommand(Prefab prefab, Vector3 at)
+    public (IEditCommand Command, IReadOnlyList<SceneEntity> Entities) BuildSpawnCommand(Prefab prefab, Vector3 at)
     {
         SceneEntity template = RootOf(prefab) ?? throw new InvalidOperationException(
             $"Prefab '{prefab.Name}' has no loaded template.");
@@ -106,7 +106,7 @@ public sealed class PrefabSystem
         }
 
         var commands = all.Select(entity => (IEditCommand)new CreateEntityCommand(_context.Scene, entity)).ToList();
-        return new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands);
+        return (new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands), all);
     }
 
     /// <summary>Builds (but does not apply or record) the command that deletes a prefab: its catalog
