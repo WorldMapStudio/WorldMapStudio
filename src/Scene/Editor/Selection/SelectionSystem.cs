@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 /// Keyed on <see cref="IEntity"/>. <see cref="Version"/> bumps on every change so views can cheaply
 /// tell when to refresh without subscribing.
 /// </summary>
-public sealed class SelectionSystem
+public sealed class SelectionSystem : IWorldParticipant
 {
     private readonly List<IEntity> _selected = [];
 
@@ -81,4 +81,9 @@ public sealed class SelectionSystem
             scene.OnSelectionChanged(selected);
         }
     }
+
+    // Dropped rather than restored across a reload: what was selected may not come back with the
+    // same identity (a re-read entity is a new instance even at the same row), and holding onto the
+    // old one is exactly the kind of stale-reference bug a reload exists to rule out.
+    void IWorldParticipant.UnloadWorld() => Clear();
 }

@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 ///
 /// Reports arrive from background builds, so this is guarded.
 /// </summary>
-public sealed class ProblemSystem
+public sealed class ProblemSystem : IWorldParticipant
 {
     private readonly object _lock = new();
     private readonly Dictionary<string, List<Problem>> _byScope = [];
@@ -127,4 +127,9 @@ public sealed class ProblemSystem
             Version++;
         }
     }
+
+    // Every scope here was reported by something that reads loaded state (landscape catalog issues,
+    // dangling procedural/image references), so it is stale the instant a reload starts — the systems
+    // that reported it will report fresh once they run again rather than needing their old scopes kept.
+    void IWorldParticipant.UnloadWorld() => Clear();
 }
