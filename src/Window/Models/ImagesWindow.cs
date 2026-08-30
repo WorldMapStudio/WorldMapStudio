@@ -99,7 +99,12 @@ public sealed class ImagesWindow : Window
     {
         var clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Images.Select(m => m.Name)) };
         clone.ConfigureNew(image.Width, image.Height, image.ChunkSize);
-        clone.LoadPixels(image.Width, image.Height, image.CopyPixels());
+
+        // Chunk-based rather than a dense CopyPixels()/LoadPixels() round-trip, so this stays cheap
+        // regardless of canvas size. Only copies what is currently resident — same limitation as
+        // PaintImage.ClearAll for the same reason: a chunk stored but not loaded on a huge image is
+        // not visited here.
+        clone.ApplyChunkEdits(image.ChunkCoords.Select(coord => (coord, (byte[]?)image.CopyChunkBytes(coord))).ToList());
 
         // Identified before it is added, so a reference created in the same session can target it.
         _context.Catalog.AssignId(clone);

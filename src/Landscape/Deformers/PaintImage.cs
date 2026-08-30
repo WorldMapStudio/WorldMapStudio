@@ -5,21 +5,26 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// A named, saved raster — width, height, and a painted grayscale buffer — backed internally by a
-/// sparse grid of fixed-size <see cref="ImageChunk"/>s rather than one flat byte array. Catalog-backed
-/// like <see cref="ProceduralModel"/>, so an <see cref="ImageComponent"/> merely references one by id
-/// instead of owning the data: many placements can share one image, and painting it from any of them
-/// updates every placement.
+/// A named, saved raster — width, height, and a painted grayscale buffer — backed by a sparse grid of
+/// fixed-size <see cref="ImageChunk"/>s rather than one flat byte array. Catalog-backed like
+/// <see cref="ProceduralModel"/>, so an <see cref="ImageComponent"/> merely references one by id instead
+/// of owning the data: many placements can share one image, and painting it from any of them updates
+/// every placement.
 ///
-/// Every pixel-level member (<see cref="Width"/>, <see cref="Height"/>, <see cref="Paint"/>,
-/// <see cref="CopyPixels"/>, ...) still behaves as it would over a flat buffer, and the canvas is still
-/// capped small enough that a dense copy (used by <see cref="CopyPixels"/>, <see cref="Resize"/>,
-/// <see cref="ReplacePixels"/>, <see cref="LoadPixels"/>) is cheap. What chunking already buys: a
-/// chunk holding nothing but zeros is never allocated in memory and never gets a row in
-/// <see cref="PaintImageFactory"/>'s storage, and a stroke crossing a chunk boundary evaluates its
-/// falloff from global pixel coordinates rather than chunk-local ones, so there is nothing to seam.
-/// Streamed residency — loading only the chunks a viewport actually needs, which is what lets the
-/// canvas grow far past this cap — is a later phase; see <c>.godot/ImageChunkPlan.md</c>.
+/// A chunk holding nothing but zeros is never allocated in memory and never gets a row in
+/// <see cref="PaintImageFactory"/>'s storage; only what a streamed-in placement's footprint actually
+/// needs is ever loaded (<see cref="ImageResidencySystem"/>), which is what lets <see cref="Width"/> and
+/// <see cref="Height"/> reach up to <see cref="MaxDimension"/> without every image needing that much
+/// memory at once; and a stroke crossing a chunk boundary evaluates its falloff from global pixel
+/// coordinates rather than chunk-local ones, so there is nothing to seam. See <c>.godot/ImageChunkPlan.md</c>
+/// for the full design.
+///
+/// A handful of members — <see cref="CopyPixels"/>, <see cref="Resize"/>, <see cref="ReplacePixels"/>,
+/// <see cref="LoadPixels"/> — are the exception: they work over one dense buffer sized to the whole
+/// canvas, for callers that genuinely need that shape (tests, an external import). They scale with
+/// <see cref="Width"/> × <see cref="Height"/> regardless of how much is actually painted, so they are
+/// only safe on a modestly sized image. <see cref="ResizeCanvas"/> and <see cref="ClearAll"/> are the
+/// chunk-based alternatives everything in the editor itself uses instead.
 ///
 /// Named <c>PaintImage</c> rather than the more obvious <c>Image</c> because this type lives in the
 /// same namespace as, and every file here brings in with <c>using Godot;</c>, Godot's own
@@ -28,7 +33,7 @@ namespace WorldMapStudio;
 public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 {
     private const int MinDimension = 1;
-    private const int MaxDimension = 4096;
+    private const int MaxDimension = 1_048_576;
     private const int MinChunkSize = 16;
     private const int MaxChunkSize = 4096;
 
@@ -75,15 +80,23 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// for why this can only be set on a fresh image.</summary>
     public int ChunkSize => _chunkSize;
 
+    /// <summary>The chunk grid's extent — every valid chunk coordinate's X falls in <c>[0, ChunksX)</c>,
+    /// Y in <c>[0, ChunksY)</c>. The last column/row typically only partly overlaps the canvas; see
+    /// <see cref="ResizeCanvas"/>.</summary>
+    public int ChunksX => _chunksX;
+
+    public int ChunksY => _chunksY;
+
     /// <summary>Coordinates of chunks that currently hold at least one non-zero pixel. A coordinate not
     /// in this set is all-zero — see <see cref="ImageChunkTable"/>.</summary>
     public IEnumerable<ImageChunkCoord> ChunkCoords => _chunks.Keys;
 
     public int ChunkCount => _chunks.Count;
 
-    /// <summary>A dense copy of the whole canvas, gathered from every chunk (absent chunks read as
-    /// zero). Cheap only because this phase caps the canvas at <see cref="MaxDimension"/> per axis —
-    /// see the type doc.</summary>
+    /// <summary>A dense copy of the whole canvas, gathered from every <em>resident</em> chunk (absent
+    /// or non-resident chunks read as zero). Scales with <see cref="Width"/> × <see cref="Height"/>
+    /// regardless of how much is actually resident — see the type doc for why this is only safe on a
+    /// modestly sized image, and not what a large image's own display or export path uses.</summary>
     public ReadOnlySpan<byte> Pixels => CopyPixels();
 
     /// <summary>Bumped only by an actual pixel/name/dimension edit — what export dirtiness and
@@ -391,7 +404,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         BumpContent();
     }
 
-    /// <summary>Changes resolution, bilinear-resampling the existing content into the new size.</summary>
+    /// <summary>Changes resolution, bilinear-resampling the existing content into the new size. Dense —
+    /// allocates a buffer proportional to both the old and new canvas area — so this is only safe on a
+    /// canvas small enough for that to be cheap. <see cref="ResizeCanvas"/> is the chunk-based
+    /// alternative that stays safe at any size, at the cost of not resampling.</summary>
     public void Resize(int width, int height)
     {
         width = Math.Clamp(width, MinDimension, MaxDimension);
@@ -433,6 +449,69 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
         RebuildChunks(dense);
         BumpContent();
+    }
+
+    /// <summary>Changes canvas dimensions without resampling — chunk-based, so unlike <see cref="Resize"/>
+    /// it stays cheap at any canvas size. A chunk that falls entirely outside the new bounds is dropped
+    /// (returned so a caller can build undo around it — see <c>ResizeImageCanvasCommand</c>); a chunk
+    /// that merely straddles a shrunk edge keeps its buffer untouched; the newly out-of-bounds remainder
+    /// is simply never read again, the same as any other canvas-edge chunk's unused padding.</summary>
+    public IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> ResizeCanvas(int width, int height)
+    {
+        width = Math.Clamp(width, MinDimension, MaxDimension);
+        height = Math.Clamp(height, MinDimension, MaxDimension);
+        if (width == _width && height == _height)
+        {
+            return [];
+        }
+
+        _width = width;
+        _height = height;
+        RecomputeGrid();
+
+        var dropped = new List<(ImageChunkCoord, byte[])>();
+        foreach ((ImageChunkCoord coord, ImageChunk chunk) in _chunks)
+        {
+            if (coord.X >= _chunksX || coord.Y >= _chunksY)
+            {
+                dropped.Add((coord, chunk.Pixels));
+            }
+        }
+
+        foreach ((ImageChunkCoord coord, _) in dropped)
+        {
+            _chunks.Remove(coord);
+            _removedSincePersist.Add(coord);
+        }
+
+        BumpContent();
+        return dropped;
+    }
+
+    /// <summary>Drops every currently <em>resident</em> chunk. Chunk-based, so unlike
+    /// <see cref="ReplacePixels"/> with a zeroed buffer this stays cheap regardless of canvas size — but
+    /// that means it is not necessarily a true whole-canvas wipe: a chunk that is stored but not
+    /// resident (evicted, or simply never loaded this session on a canvas too large to ever be fully
+    /// resident) is left untouched in storage. Returned chunks are what a caller builds undo around —
+    /// see <c>PaintImageChunksCommand</c>, which this reuses directly since "every dropped chunk goes to
+    /// null" is exactly the shape it already understands.</summary>
+    public IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> ClearAll()
+    {
+        if (_chunks.Count == 0)
+        {
+            return [];
+        }
+
+        var cleared = new List<(ImageChunkCoord, byte[])>();
+        foreach ((ImageChunkCoord coord, ImageChunk chunk) in _chunks)
+        {
+            cleared.Add((coord, chunk.Pixels));
+            _removedSincePersist.Add(coord);
+        }
+
+        _chunks = [];
+        BumpContent();
+        return cleared;
     }
 
     /// <summary>Stamps a soft circular brush centred at normalized UV coordinates, with the brush

@@ -13,14 +13,26 @@ namespace WorldMapStudio;
 /// but a chunked image is a header row plus one row per non-empty chunk, and only those chunks are ever
 /// written. See <c>.godot/ImageChunkPlan.md</c> for the storage design this implements.
 ///
-/// A whole image's current chunk set is re-staged on every commit — the same "re-persist everything the
-/// entity currently holds" shape <see cref="EditorCatalogFactory{TEntity,TRecord}"/> uses for a single
-/// row, just spread across many rows here. Only touched chunks round-trip once per-chunk undo (a later
-/// phase) exists to know what changed.
+/// Only currently resident chunks are re-staged on every commit — the "re-persist everything the entity
+/// currently holds" shape <see cref="EditorCatalogFactory{TEntity,TRecord}"/> uses for a single row,
+/// spread across many rows here, but scoped to residency rather than the whole image: a stored-but-not-
+/// resident chunk (evicted, or never loaded on a canvas too large to ever be fully resident) is left
+/// alone in storage — see <see cref="PaintImage.RemovedSincePersist"/> for how a genuine deletion is
+/// told apart from that.
+///
+/// <see cref="LoadAllAsync"/> loads every image's chunk coordinate manifest, but only loads chunk pixel
+/// data up front for an image small enough that doing so is still cheap; a larger one starts with no
+/// resident chunks and relies on <see cref="ImageResidencySystem"/> to bring them in as needed.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class PaintImageFactory : ICatalogEntityFactory
 {
+    // Above this many resident bytes, an image loads its coordinate manifest only and relies on
+    // ImageResidencySystem to bring chunks in as a streamed-in placement needs them, instead of paying
+    // for every chunk up front. Below it, an image loads fully and instantly, exactly as it did before
+    // residency existed — and stays the common case, since a default-sized image is one chunk.
+    private const long EagerLoadBudgetBytes = 64L * 1024 * 1024;
+
     private readonly EditorStorage _storage;
 
     public PaintImageFactory(EditorStorage storage)
@@ -38,10 +50,54 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
     {
         await using EditorDbContext context = _storage.CreateContext();
         List<PaintImageRecord> headers = await context.Images.AsNoTracking().ToListAsync().ConfigureAwait(false);
-        List<ImageChunkRecord> chunkRows = await context.ImageChunks.AsNoTracking().ToListAsync().ConfigureAwait(false);
-        ILookup<int, ImageChunkRecord> chunksByImage = chunkRows.ToLookup(row => row.ImageId);
 
-        return headers.Select(header => (CatalogEntity)ToEntity(header, chunksByImage[header.Id])).ToList();
+        // Coordinates only — cheap even for an image with a huge number of chunks, since it never
+        // touches the Pixels column. Every image needs its manifest regardless of eager/lazy: it is
+        // what IsStored (and so residency's reload path) reads.
+        ILookup<int, ImageChunkCoord> manifestByImage = (await context.ImageChunks.AsNoTracking()
+                .Select(row => new { row.ImageId, row.ChunkX, row.ChunkY })
+                .ToListAsync().ConfigureAwait(false))
+            .ToLookup(row => row.ImageId, row => new ImageChunkCoord(row.ChunkX, row.ChunkY));
+
+        var entities = new List<PaintImage>();
+        var eagerImageIds = new List<int>();
+        foreach (PaintImageRecord header in headers)
+        {
+            var entity = new PaintImage { RecordId = header.Id, Name = header.Name };
+            entity.ConfigureNew(header.Width, header.Height, header.ChunkSize);
+
+            List<ImageChunkCoord> coords = manifestByImage[header.Id].ToList();
+            entity.LoadManifest(coords);
+            entity.IsSaved = true;
+            entities.Add(entity);
+
+            if ((long)coords.Count * entity.ChunkByteSize <= EagerLoadBudgetBytes)
+            {
+                eagerImageIds.Add(header.Id);
+            }
+        }
+
+        if (eagerImageIds.Count > 0)
+        {
+            List<ImageChunkRecord> blobs = await context.ImageChunks.AsNoTracking()
+                .Where(row => eagerImageIds.Contains(row.ImageId))
+                .ToListAsync().ConfigureAwait(false);
+            ILookup<int, ImageChunkRecord> blobsByImage = blobs.ToLookup(row => row.ImageId);
+
+            foreach (PaintImage entity in entities)
+            {
+                int imageId = entity.RecordId ?? 0;
+                if (!eagerImageIds.Contains(imageId))
+                {
+                    continue;
+                }
+
+                entity.LoadChunks(blobsByImage[imageId].Select(row =>
+                    (new ImageChunkCoord(row.ChunkX, row.ChunkY), ImageChunkCodec.Decode(row.Format, row.Pixels, entity.ChunkSize))));
+            }
+        }
+
+        return entities;
     }
 
     public Action Stage(DbContext context, IEntity entity)
@@ -139,15 +195,5 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         }
 
         image.IsSaved = false;
-    }
-
-    private static PaintImage ToEntity(PaintImageRecord header, IEnumerable<ImageChunkRecord> chunkRows)
-    {
-        var entity = new PaintImage { RecordId = header.Id, Name = header.Name };
-        entity.ConfigureNew(header.Width, header.Height, header.ChunkSize);
-        entity.LoadChunks(chunkRows.Select(row =>
-            (new ImageChunkCoord(row.ChunkX, row.ChunkY), ImageChunkCodec.Decode(row.Format, row.Pixels, header.ChunkSize))));
-        entity.IsSaved = true;
-        return entity;
     }
 }

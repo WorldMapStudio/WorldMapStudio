@@ -435,6 +435,104 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ResizeCanvas_shrinking_drops_out_of_bounds_chunks_and_marks_them_removed()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
+        image.LoadChunks(
+        [
+            (new ImageChunkCoord(0, 0), new byte[16 * 16]),
+            (new ImageChunkCoord(3, 3), new byte[16 * 16]),
+        ]);
+
+        IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> dropped = image.ResizeCanvas(32, 32); // now a 2x2 grid
+
+        Assert.AreEqual(1, dropped.Count);
+        Assert.AreEqual(new ImageChunkCoord(3, 3), dropped[0].Coord);
+        Assert.IsFalse(image.IsResident(new ImageChunkCoord(3, 3)));
+        Assert.IsTrue(image.RemovedSincePersist.Contains(new ImageChunkCoord(3, 3)));
+        Assert.IsTrue(image.IsResident(new ImageChunkCoord(0, 0)), "a chunk still within the new bounds should survive untouched");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ResizeCanvas_extending_does_not_drop_anything()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(32, 32, chunkSize: 16);
+        image.LoadChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]);
+
+        IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> dropped = image.ResizeCanvas(64, 64);
+
+        Assert.AreEqual(0, dropped.Count);
+        Assert.IsTrue(image.IsResident(new ImageChunkCoord(0, 0)));
+        Assert.AreEqual(4, image.ChunksX);
+        Assert.AreEqual(4, image.ChunksY);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ClearAll_drops_every_resident_chunk()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks(
+        [
+            (new ImageChunkCoord(0, 0), new byte[16 * 16]),
+            (new ImageChunkCoord(1, 1), new byte[16 * 16]),
+        ]);
+
+        IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> cleared = image.ClearAll();
+
+        Assert.AreEqual(2, cleared.Count);
+        Assert.AreEqual(0, image.ChunkCount);
+        Assert.IsTrue(image.RemovedSincePersist.Contains(new ImageChunkCoord(0, 0)));
+        Assert.IsTrue(image.RemovedSincePersist.Contains(new ImageChunkCoord(1, 1)));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ResizeImageCanvasCommand_revert_restores_dimensions_and_dropped_chunks()
+    {
+        EditorContext context = NewContext("__wms_resize_canvas_command_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks([(new ImageChunkCoord(3, 3), new byte[16 * 16])]);
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = 64.0f, WorldSizeZ = 64.0f };
+        entity.AddComponent(component);
+        context.Scene.Add(entity);
+
+        var command = new ResizeImageCanvasCommand(image, 32, 32, component.AffectedEntities, "Resize Test");
+
+        Assert.AreEqual(32, image.Width);
+        Assert.IsFalse(image.IsResident(new ImageChunkCoord(3, 3)));
+
+        command.Revert();
+
+        Assert.AreEqual(64, image.Width);
+        Assert.IsTrue(image.IsResident(new ImageChunkCoord(3, 3)), "shrinking then reverting should restore the dropped chunk");
+
+        command.Apply();
+
+        Assert.AreEqual(32, image.Width);
+        Assert.IsFalse(image.IsResident(new ImageChunkCoord(3, 3)));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void A_100k_canvas_can_be_configured_and_painted_without_a_dense_allocation()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(100_000, 100_000, chunkSize: 512);
+
+        Assert.AreEqual(196, image.ChunksX);
+        Assert.AreEqual(196, image.ChunksY);
+
+        bool changed = image.Paint(0.5f, 0.5f, 0.001f, 0.001f, 1.0f, erase: false);
+
+        Assert.IsTrue(changed);
+        Assert.AreEqual(1, image.ChunkCount, "painting a small dot should only materialize one chunk on a huge canvas");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");

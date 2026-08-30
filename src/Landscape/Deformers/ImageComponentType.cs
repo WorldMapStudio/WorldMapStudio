@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using ImGuiNET;
 using NVector4 = System.Numerics.Vector4;
@@ -61,13 +62,9 @@ public sealed class ImageComponentType : ISceneComponentType
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { image.Strength = strength; }
         _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
 
-        ImGui.TextDisabled($"{image.Image.Width} x {image.Image.Height} pixels");
-        DrawResizeButton(context, image, 128);
-        ImGui.SameLine();
-        DrawResizeButton(context, image, 256);
-        ImGui.SameLine();
-        DrawResizeButton(context, image, 512);
-        ImGui.SameLine();
+        ImGui.TextDisabled($"{image.Image.Width} x {image.Image.Height} pixels, {image.Image.ChunkSize}px chunks");
+        ImGui.TextDisabled(ChunkGridSummary(image.Image));
+        DrawCanvasSizeFields(context, image);
         DrawClearButton(context, image);
 
         int uses = _system.UsageCount(image.Image.RecordId ?? -1);
@@ -155,35 +152,36 @@ public sealed class ImageComponentType : ISceneComponentType
         }
     }
 
-    private static void DrawResizeButton(InspectorContext context, ImageComponent component, int size)
+    private static string ChunkGridSummary(PaintImage image)
+    {
+        double residentMb = image.ResidentByteSize / (1024.0 * 1024.0);
+        return $"{image.ChunksX}x{image.ChunksY} chunk grid, {image.ChunkCount} resident ({residentMb:F1} MB)";
+    }
+
+    /// <summary>Explicit width/height fields committed on Enter — a crop or extend
+    /// (<see cref="PaintImage.ResizeCanvas"/>), never a resample, and safe at any canvas size since it
+    /// only touches the (typically few) chunks a shrink actually drops. Step buttons are disabled so
+    /// every commit is a single deliberate value, not one undo entry per click.</summary>
+    private static void DrawCanvasSizeFields(InspectorContext context, ImageComponent component)
     {
         PaintImage bound = component.Image!;
-        bool current = bound.Width == size && bound.Height == size;
-        if (current)
+
+        int width = bound.Width;
+        if (ImGui.InputInt("Canvas Width", ref width, 0, 0, ImGuiInputTextFlags.EnterReturnsTrue) && width != bound.Width)
         {
-            ImGui.BeginDisabled();
+            context.Sessions.Record(new ResizeImageCanvasCommand(bound, width, bound.Height, component.AffectedEntities, $"Resize {bound.Name}"));
         }
 
-        if (ImGui.Button($"{size}"))
+        int height = bound.Height;
+        if (ImGui.InputInt("Canvas Height", ref height, 0, 0, ImGuiInputTextFlags.EnterReturnsTrue) && height != bound.Height)
         {
-            int beforeWidth = bound.Width;
-            int beforeHeight = bound.Height;
-            byte[] beforePixels = bound.CopyPixels();
-            bound.Resize(size, size);
-            context.Sessions.Record(new SetImageContentCommand(
-                bound,
-                beforeWidth, beforeHeight, beforePixels,
-                bound.Width, bound.Height, bound.CopyPixels(),
-                component.AffectedEntities,
-                $"Resize {bound.Name}"));
-        }
-
-        if (current)
-        {
-            ImGui.EndDisabled();
+            context.Sessions.Record(new ResizeImageCanvasCommand(bound, bound.Width, height, component.AffectedEntities, $"Resize {bound.Name}"));
         }
     }
 
+    /// <summary>Drops every resident chunk via <see cref="PaintImage.ClearAll"/> and records it through
+    /// <see cref="PaintImageChunksCommand"/> — every cleared chunk going to null is exactly the shape
+    /// that command already understands, so no separate "clear" command type is needed.</summary>
     private static void DrawClearButton(InspectorContext context, ImageComponent component)
     {
         if (!ImGui.Button("Clear"))
@@ -192,13 +190,13 @@ public sealed class ImageComponentType : ISceneComponentType
         }
 
         PaintImage bound = component.Image!;
-        byte[] before = bound.CopyPixels();
-        bound.ReplacePixels(new byte[bound.Width * bound.Height]);
-        context.Sessions.Record(new SetImageContentCommand(
-            bound,
-            bound.Width, bound.Height, before,
-            bound.Width, bound.Height, bound.CopyPixels(),
-            component.AffectedEntities,
-            $"Clear {bound.Name}"));
+        IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> cleared = bound.ClearAll();
+        if (cleared.Count == 0)
+        {
+            return;
+        }
+
+        var edits = cleared.Select(entry => (entry.Coord, (byte[]?)entry.Pixels, (byte[]?)null)).ToList();
+        context.Sessions.Record(new PaintImageChunksCommand(bound, edits, component.AffectedEntities, $"Clear {bound.Name}"));
     }
 }
