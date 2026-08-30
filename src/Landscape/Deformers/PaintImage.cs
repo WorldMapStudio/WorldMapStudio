@@ -238,6 +238,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     internal bool IsResident(ImageChunkCoord coord) => _chunks.ContainsKey(coord);
 
+    /// <summary>This chunk's content revision, or -1 if it is not resident. See
+    /// <see cref="ImageChunk.Revision"/>.</summary>
+    public int ChunkRevision(ImageChunkCoord coord) =>
+        _chunks.TryGetValue(coord, out ImageChunk? chunk) ? chunk.Revision : -1;
+
     internal bool IsDirty(ImageChunkCoord coord) => _chunks.TryGetValue(coord, out ImageChunk? chunk) && chunk.Dirty;
 
     /// <summary>Every chunk's fixed storage footprint — what a residency budget is measured in.</summary>
@@ -356,7 +361,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             }
             else
             {
-                _chunks[coord] = new ImageChunk((byte[])pixels.Clone()) { Dirty = true };
+                // Carries the previous revision forward and bumps it, so a viewport that had this
+                // coordinate cached still sees a difference rather than a coincidental match against
+                // a fresh chunk's zero.
+                int revision = _chunks.TryGetValue(coord, out ImageChunk? previous) ? previous.Revision + 1 : 0;
+                _chunks[coord] = new ImageChunk((byte[])pixels.Clone()) { Dirty = true, Revision = revision };
                 _removedSincePersist.Remove(coord);
                 any = true;
             }
@@ -731,6 +740,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
                 else
                 {
                     existing!.Dirty = true;
+                    existing.Revision++;
                 }
             }
             else

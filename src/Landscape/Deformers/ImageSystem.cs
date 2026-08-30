@@ -85,9 +85,22 @@ public sealed class ImageSystem
                 continue;
             }
 
-            if (entity.IsRepresented && component.NeedsRefresh)
+            if (!entity.IsRepresented || !component.NeedsRefresh)
+            {
+                continue;
+            }
+
+            // A different image or display layer changes what the representation *is*, so it has to be
+            // rebuilt. A change to the bound image's pixels only changes what some of its chunks show,
+            // and that is the case a paint stroke hits every frame it drags — patch those chunks in
+            // place instead, or the cost of painting scales with the whole image rather than the brush.
+            if (component.NeedsStructuralRefresh)
             {
                 entity.RefreshRepresentation();
+            }
+            else
+            {
+                component.SyncChunkNodes();
             }
         }
     }

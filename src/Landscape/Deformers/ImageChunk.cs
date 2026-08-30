@@ -17,4 +17,10 @@ public sealed class ImageChunk
     /// starts a chunk clean by construction. What keeps <see cref="ImageResidencySystem"/> from ever
     /// evicting a chunk with unsaved work.</summary>
     public bool Dirty { get; internal set; }
+
+    /// <summary>Bumped every time this chunk's pixels change. What lets a viewport representation
+    /// re-upload only the chunks a brush actually touched instead of every chunk the image has — see
+    /// <see cref="ImageComponent.SyncChunkNodes"/>. Compared for difference, never ordering, so a
+    /// reloaded chunk starting back at zero is harmless.</summary>
+    public int Revision { get; internal set; }
 }
