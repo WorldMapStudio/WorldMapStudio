@@ -12,6 +12,7 @@ public sealed class SceneEntityRegistry
 {
     private readonly List<SceneEntity> _entities = [];
     private readonly HashSet<SceneEntity> _peripheral = [];
+    private readonly HashSet<SceneEntity> _resident = [];
 
     /// <summary>Everything loaded, including entities held only so derived data can be built.</summary>
     public IReadOnlyList<SceneEntity> Entities => _entities;
@@ -47,6 +48,30 @@ public sealed class SceneEntityRegistry
         }
     }
 
+    /// <summary>
+    /// Whether this entity is exempt from streaming — loaded once for the whole session and never
+    /// unloaded by moving around the map.
+    ///
+    /// Everything else in here belongs to <see cref="StreamingSystem"/>, which decides what stays
+    /// loaded from where the entity is; that is what lets an entity created in the editor unload on
+    /// the same terms as one read from a table. Prefab templates cannot play by those rules: they sit
+    /// on a reserved map no scan ever covers, so streaming would sweep them the first time it looked.
+    /// </summary>
+    public bool IsResident(SceneEntity entity) => _resident.Contains(entity);
+
+    /// <summary>Marks an entity as exempt from streaming. Cleared when it leaves the registry.</summary>
+    public void SetResident(SceneEntity entity, bool resident)
+    {
+        if (resident)
+        {
+            _resident.Add(entity);
+        }
+        else
+        {
+            _resident.Remove(entity);
+        }
+    }
+
     public void Add(SceneEntity entity)
     {
         _entities.Add(entity);
@@ -61,6 +86,7 @@ public sealed class SceneEntityRegistry
         }
 
         _peripheral.Remove(entity);
+        _resident.Remove(entity);
         Version++;
         return true;
     }

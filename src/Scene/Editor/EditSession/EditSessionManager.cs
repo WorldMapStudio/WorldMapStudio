@@ -22,8 +22,8 @@ public sealed class EditSessionManager
     public void BindStore(IEditSessionStore store) => _store = store;
 
     /// <summary>
-    /// Binds the streaming system so releasing a session's pins can invalidate its rescan. Left
-    /// unbound (in tests, say) a commit or abort simply leaves the next scan's timing untouched.
+    /// Binds the streaming system so releasing a session's pins can re-judge what stays loaded. Left
+    /// unbound (in tests, say) a commit or abort simply leaves the loaded set untouched.
     /// </summary>
     public void BindStreaming(StreamingSystem streaming) => _streaming = streaming;
 
@@ -40,15 +40,16 @@ public sealed class EditSessionManager
         Active.Commit();
         Active = new EditSession();
 
-        // Entities that stayed loaded only because this session pinned them are now free to unload,
-        // but streaming only sweeps stale entities during a scan, so force one.
-        _streaming?.Invalidate();
+        // Entities that stayed loaded only because this session pinned them are now free to unload.
+        // Judged here and now rather than at the next scan: scans are asynchronous and gated on the
+        // focus moving, so waiting for one leaves settled entities lingering in the scene.
+        _streaming?.Resweep();
     }
 
     public void Abort()
     {
         Active.Abort();
         Active = new EditSession();
-        _streaming?.Invalidate();
+        _streaming?.Resweep();
     }
 }
