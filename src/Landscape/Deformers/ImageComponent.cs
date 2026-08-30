@@ -406,8 +406,8 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         var mesh = new MeshInstance3D
         {
             Name = $"Chunk_{coord.X}_{coord.Y}",
-            // A hair above the backdrop so the two flat, coplanar quads do not z-fight.
-            Position = new Vector3(placement.CenterX, 0.001f, placement.CenterZ),
+            // Exactly coplanar with the backdrop — see the material below for how that stays safe.
+            Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
             Mesh = new PlaneMesh { Size = new Vector2(placement.SizeX, placement.SizeZ) },
             MaterialOverride = new StandardMaterial3D
             {
@@ -419,6 +419,15 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
                 // from the *opposite* edge of the same chunk — drawing a bright seam along every chunk
                 // boundary wherever the far side happened to be painted.
                 TextureRepeat = false,
+
+                // A tiny Y offset used to separate this from the backdrop instead, but any fixed world-
+                // unit gap is exactly as safe as the depth buffer's precision at the camera's current
+                // distance allows — which flickered badly beyond a few units, since the two are meant
+                // to sit at the same height and the "gap" was really asking floating-point precision to
+                // hold up at painting-editor view distances. Skipping the depth test and drawing after
+                // the backdrop (see RenderPriority) settles the ordering unconditionally instead.
+                NoDepthTest = true,
+                RenderPriority = 1,
             },
         };
 
