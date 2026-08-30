@@ -16,8 +16,8 @@ public sealed class EnvironmentRenderer
 {
     private const int MaxGradientStops = 8;
 
-    // Matches the flat, source-free default the viewport always used before this system existed.
-    private static readonly Color FlatAmbient = new(0.28f, 0.28f, 0.28f);
+    // The flat, source-free default the viewport falls back to when no light is driving the scene
+    private static readonly Color FlatAmbient = new(0.45f, 0.45f, 0.45f);
 
     /// <summary>How much of the camera's far plane the fitted sky dome takes up. Just inside it, so
     /// the dome is never clipped, and everything the map streams in is comfortably in front of it.</summary>
