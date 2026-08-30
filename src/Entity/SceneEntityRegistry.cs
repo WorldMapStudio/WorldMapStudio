@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// (just the viewport's demo set for now); the outline lists them and the viewport picks against
 /// them. <see cref="Version"/> bumps on add/remove so views can tell when to refresh.
 /// </summary>
-public sealed class SceneEntityRegistry
+public sealed class SceneEntityRegistry : IWorldParticipant
 {
     private readonly List<SceneEntity> _entities = [];
     private readonly HashSet<SceneEntity> _peripheral = [];
@@ -78,9 +78,10 @@ public sealed class SceneEntityRegistry
         Version++;
     }
 
-    /// <summary>Drops every loaded entity. Does not tear down viewport representations — that is the
-    /// viewport's own <see cref="IWorldParticipant.UnloadWorld"/>, since it is the one holding the
-    /// Godot nodes.</summary>
+    /// <summary>Drops every loaded entity. Leaves any Godot representation dangling if one is still
+    /// attached — callers that might reach this with entities still represented (a script, or
+    /// <see cref="WorldLifecycle"/>'s own leftover force-clear) go through <see cref="IWorldParticipant.UnloadWorld"/>
+    /// instead, which tears those down first.</summary>
     public void Clear()
     {
         if (_entities.Count == 0)
@@ -92,6 +93,23 @@ public sealed class SceneEntityRegistry
         _peripheral.Clear();
         _resident.Clear();
         Version++;
+    }
+
+    /// <summary>
+    /// The primary teardown path for every loaded scene entity — ordinary streamed content, prefab
+    /// templates, everything. Destroys each one's Godot representation (a no-op for peripheral/library
+    /// entities, which never had one) before dropping it, so nothing needs its own per-entity cleanup
+    /// beyond this. Nothing else removes streamed entities from this registry on unload: streaming's
+    /// own reconciliation, which normally would, only runs from frames a world reload draws none of.
+    /// </summary>
+    void IWorldParticipant.UnloadWorld()
+    {
+        foreach (SceneEntity entity in _entities)
+        {
+            entity.DestroyRepresentation();
+        }
+
+        Clear();
     }
 
     public bool Remove(SceneEntity entity)

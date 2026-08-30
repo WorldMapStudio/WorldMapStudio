@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// unaffected because it already owns its own data. A plain member of <see cref="EditorContext"/>,
 /// shared by every tool: whichever tool the selection was made in, copy/paste behaves the same.
 /// </summary>
-public sealed class SceneClipboard
+public sealed class SceneClipboard : IWorldParticipant
 {
     private IReadOnlyList<SceneEntity> _entries = [];
 
@@ -30,6 +30,8 @@ public sealed class SceneClipboard
     /// <summary>Drops the copied entities, e.g. across a world reload — they may reference components
     /// (a bound image, a procedural model) that no longer resolve once the catalogs reload.</summary>
     public void Clear() => _entries = [];
+
+    void IWorldParticipant.UnloadWorld() => Clear();
 
     private static IReadOnlyList<SceneEntity> CloneBatch(IReadOnlyList<SceneEntity> source, MapId? map)
     {
