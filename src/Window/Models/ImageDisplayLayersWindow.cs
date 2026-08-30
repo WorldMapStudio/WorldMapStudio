@@ -51,7 +51,8 @@ public sealed class ImageDisplayLayersWindow : Window
 
                 if (layer.DisplayMode == ImageDisplayMode.LandscapeOverlay)
                 {
-                    DrawOverlayColor(layer);
+                    DrawColor("Base Color (value 0)", layer, () => layer.BaseColor, c => layer.BaseColor = c);
+                    DrawColor("Full Color (value 255)", layer, () => layer.FullColor, c => layer.FullColor = c);
                 }
 
                 DrawFooter(layer, uses);
@@ -108,16 +109,16 @@ public sealed class ImageDisplayLayersWindow : Window
         ImGui.EndCombo();
     }
 
-    private void DrawOverlayColor(ImageDisplayLayer layer)
+    private void DrawColor(string label, ImageDisplayLayer layer, System.Func<Godot.Color> get, System.Action<Godot.Color> set)
     {
-        Godot.Color color = layer.OverlayColor;
+        Godot.Color color = get();
         var value = new Vector4(color.R, color.G, color.B, color.A);
-        if (ImGui.ColorEdit4("Overlay Color", ref value))
+        if (ImGui.ColorEdit4(label, ref value))
         {
-            layer.OverlayColor = new Godot.Color(value.X, value.Y, value.Z, value.W);
+            set(new Godot.Color(value.X, value.Y, value.Z, value.W));
         }
 
-        _tracker.Track(_context.EditSessions, layer, "overlay color", layer.OverlayColor, c => layer.OverlayColor = c);
+        _tracker.Track(_context.EditSessions, layer, label, get(), set);
     }
 
     private void DrawFooter(ImageDisplayLayer layer, int uses)
@@ -153,7 +154,8 @@ public sealed class ImageDisplayLayersWindow : Window
         {
             Name = UniqueName($"{layer.Name} Copy", Images.DisplayLayers.Select(l => l.Name)),
             DisplayMode = layer.DisplayMode,
-            OverlayColor = layer.OverlayColor,
+            BaseColor = layer.BaseColor,
+            FullColor = layer.FullColor,
         };
 
         // Identified before it is added, so a reference created in the same session can target it.

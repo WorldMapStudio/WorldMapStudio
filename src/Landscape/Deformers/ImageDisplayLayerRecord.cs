@@ -9,11 +9,19 @@ public sealed class ImageDisplayLayerRecord : IKeyedRecord
 
     public int DisplayMode { get; set; }
 
-    public float OverlayColorR { get; set; } = 1.0f;
+    public float BaseColorR { get; set; } = 1.0f;
 
-    public float OverlayColorG { get; set; } = 0.35f;
+    public float BaseColorG { get; set; } = 0.35f;
 
-    public float OverlayColorB { get; set; } = 0.1f;
+    public float BaseColorB { get; set; } = 0.1f;
 
-    public float OverlayColorA { get; set; } = 1.0f;
+    public float BaseColorA { get; set; }
+
+    public float FullColorR { get; set; } = 1.0f;
+
+    public float FullColorG { get; set; } = 0.35f;
+
+    public float FullColorB { get; set; } = 0.1f;
+
+    public float FullColorA { get; set; } = 1.0f;
 }

@@ -58,8 +58,12 @@ public static class ImageTests
         Assert.Greater(layer.Revision, revision1);
 
         int revision2 = layer.Revision;
-        layer.OverlayColor = new Color(0.1f, 0.2f, 0.3f, 1.0f);
+        layer.BaseColor = new Color(0.1f, 0.2f, 0.3f, 0.0f);
         Assert.Greater(layer.Revision, revision2);
+
+        int revision3 = layer.Revision;
+        layer.FullColor = new Color(0.1f, 0.2f, 0.3f, 1.0f);
+        Assert.Greater(layer.Revision, revision3);
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]

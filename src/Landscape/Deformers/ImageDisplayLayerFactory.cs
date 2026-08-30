@@ -16,16 +16,21 @@ public sealed class ImageDisplayLayerFactory(EditorStorage storage)
         RecordId = record.Id,
         Name = record.Name,
         DisplayMode = (ImageDisplayMode)record.DisplayMode,
-        OverlayColor = new Color(record.OverlayColorR, record.OverlayColorG, record.OverlayColorB, record.OverlayColorA),
+        BaseColor = new Color(record.BaseColorR, record.BaseColorG, record.BaseColorB, record.BaseColorA),
+        FullColor = new Color(record.FullColorR, record.FullColorG, record.FullColorB, record.FullColorA),
     };
 
     protected override void WriteRecord(ImageDisplayLayer entity, ImageDisplayLayerRecord record)
     {
         record.Name = entity.Name;
         record.DisplayMode = (int)entity.DisplayMode;
-        record.OverlayColorR = entity.OverlayColor.R;
-        record.OverlayColorG = entity.OverlayColor.G;
-        record.OverlayColorB = entity.OverlayColor.B;
-        record.OverlayColorA = entity.OverlayColor.A;
+        record.BaseColorR = entity.BaseColor.R;
+        record.BaseColorG = entity.BaseColor.G;
+        record.BaseColorB = entity.BaseColor.B;
+        record.BaseColorA = entity.BaseColor.A;
+        record.FullColorR = entity.FullColor.R;
+        record.FullColorG = entity.FullColor.G;
+        record.FullColorB = entity.FullColor.B;
+        record.FullColorA = entity.FullColor.A;
     }
 }
