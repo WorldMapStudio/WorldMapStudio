@@ -193,31 +193,108 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         };
     }
 
-    /// <summary>A decal ramping from <see cref="ImageDisplayLayer.BaseColor"/> to
-    /// <see cref="ImageDisplayLayer.FullColor"/> as the image's pixel values rise, projected straight
-    /// down onto the terrain. The vertical extent mirrors <see cref="LandscapeGrid.NominalHeightExtent"/>,
-    /// the same "tall enough regardless of exact placement height" bound <see cref="ProceduralComponent"/>
-    /// uses for a flat paint-only placement's box.</summary>
-    private Node3D BuildOverlayDecal(PaintImage image, ImageDisplayLayer layer) => new Decal
+    /// <summary>One decal per resident chunk, each ramping from <see cref="ImageDisplayLayer.BaseColor"/>
+    /// to <see cref="ImageDisplayLayer.FullColor"/> as that chunk's pixel values rise, projected
+    /// straight down onto the terrain. Per-chunk rather than one decal (and one texture) for the whole
+    /// canvas — see <see cref="PaintImageTextures"/> — so this stays cheap regardless of how large the
+    /// canvas is; an unpainted image simply gets no decals, the same as a fully transparent one. The
+    /// vertical extent mirrors <see cref="LandscapeGrid.NominalHeightExtent"/>, the same "tall enough
+    /// regardless of exact placement height" bound <see cref="ProceduralComponent"/> uses for a flat
+    /// paint-only placement's box.</summary>
+    private Node3D BuildOverlayDecal(PaintImage image, ImageDisplayLayer layer)
     {
-        Name = "ImageOverlay",
-        Size = new Vector3(WorldSizeX, LandscapeGrid.NominalHeightExtent * 2.0f, WorldSizeZ),
-        TextureAlbedo = PaintImageTextures.Tinted(image, layer.BaseColor, layer.FullColor),
-    };
-
-    /// <summary>A flat, unshaded quad showing the image's own texture — what the Paint tool targets
-    /// directly (via <see cref="SceneEntity.TryPickGeometry"/>) instead of projecting through the
-    /// terrain when this placement's display mode is <see cref="ImageDisplayMode.Object"/>.</summary>
-    private Node3D BuildObjectMesh(PaintImage image) => new MeshInstance3D
-    {
-        Name = "ImageObject",
-        Mesh = new PlaneMesh { Size = new Vector2(WorldSizeX, WorldSizeZ) },
-        MaterialOverride = new StandardMaterial3D
+        var root = new Node3D { Name = "ImageOverlay" };
+        foreach (ImageChunkCoord coord in image.ChunkCoords)
         {
-            AlbedoTexture = PaintImageTextures.Grayscale(image),
-            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-        },
-    };
+            if (ChunkPlacementFor(image, coord) is not { } placement)
+            {
+                continue;
+            }
+
+            root.AddChild(new Decal
+            {
+                Name = $"Chunk_{coord.X}_{coord.Y}",
+                Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
+                Size = new Vector3(placement.SizeX, LandscapeGrid.NominalHeightExtent * 2.0f, placement.SizeZ),
+                TextureAlbedo = PaintImageTextures.ChunkTinted(image, coord, layer.BaseColor, layer.FullColor),
+            });
+        }
+
+        return root;
+    }
+
+    /// <summary>A flat, unshaded backdrop sized to the whole footprint — solid black, no texture, so
+    /// its cost does not scale with canvas size — with one further quad layered per resident chunk
+    /// showing that chunk's own grayscale texture. The backdrop is what the Paint tool targets directly
+    /// (via <see cref="SceneEntity.TryPickGeometry"/>) instead of projecting through the terrain when
+    /// this placement's display mode is <see cref="ImageDisplayMode.Object"/>: it exists even before
+    /// anything has been painted, so there is always something to click and start painting on.</summary>
+    private Node3D BuildObjectMesh(PaintImage image)
+    {
+        var root = new Node3D { Name = "ImageObject" };
+        root.AddChild(new MeshInstance3D
+        {
+            Name = "Backdrop",
+            Mesh = new PlaneMesh { Size = new Vector2(WorldSizeX, WorldSizeZ) },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoColor = Colors.Black,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+            },
+        });
+
+        foreach (ImageChunkCoord coord in image.ChunkCoords)
+        {
+            if (ChunkPlacementFor(image, coord) is not { } placement)
+            {
+                continue;
+            }
+
+            root.AddChild(new MeshInstance3D
+            {
+                Name = $"Chunk_{coord.X}_{coord.Y}",
+                // A hair above the backdrop so the two flat, coplanar quads do not z-fight.
+                Position = new Vector3(placement.CenterX, 0.001f, placement.CenterZ),
+                Mesh = new PlaneMesh { Size = new Vector2(placement.SizeX, placement.SizeZ) },
+                MaterialOverride = new StandardMaterial3D
+                {
+                    AlbedoTexture = PaintImageTextures.ChunkGrayscale(image, coord),
+                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+                },
+            });
+        }
+
+        return root;
+    }
+
+    private readonly record struct ChunkPlacement(float CenterX, float CenterZ, float SizeX, float SizeZ);
+
+    /// <summary>Where one chunk's textured quad/decal goes in this placement's local space — the
+    /// inverse of <see cref="TryLocalToUv"/>, narrowed to just that chunk's pixel sub-rect. Null if the
+    /// chunk falls outside the canvas (only possible for a stale coordinate from a since-shrunk image).</summary>
+    private ChunkPlacement? ChunkPlacementFor(PaintImage image, ImageChunkCoord coord)
+    {
+        int baseX = coord.X * image.ChunkSize;
+        int baseY = coord.Y * image.ChunkSize;
+        int width = Math.Min(image.ChunkSize, image.Width - baseX);
+        int height = Math.Min(image.ChunkSize, image.Height - baseY);
+        if (width <= 0 || height <= 0)
+        {
+            return null;
+        }
+
+        float u0 = (float)baseX / image.Width;
+        float u1 = (float)(baseX + width) / image.Width;
+        float v0 = (float)baseY / image.Height;
+        float v1 = (float)(baseY + height) / image.Height;
+
+        float loX = (u0 - 0.5f) * WorldSizeX;
+        float hiX = (u1 - 0.5f) * WorldSizeX;
+        float loZ = (v0 - 0.5f) * WorldSizeZ;
+        float hiZ = (v1 - 0.5f) * WorldSizeZ;
+
+        return new ChunkPlacement((loX + hiX) * 0.5f, (loZ + hiZ) * 0.5f, hiX - loX, hiZ - loZ);
+    }
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
