@@ -357,6 +357,12 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
             Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
             Size = new Vector3(placement.SizeX, LandscapeGrid.NominalHeightExtent * 2.0f, placement.SizeZ),
             TextureAlbedo = texture,
+
+            // A decal's default cull mask matches every VisualInstance3D on the default layer, which in
+            // this editor is everything — models, markers, the viewport's own reference grid. Restrict
+            // it to the layer terrain surfaces render on, so painting only ever visibly colors the
+            // ground it is meant to paint.
+            CullMask = LandscapeChunk.RenderLayer,
         };
 
         return new ChunkNode(decal, texture);
