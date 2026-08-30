@@ -9,7 +9,7 @@ namespace WorldMapStudio;
 /// (compiled into the same assembly, e.g. the WoW plugin's WMO doodad-set picker) can extend it with
 /// format-specific state and inspector UI without this file needing to know about that format.
 /// </summary>
-public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy
+public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy, IMeshPickable
 {
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;

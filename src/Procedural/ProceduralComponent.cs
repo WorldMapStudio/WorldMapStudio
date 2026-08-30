@@ -18,7 +18,7 @@ namespace WorldMapStudio;
 /// never <see cref="Model"/> or <see cref="Network"/> live, which would race the catalog the way
 /// <see cref="LandscapeBuilder"/>'s class comment warns against for live scene state generally.
 /// </summary>
-public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable, ILandscapeDeformer, ITransformPolicy
+public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable, ILandscapeDeformer, ITransformPolicy, IMeshPickable
 {
     private static readonly VertexNetwork EmptyNetwork = new();
 

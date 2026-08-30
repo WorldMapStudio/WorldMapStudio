@@ -30,6 +30,16 @@ public interface ISceneNodeComponent
     Node3D? BuildNode();
 }
 
+/// <summary>
+/// Marks an <see cref="ISceneNodeComponent"/> whose built node is real, clickable geometry (a
+/// model, a procedural mesh) rather than an editor helper (a marker gizmo, a paint-area stamp).
+/// Click selection ray-tests these components' <see cref="MeshInstance3D"/> triangles directly
+/// instead of falling back to the entity's bounding box; see <see cref="SceneEntity.TryPickGeometry"/>.
+/// </summary>
+public interface IMeshPickable
+{
+}
+
 public interface ITransformPolicy
 {
     SelfRotation SelfRotation { get; }
