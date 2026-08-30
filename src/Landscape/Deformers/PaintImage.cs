@@ -228,6 +228,99 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         }
     }
 
+    /// <summary>Clears the dirty flag on every given resident chunk. Called once a commit has
+    /// successfully persisted them — see <see cref="PaintImageFactory.Stage"/> — so
+    /// <see cref="EvictChunk"/> becomes free to drop them again once nothing needs them resident.
+    /// Without this, a chunk that was ever painted would stay pinned in memory forever, since eviction
+    /// refuses to touch a dirty one.</summary>
+    internal void MarkChunksClean(IEnumerable<ImageChunkCoord> coords)
+    {
+        foreach (ImageChunkCoord coord in coords)
+        {
+            if (_chunks.TryGetValue(coord, out ImageChunk? chunk))
+            {
+                chunk.Dirty = false;
+            }
+        }
+    }
+
+    // Coordinate to its content immediately before the in-progress stroke (null = did not exist), for
+    // every chunk the stroke has touched so far. Not the same as PersistedChunkCoords/manifest
+    // bookkeeping — this is purely in-memory, scoped to one stroke, and reset on every BeginStroke.
+    private Dictionary<ImageChunkCoord, byte[]?>? _strokeBefore;
+
+    /// <summary>Starts recording per-chunk "before" snapshots for an undo command. Call once when a
+    /// paint stroke begins (e.g. on mouse-down) — not once per <see cref="Paint"/> call, since a single
+    /// stroke calls <see cref="Paint"/> many times as the pointer moves and undo needs the state from
+    /// before the <em>whole</em> stroke, not before each dab.</summary>
+    public void BeginStroke() => _strokeBefore = [];
+
+    /// <summary>Stops recording and returns every chunk that actually changed since
+    /// <see cref="BeginStroke"/>: its coordinate, its content immediately before the stroke (null if it
+    /// did not exist yet), and its content now (null if it does not exist now — erased back to empty).
+    /// A chunk the stroke merely touched but left unchanged (every dab in it rounded to zero) is
+    /// omitted. Safe to call with no stroke in progress — returns empty.</summary>
+    public IReadOnlyList<(ImageChunkCoord Coord, byte[]? Before, byte[]? After)> EndStroke()
+    {
+        if (_strokeBefore is not { } before)
+        {
+            return [];
+        }
+
+        _strokeBefore = null;
+
+        var result = new List<(ImageChunkCoord, byte[]?, byte[]?)>();
+        foreach ((ImageChunkCoord coord, byte[]? beforePixels) in before)
+        {
+            byte[]? afterPixels = CopyChunkBytes(coord);
+            if (!BytesEqual(beforePixels, afterPixels))
+            {
+                result.Add((coord, beforePixels, afterPixels));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>Applies a set of chunk edits directly by coordinate — a replacement buffer, or null
+    /// meaning the chunk should not exist (all-zero) — the shape a per-chunk undo apply/revert needs,
+    /// as opposed to <see cref="LoadPixels"/>'s dense whole-canvas replacement. Marks every affected
+    /// chunk dirty, so a commit re-persists it on the next <see cref="PaintImageFactory.Stage"/>.
+    /// Never refuses a coordinate the way <see cref="Paint"/> does for a stored-but-unloaded chunk:
+    /// every edit this is called with came from <see cref="EndStroke"/>, which by construction only
+    /// ever recorded chunks <see cref="Paint"/> actually let it touch while they were resident.</summary>
+    internal void ApplyChunkEdits(IEnumerable<(ImageChunkCoord Coord, byte[]? Pixels)> edits)
+    {
+        bool any = false;
+        foreach ((ImageChunkCoord coord, byte[]? pixels) in edits)
+        {
+            if (pixels == null)
+            {
+                any |= _chunks.Remove(coord);
+            }
+            else
+            {
+                _chunks[coord] = new ImageChunk((byte[])pixels.Clone()) { Dirty = true };
+                any = true;
+            }
+        }
+
+        if (any)
+        {
+            BumpContent();
+        }
+    }
+
+    private static bool BytesEqual(byte[]? a, byte[]? b)
+    {
+        if (a == null || b == null)
+        {
+            return a == b;
+        }
+
+        return a.AsSpan().SequenceEqual(b);
+    }
+
     public byte[] CopyPixels()
     {
         var dense = new byte[_width * _height];
@@ -463,6 +556,13 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             // Erasing a chunk that exists nowhere — not resident, not stored — changes nothing.
             return false;
+        }
+
+        // Recorded once per stroke, on this chunk's first touch — a later dab in the same stroke must
+        // not overwrite it with an already-painted-on state, or undo would only revert the last dab.
+        if (_strokeBefore is { } stroke && !stroke.ContainsKey(coord))
+        {
+            stroke[coord] = resident ? (byte[])existing!.Pixels.Clone() : null;
         }
 
         byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize];

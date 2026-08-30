@@ -282,6 +282,98 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Stroke_tracking_records_state_before_the_whole_stroke_not_each_dab()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 64); // a single chunk, simplest case
+
+        image.BeginStroke();
+        image.Paint(0.5f, 0.5f, 0.1f, 0.1f, 0.5f, erase: false);
+        image.Paint(0.5f, 0.5f, 0.1f, 0.1f, 0.5f, erase: false); // second dab, same spot, darker still
+        var edits = image.EndStroke();
+
+        Assert.AreEqual(1, edits.Count);
+        Assert.IsNull(edits[0].Before, "the chunk did not exist before the stroke started");
+        Assert.IsNotNull(edits[0].After);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Stroke_tracking_omits_chunks_touched_but_left_unchanged()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+
+        image.BeginStroke();
+        bool changed = image.Paint(0.9f, 0.9f, 0.001f, 0.001f, 1.0f, erase: true); // erasing nothing: a no-op
+        var edits = image.EndStroke();
+
+        Assert.IsFalse(changed);
+        Assert.AreEqual(0, edits.Count);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void PaintImageChunksCommand_apply_and_revert_round_trip_a_stroke_with_narrowed_bounds()
+    {
+        EditorContext context = NewContext("__wms_paint_chunks_command_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+        entity.AddComponent(component);
+        context.Scene.Add(entity);
+
+        image.BeginStroke();
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        var edits = image.EndStroke();
+
+        Assert.AreEqual(1, edits.Count);
+        ImageChunkCoord coord = edits[0].Coord;
+        Assert.IsNull(edits[0].Before);
+        Assert.IsTrue(image.IsResident(coord));
+
+        var command = new PaintImageChunksCommand(image, edits, component.AffectedEntities, "Paint Test");
+
+        Assert.AreEqual(1, command.ChunkImpacts.Count);
+        ChunkChangeImpact impact = command.ChunkImpacts[0];
+        Assert.IsNull(impact.Before);
+        Assert.IsNotNull(impact.After);
+        Assert.AreApproximatelyEqual(16.0, impact.After!.Bounds.Size.X, 1e-4,
+            "bounds should be narrowed to the one touched 16px chunk, not the whole 64-wide footprint");
+
+        command.Revert();
+        Assert.IsFalse(image.IsResident(coord), "reverting should remove a chunk that did not exist before the stroke");
+
+        command.Apply();
+        Assert.IsTrue(image.IsResident(coord));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Marking_chunks_clean_after_commit_allows_eviction()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        var coord = new ImageChunkCoord(0, 0);
+        Assert.IsTrue(image.IsDirty(coord));
+
+        image.EvictChunk(coord);
+        Assert.IsTrue(image.IsResident(coord), "still dirty, so eviction should still refuse it");
+
+        image.MarkChunksClean([coord]);
+        Assert.IsFalse(image.IsDirty(coord));
+
+        image.EvictChunk(coord);
+        Assert.IsFalse(image.IsResident(coord), "now clean, eviction should succeed");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");

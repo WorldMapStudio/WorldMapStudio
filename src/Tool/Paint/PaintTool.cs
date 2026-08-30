@@ -25,7 +25,6 @@ public sealed class PaintTool : ITool
     private bool _painting;
     private ImageComponent? _strokeTarget;
     private PaintImage? _strokeImage;
-    private byte[]? _strokeBefore;
 
     public PaintTool(ToolContext context)
     {
@@ -93,7 +92,7 @@ public sealed class PaintTool : ITool
             _painting = true;
             _strokeTarget = target;
             _strokeImage = image;
-            _strokeBefore = image.CopyPixels();
+            image.BeginStroke();
         }
 
         if (_painting)
@@ -132,26 +131,19 @@ public sealed class PaintTool : ITool
         _painting = false;
         ImageComponent? target = _strokeTarget;
         PaintImage? image = _strokeImage;
-        byte[]? before = _strokeBefore;
         _strokeTarget = null;
         _strokeImage = null;
-        _strokeBefore = null;
 
-        if (!record || target == null || image == null || before == null)
+        // Always drains the stroke's per-chunk tracking, even when not recording — otherwise the next
+        // stroke's "before" snapshots would start from whatever an abandoned stroke left in progress.
+        var edits = image?.EndStroke();
+
+        if (!record || target == null || image == null || edits is not { Count: > 0 })
         {
             return;
         }
 
-        byte[] after = image.CopyPixels();
-        if (!before.SequenceEqual(after))
-        {
-            _sessions.Record(new SetImageContentCommand(
-                image,
-                image.Width, image.Height, before,
-                image.Width, image.Height, after,
-                target.AffectedEntities,
-                $"Paint {image.Name}"));
-        }
+        _sessions.Record(new PaintImageChunksCommand(image, edits, target.AffectedEntities, $"Paint {image.Name}"));
     }
 
     private bool TryHit(ImageComponent target, bool onObject, in ViewportContext context, out GVector3 local)
