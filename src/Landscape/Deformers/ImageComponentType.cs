@@ -48,15 +48,16 @@ public sealed class ImageComponentType : ISceneComponentType
 
         ImGui.Separator();
 
-        // "World" makes clear this is the placement's footprint in world units, not the image's own
-        // pixel resolution shown below — the two used to share the plain "Width" label and that read
-        // as one setting instead of two unrelated ones.
+        // "Footprint" for how large the projection is on the ground, distinct from both the entity's
+        // own transform (position/rotation, drawn elsewhere and untouched by this component) and the
+        // image's pixel resolution (shown below) — three different "size"-shaped settings that used to
+        // share overlapping names.
         float sizeX = image.WorldSizeX;
-        if (ImGui.DragFloat("World Size X", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
+        if (ImGui.DragFloat("Footprint Width", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
         _tracker.Track(context.Sessions, image, "width", image.WorldSizeX, value => image.WorldSizeX = value);
 
         float sizeZ = image.WorldSizeZ;
-        if (ImGui.DragFloat("World Size Z", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
+        if (ImGui.DragFloat("Footprint Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
         _tracker.Track(context.Sessions, image, "depth", image.WorldSizeZ, value => image.WorldSizeZ = value);
 
         LandscapeDeformerInspector.DrawChannelCombo(context, _landscape.Catalog, image, image.Channel, value => image.Channel = value);
@@ -66,8 +67,8 @@ public sealed class ImageComponentType : ISceneComponentType
         _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
 
         ImGui.Separator();
-        ImGui.TextDisabled($"Canvas: {image.Image.Width} x {image.Image.Height} px, {image.Image.ChunkSize}px chunks (fixed at creation)");
         ImGui.TextDisabled(ChunkGridSummary(image.Image));
+        ImGui.TextDisabled(ResidencySummary(image.Image));
         DrawClearButton(context, image);
 
         int uses = _system.UsageCount(image.Image.RecordId ?? -1);
@@ -155,10 +156,13 @@ public sealed class ImageComponentType : ISceneComponentType
         }
     }
 
-    private static string ChunkGridSummary(PaintImage image)
+    private static string ChunkGridSummary(PaintImage image) =>
+        $"{image.ChunkSize}px chunks, {image.ChunksX}x{image.ChunksY} grid = {image.Width}x{image.Height}px total (fixed at creation)";
+
+    private static string ResidencySummary(PaintImage image)
     {
         double residentMb = image.ResidentByteSize / (1024.0 * 1024.0);
-        return $"{image.ChunksX}x{image.ChunksY} chunk grid, {image.ChunkCount} resident ({residentMb:F1} MB)";
+        return $"{image.ChunkCount} resident ({residentMb:F1} MB)";
     }
 
     /// <summary>Drops every resident chunk via <see cref="PaintImage.ClearAll"/> and records it through
