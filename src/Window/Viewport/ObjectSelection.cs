@@ -14,9 +14,10 @@ namespace WorldMapStudio;
 /// removes, and dragging from empty space marquee-selects everything whose centre falls inside the
 /// box. Marquee selection skips <see cref="IDerivedEntity"/>s (e.g. landscape chunks) — they're
 /// still individually clickable for their inspector, but a box drag shouldn't sweep them up.
-/// Selection lives in the shared <see cref="SelectionSystem"/> so the outline and inspector
-/// stay in sync; each entity is picked and outlined against its own <see cref="SceneEntity.LocalBounds"/>
-/// in its world transform.
+/// Selection lives in the shared <see cref="SelectionSystem"/> so the outline and inspector stay in
+/// sync. Marquee selection and the outline both work against <see cref="SceneEntity.LocalBounds"/>
+/// in the entity's world transform; click selection prefers ray-testing real geometry where an
+/// entity has any — see <see cref="Pick"/>.
 /// </summary>
 public sealed class ObjectSelection
 {
@@ -165,7 +166,20 @@ public sealed class ObjectSelection
         }
     }
 
-    // Nearest entity under the cursor, or null. Uses an analytic ray-vs-box slab test.
+    /// <summary>
+    /// Nearest entity under the cursor, or null.
+    ///
+    /// Two phases. The broad phase is the old ray-vs-box test over everything in view; it both
+    /// rejects the bulk of the scene and yields a lower bound on how far away each survivor's real
+    /// geometry can possibly be. The narrow phase then walks the survivors nearest-box-first and, for
+    /// anything carrying real geometry, ray-tests its actual triangles — so clicking through the
+    /// hollow of an archway or past a model's silhouette correctly misses it. Entities that only draw
+    /// editor helpers (markers, stamps) or whose model is still streaming in keep their box hit.
+    ///
+    /// Sorting is what makes triangle testing affordable: once something is hit at distance t, every
+    /// remaining candidate whose box starts beyond t is unreachable, so a click typically tests the
+    /// triangles of one or two models rather than every model in view.
+    /// </summary>
     private SceneEntity? Pick(NVector2 mouse, Camera3D camera, NVector2 imageMin, NVector2 imageSize)
     {
         GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
@@ -177,13 +191,39 @@ public sealed class ObjectSelection
         GVector3 from = camera.ProjectRayOrigin(local);
         GVector3 dir = camera.ProjectRayNormal(local);
 
-        SceneEntity? best = null;
-        float bestT = float.PositiveInfinity;
+        // (entity, nearest possible distance, distance to use if it has no geometry to test)
+        var candidates = new List<(SceneEntity Entity, float Near, float BoxHit)>();
         foreach (SceneEntity obj in _scene.InView)
         {
-            if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float t) && t < bestT)
+            if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float boxHit, out float near))
             {
-                bestT = t;
+                candidates.Add((obj, near, boxHit));
+            }
+        }
+
+        candidates.Sort(static (a, b) => a.Near.CompareTo(b.Near));
+
+        SceneEntity? best = null;
+        float bestT = float.PositiveInfinity;
+        foreach ((SceneEntity obj, float near, float boxHit) in candidates)
+        {
+            if (near >= bestT)
+            {
+                break;
+            }
+
+            bool geometryHit = obj.TryPickGeometry(from, dir, out float t, out bool hadGeometry);
+            if (hadGeometry)
+            {
+                if (geometryHit && t < bestT)
+                {
+                    bestT = t;
+                    best = obj;
+                }
+            }
+            else if (boxHit < bestT)
+            {
+                bestT = boxHit;
                 best = obj;
             }
         }
@@ -306,11 +346,22 @@ public sealed class ObjectSelection
         drawList.AddRect(min, max, ImGui.GetColorU32(new NVector4(0.40f, 0.65f, 1.0f, 0.90f)));
     }
 
-    // Slab test: transform the ray into the box's local space and clip against its bounds.
-    // Reports the entry distance so the caller can pick the nearest hit among several boxes.
-    private static bool TryRayBox(GVector3 origin, GVector3 dir, Transform3D boxTransform, Aabb bounds, out float tHit)
+    /// <summary>
+    /// Slab test: transform the ray into the box's local space and clip against its bounds.
+    /// </summary>
+    /// <param name="tHit">
+    /// Distance to select this entity at when the box is all we have to go on — the entry distance,
+    /// or the exit distance when the ray starts inside the box.
+    /// </param>
+    /// <param name="tNear">
+    /// Lower bound on how close anything inside this box can be: the entry distance, clamped to zero
+    /// when the ray starts inside. <see cref="Pick"/> sorts and early-outs on this, which is only
+    /// sound because nothing in the box — triangle or <paramref name="tHit"/> — can be nearer than it.
+    /// </param>
+    private static bool TryRayBox(GVector3 origin, GVector3 dir, Transform3D boxTransform, Aabb bounds, out float tHit, out float tNear)
     {
         tHit = 0.0f;
+        tNear = 0.0f;
         Transform3D inv = boxTransform.AffineInverse();
         GVector3 o = inv * origin;
         GVector3 d = inv.Basis * dir;
@@ -357,6 +408,7 @@ public sealed class ObjectSelection
         }
 
         tHit = tMin >= 0.0f ? tMin : tMax;
+        tNear = Mathf.Max(tMin, 0.0f);
         return true;
     }
 }

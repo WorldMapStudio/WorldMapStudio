@@ -14,6 +14,7 @@ public class SceneEntity : Entity
     private Transform3D _transform = Transform3D.Identity;
     private readonly List<SceneComponent> _components = [];
     private readonly List<SceneEntity> _children = [];
+    private readonly List<Node3D> _meshPickNodes = [];
     private SceneEntity? _parent;
 
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
@@ -197,6 +198,7 @@ public class SceneEntity : Entity
         // Nothing to read back: the node only ever mirrored _transform.
         Node.QueueFree();
         Node = null;
+        _meshPickNodes.Clear();
     }
 
     /// <summary>
@@ -265,15 +267,94 @@ public class SceneEntity : Entity
     protected virtual Node3D BuildNode()
     {
         var root = new Node3D { Name = $"Entity{Id.Value}" };
+        ClearPickNodes();
         foreach (ISceneNodeComponent component in Components.OfType<ISceneNodeComponent>())
         {
             if (component.BuildNode() is { } child)
             {
                 root.AddChild(child);
+                if (component is IMeshPickable)
+                {
+                    RegisterPickNode(child);
+                }
             }
         }
 
         return root;
+    }
+
+    /// <summary>
+    /// Declares a node whose <see cref="MeshInstance3D"/> descendants click selection should ray-test
+    /// instead of settling for <see cref="LocalBounds"/>. <see cref="BuildNode"/> does this for every
+    /// <see cref="IMeshPickable"/> component; an entity that builds its own node instead (a landscape
+    /// chunk) calls it from its override.
+    ///
+    /// This matters most exactly where the bounds least resemble the geometry. A chunk's bounds are a
+    /// nominal ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab wrapped around a thin surface,
+    /// and the camera normally sits inside one: unregistered, every click would land on terrain a few
+    /// units away in mid-air, and nothing beyond it — no model, no marker — could ever be selected.
+    /// </summary>
+    protected void RegisterPickNode(Node3D node) => _meshPickNodes.Add(node);
+
+    /// <summary>Forgets every registered pick node, for an override that is rebuilding its representation.</summary>
+    protected void ClearPickNodes() => _meshPickNodes.Clear();
+
+    /// <summary>
+    /// Ray-vs-triangle test, in world space, against every <see cref="MeshInstance3D"/> under this
+    /// entity's <see cref="IMeshPickable"/> components. Unlike the bounding-box test, a ray that passes
+    /// through empty space inside the model's box but misses every face is a miss — that's the point of
+    /// using it for click selection. <paramref name="t"/> is the distance along the ray, comparable
+    /// with the distances the box test reports for other entities.
+    /// </summary>
+    /// <param name="hadGeometry">
+    /// Whether there was actually anything to test: false for entities that only draw editor helpers,
+    /// and for a model still streaming in. The caller must fall back to <see cref="LocalBounds"/> in
+    /// that case — "nothing to test yet" must never read as "the click missed", which is precisely
+    /// what makes an entity silently unselectable.
+    /// </param>
+    public bool TryPickGeometry(Vector3 origin, Vector3 dir, out float t, out bool hadGeometry)
+    {
+        t = float.PositiveInfinity;
+        bool hit = false;
+        bool geometry = false;
+        foreach (Node3D node in _meshPickNodes)
+        {
+            if (GodotObject.IsInstanceValid(node))
+            {
+                hit |= TryPickNode(node, origin, dir, ref t, ref geometry);
+            }
+        }
+
+        hadGeometry = geometry;
+        return hit;
+    }
+
+    private static bool TryPickNode(Node3D node, Vector3 origin, Vector3 dir, ref float best, ref bool hadGeometry)
+    {
+        bool hit = false;
+        if (node is MeshInstance3D { Mesh: { } mesh, Visible: true })
+        {
+            Vector3[] triangles = MeshPicking.Triangles(mesh);
+            if (triangles.Length > 0)
+            {
+                hadGeometry = true;
+
+                // Test in mesh-local space so the triangles need no per-click transforming; the
+                // unnormalised local direction keeps `best` a distance along the original world ray.
+                Transform3D inv = node.GlobalTransform.AffineInverse();
+                hit |= MeshPicking.TryRayTriangles(triangles, inv * origin, inv.Basis * dir, ref best);
+            }
+        }
+
+        foreach (Node child in node.GetChildren())
+        {
+            if (child is Node3D child3D)
+            {
+                hit |= TryPickNode(child3D, origin, dir, ref best, ref hadGeometry);
+            }
+        }
+
+        return hit;
     }
 
     /// <summary>Reacts to a change in selection state (e.g. highlight). Default does nothing.</summary>

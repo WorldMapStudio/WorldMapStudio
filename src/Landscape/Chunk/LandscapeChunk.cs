@@ -74,7 +74,10 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
             child.QueueFree();
         }
 
-        node.AddChild(BuildSurface());
+        ClearPickNodes();
+        MeshInstance3D surface = BuildSurface();
+        node.AddChild(surface);
+        RegisterPickNode(surface);
     }
 
     /// <summary>Toggles the chunk border overlay on this chunk's existing material.</summary>
@@ -86,10 +89,18 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
         }
     }
 
+    /// <summary>
+    /// Registers the surface for click picking: <see cref="LocalBounds"/> is a nominal
+    /// ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab, far taller than the terrain it wraps, so
+    /// picking a chunk by its bounds would claim every click made from inside that slab.
+    /// </summary>
     protected override Node3D BuildNode()
     {
+        ClearPickNodes();
         var node = new Node3D { Name = $"Chunk{Coord.X}_{Coord.Y}" };
-        node.AddChild(BuildSurface());
+        MeshInstance3D surface = BuildSurface();
+        node.AddChild(surface);
+        RegisterPickNode(surface);
         return node;
     }
 
