@@ -27,7 +27,7 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
-    public static void Images_ignore_authored_height_and_tilt()
+    public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");
         var target = new SceneEntity();
@@ -36,10 +36,121 @@ public static class ImageTests
             Basis.FromEuler(new Vector3(0.35f, 0.7f, -0.2f)),
             new Vector3(12.0f, 99.0f, 24.0f));
 
-        Assert.AreApproximatelyEqual(0.0, target.Transform.Origin.Y, 1e-5);
+        // Height has no bearing on the terrain projection (Rasterize/Paint never read local.Y), so
+        // it's free — unlike rotation, where only yaw actually changes the projected footprint.
+        Assert.AreApproximatelyEqual(99.0, target.Transform.Origin.Y, 1e-5);
         Assert.AreApproximatelyEqual(0.0, target.Transform.Basis.X.Y, 1e-5);
         Assert.AreApproximatelyEqual(1.0, target.Transform.Basis.Y.Y, 1e-5);
         Assert.AreApproximatelyEqual(0.0, target.Transform.Basis.Z.Y, 1e-5);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Display_layer_setters_bump_revision()
+    {
+        var layer = new ImageDisplayLayer();
+        int revision0 = layer.Revision;
+
+        layer.Name = "Roads";
+        Assert.Greater(layer.Revision, revision0);
+
+        int revision1 = layer.Revision;
+        layer.DisplayMode = ImageDisplayMode.LandscapeOverlay;
+        Assert.Greater(layer.Revision, revision1);
+
+        int revision2 = layer.Revision;
+        layer.OverlayColor = new Color(0.1f, 0.2f, 0.3f, 1.0f);
+        Assert.Greater(layer.Revision, revision2);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void None_display_mode_builds_no_node()
+    {
+        EditorContext context = NewContext("__wms_image_display_none_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.None };
+        context.Catalog.Add(layer);
+
+        var target = new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId };
+        Assert.IsNull(target.BuildNode());
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void LandscapeOverlay_display_mode_builds_a_decal_sized_to_the_footprint()
+    {
+        EditorContext context = NewContext("__wms_image_display_overlay_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.LandscapeOverlay };
+        context.Catalog.Add(layer);
+
+        var target = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            DisplayLayerId = layer.RecordId,
+            WorldSizeX = 32.0f,
+            WorldSizeZ = 48.0f,
+        };
+
+        var decal = target.BuildNode() as Decal;
+        Assert.IsNotNull(decal);
+        Assert.AreApproximatelyEqual(32.0, decal!.Size.X, 1e-5);
+        Assert.AreApproximatelyEqual(48.0, decal.Size.Z, 1e-5);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Object_display_mode_builds_a_paintable_quad_sized_to_the_footprint()
+    {
+        EditorContext context = NewContext("__wms_image_display_object_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.Object };
+        context.Catalog.Add(layer);
+
+        var target = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            DisplayLayerId = layer.RecordId,
+            WorldSizeX = 20.0f,
+            WorldSizeZ = 10.0f,
+        };
+
+        var mesh = target.BuildNode() as MeshInstance3D;
+        Assert.IsNotNull(mesh);
+        var plane = mesh!.Mesh as PlaneMesh;
+        Assert.IsNotNull(plane);
+        Assert.AreApproximatelyEqual(20.0, plane!.Size.X, 1e-5);
+        Assert.AreApproximatelyEqual(10.0, plane.Size.Y, 1e-5);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void System_update_refreshes_every_placement_when_the_shared_display_layer_changes()
+    {
+        EditorContext context = NewContext("__wms_image_display_update_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.None };
+        context.Catalog.Add(layer);
+
+        var entityA = new SceneEntity();
+        var entityB = new SceneEntity();
+        entityA.AddComponent(new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId });
+        entityB.AddComponent(new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId });
+        context.Scene.Add(entityA);
+        context.Scene.Add(entityB);
+        entityA.CreateRepresentation(context.Root);
+        entityB.CreateRepresentation(context.Root);
+
+        var componentA = entityA.Component<ImageComponent>()!;
+        var componentB = entityB.Component<ImageComponent>()!;
+        context.Images.Update();
+        Assert.IsFalse(componentA.NeedsRefresh);
+        Assert.IsFalse(componentB.NeedsRefresh);
+
+        layer.DisplayMode = ImageDisplayMode.Object;
+
+        Assert.IsTrue(componentA.NeedsRefresh);
+        Assert.IsTrue(componentB.NeedsRefresh);
+
+        context.Images.Update();
+        Assert.IsFalse(componentA.NeedsRefresh, "the guarded sweep should have refreshed every placement sharing the layer");
+        Assert.IsFalse(componentB.NeedsRefresh);
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]

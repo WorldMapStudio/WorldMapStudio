@@ -44,6 +44,10 @@ public sealed class Editor : IScene
         // rebuilds every other placement referencing it.
         _context.Procedural.Update();
 
+        // Same idea for an image or display layer edited from one placement (or a window, script, or
+        // undo): rebuilds every other placement's viewport representation.
+        _context.Images.Update();
+
         // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
         // since last frame (never blocks, mirrors WorkQueue's own per-frame main-thread pump), and
         // fires any registered wms.events handlers for what changed since last frame.

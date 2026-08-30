@@ -1,3 +1,4 @@
+using System.Linq;
 using ImGuiNET;
 using NVector4 = System.Numerics.Vector4;
 
@@ -9,6 +10,7 @@ public sealed class ImageComponentType : ISceneComponentType
     private readonly ImageSystem _system;
     private readonly LandscapeSystem _landscape;
     private readonly ImagePicker _picker;
+    private readonly ImageDisplayLayerPicker _layerPicker = new();
     private readonly ComponentFieldEditTracker _tracker = new();
 
     public float Priority => 2.0f;
@@ -31,6 +33,7 @@ public sealed class ImageComponentType : ISceneComponentType
         var image = (ImageComponent)component;
 
         DrawImageReference(context, image);
+        DrawDisplayLayerCombo(context, image);
 
         if (image.Image == null)
         {
@@ -74,7 +77,11 @@ public sealed class ImageComponentType : ISceneComponentType
         }
     }
 
-    public void DrawModals() => _picker.Draw();
+    public void DrawModals()
+    {
+        _picker.Draw();
+        _layerPicker.Draw();
+    }
 
     private void DrawImageReference(InspectorContext context, ImageComponent image)
     {
@@ -108,6 +115,43 @@ public sealed class ImageComponentType : ISceneComponentType
             {
                 ComponentFieldRecorder.Record(context, image, "image", image.ImageId, null, value => image.ImageId = value);
             }
+        }
+    }
+
+    /// <summary>A plain combo rather than a full modal picker like <see cref="ImagePicker"/> — display
+    /// layers are a small, hand-authored list (presets), not a large browsable catalog, the same
+    /// weight of UI as <see cref="ProceduralModelFieldEditor.Draw"/>'s function combo.</summary>
+    private void DrawDisplayLayerCombo(InspectorContext context, ImageComponent image)
+    {
+        ImageDisplayLayer? bound = image.DisplayLayer;
+        string label = bound != null
+            ? bound.Name
+            : image.DisplayLayerId == null ? "(none)" : $"#{image.DisplayLayerId} (missing)";
+
+        if (ImGui.BeginCombo("Display Layer", label))
+        {
+            if (ImGui.Selectable("(none)", image.DisplayLayerId == null))
+            {
+                ComponentFieldRecorder.Record(context, image, "display layer", image.DisplayLayerId, (int?)null, value => image.DisplayLayerId = value);
+            }
+
+            foreach (ImageDisplayLayer layer in _system.DisplayLayers.OrderBy(l => l.Name, System.StringComparer.OrdinalIgnoreCase))
+            {
+                if (ImGui.Selectable($"{layer.Name}##{layer.RecordId}", layer.RecordId == image.DisplayLayerId))
+                {
+                    int? selected = layer.RecordId;
+                    ComponentFieldRecorder.Record(context, image, "display layer", image.DisplayLayerId, selected, value => image.DisplayLayerId = value);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("New##displaylayer"))
+        {
+            _layerPicker.OpenCreate(context.Sessions, _system.Context.Catalog, created =>
+                ComponentFieldRecorder.Record(context, image, "display layer", image.DisplayLayerId, created.RecordId, value => image.DisplayLayerId = value));
         }
     }
 

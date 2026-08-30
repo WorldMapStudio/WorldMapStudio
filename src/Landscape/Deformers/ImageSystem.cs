@@ -4,13 +4,16 @@ using System.Linq;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Owns the loaded <see cref="PaintImage"/> catalog. Unlike <see cref="ProceduralSystem"/>, there is
-/// no per-frame <see cref="ISceneNodeComponent"/> to rebuild — an <see cref="ImageComponent"/> is a
-/// pure <see cref="ILandscapeDeformer"/> with no representation node — so this is just catalog lookup
-/// and usage-counting, no build cache and no <c>Update()</c> loop.
+/// Owns the loaded <see cref="PaintImage"/> and <see cref="ImageDisplayLayer"/> catalogs. Unlike
+/// <see cref="ProceduralSystem"/>, there is no build cache to bound — an <see cref="ImageComponent"/>'s
+/// viewport representation is just a decal or a plane, cheap to rebuild — but it still needs the same
+/// kind of per-frame <see cref="Update"/> sweep to notice a shared image or display layer changed
+/// under a placement built from it.
 /// </summary>
 public sealed class ImageSystem
 {
+    private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
+
     public ImageSystem(EditorContext context)
     {
         Context = context;
@@ -21,15 +24,78 @@ public sealed class ImageSystem
     /// <summary>The loaded image catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
     public IEnumerable<PaintImage> Images => Context.Catalog.OfType<PaintImage>();
 
+    /// <summary>The loaded display-layer catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
+    public IEnumerable<ImageDisplayLayer> DisplayLayers => Context.Catalog.OfType<ImageDisplayLayer>();
+
     public PaintImage? FindImage(int? id) =>
         id is int value ? Images.FirstOrDefault(image => image.RecordId == value) : null;
+
+    public ImageDisplayLayer? FindDisplayLayer(int? id) =>
+        id is int value ? DisplayLayers.FirstOrDefault(layer => layer.RecordId == value) : null;
 
     /// <summary>How many loaded scene entities currently reference this image — what the picker and
     /// the images window show so an edit or delete does not surprise the user.</summary>
     public int UsageCount(int imageId) =>
         Context.Scene.Entities.Count(entity => entity.Component<ImageComponent>()?.ImageId == imageId);
 
-    /// <summary>Loads the image catalog whole, replacing what is loaded. Called after the migration
-    /// gate, like <see cref="ProceduralSystem.LoadCatalog"/>.</summary>
-    public void LoadCatalog() => Context.Database.LoadCatalog<PaintImage>();
+    /// <summary>How many loaded scene entities currently reference this display layer — what the
+    /// layers window shows so an edit or delete does not surprise the user.</summary>
+    public int DisplayLayerUsageCount(int layerId) =>
+        Context.Scene.Entities.Count(entity => entity.Component<ImageComponent>()?.DisplayLayerId == layerId);
+
+    /// <summary>Loads both catalogs whole, replacing what is loaded. Called after the migration gate,
+    /// like <see cref="ProceduralSystem.LoadCatalog"/>.</summary>
+    public void LoadCatalog()
+    {
+        Context.Database.LoadCatalog<PaintImage>();
+        Context.Database.LoadCatalog<ImageDisplayLayer>();
+    }
+
+    /// <summary>
+    /// Notices an image or display layer changed since a loaded placement last built its viewport
+    /// representation — from another entity, a window, an undo, or a script — and rebuilds that
+    /// placement. Called once per frame, like <see cref="ProceduralSystem.Update"/>.
+    ///
+    /// Guarded by the same kind of cheap running tick <see cref="ProceduralSystem.Update"/> uses, so
+    /// the per-entity walk below only runs on a frame where something actually moved.
+    /// </summary>
+    public void Update()
+    {
+        var tick = (Context.Catalog.Version, Context.Scene.Version, SumRevisions());
+        if (tick == _lastUpdateTick)
+        {
+            return;
+        }
+
+        _lastUpdateTick = tick;
+
+        foreach (SceneEntity entity in Context.Scene.Entities)
+        {
+            if (entity.Component<ImageComponent>() is not { } component)
+            {
+                continue;
+            }
+
+            if (entity.IsRepresented && component.NeedsRefresh)
+            {
+                entity.RefreshRepresentation();
+            }
+        }
+    }
+
+    private int SumRevisions()
+    {
+        int sum = 0;
+        foreach (PaintImage image in Images)
+        {
+            sum += image.Revision;
+        }
+
+        foreach (ImageDisplayLayer layer in DisplayLayers)
+        {
+            sum += layer.Revision;
+        }
+
+        return sum;
+    }
 }
