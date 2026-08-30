@@ -30,6 +30,19 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     private int? _representedDisplayLayerId;
     private int _representedDisplayLayerRevision = -1;
 
+    // The node BuildNode last produced, and the per-chunk children hanging off it keyed by which chunk
+    // and which revision of it they show. Held so a content change can re-upload just the chunks that
+    // actually moved (SyncChunkNodes) instead of tearing the whole representation down and rebuilding
+    // every chunk's texture — the difference between a paint stroke costing one texture upload a frame
+    // and costing one per chunk in the entire image, every frame.
+    private Node3D? _root;
+    private readonly Dictionary<ImageChunkCoord, ChunkNode> _chunkNodes = [];
+
+    private sealed record ChunkNode(Node3D Node, ImageTexture Texture)
+    {
+        public int Revision { get; set; } = -1;
+    }
+
     public ImageComponent(ImageSystem system)
     {
         // Guarded for the same reason ProceduralComponent guards its system: a null here is otherwise
@@ -160,10 +173,21 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     };
 
     /// <summary>Whether the bound image or display layer has moved on since this placement's viewport
-    /// representation was last built.</summary>
+    /// representation was last built. Covers both kinds of change — see
+    /// <see cref="NeedsStructuralRefresh"/> for which of them actually need a full rebuild.</summary>
     public bool NeedsRefresh =>
-        _representedImageId != ImageId || _representedImageRevision != (Image?.ViewRevision ?? -1) ||
-        _representedDisplayLayerId != DisplayLayerId || _representedDisplayLayerRevision != (DisplayLayer?.Revision ?? -1);
+        NeedsStructuralRefresh || _representedImageRevision != (Image?.ViewRevision ?? -1);
+
+    /// <summary>Whether what changed is something <see cref="SyncChunkNodes"/> cannot patch in place —
+    /// a different image, a different display layer, or an edit to the bound layer itself (which can
+    /// change the display mode, and so the entire node shape, or the colour ramp every chunk's texture
+    /// was baked with). A change to the image's <em>pixels</em> is deliberately not here: that is the
+    /// common case, happens every frame of a paint stroke, and only ever needs the touched chunks
+    /// re-uploaded.</summary>
+    public bool NeedsStructuralRefresh =>
+        _representedImageId != ImageId ||
+        _representedDisplayLayerId != DisplayLayerId ||
+        _representedDisplayLayerRevision != (DisplayLayer?.Revision ?? -1);
 
     /// <summary>
     /// Builds this placement's viewport preview per its bound <see cref="ImageDisplayLayer"/>'s
@@ -179,18 +203,120 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         _representedImageRevision = Image?.ViewRevision ?? -1;
         _representedDisplayLayerId = DisplayLayerId;
         _representedDisplayLayerRevision = DisplayLayer?.Revision ?? -1;
+        _chunkNodes.Clear();
+        _root = null;
 
         if (DisplayLayer is not { } layer || Image is not { } image || layer.DisplayMode == ImageDisplayMode.None)
         {
             return null;
         }
 
-        return layer.DisplayMode switch
+        _root = layer.DisplayMode switch
         {
             ImageDisplayMode.LandscapeOverlay => BuildOverlayDecal(image, layer),
             ImageDisplayMode.Object => BuildObjectMesh(image),
             _ => null,
         };
+
+        return _root;
+    }
+
+    /// <summary>
+    /// Brings the existing representation up to date with the bound image's current chunks, touching
+    /// only what changed: a chunk whose <see cref="ImageChunk.Revision"/> moved gets its pixels
+    /// re-uploaded into the texture it already has, a newly painted or streamed-in chunk gets a node,
+    /// and one that was erased or evicted loses its node. Everything else is left alone.
+    ///
+    /// This is what makes painting cheap. Rebuilding the representation instead — which is what a
+    /// <see cref="SceneEntity.RefreshRepresentation"/> does — allocates a fresh texture for every chunk
+    /// in the image, and a paint stroke bumps the image's revision on every frame it drags, so the cost
+    /// of one stroke scales with the size of the whole image rather than with the size of the brush.
+    ///
+    /// Only valid when <see cref="NeedsStructuralRefresh"/> is false; the caller checks that first.
+    /// </summary>
+    public void SyncChunkNodes()
+    {
+        // Recorded before the early-out below, not after the work: a placement with nothing to draw
+        // (no bound image, display mode None) is still fully in step with what it is bound to, and
+        // leaving it looking stale would keep NeedsRefresh true forever.
+        _representedImageRevision = Image?.ViewRevision ?? -1;
+
+        if (_root is not { } root || !GodotObject.IsInstanceValid(root) ||
+            Image is not { } image || DisplayLayer is not { } layer || layer.DisplayMode == ImageDisplayMode.None)
+        {
+            return;
+        }
+
+        foreach (ImageChunkCoord coord in image.ChunkCoords)
+        {
+            int revision = image.ChunkRevision(coord);
+            if (_chunkNodes.TryGetValue(coord, out ChunkNode? existing))
+            {
+                if (existing.Revision != revision)
+                {
+                    existing.Texture.Update(ChunkImage(image, layer, coord));
+                    existing.Revision = revision;
+                }
+
+                continue;
+            }
+
+            if (AddChunkNode(root, image, layer, coord) is { } added)
+            {
+                added.Revision = revision;
+            }
+        }
+
+        // Erased (all-zero) or evicted since the last sync — the coordinate is no longer resident, so
+        // whatever it was showing is stale.
+        List<ImageChunkCoord>? gone = null;
+        foreach ((ImageChunkCoord coord, ChunkNode node) in _chunkNodes)
+        {
+            if (!image.IsResident(coord))
+            {
+                (gone ??= []).Add(coord);
+                RemoveChunkNode(root, node);
+            }
+        }
+
+        foreach (ImageChunkCoord coord in gone ?? [])
+        {
+            _chunkNodes.Remove(coord);
+        }
+    }
+
+    private static void RemoveChunkNode(Node3D root, ChunkNode node)
+    {
+        if (!GodotObject.IsInstanceValid(node.Node))
+        {
+            return;
+        }
+
+        // Detached before freeing rather than freed in place: QueueFree is deferred, so a node left as
+        // a child would still be holding its name when a later sync re-adds the same coordinate.
+        root.RemoveChild(node.Node);
+        node.Node.QueueFree();
+    }
+
+    private Image ChunkImage(PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord) =>
+        layer.DisplayMode == ImageDisplayMode.LandscapeOverlay
+            ? PaintImageTextures.ChunkTintedImage(image, coord, layer.BaseColor, layer.FullColor)
+            : PaintImageTextures.ChunkGrayscaleImage(image, coord);
+
+    private ChunkNode? AddChunkNode(Node3D root, PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord)
+    {
+        ChunkNode? built = layer.DisplayMode == ImageDisplayMode.LandscapeOverlay
+            ? BuildOverlayChunk(image, layer, coord)
+            : BuildObjectChunk(image, coord);
+
+        if (built == null)
+        {
+            return null;
+        }
+
+        root.AddChild(built.Node);
+        _chunkNodes[coord] = built;
+        return built;
     }
 
     /// <summary>One decal per resident chunk, each ramping from <see cref="ImageDisplayLayer.BaseColor"/>
@@ -206,21 +332,34 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         var root = new Node3D { Name = "ImageOverlay" };
         foreach (ImageChunkCoord coord in image.ChunkCoords)
         {
-            if (ChunkPlacementFor(image, coord) is not { } placement)
+            if (BuildOverlayChunk(image, layer, coord) is { } chunk)
             {
-                continue;
+                root.AddChild(chunk.Node);
+                _chunkNodes[coord] = chunk;
+                chunk.Revision = image.ChunkRevision(coord);
             }
-
-            root.AddChild(new Decal
-            {
-                Name = $"Chunk_{coord.X}_{coord.Y}",
-                Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
-                Size = new Vector3(placement.SizeX, LandscapeGrid.NominalHeightExtent * 2.0f, placement.SizeZ),
-                TextureAlbedo = PaintImageTextures.ChunkTinted(image, coord, layer.BaseColor, layer.FullColor),
-            });
         }
 
         return root;
+    }
+
+    private ChunkNode? BuildOverlayChunk(PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord)
+    {
+        if (ChunkPlacementFor(image, coord) is not { } placement)
+        {
+            return null;
+        }
+
+        ImageTexture texture = PaintImageTextures.ChunkTinted(image, coord, layer.BaseColor, layer.FullColor);
+        var decal = new Decal
+        {
+            Name = $"Chunk_{coord.X}_{coord.Y}",
+            Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
+            Size = new Vector3(placement.SizeX, LandscapeGrid.NominalHeightExtent * 2.0f, placement.SizeZ),
+            TextureAlbedo = texture,
+        };
+
+        return new ChunkNode(decal, texture);
     }
 
     /// <summary>A flat, unshaded backdrop sized to the whole footprint — solid black, no texture, so
@@ -245,26 +384,45 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
         foreach (ImageChunkCoord coord in image.ChunkCoords)
         {
-            if (ChunkPlacementFor(image, coord) is not { } placement)
+            if (BuildObjectChunk(image, coord) is { } chunk)
             {
-                continue;
+                root.AddChild(chunk.Node);
+                _chunkNodes[coord] = chunk;
+                chunk.Revision = image.ChunkRevision(coord);
             }
-
-            root.AddChild(new MeshInstance3D
-            {
-                Name = $"Chunk_{coord.X}_{coord.Y}",
-                // A hair above the backdrop so the two flat, coplanar quads do not z-fight.
-                Position = new Vector3(placement.CenterX, 0.001f, placement.CenterZ),
-                Mesh = new PlaneMesh { Size = new Vector2(placement.SizeX, placement.SizeZ) },
-                MaterialOverride = new StandardMaterial3D
-                {
-                    AlbedoTexture = PaintImageTextures.ChunkGrayscale(image, coord),
-                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-                },
-            });
         }
 
         return root;
+    }
+
+    private ChunkNode? BuildObjectChunk(PaintImage image, ImageChunkCoord coord)
+    {
+        if (ChunkPlacementFor(image, coord) is not { } placement)
+        {
+            return null;
+        }
+
+        ImageTexture texture = PaintImageTextures.ChunkGrayscale(image, coord);
+        var mesh = new MeshInstance3D
+        {
+            Name = $"Chunk_{coord.X}_{coord.Y}",
+            // A hair above the backdrop so the two flat, coplanar quads do not z-fight.
+            Position = new Vector3(placement.CenterX, 0.001f, placement.CenterZ),
+            Mesh = new PlaneMesh { Size = new Vector2(placement.SizeX, placement.SizeZ) },
+            MaterialOverride = new StandardMaterial3D
+            {
+                AlbedoTexture = texture,
+                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+
+                // Clamp, not the default repeat. Each chunk is its own texture covering its own quad,
+                // so a bilinear tap at a quad's edge would otherwise wrap around and blend in pixels
+                // from the *opposite* edge of the same chunk — drawing a bright seam along every chunk
+                // boundary wherever the far side happened to be painted.
+                TextureRepeat = false,
+            },
+        };
+
+        return new ChunkNode(mesh, texture);
     }
 
     private readonly record struct ChunkPlacement(float CenterX, float CenterZ, float SizeX, float SizeZ);

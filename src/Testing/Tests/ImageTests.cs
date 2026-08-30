@@ -469,6 +469,134 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Painting_bumps_only_the_touched_chunks_revision()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);   // chunk (0,0)
+        image.Paint(60.0f / 64.0f, 60.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false); // chunk (3,3)
+
+        var painted = new ImageChunkCoord(0, 0);
+        var untouched = new ImageChunkCoord(3, 3);
+        int paintedBefore = image.ChunkRevision(painted);
+        int untouchedBefore = image.ChunkRevision(untouched);
+
+        // A second dab landing only in chunk (0,0).
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        Assert.Greater(image.ChunkRevision(painted), paintedBefore);
+        Assert.AreEqual(untouchedBefore, image.ChunkRevision(untouched),
+            "a chunk the brush never reached must not look changed, or the viewport re-uploads every chunk per frame");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Chunk_revision_is_minus_one_for_a_non_resident_chunk()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+
+        Assert.AreEqual(-1, image.ChunkRevision(new ImageChunkCoord(0, 0)));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Painting_pixels_needs_no_structural_refresh()
+    {
+        EditorContext context = NewContext("__wms_image_structural_refresh_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.Object };
+        context.Catalog.Add(layer);
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId };
+        entity.AddComponent(component);
+        context.Scene.Add(entity);
+        entity.CreateRepresentation(context.Root);
+
+        Assert.IsFalse(component.NeedsRefresh);
+
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        Assert.IsTrue(component.NeedsRefresh, "the placement should notice its bound image was painted");
+        Assert.IsFalse(component.NeedsStructuralRefresh,
+            "a pixel edit must be patchable in place — a full rebuild here is what made painting scale with image size");
+
+        component.SyncChunkNodes();
+        Assert.IsFalse(component.NeedsRefresh, "syncing should bring the placement back in step");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Changing_the_display_layer_does_need_a_structural_refresh()
+    {
+        EditorContext context = NewContext("__wms_image_structural_layer_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.Object };
+        context.Catalog.Add(layer);
+
+        var component = new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId };
+        component.BuildNode();
+
+        Assert.IsFalse(component.NeedsStructuralRefresh);
+
+        // Changing the mode changes the node shape entirely; changing the colours rebakes every
+        // chunk's texture. Both are layer edits, so a layer edit is always structural.
+        layer.DisplayMode = ImageDisplayMode.LandscapeOverlay;
+
+        Assert.IsTrue(component.NeedsStructuralRefresh);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Syncing_adds_nodes_for_newly_painted_chunks_and_drops_erased_ones()
+    {
+        EditorContext context = NewContext("__wms_image_sync_nodes_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.LandscapeOverlay };
+        context.Catalog.Add(layer);
+
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            DisplayLayerId = layer.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+
+        Node3D? root = component.BuildNode();
+        Assert.IsNotNull(root);
+        Assert.AreEqual(0, root!.GetChildCount());
+
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        component.SyncChunkNodes();
+
+        Assert.AreEqual(1, root.GetChildCount(), "the newly painted chunk should gain a decal");
+
+        // Erase it back to nothing: the chunk is pruned, so its node has to go too.
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 10.0f, 10.0f, 1.0f, erase: true);
+        Assert.AreEqual(0, image.ChunkCount);
+
+        component.SyncChunkNodes();
+        Assert.AreEqual(0, root.GetChildCount(), "an erased chunk should lose its decal");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Chunk_textures_are_cropped_to_the_part_of_the_chunk_inside_the_canvas()
+    {
+        var image = new PaintImage();
+
+        // 40px canvas in 16px chunks: the last column/row is only 8px of real canvas.
+        image.ConfigureNew(40, 40, chunkSize: 16);
+        image.Paint(0.5f, 0.5f, 2.0f, 2.0f, 1.0f, erase: false);
+
+        ImageTexture interior = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(0, 0));
+        ImageTexture edge = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(2, 2));
+
+        Assert.AreEqual(16, interior.GetWidth());
+        Assert.AreEqual(8, edge.GetWidth(), "a partly-covered edge chunk must not stretch a full tile over a narrower quad");
+        Assert.AreEqual(8, edge.GetHeight());
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");
