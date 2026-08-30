@@ -5,9 +5,9 @@ using System.Linq;
 namespace WorldMapStudio;
 
 /// <summary>Replaces a set of an image's chunks with recorded before/after content — the per-chunk
-/// undo shape a completed paint stroke needs. A stroke typically touches a handful of chunks, so this
-/// only snapshots those, unlike <see cref="SetImageContentCommand"/>'s whole-canvas before/after —
-/// which is why that command remains what a whole-image edit (resize, clear) uses instead.
+/// undo shape a completed paint stroke (or a chunk-based clear, via <see cref="PaintImage.ClearAll"/>)
+/// needs. A stroke typically touches a handful of chunks, so this only snapshots those rather than the
+/// whole canvas.
 ///
 /// Snapshots every entity in <paramref name="affectedEntities"/>, not just the placement the tool
 /// happened to be pointed at: an image may be shared by several placements, so every placement's chunk
