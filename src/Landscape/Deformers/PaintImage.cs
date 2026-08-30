@@ -33,8 +33,12 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 {
+    /// <summary>The largest <see cref="Width"/> or <see cref="Height"/> <see cref="ConfigureNew"/>
+    /// will accept — public so a caller building its own size UI (the creation form) can clamp or
+    /// display against the same limit rather than duplicating the number.</summary>
+    public const int MaxDimension = 1_048_576;
+
     private const int MinDimension = 1;
-    private const int MaxDimension = 1_048_576;
     private const int MinChunkSize = 16;
     private const int MaxChunkSize = 4096;
 
