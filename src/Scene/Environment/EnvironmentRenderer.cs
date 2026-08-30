@@ -8,9 +8,10 @@ namespace WorldMapStudio;
 /// <summary>
 /// Applies <see cref="EnvironmentSystem.Current"/> to a Godot <see cref="Godot.Environment"/>, a
 /// <see cref="DirectionalLight3D"/> sun, and a set of camera-pinned model layers (skyboxes, stars).
-/// Owned and updated once per frame by <see cref="ViewportWindow"/>. With
-/// <see cref="ViewSettings.UseEnvironmentLighting"/> off, or with no sources loaded at all, it leaves
-/// the viewport at the flat grey look the editor always used before this system existed.
+/// Owned and updated once per frame by <see cref="ViewportWindow"/>. With no sources loaded at all,
+/// <see cref="EnvironmentValues"/>'s own defaults still light the scene with a generic sun — only
+/// <see cref="ViewSettings.UseEnvironmentLighting"/> off falls back to the flat grey look the editor
+/// always used before this system existed.
 /// </summary>
 public sealed class EnvironmentRenderer
 {
@@ -91,7 +92,7 @@ public sealed class EnvironmentRenderer
     {
         _skyLayerRoot.GlobalPosition = cameraPosition;
 
-        if (!_view.UseEnvironmentLighting || !_environments.HasSources)
+        if (!_view.UseEnvironmentLighting)
         {
             ApplyFlatDefault();
             _appliedVersion = -1;
