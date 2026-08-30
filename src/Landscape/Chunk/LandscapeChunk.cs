@@ -11,6 +11,13 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
 {
+    /// <summary>The visual layer terrain surfaces render on, distinct from the default layer every
+    /// other node (models, markers, the viewport's reference grid) stays on. What lets
+    /// <see cref="ImageComponent"/>'s LandscapeOverlay <see cref="Decal"/> restrict its
+    /// <see cref="Decal.CullMask"/> to actual terrain — a decal's default cull mask matches everything
+    /// on the default layer, which is every other kind of geometry in the scene too.</summary>
+    public const uint RenderLayer = 1u << 1;
+
     private readonly float _chunkSize;
 
     /// <summary>
@@ -109,5 +116,6 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
         Name = "Surface",
         Mesh = Mesh,
         MaterialOverride = Material,
+        Layers = RenderLayer,
     };
 }
