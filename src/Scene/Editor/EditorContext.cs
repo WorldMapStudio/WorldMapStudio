@@ -135,9 +135,11 @@ public sealed partial class EditorContext : ISubsystemHost
         Streaming.AddLoader(Landscape.ChunkLoader);
 
         // Bound here rather than injected, because the session manager is constructed before the
-        // database it writes through. From now on committing a session persists it, whichever caller
-        // (menu, script, HTTP) asked.
+        // database and streaming system it depends on. From now on committing a session persists it,
+        // whichever caller (menu, script, HTTP) asked, and releasing its pins forces a rescan so
+        // entities that only stayed loaded for the edit can unload.
         EditSessions.BindStore(Database);
+        EditSessions.BindStreaming(Streaming);
 
         InitializeSubsystems();
     }
