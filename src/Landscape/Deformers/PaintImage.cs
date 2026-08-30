@@ -23,8 +23,9 @@ namespace WorldMapStudio;
 /// <see cref="LoadPixels"/> — are the exception: they work over one dense buffer sized to the whole
 /// canvas, for callers that genuinely need that shape (tests, an external import). They scale with
 /// <see cref="Width"/> × <see cref="Height"/> regardless of how much is actually painted, so they are
-/// only safe on a modestly sized image. <see cref="ResizeCanvas"/> and <see cref="ClearAll"/> are the
-/// chunk-based alternatives everything in the editor itself uses instead.
+/// only safe on a modestly sized image; nothing in the editor itself calls them. Width, height, and
+/// chunk size are all fixed for an image's whole lifetime, chosen once at creation via
+/// <see cref="ConfigureNew"/> — see that method for why changing them later is not offered.
 ///
 /// Named <c>PaintImage</c> rather than the more obvious <c>Image</c> because this type lives in the
 /// same namespace as, and every file here brings in with <c>using Godot;</c>, Godot's own
@@ -81,8 +82,8 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     public int ChunkSize => _chunkSize;
 
     /// <summary>The chunk grid's extent — every valid chunk coordinate's X falls in <c>[0, ChunksX)</c>,
-    /// Y in <c>[0, ChunksY)</c>. The last column/row typically only partly overlaps the canvas; see
-    /// <see cref="ResizeCanvas"/>.</summary>
+    /// Y in <c>[0, ChunksY)</c>. The last column/row typically only partly overlaps the canvas, when
+    /// <see cref="ChunkSize"/> does not evenly divide <see cref="Width"/>/<see cref="Height"/>.</summary>
     public int ChunksX => _chunksX;
 
     public int ChunksY => _chunksY;
@@ -134,10 +135,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     public override string DisplayName => Name;
 
     /// <summary>Sets canvas size and chunk size on a freshly created image — meant to run once, right
-    /// after construction, before anything is painted or loaded. Chunk size is not re-configurable
-    /// once an image carries real content: rechunking existing pixels is a full rebuild of every
-    /// chunk, which the design plan defers as an explicit, separate operation rather than something
-    /// that happens implicitly.</summary>
+    /// after construction, before anything is painted or loaded. None of the three are re-configurable
+    /// once an image carries real content: a canvas resize has to decide what happens to chunks the new
+    /// bounds no longer cover, and a re-chunk is a full rebuild of every chunk — both are surprising
+    /// things for an "edit a field" action to trigger on an image that may already be painted, shared
+    /// across placements, and partially committed, so this editor does not offer either. Pick the size
+    /// you want at creation.</summary>
     public void ConfigureNew(int width, int height, int chunkSize)
     {
         _width = Math.Clamp(width, MinDimension, MaxDimension);
@@ -406,8 +409,8 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     /// <summary>Changes resolution, bilinear-resampling the existing content into the new size. Dense —
     /// allocates a buffer proportional to both the old and new canvas area — so this is only safe on a
-    /// canvas small enough for that to be cheap. <see cref="ResizeCanvas"/> is the chunk-based
-    /// alternative that stays safe at any size, at the cost of not resampling.</summary>
+    /// canvas small enough for that to be cheap, and not something the editor's own UI offers: see
+    /// <see cref="ConfigureNew"/> for why canvas size is creation-only there.</summary>
     public void Resize(int width, int height)
     {
         width = Math.Clamp(width, MinDimension, MaxDimension);
@@ -449,43 +452,6 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
         RebuildChunks(dense);
         BumpContent();
-    }
-
-    /// <summary>Changes canvas dimensions without resampling — chunk-based, so unlike <see cref="Resize"/>
-    /// it stays cheap at any canvas size. A chunk that falls entirely outside the new bounds is dropped
-    /// (returned so a caller can build undo around it — see <c>ResizeImageCanvasCommand</c>); a chunk
-    /// that merely straddles a shrunk edge keeps its buffer untouched; the newly out-of-bounds remainder
-    /// is simply never read again, the same as any other canvas-edge chunk's unused padding.</summary>
-    public IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> ResizeCanvas(int width, int height)
-    {
-        width = Math.Clamp(width, MinDimension, MaxDimension);
-        height = Math.Clamp(height, MinDimension, MaxDimension);
-        if (width == _width && height == _height)
-        {
-            return [];
-        }
-
-        _width = width;
-        _height = height;
-        RecomputeGrid();
-
-        var dropped = new List<(ImageChunkCoord, byte[])>();
-        foreach ((ImageChunkCoord coord, ImageChunk chunk) in _chunks)
-        {
-            if (coord.X >= _chunksX || coord.Y >= _chunksY)
-            {
-                dropped.Add((coord, chunk.Pixels));
-            }
-        }
-
-        foreach ((ImageChunkCoord coord, _) in dropped)
-        {
-            _chunks.Remove(coord);
-            _removedSincePersist.Add(coord);
-        }
-
-        BumpContent();
-        return dropped;
     }
 
     /// <summary>Drops every currently <em>resident</em> chunk. Chunk-based, so unlike

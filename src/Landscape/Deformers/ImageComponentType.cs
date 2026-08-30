@@ -48,12 +48,15 @@ public sealed class ImageComponentType : ISceneComponentType
 
         ImGui.Separator();
 
+        // "World" makes clear this is the placement's footprint in world units, not the image's own
+        // pixel resolution shown below — the two used to share the plain "Width" label and that read
+        // as one setting instead of two unrelated ones.
         float sizeX = image.WorldSizeX;
-        if (ImGui.DragFloat("Width", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
+        if (ImGui.DragFloat("World Size X", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
         _tracker.Track(context.Sessions, image, "width", image.WorldSizeX, value => image.WorldSizeX = value);
 
         float sizeZ = image.WorldSizeZ;
-        if (ImGui.DragFloat("Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
+        if (ImGui.DragFloat("World Size Z", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
         _tracker.Track(context.Sessions, image, "depth", image.WorldSizeZ, value => image.WorldSizeZ = value);
 
         LandscapeDeformerInspector.DrawChannelCombo(context, _landscape.Catalog, image, image.Channel, value => image.Channel = value);
@@ -62,9 +65,9 @@ public sealed class ImageComponentType : ISceneComponentType
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { image.Strength = strength; }
         _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
 
-        ImGui.TextDisabled($"{image.Image.Width} x {image.Image.Height} pixels, {image.Image.ChunkSize}px chunks");
+        ImGui.Separator();
+        ImGui.TextDisabled($"Canvas: {image.Image.Width} x {image.Image.Height} px, {image.Image.ChunkSize}px chunks (fixed at creation)");
         ImGui.TextDisabled(ChunkGridSummary(image.Image));
-        DrawCanvasSizeFields(context, image);
         DrawClearButton(context, image);
 
         int uses = _system.UsageCount(image.Image.RecordId ?? -1);
@@ -156,27 +159,6 @@ public sealed class ImageComponentType : ISceneComponentType
     {
         double residentMb = image.ResidentByteSize / (1024.0 * 1024.0);
         return $"{image.ChunksX}x{image.ChunksY} chunk grid, {image.ChunkCount} resident ({residentMb:F1} MB)";
-    }
-
-    /// <summary>Explicit width/height fields committed on Enter — a crop or extend
-    /// (<see cref="PaintImage.ResizeCanvas"/>), never a resample, and safe at any canvas size since it
-    /// only touches the (typically few) chunks a shrink actually drops. Step buttons are disabled so
-    /// every commit is a single deliberate value, not one undo entry per click.</summary>
-    private static void DrawCanvasSizeFields(InspectorContext context, ImageComponent component)
-    {
-        PaintImage bound = component.Image!;
-
-        int width = bound.Width;
-        if (ImGui.InputInt("Canvas Width", ref width, 0, 0, ImGuiInputTextFlags.EnterReturnsTrue) && width != bound.Width)
-        {
-            context.Sessions.Record(new ResizeImageCanvasCommand(bound, width, bound.Height, component.AffectedEntities, $"Resize {bound.Name}"));
-        }
-
-        int height = bound.Height;
-        if (ImGui.InputInt("Canvas Height", ref height, 0, 0, ImGuiInputTextFlags.EnterReturnsTrue) && height != bound.Height)
-        {
-            context.Sessions.Record(new ResizeImageCanvasCommand(bound, bound.Width, height, component.AffectedEntities, $"Resize {bound.Name}"));
-        }
     }
 
     /// <summary>Drops every resident chunk via <see cref="PaintImage.ClearAll"/> and records it through
