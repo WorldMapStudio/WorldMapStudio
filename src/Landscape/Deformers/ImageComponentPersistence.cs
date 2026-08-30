@@ -13,6 +13,10 @@ public sealed class SceneImageComponentRecord
     /// ever picking an image.</summary>
     public int? ImageId { get; set; }
 
+    /// <summary>The referenced <see cref="ImageDisplayLayer"/>'s row id. Null for a placement with no
+    /// viewport preview.</summary>
+    public int? DisplayLayerId { get; set; }
+
     public double WorldSizeX { get; set; } = 64.0;
 
     public double WorldSizeZ { get; set; } = 64.0;
@@ -72,6 +76,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence
             var image = new ImageComponent(Images)
             {
                 ImageId = row.ImageId,
+                DisplayLayerId = row.DisplayLayerId,
                 WorldSizeX = (float)row.WorldSizeX,
                 WorldSizeZ = (float)row.WorldSizeZ,
                 Strength = (float)row.Strength,
@@ -99,6 +104,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence
             Entity = entity.RecordId is null ? entityRow : null,
             EntityId = entity.RecordId ?? 0,
             ImageId = image.ImageId,
+            DisplayLayerId = image.DisplayLayerId,
             WorldSizeX = image.WorldSizeX,
             WorldSizeZ = image.WorldSizeZ,
             Strength = image.Strength,

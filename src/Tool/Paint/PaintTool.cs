@@ -21,6 +21,7 @@ public sealed class PaintTool : ITool
     private float _radius = 4.0f;
     private float _opacity = 0.35f;
     private bool _erase;
+    private bool _paintOnObject = true;
     private bool _painting;
     private ImageComponent? _strokeTarget;
     private PaintImage? _strokeImage;
@@ -50,6 +51,21 @@ public sealed class PaintTool : ITool
 
         ImGui.Checkbox("Erase", ref _erase);
         ImGui.SameLine();
+
+        bool objectAvailable = ActiveTarget()?.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
+        if (!objectAvailable)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        ImGui.Checkbox("Paint on Object", ref _paintOnObject);
+
+        if (!objectAvailable)
+        {
+            ImGui.EndDisabled();
+        }
+
+        ImGui.SameLine();
         ImGui.TextDisabled(ActiveTarget()?.Owner?.DisplayName ?? "No image selected");
     }
 
@@ -62,12 +78,14 @@ public sealed class PaintTool : ITool
             return;
         }
 
-        DrawTargetOutline(target, context.Camera, context.ImageMin);
+        bool onObject = _paintOnObject && target.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
 
-        bool hit = TryHit(target, context, out GVector3 local);
+        DrawTargetOutline(target, onObject, context.Camera, context.ImageMin);
+
+        bool hit = TryHit(target, onObject, context, out GVector3 local);
         if (hit)
         {
-            DrawBrush(target, local, context.Camera, context.ImageMin);
+            DrawBrush(target, onObject, local, context.Camera, context.ImageMin);
         }
 
         if (!_painting && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && target.Image is { } image)
@@ -136,7 +154,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private bool TryHit(ImageComponent target, in ViewportContext context, out GVector3 local)
+    private bool TryHit(ImageComponent target, bool onObject, in ViewportContext context, out GVector3 local)
     {
         NVector2 mouse = ImGui.GetMousePos();
         GVector2 viewport = new(mouse.X - context.ImageMin.X, mouse.Y - context.ImageMin.Y);
@@ -149,12 +167,40 @@ public sealed class PaintTool : ITool
         GVector3 rayOrigin = context.Camera.ProjectRayOrigin(viewport);
         GVector3 rayDir = context.Camera.ProjectRayNormal(viewport);
 
+        if (onObject)
+        {
+            return TryHitObject(target, rayOrigin, rayDir, out local);
+        }
+
         if (TryHitTerrain(target, rayOrigin, rayDir, out local))
         {
             return true;
         }
 
         return TryHitFallbackPlane(target, rayOrigin, rayDir, out local);
+    }
+
+    /// <summary>Object display mode paints directly onto its own mesh instead of projecting through
+    /// the terrain — reuses the same ray-vs-triangle test <see cref="IMeshPickable"/> click-selection
+    /// already gets (<see cref="SceneEntity.TryPickGeometry"/>) rather than inventing separate plane
+    /// math, since the built object is just an ordinary mesh child.</summary>
+    private static bool TryHitObject(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    {
+        local = default;
+        if (!target.Owner!.TryPickGeometry(rayOrigin, rayDir, out float t, out _))
+        {
+            return false;
+        }
+
+        GVector3 world = rayOrigin + (rayDir * t);
+        GVector3 candidate = target.Owner!.Transform.AffineInverse() * world;
+        if (!TargetContains(target, candidate))
+        {
+            return false;
+        }
+
+        local = candidate;
+        return true;
     }
 
     private bool TryHitTerrain(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
@@ -198,13 +244,17 @@ public sealed class PaintTool : ITool
         Mathf.Abs(local.X) <= target.WorldSizeX * 0.5f &&
         Mathf.Abs(local.Z) <= target.WorldSizeZ * 0.5f;
 
-    private GVector3 TerrainPoint(ImageComponent target, GVector3 local)
+    /// <summary>Where a local footprint point actually lands for display — the object's own flat
+    /// surface when painting targets it, or dropped onto the terrain otherwise. Must match whatever
+    /// <see cref="TryHit"/> just hit-tested against, or the outline/brush would lie about where a
+    /// click actually lands.</summary>
+    private GVector3 SurfacePoint(ImageComponent target, GVector3 local, bool onObject)
     {
         GVector3 world = target.Owner!.Transform * new GVector3(local.X, 0.0f, local.Z);
-        return _terrain.DropToHeight(world);
+        return onObject ? world : _terrain.DropToHeight(world);
     }
 
-    private void DrawTargetOutline(ImageComponent target, Camera3D camera, NVector2 imageMin)
+    private void DrawTargetOutline(ImageComponent target, bool onObject, Camera3D camera, NVector2 imageMin)
     {
         GVector3 half = new(target.WorldSizeX * 0.5f, 0.0f, target.WorldSizeZ * 0.5f);
         GVector3[] local =
@@ -218,7 +268,7 @@ public sealed class PaintTool : ITool
         Span<NVector2> screen = stackalloc NVector2[4];
         for (int i = 0; i < local.Length; i++)
         {
-            if (!ObjectSelection.WorldToScreen(camera, TerrainPoint(target, local[i]), imageMin, out screen[i]))
+            if (!ObjectSelection.WorldToScreen(camera, SurfacePoint(target, local[i], onObject), imageMin, out screen[i]))
             {
                 return;
             }
@@ -232,7 +282,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private void DrawBrush(ImageComponent target, GVector3 local, Camera3D camera, NVector2 imageMin)
+    private void DrawBrush(ImageComponent target, bool onObject, GVector3 local, Camera3D camera, NVector2 imageMin)
     {
         const int Segments = 48;
 
@@ -249,7 +299,7 @@ public sealed class PaintTool : ITool
                 local.X + (Mathf.Cos(angle) * _radius),
                 0.0f,
                 local.Z + (Mathf.Sin(angle) * _radius));
-            GVector3 world = TerrainPoint(target, point);
+            GVector3 world = SurfacePoint(target, point, onObject);
             if (!ObjectSelection.WorldToScreen(camera, world, imageMin, out NVector2 screen))
             {
                 previous = null;

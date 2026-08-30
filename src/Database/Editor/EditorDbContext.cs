@@ -42,6 +42,8 @@ public sealed class EditorDbContext : DbContext
 
     public DbSet<PaintImageRecord> Images => Set<PaintImageRecord>();
 
+    public DbSet<ImageDisplayLayerRecord> ImageDisplayLayers => Set<ImageDisplayLayerRecord>();
+
     public DbSet<PrefabRecord> Prefabs => Set<PrefabRecord>();
 
     public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
@@ -119,6 +121,15 @@ public sealed class EditorDbContext : DbContext
         model.Entity<PaintImageRecord>(entity =>
         {
             entity.ToTable("images");
+            entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+
+        model.Entity<ImageDisplayLayerRecord>(entity =>
+        {
+            entity.ToTable("image_display_layers");
             entity.HasKey(record => record.Id);
 
             // The editor assigns catalog ids so entities can reference each other before a commit.

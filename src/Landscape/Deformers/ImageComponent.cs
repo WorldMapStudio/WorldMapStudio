@@ -12,14 +12,23 @@ namespace WorldMapStudio;
 /// updates every placement. See <see cref="ProceduralComponent"/> for the same split applied to
 /// procedural meshes.
 /// </summary>
-public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer
+public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, ISceneNodeComponent, IMeshPickable
 {
     private const float BoundsHeight = 2.0f;
 
     private readonly ImageSystem _system;
     private int? _imageId;
+    private int? _displayLayerId;
     private float _worldSizeX = 64.0f;
     private float _worldSizeZ = 64.0f;
+
+    // What the viewport representation was last built from. Compared by ImageSystem.Update against
+    // the live pair every frame, mirroring ProceduralComponent's _representedModelId/_representedRevision —
+    // see that class for why this lives here rather than being recomputed from scratch each frame.
+    private int? _representedImageId;
+    private int _representedImageRevision = -1;
+    private int? _representedDisplayLayerId;
+    private int _representedDisplayLayerRevision = -1;
 
     public ImageComponent(ImageSystem system)
     {
@@ -33,22 +42,71 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     public int? ImageId
     {
         get => _imageId;
-        set => _imageId = value;
+        set
+        {
+            if (_imageId == value)
+            {
+                return;
+            }
+
+            _imageId = value;
+            Owner?.RefreshRepresentation();
+        }
     }
 
     /// <summary>The bound image, or null if <see cref="ImageId"/> is unset or dangling.</summary>
     public PaintImage? Image => _system.FindImage(_imageId);
 
+    public int? DisplayLayerId
+    {
+        get => _displayLayerId;
+        set
+        {
+            if (_displayLayerId == value)
+            {
+                return;
+            }
+
+            _displayLayerId = value;
+            Owner?.RefreshRepresentation();
+        }
+    }
+
+    /// <summary>The bound display layer, or null if <see cref="DisplayLayerId"/> is unset or dangling.
+    /// Purely a viewport concern — see <see cref="BuildNode"/> — never consulted by <see cref="Rasterize"/>
+    /// or <see cref="ContentVersion"/>.</summary>
+    public ImageDisplayLayer? DisplayLayer => _system.FindDisplayLayer(_displayLayerId);
+
     public float WorldSizeX
     {
         get => _worldSizeX;
-        set => _worldSizeX = Mathf.Max(0.5f, value);
+        set
+        {
+            float clamped = Mathf.Max(0.5f, value);
+            if (_worldSizeX == clamped)
+            {
+                return;
+            }
+
+            _worldSizeX = clamped;
+            Owner?.RefreshRepresentation();
+        }
     }
 
     public float WorldSizeZ
     {
         get => _worldSizeZ;
-        set => _worldSizeZ = Mathf.Max(0.5f, value);
+        set
+        {
+            float clamped = Mathf.Max(0.5f, value);
+            if (_worldSizeZ == clamped)
+            {
+                return;
+            }
+
+            _worldSizeZ = clamped;
+            Owner?.RefreshRepresentation();
+        }
     }
 
     public float Strength { get; set; } = 1.0f;
@@ -63,7 +121,11 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     public SelfScale SelfScale => SelfScale.None;
 
-    public bool UsesTerrainHeight => true;
+    // Free height: neither Rasterize nor Paint below ever read local.Y, so an entity's Y position has
+    // no bearing on the terrain projection — only rotation does (see SelfRotation above), which is
+    // why this is the only one of the two that's unlocked. StampComponent already establishes that
+    // "free height, still an ILandscapeDeformer" is a safe combination in this codebase.
+    public bool UsesTerrainHeight => false;
 
     public Aabb LocalBounds => new(
         new Vector3(-WorldSizeX * 0.5f, -BoundsHeight * 0.5f, -WorldSizeZ * 0.5f),
@@ -85,15 +147,76 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         : Owner is { } owner ? [owner] : [];
 
     /// <summary>An independent placement of the same image — cloning a component shares its bound
-    /// image rather than forking the pixels, the same way cloning a <see cref="ProceduralComponent"/>
-    /// shares its bound model.</summary>
+    /// image (and display layer) rather than forking the pixels, the same way cloning a
+    /// <see cref="ProceduralComponent"/> shares its bound model.</summary>
     public override SceneComponent Clone() => new ImageComponent(_system)
     {
         ImageId = ImageId,
+        DisplayLayerId = DisplayLayerId,
         WorldSizeX = WorldSizeX,
         WorldSizeZ = WorldSizeZ,
         Strength = Strength,
         Channel = Channel,
+    };
+
+    /// <summary>Whether the bound image or display layer has moved on since this placement's viewport
+    /// representation was last built.</summary>
+    public bool NeedsRefresh =>
+        _representedImageId != ImageId || _representedImageRevision != (Image?.Revision ?? -1) ||
+        _representedDisplayLayerId != DisplayLayerId || _representedDisplayLayerRevision != (DisplayLayer?.Revision ?? -1);
+
+    /// <summary>
+    /// Builds this placement's viewport preview per its bound <see cref="ImageDisplayLayer"/>'s
+    /// <see cref="ImageDisplayMode"/> — nothing for <see cref="ImageDisplayMode.None"/> or while
+    /// unbound, a colored <see cref="Decal"/> for <see cref="ImageDisplayMode.LandscapeOverlay"/>, or a
+    /// paintable textured quad for <see cref="ImageDisplayMode.Object"/>. Purely a viewport concern —
+    /// the landscape channel this placement paints (see <see cref="Rasterize"/>) is unaffected by
+    /// display mode either way.
+    /// </summary>
+    public Node3D? BuildNode()
+    {
+        _representedImageId = ImageId;
+        _representedImageRevision = Image?.Revision ?? -1;
+        _representedDisplayLayerId = DisplayLayerId;
+        _representedDisplayLayerRevision = DisplayLayer?.Revision ?? -1;
+
+        if (DisplayLayer is not { } layer || Image is not { } image || layer.DisplayMode == ImageDisplayMode.None)
+        {
+            return null;
+        }
+
+        return layer.DisplayMode switch
+        {
+            ImageDisplayMode.LandscapeOverlay => BuildOverlayDecal(image, layer),
+            ImageDisplayMode.Object => BuildObjectMesh(image),
+            _ => null,
+        };
+    }
+
+    /// <summary>A decal fading from transparent to <see cref="ImageDisplayLayer.OverlayColor"/> as the
+    /// image's pixel values rise, projected straight down onto the terrain. The vertical extent
+    /// mirrors <see cref="LandscapeGrid.NominalHeightExtent"/>, the same "tall enough regardless of
+    /// exact placement height" bound <see cref="ProceduralComponent"/> uses for a flat paint-only
+    /// placement's box.</summary>
+    private Node3D BuildOverlayDecal(PaintImage image, ImageDisplayLayer layer) => new Decal
+    {
+        Name = "ImageOverlay",
+        Size = new Vector3(WorldSizeX, LandscapeGrid.NominalHeightExtent * 2.0f, WorldSizeZ),
+        TextureAlbedo = PaintImageTextures.Tinted(image, layer.OverlayColor),
+    };
+
+    /// <summary>A flat, unshaded quad showing the image's own texture — what the Paint tool targets
+    /// directly (via <see cref="SceneEntity.TryPickGeometry"/>) instead of projecting through the
+    /// terrain when this placement's display mode is <see cref="ImageDisplayMode.Object"/>.</summary>
+    private Node3D BuildObjectMesh(PaintImage image) => new MeshInstance3D
+    {
+        Name = "ImageObject",
+        Mesh = new PlaneMesh { Size = new Vector2(WorldSizeX, WorldSizeZ) },
+        MaterialOverride = new StandardMaterial3D
+        {
+            AlbedoTexture = PaintImageTextures.Grayscale(image),
+            ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
+        },
     };
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
