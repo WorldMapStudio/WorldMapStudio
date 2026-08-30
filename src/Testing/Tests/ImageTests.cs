@@ -642,6 +642,26 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void EvictChunk_reports_whether_it_actually_evicted_anything()
+    {
+        // ImageResidencySystem.Evict relies on this to know whether a landscape chunk that sampled a
+        // now-evicted coordinate needs rebuilding — a false positive would skip that rebuild and leave
+        // terrain showing paint from an image chunk that is no longer even resident.
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]);
+
+        Assert.IsTrue(image.EvictChunk(new ImageChunkCoord(0, 0)), "a clean resident chunk should report a real eviction");
+        Assert.IsFalse(image.EvictChunk(new ImageChunkCoord(0, 0)), "already gone, so nothing to report");
+        Assert.IsFalse(image.EvictChunk(new ImageChunkCoord(5, 5)), "never resident, so nothing to report");
+
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        var dirtyCoord = new ImageChunkCoord(0, 0);
+        Assert.IsTrue(image.IsDirty(dirtyCoord));
+        Assert.IsFalse(image.EvictChunk(dirtyCoord), "a dirty chunk is refused, so nothing to report");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");

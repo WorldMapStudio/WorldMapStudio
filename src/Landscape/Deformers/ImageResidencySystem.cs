@@ -130,6 +130,8 @@ public sealed class ImageResidencySystem
             }
         }
 
+        bool evictedAny = false;
+
         // Unconditional: nothing keeps a chunk resident just because there happens to be budget to
         // spare. EvictChunk itself refuses a dirty one, so unsaved work is never at risk here.
         foreach (PaintImage image in _images.Images)
@@ -139,7 +141,7 @@ public sealed class ImageResidencySystem
             {
                 if (!wanted.Contains(coord))
                 {
-                    image.EvictChunk(coord);
+                    evictedAny |= image.EvictChunk(coord);
                 }
             }
         }
@@ -177,9 +179,18 @@ public sealed class ImageResidencySystem
                     break;
                 }
 
-                image.EvictChunk(coord);
+                evictedAny |= image.EvictChunk(coord);
                 total -= bytes;
             }
+        }
+
+        if (evictedAny)
+        {
+            // A landscape chunk built while an evicted coordinate was resident has that contribution
+            // baked into its mesh/texture — without this, it keeps showing paint from an image chunk
+            // that is no longer even in memory, since nothing else notices residency shrinking (only
+            // growing it, via ApplyCompletedLoad, already invalidates).
+            _context.Streaming.Invalidate();
         }
 
         PruneRecency();

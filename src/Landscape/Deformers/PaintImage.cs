@@ -279,13 +279,19 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Drops a clean resident chunk from memory — the pixels stay safe in storage, only the
     /// in-memory copy goes away. A no-op if the chunk is dirty (unsaved edits) or already gone: the
     /// residency system is expected to have already excluded those, but never evicting one is cheap
-    /// insurance against ever losing unsaved work to a budget sweep.</summary>
-    internal void EvictChunk(ImageChunkCoord coord)
+    /// insurance against ever losing unsaved work to a budget sweep. Returns whether it actually
+    /// evicted something — <see cref="ImageResidencySystem"/> uses that to know whether a landscape
+    /// chunk that sampled this coordinate while it was resident needs rebuilding now that it reads as
+    /// zero again.</summary>
+    internal bool EvictChunk(ImageChunkCoord coord)
     {
         if (_chunks.TryGetValue(coord, out ImageChunk? chunk) && !chunk.Dirty && _chunks.Remove(coord))
         {
             BumpView();
+            return true;
         }
+
+        return false;
     }
 
     /// <summary>Clears the dirty flag on every given resident chunk. Called once a commit has
