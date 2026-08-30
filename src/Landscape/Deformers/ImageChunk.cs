@@ -11,4 +11,10 @@ public sealed class ImageChunk
     }
 
     public byte[] Pixels { get; }
+
+    /// <summary>Whether this chunk's in-memory pixels differ from what storage last saw. Set by
+    /// <see cref="PaintImage"/> on an edit, cleared by a commit's write-back — never by a load, which
+    /// starts a chunk clean by construction. What keeps <see cref="ImageResidencySystem"/> from ever
+    /// evicting a chunk with unsaved work.</summary>
+    public bool Dirty { get; internal set; }
 }

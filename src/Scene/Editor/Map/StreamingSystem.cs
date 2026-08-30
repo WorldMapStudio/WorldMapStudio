@@ -76,6 +76,25 @@ public sealed class StreamingSystem
     /// </summary>
     public void AddLoader(ISceneEntityLoader loader) => _loaders.Add(loader);
 
+    /// <summary>Whether any scan has landed yet. <see cref="LoadRegion"/> and <see cref="ScanMap"/> are
+    /// meaningless (a default, zero-sized box; a default map) before this is true.</summary>
+    public bool Reconciled => _reconciled;
+
+    /// <summary>Bumped every time a scan lands — what a system whose own "worth having resident"
+    /// targets follow this same region (image chunk residency) gates its recompute on, instead of
+    /// walking the scene every frame regardless of whether anything changed.</summary>
+    public int ScanVersion { get; private set; }
+
+    /// <summary>The map the most recently landed scan covered.</summary>
+    public MapId ScanMap => _scanMap;
+
+    /// <summary>The load region — the view grown by every loader's declared margin — the most recently
+    /// landed scan covered, in world space. Stored entities are read over this wider region because
+    /// they are what derived content is built from; a system that needs the same "what's worth having
+    /// loaded right now" answer streaming itself uses (image chunk residency) reads this rather than
+    /// recomputing its own.</summary>
+    public Aabb LoadRegion => Grow(_scanView, LoadMargin());
+
     /// <summary>
     /// Forces the next update to re-scan, regardless of how far the focus has moved. What a loader
     /// returns can depend on more than position — landscape chunks are rebuilt from the entities that
@@ -243,6 +262,7 @@ public sealed class StreamingSystem
         RelinkLoadedParents();
 
         _reconciled = true;
+        ScanVersion++;
         ApplyFates();
     }
 

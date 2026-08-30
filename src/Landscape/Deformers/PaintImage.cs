@@ -57,7 +57,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             }
 
             _name = value;
-            Revision++;
+            BumpContent();
         }
     }
 
@@ -80,13 +80,31 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// see the type doc.</summary>
     public ReadOnlySpan<byte> Pixels => CopyPixels();
 
-    /// <summary>Bumped by every mutation. A plain counter rather than a content hash — unlike
-    /// <see cref="ProceduralModel.NetworkFingerprint"/>, an image's buffer can be megabytes, and a
-    /// paint stroke replaces it every frame while dragging, so hashing the bytes on every change
-    /// would be far too costly to pay continuously. Identity plus this counter is enough to notice
-    /// "this image changed since I last looked" without needing to know how.
-    /// </summary>
-    public int Revision { get; private set; }
+    /// <summary>Bumped only by an actual pixel/name/dimension edit — what export dirtiness and
+    /// <see cref="ImageComponent.ContentVersion"/> key off, so a chunk merely streaming in or out
+    /// (which <see cref="ViewRevision"/> also tracks) never marks terrain dirty or triggers a
+    /// re-export on ground nobody touched.</summary>
+    public int ContentRevision { get; private set; }
+
+    /// <summary>Bumped by everything <see cref="ContentRevision"/> is, plus a chunk becoming resident
+    /// or getting evicted — what a viewport representation (a decal, a paintable quad, a picker
+    /// preview) should rebuild against, since streamed-in pixels need to be seen even though they are
+    /// not new content.
+    ///
+    /// A plain counter rather than a content hash — unlike <see cref="ProceduralModel.NetworkFingerprint"/>,
+    /// an image's buffer can be megabytes, and a paint stroke replaces it every frame while dragging,
+    /// so hashing the bytes on every change would be far too costly to pay continuously. Identity plus
+    /// this counter is enough to notice "this image changed since I last looked" without needing to
+    /// know how.</summary>
+    public int ViewRevision { get; private set; }
+
+    private void BumpContent()
+    {
+        ContentRevision++;
+        ViewRevision++;
+    }
+
+    private void BumpView() => ViewRevision++;
 
     /// <inheritdoc />
     public int? RecordId { get; set; }
@@ -108,8 +126,13 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _chunkSize = Math.Clamp(chunkSize, MinChunkSize, MaxChunkSize);
         RecomputeGrid();
         _chunks = [];
-        _persistedChunkCoords.Clear();
-        Revision++;
+
+        // Deliberately not clearing _persistedChunkCoords: on every current caller it is already empty
+        // (a freshly constructed PaintImage, not yet staged), so this is a no-op today. But a future
+        // "reconfigure an existing, already-committed image" caller needs the old manifest intact for
+        // Stage to still know which now-orphaned rows to delete — clearing it here would silently leak
+        // those rows forever.
+        BumpContent();
     }
 
     /// <summary>What <see cref="PaintImageFactory"/> last wrote to (or loaded from) storage — the set
@@ -146,6 +169,65 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         SetPersistedChunkCoords(table.Keys);
     }
 
+    /// <summary>Loads only the coordinate manifest — which chunks exist in storage — without their
+    /// pixel data. What lets a catalog load stay cheap for a huge image: <see cref="ImageResidencySystem"/>
+    /// fetches actual chunk bytes later, only for what a viewport needs. A coordinate reported here
+    /// reads as zero (via <see cref="CreateSampler"/>) and refuses to be painted over (see
+    /// <see cref="Paint"/>) until it is actually loaded.</summary>
+    internal void LoadManifest(IEnumerable<ImageChunkCoord> coords)
+    {
+        _chunks = [];
+        SetPersistedChunkCoords(coords);
+    }
+
+    /// <summary>Whether a coordinate has a row in storage — resident or not. See the four-state table
+    /// in <c>.godot/ImageChunkPlan.md</c>.</summary>
+    internal bool IsStored(ImageChunkCoord coord) => _persistedChunkCoords.Contains(coord);
+
+    internal bool IsResident(ImageChunkCoord coord) => _chunks.ContainsKey(coord);
+
+    internal bool IsDirty(ImageChunkCoord coord) => _chunks.TryGetValue(coord, out ImageChunk? chunk) && chunk.Dirty;
+
+    /// <summary>Every chunk's fixed storage footprint — what a residency budget is measured in.</summary>
+    internal long ChunkByteSize => (long)_chunkSize * _chunkSize;
+
+    internal long ResidentByteSize => _chunks.Count * ChunkByteSize;
+
+    /// <summary>Merges freshly loaded chunk bytes into residency as clean (matches storage). A
+    /// coordinate that is already resident is left alone — it raced against a paint or an eviction
+    /// since the load was requested, and whatever is live now is more current than what this load saw.</summary>
+    internal void PublishLoadedChunks(IEnumerable<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
+    {
+        bool any = false;
+        foreach ((ImageChunkCoord coord, byte[] pixels) in chunks)
+        {
+            if (_chunks.ContainsKey(coord))
+            {
+                continue;
+            }
+
+            _chunks[coord] = new ImageChunk(pixels);
+            any = true;
+        }
+
+        if (any)
+        {
+            BumpView();
+        }
+    }
+
+    /// <summary>Drops a clean resident chunk from memory — the pixels stay safe in storage, only the
+    /// in-memory copy goes away. A no-op if the chunk is dirty (unsaved edits) or already gone: the
+    /// residency system is expected to have already excluded those, but never evicting one is cheap
+    /// insurance against ever losing unsaved work to a budget sweep.</summary>
+    internal void EvictChunk(ImageChunkCoord coord)
+    {
+        if (_chunks.TryGetValue(coord, out ImageChunk? chunk) && !chunk.Dirty && _chunks.Remove(coord))
+        {
+            BumpView();
+        }
+    }
+
     public byte[] CopyPixels()
     {
         var dense = new byte[_width * _height];
@@ -163,7 +245,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     {
         byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
         RebuildChunks(dense);
-        Revision++;
+        BumpContent();
     }
 
     /// <summary>Changes resolution, bilinear-resampling the existing content into the new size.</summary>
@@ -195,7 +277,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _height = height;
         RecomputeGrid();
         RebuildChunks(resized);
-        Revision++;
+        BumpContent();
     }
 
     /// <summary>Replaces both resolution and content at once — the shape a persistence load and an
@@ -207,7 +289,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         RecomputeGrid();
         byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
         RebuildChunks(dense);
-        Revision++;
+        BumpContent();
     }
 
     /// <summary>Stamps a soft circular brush centred at normalized UV coordinates, with the brush
@@ -250,10 +332,29 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
-            Revision++;
+            BumpContent();
         }
 
         return changed;
+    }
+
+    /// <summary>Converts a UV range on this image into the inclusive, clamped chunk-coordinate rect
+    /// that covers it, grown by <paramref name="headroomChunks"/> on every side — what a caller that
+    /// needs "this footprint plus some slack" (residency's target computation) asks for, distinct from
+    /// the exact rect <see cref="Paint"/> derives for itself with no headroom.</summary>
+    public ImageChunkRect ChunkRectForUv(float uMin, float uMax, float vMin, float vMax, int headroomChunks = 0)
+    {
+        int pxMin = Math.Clamp(Mathf.FloorToInt(Mathf.Min(uMin, uMax) * _width), 0, _width - 1);
+        int pxMax = Math.Clamp(Mathf.CeilToInt(Mathf.Max(uMin, uMax) * _width), 0, _width - 1);
+        int pyMin = Math.Clamp(Mathf.FloorToInt(Mathf.Min(vMin, vMax) * _height), 0, _height - 1);
+        int pyMax = Math.Clamp(Mathf.CeilToInt(Mathf.Max(vMin, vMax) * _height), 0, _height - 1);
+
+        int cxMin = Math.Clamp((pxMin / _chunkSize) - headroomChunks, 0, _chunksX - 1);
+        int cxMax = Math.Clamp((pxMax / _chunkSize) + headroomChunks, 0, _chunksX - 1);
+        int cyMin = Math.Clamp((pyMin / _chunkSize) - headroomChunks, 0, _chunksY - 1);
+        int cyMax = Math.Clamp((pyMax / _chunkSize) + headroomChunks, 0, _chunksY - 1);
+
+        return new ImageChunkRect(cxMin, cyMin, cxMax, cyMax);
     }
 
     /// <summary>Snapshots the current chunk set for a landscape build to sample from — typically off
@@ -267,6 +368,9 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _chunksY = (_height + _chunkSize - 1) / _chunkSize;
     }
 
+    // Every chunk this produces is dirty: it is called from ReplacePixels/Resize/LoadPixels, which are
+    // always edits (or an undo apply/revert, itself just an edit landing at a different value) — never
+    // a load from storage, which goes through LoadChunks/LoadManifest instead and marks clean.
     private void RebuildChunks(byte[] dense)
     {
         var chunks = new Dictionary<ImageChunkCoord, ImageChunk>();
@@ -276,7 +380,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             {
                 if (ExtractChunk(dense, cx, cy) is { } pixels)
                 {
-                    chunks[new ImageChunkCoord(cx, cy)] = new ImageChunk(pixels);
+                    chunks[new ImageChunkCoord(cx, cy)] = new ImageChunk(pixels) { Dirty = true };
                 }
             }
         }
@@ -330,8 +434,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         }
     }
 
-    /// <summary>Paints the part of one brush stamp that falls in one chunk, materializing it on first
-    /// write and leaving it absent if erasing would have no effect on a chunk that does not exist yet.</summary>
+    /// <summary>Paints the part of one brush stamp that falls in one chunk. A chunk that is stored but
+    /// not currently resident refuses the whole stamp — see <c>.godot/ImageChunkPlan.md</c>, "Painting
+    /// into a chunk that hasn't loaded": fabricating a zero buffer over it would silently destroy real
+    /// pixels at the next commit, and there is no way to know what erasing it should even do until it
+    /// actually loads. A truly empty chunk (never painted, never stored) still materializes on first
+    /// non-erase write and stays absent for a no-op erase, exactly as before chunking existed.</summary>
     private bool PaintChunk(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, byte amount, bool erase)
     {
         int chunkBaseX = coord.X * _chunkSize;
@@ -345,7 +453,19 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             return false;
         }
 
-        byte[]? pixels = null;
+        bool resident = _chunks.TryGetValue(coord, out ImageChunk? existing);
+        if (!resident && IsStored(coord))
+        {
+            return false;
+        }
+
+        if (!resident && erase)
+        {
+            // Erasing a chunk that exists nowhere — not resident, not stored — changes nothing.
+            return false;
+        }
+
+        byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize];
         bool changed = false;
 
         for (int py = loY; py <= hiY; py++)
@@ -369,17 +489,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
                     continue;
                 }
 
-                if (pixels == null && !TryGetOrCreateChunk(coord, out pixels))
-                {
-                    // Erasing a chunk that does not exist changes nothing — there is nothing left to
-                    // paint in this chunk's share of the stamp.
-                    return changed;
-                }
-
                 int localX = px - chunkBaseX;
                 int localY = py - chunkBaseY;
                 int index = (localY * _chunkSize) + localX;
-                byte before = pixels![index];
+                byte before = pixels[index];
                 byte after = erase
                     ? (byte)Math.Max(0, before - delta)
                     : (byte)Math.Min(255, before + delta);
@@ -392,25 +505,18 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             }
         }
 
-        return changed;
-
-        bool TryGetOrCreateChunk(ImageChunkCoord chunkCoord, out byte[]? chunkPixels)
+        if (changed)
         {
-            if (_chunks.TryGetValue(chunkCoord, out ImageChunk? existing))
+            if (resident)
             {
-                chunkPixels = existing.Pixels;
-                return true;
+                existing!.Dirty = true;
             }
-
-            if (erase)
+            else
             {
-                chunkPixels = null;
-                return false;
+                _chunks[coord] = new ImageChunk(pixels) { Dirty = true };
             }
-
-            chunkPixels = new byte[_chunkSize * _chunkSize];
-            _chunks[chunkCoord] = new ImageChunk(chunkPixels);
-            return true;
         }
+
+        return changed;
     }
 }

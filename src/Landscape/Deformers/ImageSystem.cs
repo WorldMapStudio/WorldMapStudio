@@ -17,9 +17,14 @@ public sealed class ImageSystem
     public ImageSystem(EditorContext context)
     {
         Context = context;
+        Residency = new ImageResidencySystem(context, this);
     }
 
     public EditorContext Context { get; }
+
+    /// <summary>Keeps resident image chunks matching what streamed-in placements need and evicts the
+    /// rest under a byte budget. See <see cref="ImageResidencySystem"/>.</summary>
+    public ImageResidencySystem Residency { get; }
 
     /// <summary>The loaded image catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
     public IEnumerable<PaintImage> Images => Context.Catalog.OfType<PaintImage>();
@@ -61,6 +66,10 @@ public sealed class ImageSystem
     /// </summary>
     public void Update()
     {
+        // Runs first so a chunk that streams in or gets evicted this frame is reflected by the
+        // ViewRevision-driven sweep below in the same frame it happened, not one frame later.
+        Residency.Update();
+
         var tick = (Context.Catalog.Version, Context.Scene.Version, SumRevisions());
         if (tick == _lastUpdateTick)
         {
@@ -88,7 +97,7 @@ public sealed class ImageSystem
         int sum = 0;
         foreach (PaintImage image in Images)
         {
-            sum += image.Revision;
+            sum += image.ViewRevision;
         }
 
         foreach (ImageDisplayLayer layer in DisplayLayers)

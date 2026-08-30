@@ -168,6 +168,120 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Painting_a_stored_but_not_resident_chunk_is_refused_without_data_loss()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadManifest([new ImageChunkCoord(0, 0)]); // storage has this chunk, but it is not loaded
+
+        bool changed = image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        Assert.IsFalse(changed, "painting a chunk that is stored but not resident must not fabricate a zero buffer over it");
+        Assert.AreEqual(0, image.ChunkCount);
+        Assert.AreEqual(1, image.PersistedChunkCoords.Count);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Publishing_loaded_chunks_bumps_only_view_revision_and_unblocks_painting()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadManifest([new ImageChunkCoord(0, 0)]);
+
+        int contentBefore = image.ContentRevision;
+        int viewBefore = image.ViewRevision;
+
+        image.PublishLoadedChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]);
+
+        Assert.AreEqual(contentBefore, image.ContentRevision, "loading a chunk from storage is not a content edit");
+        Assert.Greater(image.ViewRevision, viewBefore);
+
+        bool changed = image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        Assert.IsTrue(changed, "the chunk is now resident, so painting should work normally");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Evicting_a_dirty_chunk_is_refused()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        var coord = new ImageChunkCoord(0, 0);
+        Assert.IsTrue(image.IsDirty(coord));
+
+        image.EvictChunk(coord);
+
+        Assert.IsTrue(image.IsResident(coord), "a chunk with unsaved edits must never be evicted");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Evicting_a_clean_chunk_leaves_it_stored_but_not_resident()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]);
+
+        var coord = new ImageChunkCoord(0, 0);
+        Assert.IsFalse(image.IsDirty(coord));
+
+        int viewBefore = image.ViewRevision;
+        image.EvictChunk(coord);
+
+        Assert.IsFalse(image.IsResident(coord));
+        Assert.IsTrue(image.IsStored(coord), "eviction only drops the in-memory copy, not the storage manifest");
+        Assert.Greater(image.ViewRevision, viewBefore);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ChunksNeededFor_intersects_footprint_with_region_and_adds_headroom()
+    {
+        EditorContext context = NewContext("__wms_image_chunks_needed_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+        entity.AddComponent(component);
+
+        // Covers world X/Z in [-40, -8] — the near-corner quarter of the placement's [-32, 32] footprint.
+        var region = new Aabb(new Vector3(-40.0f, -1000.0f, -40.0f), new Vector3(32.0f, 2000.0f, 32.0f));
+
+        ImageChunkRect? rect = component.ChunksNeededFor(region);
+
+        Assert.IsNotNull(rect);
+        Assert.AreEqual(0, rect!.Value.MinX);
+        Assert.AreEqual(0, rect.Value.MinY);
+        Assert.AreEqual(2, rect.Value.MaxX);
+        Assert.AreEqual(2, rect.Value.MaxY);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ChunksNeededFor_returns_null_when_the_region_misses_the_footprint()
+    {
+        EditorContext context = NewContext("__wms_image_chunks_needed_miss_test__");
+        PaintImage image = NewImage(context, id: 1);
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+        entity.AddComponent(component);
+
+        var farRegion = new Aabb(new Vector3(1000.0f, -10.0f, 1000.0f), new Vector3(10.0f, 20.0f, 10.0f));
+
+        Assert.IsNull(component.ChunksNeededFor(farRegion));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");
