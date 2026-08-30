@@ -154,10 +154,12 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
     }
 
     /// <summary>Rebuilds the preview texture only when the previewed image or its
-    /// <see cref="PaintImage.Revision"/> changed, since this allocates a texture.</summary>
+    /// <see cref="PaintImage.ViewRevision"/> changed, since this allocates a texture. Keyed on
+    /// <c>ViewRevision</c> rather than <c>ContentRevision</c> so a chunk streaming in updates the
+    /// preview even though nothing was actually edited.</summary>
     private ImageTexture Texture(PaintImage image)
     {
-        if (_previewTexture != null && _cachedId == image.RecordId && _cachedRevision == image.Revision)
+        if (_previewTexture != null && _cachedId == image.RecordId && _cachedRevision == image.ViewRevision)
         {
             return _previewTexture;
         }
@@ -165,7 +167,7 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
         Image raw = Image.CreateFromData(image.Width, image.Height, false, Image.Format.R8, image.CopyPixels());
         _previewTexture = ImageTexture.CreateFromImage(raw);
         _cachedId = image.RecordId;
-        _cachedRevision = image.Revision;
+        _cachedRevision = image.ViewRevision;
         return _previewTexture;
     }
 }

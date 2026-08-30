@@ -137,7 +137,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     public Aabb InfluenceBounds => Entity.Transform * LocalBounds;
 
-    public override int ContentVersion => HashCode.Combine(ImageId, Image?.Revision ?? 0, WorldSizeX, WorldSizeZ, Strength, Channel);
+    public override int ContentVersion => HashCode.Combine(ImageId, Image?.ContentRevision ?? 0, WorldSizeX, WorldSizeZ, Strength, Channel);
 
     /// <summary>Every loaded placement referencing the same image — what a paint or resize undo
     /// command snapshots chunk fingerprints against, since the edit lands on the shared image, not
@@ -162,7 +162,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     /// <summary>Whether the bound image or display layer has moved on since this placement's viewport
     /// representation was last built.</summary>
     public bool NeedsRefresh =>
-        _representedImageId != ImageId || _representedImageRevision != (Image?.Revision ?? -1) ||
+        _representedImageId != ImageId || _representedImageRevision != (Image?.ViewRevision ?? -1) ||
         _representedDisplayLayerId != DisplayLayerId || _representedDisplayLayerRevision != (DisplayLayer?.Revision ?? -1);
 
     /// <summary>
@@ -176,7 +176,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     public Node3D? BuildNode()
     {
         _representedImageId = ImageId;
-        _representedImageRevision = Image?.Revision ?? -1;
+        _representedImageRevision = Image?.ViewRevision ?? -1;
         _representedDisplayLayerId = DisplayLayerId;
         _representedDisplayLayerRevision = DisplayLayer?.Revision ?? -1;
 
@@ -275,6 +275,58 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         float radiusX = radius / WorldSizeX;
         float radiusY = radius / WorldSizeZ;
         return image.Paint(u, v, radiusX, radiusY, opacity, erase);
+    }
+
+    /// <summary>The bound image's chunks this placement needs resident to cover a world-space region
+    /// — typically <see cref="StreamingSystem.LoadRegion"/> — or null if unbound, or the region misses
+    /// this placement's footprint entirely. What <see cref="ImageResidencySystem"/> unions per image
+    /// across every placement referencing it, since several can share one.
+    ///
+    /// Approximate under rotation: the region's corners are transformed into local space and bounded
+    /// there rather than intersected exactly, so a rotated footprint can ask for a few chunks it does
+    /// not strictly need — never the reverse, which is what would actually matter (a build sampling a
+    /// chunk that was never requested).</summary>
+    public ImageChunkRect? ChunksNeededFor(Aabb worldRegion)
+    {
+        if (Image is not { } image)
+        {
+            return null;
+        }
+
+        Transform3D inverse = Entity.Transform.AffineInverse();
+        float minLocalX = float.MaxValue, maxLocalX = float.MinValue;
+        float minLocalZ = float.MaxValue, maxLocalZ = float.MinValue;
+
+        for (int i = 0; i < 8; i++)
+        {
+            var corner = new Vector3(
+                (i & 1) == 0 ? worldRegion.Position.X : worldRegion.End.X,
+                (i & 2) == 0 ? worldRegion.Position.Y : worldRegion.End.Y,
+                (i & 4) == 0 ? worldRegion.Position.Z : worldRegion.End.Z);
+            Vector3 local = inverse * corner;
+            minLocalX = Mathf.Min(minLocalX, local.X);
+            maxLocalX = Mathf.Max(maxLocalX, local.X);
+            minLocalZ = Mathf.Min(minLocalZ, local.Z);
+            maxLocalZ = Mathf.Max(maxLocalZ, local.Z);
+        }
+
+        float halfX = WorldSizeX * 0.5f;
+        float halfZ = WorldSizeZ * 0.5f;
+        float loX = Mathf.Max(minLocalX, -halfX);
+        float hiX = Mathf.Min(maxLocalX, halfX);
+        float loZ = Mathf.Max(minLocalZ, -halfZ);
+        float hiZ = Mathf.Min(maxLocalZ, halfZ);
+        if (loX > hiX || loZ > hiZ)
+        {
+            return null;
+        }
+
+        float uMin = (loX / WorldSizeX) + 0.5f;
+        float uMax = (hiX / WorldSizeX) + 0.5f;
+        float vMin = (loZ / WorldSizeZ) + 0.5f;
+        float vMax = (hiZ / WorldSizeZ) + 0.5f;
+
+        return image.ChunkRectForUv(uMin, uMax, vMin, vMax, headroomChunks: 1);
     }
 
     private bool TryLocalToUv(Vector3 local, out float u, out float v)
