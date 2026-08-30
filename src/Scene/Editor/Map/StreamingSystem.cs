@@ -8,13 +8,20 @@ namespace WorldMapStudio;
 /// <summary>
 /// Streams scene entities in and out as the editor's focus moves. Each update it scans the current
 /// map's storages for entities whose bounds overlap a box around the focus on a background thread,
-/// then on the main thread reconciles the scene registry: newly in-range entities are added, and streamed entities
-/// that have left the range are removed unless the active edit session still pins them. Runs one scan
-/// at a time and only re-scans once the focus has moved far enough (or the map changed).
+/// then on the main thread reconciles the scene registry: newly in-range entities are added, and every
+/// entity in the registry is re-judged by <see cref="FateOf"/>. Runs one scan at a time and only
+/// re-scans once the focus has moved far enough (or the map changed).
 ///
 /// Entering another map is just a scan whose results share nothing with the last one, so the previous
-/// map's entities unload — except the pinned ones, which stay loaded (and editable) until the session
-/// is committed or aborted.
+/// map's entities unload — except the ones the edit session pins, which stay in memory (but out of
+/// sight) until the session is committed or aborted.
+///
+/// Streaming judges every non-resident entity in the registry, not just the ones it put there itself.
+/// It used to track only what it had loaded, keyed by the row id: an entity created in the editor has
+/// no row yet, so it was invisible to that bookkeeping and simply never unloaded — it stayed drawn and
+/// listed over a chunk that was long gone, and committing it did not help, because a commit does not
+/// hand streaming anything it was not already tracking. Judging the registry has no such gap, which is
+/// why a new entity and a modified one now behave identically.
 ///
 /// Two regions, not one. The <b>view</b> is what the user is looking at and what loaders produce for.
 /// The <b>load</b> region is wider, by whatever margin a loader declares, and is what stored entities
@@ -32,17 +39,35 @@ public sealed class StreamingSystem
     private const float VerticalRange = 4096.0f;
 
     private readonly EditorContext _context;
-    private readonly Dictionary<(Type Type, long Key), SceneEntity> _streamed = new();
     private readonly List<ISceneEntityLoader> _loaders = [];
+
+    // The live entities the last applied scan reported, which is not the same as "everything loaded":
+    // an entity created in the editor is loaded but has no row for a scan to find.
+    private readonly HashSet<SceneEntity> _present = [];
 
     private Task<List<SceneEntity>>? _pendingScan;
     private MapId _scanMap;
+    private Aabb _scanView;
     private Vector3 _lastFocus;
-    private bool _scanned;
+    private bool _scanStarted;  // a scan has been launched for the current map and position
+    private bool _reconciled;   // a scan has landed, so there is a region to judge fates against
 
     public StreamingSystem(EditorContext context)
     {
         _context = context;
+    }
+
+    /// <summary>What streaming does with one loaded entity when it re-judges the registry.</summary>
+    public enum EntityFate
+    {
+        /// <summary>In the open map and in view: drawn, listed, picked and selectable.</summary>
+        Visible,
+
+        /// <summary>Held in memory but out of reach: not drawn, listed, picked or selectable.</summary>
+        Hidden,
+
+        /// <summary>Nothing is holding it any more, so it leaves the scene entirely.</summary>
+        Unload,
     }
 
     /// <summary>
@@ -56,7 +81,29 @@ public sealed class StreamingSystem
     /// returns can depend on more than position — landscape chunks are rebuilt from the entities that
     /// shape them — so an edit has to be able to say "what you have is stale".
     /// </summary>
-    public void Invalidate() => _scanned = false;
+    public void Invalidate() => _scanStarted = false;
+
+    /// <summary>
+    /// Re-judges every loaded entity right now against the last scan, then forces a re-scan.
+    /// Called when the edit session ends.
+    ///
+    /// Releasing the session's pins changes what is holding entities in the scene, and that has to
+    /// take effect immediately: a scan is asynchronous and, since it is also gated on the focus having
+    /// moved, may not run for a long time. Until it did, an entity that only stayed loaded because it
+    /// was dirty went on being drawn and listed after the commit that settled it — and the user had to
+    /// fly somewhere else to make the editor notice.
+    /// </summary>
+    public void Resweep()
+    {
+        Invalidate();
+
+        // Nothing has been scanned yet, so there is no region to judge against; the first scan will
+        // do it. Judging against a default region here would unload the whole scene.
+        if (_reconciled)
+        {
+            ApplyFates();
+        }
+    }
 
     /// <summary>Called each frame with the viewport focus (camera position, in Godot space).</summary>
     public void Update(Vector3 focus)
@@ -69,13 +116,13 @@ public sealed class StreamingSystem
         }
 
         MapId map = _context.Maps.CurrentMap;
-        bool mapChanged = !_scanned || !map.Equals(_scanMap);
+        bool mapChanged = !_scanStarted || !map.Equals(_scanMap);
         if (!mapChanged && focus.DistanceTo(_lastFocus) < RescanDistance)
         {
             return;
         }
 
-        _scanned = true;
+        _scanStarted = true;
         _scanMap = map;
         _lastFocus = focus;
 
@@ -85,9 +132,12 @@ public sealed class StreamingSystem
             loader.Prepare();
         }
 
+        // Recorded here, on the main thread, and read back when the scan lands: the view a scan was
+        // taken over is what every later fate is judged against, so it must not be written from the
+        // scan's own thread. Only one scan is ever in flight, so it cannot change underneath one.
         var extent = new Vector3(Range, VerticalRange, Range);
-        var view = new Aabb(focus - extent, extent * 2.0f);
-        _pendingScan = ScanAsync(map, view, Grow(view, LoadMargin()));
+        _scanView = new Aabb(focus - extent, extent * 2.0f);
+        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()));
     }
 
     private void ApplyCompletedScan()
@@ -149,16 +199,14 @@ public sealed class StreamingSystem
             result.AddRange(await loader.ScanAsync(map, view).ConfigureAwait(false));
         }
 
-        _lastView = view;
         return result;
     }
-
-    private Aabb _lastView;
 
     private void Reconcile(List<SceneEntity> scanned)
     {
         // Index entities already in the scene that carry a persistent key, so a scan never duplicates
-        // one that was created-and-committed (and is therefore not yet in _streamed).
+        // one that is already loaded — including one this session created and committed, whose row
+        // the scan is seeing for the first time.
         var loaded = new Dictionary<(Type, long), SceneEntity>();
         foreach (SceneEntity entity in _context.Scene.Entities)
         {
@@ -168,7 +216,7 @@ public sealed class StreamingSystem
             }
         }
 
-        var present = new HashSet<(Type, long)>();
+        _present.Clear();
         foreach (SceneEntity entity in scanned)
         {
             if (KeyOf(entity) is not long key)
@@ -177,47 +225,103 @@ public sealed class StreamingSystem
             }
 
             var id = (entity.GetType(), key);
-            present.Add(id);
-
             if (loaded.TryGetValue(id, out SceneEntity? existing))
             {
                 // A re-scan of derived content is a rebuild, so its result replaces what is loaded
                 // rather than being thrown away as a duplicate.
                 Refresh(existing, entity);
-                _streamed.TryAdd(id, existing);
+                _present.Add(existing);
             }
-            else if (_streamed.TryAdd(id, entity))
+            else
             {
                 _context.Scene.Add(entity);
+                loaded[id] = entity;
+                _present.Add(entity);
             }
-
-            // Loaded because something in view needs it, rather than because it is in view itself.
-            SceneEntity live = loaded.TryGetValue(id, out SceneEntity? kept) ? kept : entity;
-            SetPeripheral(live);
         }
 
         RelinkLoadedParents();
 
-        // Unload streamed entities that fell out of range, unless the session still holds them.
-        var stale = new List<(Type, long)>();
-        foreach (KeyValuePair<(Type, long), SceneEntity> pair in _streamed)
+        _reconciled = true;
+        ApplyFates();
+    }
+
+    /// <summary>
+    /// What becomes of one loaded entity: where it is decides whether it can be seen, and only then
+    /// does what is holding it decide whether it stays in memory at all.
+    ///
+    /// Visibility is a question about place alone. Not about whether the entity is new, or dirty, or
+    /// turned up in the scan — a dirty entity is held in memory so its edit survives, which is no
+    /// reason to keep drawing it over ground the editor has stopped loading. That also makes a created
+    /// entity and a modified one the same case, which they were not while "is it loaded" was answered
+    /// from a row id an unsaved entity does not have.
+    ///
+    /// Pure and static so the rules can be tested without an editor around them.
+    /// </summary>
+    /// <param name="scanned">
+    /// Whether the last scan returned this entity. This is what covers the load margin — stored
+    /// entities are read over the wider region, so an input just past the view is in the scan — and
+    /// also the families a scan reaches outside its region to complete. Deliberately not a second
+    /// geometric test against the load region: derived content is produced for the view only, so a
+    /// chunk the loader has stopped producing has to go rather than sit in the margin unrefreshed.
+    /// </param>
+    /// <param name="pinned">Whether the edit session is holding the entity for an uncommitted edit.</param>
+    public static EntityFate FateOf(MapId map, Aabb bounds, MapId scanMap, Aabb view, bool scanned, bool pinned)
+    {
+        if (map == scanMap && bounds.Intersects(view))
         {
-            if (present.Contains(pair.Key) || IsPinned(pair.Value))
+            return EntityFate.Visible;
+        }
+
+        return scanned || pinned ? EntityFate.Hidden : EntityFate.Unload;
+    }
+
+    /// <summary>
+    /// Re-judges every entity streaming owns against the last scan. Resident entities (prefab
+    /// templates) are skipped: they are not streamed content and there is no region they belong to.
+    /// </summary>
+    private void ApplyFates()
+    {
+        var unload = new List<SceneEntity>();
+        foreach (SceneEntity entity in _context.Scene.Entities)
+        {
+            if (_context.Scene.IsResident(entity))
             {
                 continue;
             }
 
-            // An entity that leaves the scene must leave the selection with it, or the inspector and
-            // the gizmo keep editing something the viewport no longer shows.
-            _context.Selection.Remove(pair.Value);
-            _context.Scene.Remove(pair.Value);
-            stale.Add(pair.Key);
+            switch (FateOf(entity.Map, entity.WorldBounds, _scanMap, _scanView,
+                           _present.Contains(entity), IsPinned(entity)))
+            {
+                case EntityFate.Visible:
+                    _context.Scene.SetPeripheral(entity, false);
+                    break;
+
+                case EntityFate.Hidden:
+                    Hide(entity);
+                    break;
+
+                default:
+                    unload.Add(entity);
+                    break;
+            }
         }
 
-        foreach ((Type, long) id in stale)
+        foreach (SceneEntity entity in unload)
         {
-            _streamed.Remove(id);
+            _context.Selection.Remove(entity);
+            _context.Scene.Remove(entity);
+            _present.Remove(entity);
         }
+    }
+
+    // Out of reach is out of the selection too, whether the entity left the scene or is only being
+    // held in memory: otherwise the inspector and the gizmo go on editing something the viewport no
+    // longer shows.
+    private void Hide(SceneEntity entity)
+    {
+        _context.Scene.SetPeripheral(entity, true);
+        _context.Selection.Remove(entity);
     }
 
     private void RelinkLoadedParents()
@@ -236,19 +340,6 @@ public sealed class StreamingSystem
             entity.Parent = entity.ParentRecordId is int parentId && byRecordId.TryGetValue(parentId, out SceneEntity? parent)
                 ? parent
                 : entity.Parent?.RecordId == null ? entity.Parent : null;
-        }
-    }
-
-    // Peripheral entities are inputs, not scenery: they are not drawn, listed or picked, and losing
-    // the selection with them keeps the gizmo off something the user can no longer see.
-    private void SetPeripheral(SceneEntity entity)
-    {
-        bool peripheral = !entity.WorldBounds.Intersects(_lastView);
-        _context.Scene.SetPeripheral(entity, peripheral);
-
-        if (peripheral)
-        {
-            _context.Selection.Remove(entity);
         }
     }
 

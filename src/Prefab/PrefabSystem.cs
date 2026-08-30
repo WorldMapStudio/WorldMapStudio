@@ -14,7 +14,8 @@ namespace WorldMapStudio;
 /// <see cref="SceneEntity"/> + <see cref="ISceneComponentPersistence"/> machinery persists them
 /// without any new serialization — see <c>.claude/plans</c> for the full reasoning. Loaded once,
 /// kept in <see cref="EditorContext.Scene"/> marked peripheral so they are never drawn, listed or
-/// picked, but still read by <see cref="DatabaseSystem"/>'s save-vs-delete check on commit.
+/// picked, and marked resident (see <see cref="SceneEntityRegistry.IsResident"/>) so streaming never
+/// sweeps them, but still read by <see cref="DatabaseSystem"/>'s save-vs-delete check on commit.
 ///
 /// Spawning clones a template into fresh, independent entities (like copy/paste) — nothing keeps
 /// referencing the <see cref="Prefab"/> afterward, so editing the template later never changes an
@@ -55,6 +56,7 @@ public sealed class PrefabSystem
         {
             _context.Scene.Add(entity);
             _context.Scene.SetPeripheral(entity, true);
+            _context.Scene.SetResident(entity, true);
         }
     }
 
