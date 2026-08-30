@@ -11,6 +11,7 @@ namespace WorldMapStudio;
 public sealed class EditSessionManager
 {
     private IEditSessionStore? _store;
+    private StreamingSystem? _streaming;
 
     public EditSession Active { get; private set; } = new();
 
@@ -19,6 +20,12 @@ public sealed class EditSessionManager
     /// the database exists. Left unbound (in tests, say) a commit simply keeps the edits in memory.
     /// </summary>
     public void BindStore(IEditSessionStore store) => _store = store;
+
+    /// <summary>
+    /// Binds the streaming system so releasing a session's pins can invalidate its rescan. Left
+    /// unbound (in tests, say) a commit or abort simply leaves the next scan's timing untouched.
+    /// </summary>
+    public void BindStreaming(StreamingSystem streaming) => _streaming = streaming;
 
     public void Record(IEditCommand command) => Active.Record(command);
 
@@ -32,11 +39,16 @@ public sealed class EditSessionManager
         _store?.Persist(Active);
         Active.Commit();
         Active = new EditSession();
+
+        // Entities that stayed loaded only because this session pinned them are now free to unload,
+        // but streaming only sweeps stale entities during a scan, so force one.
+        _streaming?.Invalidate();
     }
 
     public void Abort()
     {
         Active.Abort();
         Active = new EditSession();
+        _streaming?.Invalidate();
     }
 }

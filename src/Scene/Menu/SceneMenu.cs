@@ -146,9 +146,10 @@ public sealed class SceneMenu : IMainMenu
             return;
         }
 
-        // Shift the whole batch rigidly so its centre lands under the cursor, preserving whatever
-        // layout (and, for a parent/child pair, relative offset) the copied entities had.
-        Vector3 delta = pointer.WorldPoint - Centroid(pasted);
+        // Shift the whole batch rigidly so the bottom-centre of its combined bounds lands under the
+        // cursor, preserving whatever layout (and, for a parent/child pair, relative offset) the
+        // copied entities had.
+        Vector3 delta = pointer.WorldPoint - BoundsBottomCenter(pasted);
         foreach (SceneEntity entity in pasted)
         {
             Transform3D transform = entity.Transform;
@@ -169,15 +170,18 @@ public sealed class SceneMenu : IMainMenu
             : new BatchEditCommand($"Paste {commands.Count} entities", commands));
     }
 
-    private static Vector3 Centroid(IReadOnlyList<SceneEntity> entities)
+    // Horizontally centred, vertically at the lowest point: the natural anchor for dropping a batch
+    // onto a surface, so pasted content sits on the ground under the cursor rather than being buried
+    // or floating.
+    private static Vector3 BoundsBottomCenter(IReadOnlyList<SceneEntity> entities)
     {
-        Vector3 sum = Vector3.Zero;
-        foreach (SceneEntity entity in entities)
+        Aabb bounds = entities[0].WorldBounds;
+        for (int i = 1; i < entities.Count; i++)
         {
-            sum += entity.Transform.Origin;
+            bounds = bounds.Merge(entities[i].WorldBounds);
         }
 
-        return sum / entities.Count;
+        return new Vector3(bounds.Position.X + bounds.Size.X * 0.5f, bounds.Position.Y, bounds.Position.Z + bounds.Size.Z * 0.5f);
     }
 
     private void AddSceneEntity()
