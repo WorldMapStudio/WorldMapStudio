@@ -253,7 +253,7 @@ public static class RoadTests
 
     // Mirrors how the editor actually wires a road: the network/channel model carries no layer or
     // material knowledge of its own, and a sibling LandscapeMaterialBindComponent on the same entity is
-    // what claims the centre and shoulder layers — see DrawingTargetTests for the same pattern. The
+    // what claims the centre and shoulder layers — see ImageTests for the same pattern. The
     // road is now an ordinary ProceduralComponent bound to a model on the built-in road function, so
     // its published paint (what Rasterize/InfluenceBounds actually read) only exists once the entity's
     // representation has been built — hence CreateRepresentation below, unlike the old RoadComponent

@@ -5,13 +5,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
-public sealed class SceneDrawingTargetComponentRecord
+public sealed class SceneImageComponentRecord
 {
     public int EntityId { get; set; }
 
-    public int Width { get; set; } = 256;
-
-    public int Height { get; set; } = 256;
+    /// <summary>The referenced <see cref="PaintImage"/>'s row id. Null for a placement created without
+    /// ever picking an image.</summary>
+    public int? ImageId { get; set; }
 
     public double WorldSizeX { get; set; } = 64.0;
 
@@ -21,65 +21,70 @@ public sealed class SceneDrawingTargetComponentRecord
 
     public string Channel { get; set; } = "";
 
-    public byte[] Pixels { get; set; } = [];
-
     public SceneEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
-public sealed class DrawingTargetComponentPersistence : ISceneComponentPersistence
+public sealed class ImageComponentPersistence : ISceneComponentPersistence
 {
-    public DrawingTargetComponentPersistence(EditorStorage storage)
+    private readonly EditorStorage _storage;
+
+    public ImageComponentPersistence(EditorStorage storage)
     {
+        _storage = storage;
     }
+
+    /// <summary>Resolved on use rather than captured in the constructor — see
+    /// <see cref="ProceduralComponentPersistence.Procedural"/> for why.</summary>
+    private ImageSystem Images => _storage.Context.Images;
 
     public float Priority => 0.0f;
 
-    public string TypeId => "drawing-target";
+    public string TypeId => "image";
 
     public void Configure(ModelBuilder model)
     {
-        model.Entity<SceneDrawingTargetComponentRecord>(entity =>
+        model.Entity<SceneImageComponentRecord>(entity =>
         {
-            entity.ToTable("scene_drawing_target_components");
+            entity.ToTable("scene_image_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()
-                .HasForeignKey<SceneDrawingTargetComponentRecord>(record => record.EntityId)
+                .HasForeignKey<SceneImageComponentRecord>(record => record.EntityId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
     public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
     {
-        List<SceneDrawingTargetComponentRecord> rows = await context.Set<SceneDrawingTargetComponentRecord>().AsNoTracking()
+        List<SceneImageComponentRecord> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))
             .ToListAsync()
             .ConfigureAwait(false);
 
-        foreach (SceneDrawingTargetComponentRecord row in rows)
+        foreach (SceneImageComponentRecord row in rows)
         {
             if (!byId.TryGetValue(row.EntityId, out SceneEntity? entity))
             {
                 continue;
             }
 
-            var target = new DrawingTargetComponent
+            var image = new ImageComponent(Images)
             {
+                ImageId = row.ImageId,
                 WorldSizeX = (float)row.WorldSizeX,
                 WorldSizeZ = (float)row.WorldSizeZ,
                 Strength = (float)row.Strength,
                 Channel = row.Channel,
             };
-            target.LoadPixels(row.Width, row.Height, row.Pixels);
-            entity.LoadComponent(target);
+            entity.LoadComponent(image);
         }
     }
 
     public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
     {
-        DrawingTargetComponent? target = entity.Component<DrawingTargetComponent>();
-        if (target == null)
+        ImageComponent? image = entity.Component<ImageComponent>();
+        if (image == null)
         {
             if (entity.RecordId is int id)
             {
@@ -89,21 +94,19 @@ public sealed class DrawingTargetComponentPersistence : ISceneComponentPersisten
             return;
         }
 
-        var row = new SceneDrawingTargetComponentRecord
+        var row = new SceneImageComponentRecord
         {
             Entity = entity.RecordId is null ? entityRow : null,
             EntityId = entity.RecordId ?? 0,
-            Width = target.Width,
-            Height = target.Height,
-            WorldSizeX = target.WorldSizeX,
-            WorldSizeZ = target.WorldSizeZ,
-            Strength = target.Strength,
-            Channel = target.Channel,
-            Pixels = target.CopyPixels(),
+            ImageId = image.ImageId,
+            WorldSizeX = image.WorldSizeX,
+            WorldSizeZ = image.WorldSizeZ,
+            Strength = image.Strength,
+            Channel = image.Channel,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }
 
     public void StageDelete(EditorDbContext context, int entityId) =>
-        EditorComponentPersistenceHelpers.StageDelete<SceneDrawingTargetComponentRecord>(context, entityId);
+        EditorComponentPersistenceHelpers.StageDelete<SceneImageComponentRecord>(context, entityId);
 }

@@ -6,7 +6,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// A rectangular footprint that adds one flat value onto every selected channel's texels inside it —
-/// the same footprint as <see cref="DrawingTargetComponent"/>, but writing a constant everywhere it
+/// the same footprint as <see cref="ImageComponent"/>, but writing a constant everywhere it
 /// overlaps instead of a painted bitmap, and onto as many channels as are selected instead of one.
 ///
 /// Claims nothing itself: like the other deformers in this folder, it only writes into named channels.

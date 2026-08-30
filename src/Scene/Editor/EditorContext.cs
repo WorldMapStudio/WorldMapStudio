@@ -78,6 +78,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Builds scene procedural meshes from authored graph components.</summary>
     public ProceduralSystem Procedural { get; }
 
+    /// <summary>Owns the saved image catalog that <see cref="ImageComponent"/> placements reference.</summary>
+    public ImageSystem Images { get; }
+
     /// <summary>Owns the saved prefab library: catalog rows plus their scene-entity templates.</summary>
     public PrefabSystem Prefabs { get; }
 
@@ -119,6 +122,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Database = new DatabaseSystem(this);
         Landscape = new LandscapeSystem(this);
         Procedural = new ProceduralSystem(this);
+        Images = new ImageSystem(this);
         Prefabs = new PrefabSystem(this);
 
         // Built after Assets/Landscape/Procedural: the built-in component types capture them.
@@ -189,6 +193,9 @@ public sealed partial class EditorContext : ISubsystemHost
         // Models bind material presets, so presets load first.
         onStep?.Invoke("Loading procedural models");
         Procedural.LoadCatalog();
+
+        onStep?.Invoke("Loading images");
+        Images.LoadCatalog();
 
         onStep?.Invoke("Loading prefabs");
         Prefabs.LoadCatalog();
