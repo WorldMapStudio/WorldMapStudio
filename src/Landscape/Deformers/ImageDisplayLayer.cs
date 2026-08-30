@@ -10,8 +10,10 @@ public enum ImageDisplayMode
     /// <summary>No preview — the image paints its landscape channel with nothing extra to see.</summary>
     None,
 
-    /// <summary>A decal on the terrain fading from transparent to <see cref="ImageDisplayLayer.OverlayColor"/>
-    /// as the image's pixel values rise.</summary>
+    /// <summary>A decal on the terrain, ramping from <see cref="ImageDisplayLayer.BaseColor"/> at a
+    /// pixel value of 0 to <see cref="ImageDisplayLayer.FullColor"/> at 255 — each independently
+    /// alpha-capable, so the ramp can be e.g. fully transparent to opaque, opaque black to opaque
+    /// white, or anything between.</summary>
     LandscapeOverlay,
 
     /// <summary>A flat, paintable quad showing the image's texture, which the Paint tool can target
@@ -28,7 +30,8 @@ public sealed class ImageDisplayLayer : CatalogEntity, IKeyedCatalogEntity
 {
     private string _name = "Display Layer";
     private ImageDisplayMode _displayMode = ImageDisplayMode.None;
-    private Color _overlayColor = new(1.0f, 0.35f, 0.1f, 1.0f);
+    private Color _baseColor = new(1.0f, 0.35f, 0.1f, 0.0f);
+    private Color _fullColor = new(1.0f, 0.35f, 0.1f, 1.0f);
 
     public string Name
     {
@@ -60,19 +63,36 @@ public sealed class ImageDisplayLayer : CatalogEntity, IKeyedCatalogEntity
         }
     }
 
-    /// <summary>Only meaningful in <see cref="ImageDisplayMode.LandscapeOverlay"/> — the color the
-    /// decal fades toward as an image's pixel values rise from 0.</summary>
-    public Color OverlayColor
+    /// <summary>Only meaningful in <see cref="ImageDisplayMode.LandscapeOverlay"/> — the color (and
+    /// alpha) the decal shows where an image's pixel value is 0.</summary>
+    public Color BaseColor
     {
-        get => _overlayColor;
+        get => _baseColor;
         set
         {
-            if (_overlayColor == value)
+            if (_baseColor == value)
             {
                 return;
             }
 
-            _overlayColor = value;
+            _baseColor = value;
+            Revision++;
+        }
+    }
+
+    /// <summary>Only meaningful in <see cref="ImageDisplayMode.LandscapeOverlay"/> — the color (and
+    /// alpha) the decal shows where an image's pixel value is 255.</summary>
+    public Color FullColor
+    {
+        get => _fullColor;
+        set
+        {
+            if (_fullColor == value)
+            {
+                return;
+            }
+
+            _fullColor = value;
             Revision++;
         }
     }

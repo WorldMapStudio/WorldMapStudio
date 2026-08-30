@@ -193,16 +193,16 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         };
     }
 
-    /// <summary>A decal fading from transparent to <see cref="ImageDisplayLayer.OverlayColor"/> as the
-    /// image's pixel values rise, projected straight down onto the terrain. The vertical extent
-    /// mirrors <see cref="LandscapeGrid.NominalHeightExtent"/>, the same "tall enough regardless of
-    /// exact placement height" bound <see cref="ProceduralComponent"/> uses for a flat paint-only
-    /// placement's box.</summary>
+    /// <summary>A decal ramping from <see cref="ImageDisplayLayer.BaseColor"/> to
+    /// <see cref="ImageDisplayLayer.FullColor"/> as the image's pixel values rise, projected straight
+    /// down onto the terrain. The vertical extent mirrors <see cref="LandscapeGrid.NominalHeightExtent"/>,
+    /// the same "tall enough regardless of exact placement height" bound <see cref="ProceduralComponent"/>
+    /// uses for a flat paint-only placement's box.</summary>
     private Node3D BuildOverlayDecal(PaintImage image, ImageDisplayLayer layer) => new Decal
     {
         Name = "ImageOverlay",
         Size = new Vector3(WorldSizeX, LandscapeGrid.NominalHeightExtent * 2.0f, WorldSizeZ),
-        TextureAlbedo = PaintImageTextures.Tinted(image, layer.OverlayColor),
+        TextureAlbedo = PaintImageTextures.Tinted(image, layer.BaseColor, layer.FullColor),
     };
 
     /// <summary>A flat, unshaded quad showing the image's own texture — what the Paint tool targets
