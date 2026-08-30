@@ -113,7 +113,7 @@ public sealed class SceneScriptApi : IScriptModule
     {
         "marker" => new MarkerComponent(),
         "landscape-stamp" => new StampComponent(),
-        "drawing-target" => new DrawingTargetComponent(),
+        "image" => new ImageComponent(_context.Images),
         "landscape-material-bind" => new LandscapeMaterialBindComponent(),
         "procedural-mesh" => new ProceduralComponent(_context.Procedural),
         _ => throw new InvalidOperationException($"No scene component type named '{typeId}'."),
@@ -123,7 +123,7 @@ public sealed class SceneScriptApi : IScriptModule
     {
         "marker" => "Empty",
         "landscape-stamp" => "Stamp",
-        "drawing-target" => "Drawing Target",
+        "image" => "Image",
         "landscape-material-bind" => "Landscape Material Bind",
         "procedural-mesh" => "Procedural Mesh",
         _ => "Entity",

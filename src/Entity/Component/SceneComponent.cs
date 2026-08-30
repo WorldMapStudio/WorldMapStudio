@@ -48,26 +48,3 @@ public interface ITransformPolicy
 
     bool UsesTerrainHeight { get; }
 }
-
-public interface IDrawingTargetComponent
-{
-    int Width { get; }
-
-    int Height { get; }
-
-    float WorldSizeX { get; }
-
-    float WorldSizeZ { get; }
-
-    System.ReadOnlySpan<byte> Pixels { get; }
-
-    bool Paint(Vector3 local, float radius, float opacity, bool erase);
-
-    byte[] CopyPixels();
-
-    void ReplacePixels(byte[] pixels);
-
-    void Resize(int width, int height);
-
-    void LoadPixels(int width, int height, byte[] pixels);
-}

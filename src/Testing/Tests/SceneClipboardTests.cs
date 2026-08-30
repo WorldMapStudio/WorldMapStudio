@@ -39,24 +39,28 @@ public static class SceneClipboardTests
         Assert.IsFalse(ReferenceEquals(entity.Component<MarkerComponent>(), cloneMarker));
     }
 
-    [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
-    public static void Clone_gives_a_drawing_target_its_own_pixel_buffer()
+    [EditorTest(Category = "Clipboard", Thread = TestThread.Main)]
+    public static void Clone_of_an_image_placement_shares_the_bound_image()
     {
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_clipboard_image_clone_test__" });
+        var image = new PaintImage { RecordId = 1, Name = "Image 1" };
+        context.Catalog.Add(image);
+
         var entity = new SceneEntity();
-        var target = new DrawingTargetComponent();
+        var target = new ImageComponent(context.Images) { ImageId = image.RecordId };
         entity.AddComponent(target);
-        target.Paint(Vector3.Zero, 100.0f, 1.0f, erase: false);
 
         SceneEntity clone = entity.Clone();
-        var cloneTarget = clone.Component<DrawingTargetComponent>()!;
-        byte[] clonedPixels = cloneTarget.CopyPixels();
+        var cloneTarget = clone.Component<ImageComponent>()!;
 
-        // Mutating the original after cloning must not leak into the clone's buffer.
-        target.Paint(new Vector3(20.0f, 0.0f, 20.0f), 5.0f, 1.0f, erase: false);
+        Assert.AreEqual(target.ImageId, cloneTarget.ImageId);
+        Assert.IsTrue(ReferenceEquals(target.Image, cloneTarget.Image),
+            "cloning a placement should share the bound image, like ProceduralComponent.Clone() shares its model, not fork the pixels");
 
-        Assert.IsTrue(clonedPixels.SequenceEqual(cloneTarget.CopyPixels()),
-            "the clone's pixel buffer must not be affected by edits to the original made after cloning");
-        Assert.IsFalse(target.CopyPixels().SequenceEqual(clonedPixels), "sanity: the original actually changed");
+        // Painting through either placement mutates the one shared image.
+        target.Paint(Vector3.Zero, 100.0f, 1.0f, erase: false);
+        Assert.IsTrue(cloneTarget.Image!.Pixels.ToArray().Any(pixel => pixel > 0),
+            "a paint stroke on one placement should be visible through the other, since they share the same image");
     }
 
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]

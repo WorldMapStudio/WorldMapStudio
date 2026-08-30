@@ -9,7 +9,8 @@ using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
-/// <summary>Projects a circular brush onto the selected entity's <see cref="DrawingTargetComponent"/>.</summary>
+/// <summary>Projects a circular brush onto the selected entity's bound <see cref="PaintImage"/>, via
+/// its <see cref="ImageComponent"/> placement.</summary>
 public sealed class PaintTool : ITool
 {
     private readonly SelectionSystem _selection;
@@ -21,7 +22,8 @@ public sealed class PaintTool : ITool
     private float _opacity = 0.35f;
     private bool _erase;
     private bool _painting;
-    private DrawingTargetComponent? _strokeTarget;
+    private ImageComponent? _strokeTarget;
+    private PaintImage? _strokeImage;
     private byte[]? _strokeBefore;
 
     public PaintTool(ToolContext context)
@@ -48,12 +50,12 @@ public sealed class PaintTool : ITool
 
         ImGui.Checkbox("Erase", ref _erase);
         ImGui.SameLine();
-        ImGui.TextDisabled(ActiveTarget()?.Owner?.DisplayName ?? "No drawing target selected");
+        ImGui.TextDisabled(ActiveTarget()?.Owner?.DisplayName ?? "No image selected");
     }
 
     public void UpdateViewport(in ViewportContext context)
     {
-        DrawingTargetComponent? target = ActiveTarget();
+        ImageComponent? target = ActiveTarget();
         if (target == null || context.CameraFlying)
         {
             FinishStroke(record: false);
@@ -68,11 +70,12 @@ public sealed class PaintTool : ITool
             DrawBrush(target, local, context.Camera, context.ImageMin);
         }
 
-        if (!_painting && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        if (!_painting && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && target.Image is { } image)
         {
             _painting = true;
             _strokeTarget = target;
-            _strokeBefore = target.CopyPixels();
+            _strokeImage = image;
+            _strokeBefore = image.CopyPixels();
         }
 
         if (_painting)
@@ -95,10 +98,10 @@ public sealed class PaintTool : ITool
         FinishStroke(record: true);
     }
 
-    private DrawingTargetComponent? ActiveTarget() =>
+    private ImageComponent? ActiveTarget() =>
         _selection.Selected.OfType<SceneEntity>()
             .Where(entity => _scene.Contains(entity))
-            .Select(entity => entity.Component<DrawingTargetComponent>())
+            .Select(entity => entity.Component<ImageComponent>())
             .FirstOrDefault(component => component != null);
 
     private void FinishStroke(bool record)
@@ -109,24 +112,31 @@ public sealed class PaintTool : ITool
         }
 
         _painting = false;
-        DrawingTargetComponent? target = _strokeTarget;
+        ImageComponent? target = _strokeTarget;
+        PaintImage? image = _strokeImage;
         byte[]? before = _strokeBefore;
         _strokeTarget = null;
+        _strokeImage = null;
         _strokeBefore = null;
 
-        if (!record || target == null || before == null)
+        if (!record || target == null || image == null || before == null)
         {
             return;
         }
 
-        byte[] after = target.CopyPixels();
+        byte[] after = image.CopyPixels();
         if (!before.SequenceEqual(after))
         {
-            _sessions.Record(new SetDrawingTargetPixelsCommand(target, before, after));
+            _sessions.Record(new SetImageContentCommand(
+                image,
+                image.Width, image.Height, before,
+                image.Width, image.Height, after,
+                target.AffectedEntities,
+                $"Paint {image.Name}"));
         }
     }
 
-    private bool TryHit(DrawingTargetComponent target, in ViewportContext context, out GVector3 local)
+    private bool TryHit(ImageComponent target, in ViewportContext context, out GVector3 local)
     {
         NVector2 mouse = ImGui.GetMousePos();
         GVector2 viewport = new(mouse.X - context.ImageMin.X, mouse.Y - context.ImageMin.Y);
@@ -147,7 +157,7 @@ public sealed class PaintTool : ITool
         return TryHitFallbackPlane(target, rayOrigin, rayDir, out local);
     }
 
-    private bool TryHitTerrain(DrawingTargetComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    private bool TryHitTerrain(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
     {
         local = default;
         if (!_terrain.TryHit(rayOrigin, rayDir, out GVector3 world))
@@ -165,7 +175,7 @@ public sealed class PaintTool : ITool
         return true;
     }
 
-    private static bool TryHitFallbackPlane(DrawingTargetComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    private static bool TryHitFallbackPlane(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
     {
         if (Mathf.Abs(rayDir.Y) < 1e-6f)
         {
@@ -184,17 +194,17 @@ public sealed class PaintTool : ITool
         return TargetContains(target, local);
     }
 
-    private static bool TargetContains(DrawingTargetComponent target, GVector3 local) =>
+    private static bool TargetContains(ImageComponent target, GVector3 local) =>
         Mathf.Abs(local.X) <= target.WorldSizeX * 0.5f &&
         Mathf.Abs(local.Z) <= target.WorldSizeZ * 0.5f;
 
-    private GVector3 TerrainPoint(DrawingTargetComponent target, GVector3 local)
+    private GVector3 TerrainPoint(ImageComponent target, GVector3 local)
     {
         GVector3 world = target.Owner!.Transform * new GVector3(local.X, 0.0f, local.Z);
         return _terrain.DropToHeight(world);
     }
 
-    private void DrawTargetOutline(DrawingTargetComponent target, Camera3D camera, NVector2 imageMin)
+    private void DrawTargetOutline(ImageComponent target, Camera3D camera, NVector2 imageMin)
     {
         GVector3 half = new(target.WorldSizeX * 0.5f, 0.0f, target.WorldSizeZ * 0.5f);
         GVector3[] local =
@@ -222,7 +232,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private void DrawBrush(DrawingTargetComponent target, GVector3 local, Camera3D camera, NVector2 imageMin)
+    private void DrawBrush(ImageComponent target, GVector3 local, Camera3D camera, NVector2 imageMin)
     {
         const int Segments = 48;
 

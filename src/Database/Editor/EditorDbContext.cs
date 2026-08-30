@@ -40,6 +40,8 @@ public sealed class EditorDbContext : DbContext
 
     public DbSet<ProceduralModelRecord> ProceduralModels => Set<ProceduralModelRecord>();
 
+    public DbSet<PaintImageRecord> Images => Set<PaintImageRecord>();
+
     public DbSet<PrefabRecord> Prefabs => Set<PrefabRecord>();
 
     public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
@@ -108,6 +110,15 @@ public sealed class EditorDbContext : DbContext
         model.Entity<ProceduralModelRecord>(entity =>
         {
             entity.ToTable("procedural_models");
+            entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+
+        model.Entity<PaintImageRecord>(entity =>
+        {
+            entity.ToTable("images");
             entity.HasKey(record => record.Id);
 
             // The editor assigns catalog ids so entities can reference each other before a commit.
