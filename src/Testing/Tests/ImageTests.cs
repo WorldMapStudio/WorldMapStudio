@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
@@ -371,6 +372,66 @@ public static class ImageTests
 
         image.EvictChunk(coord);
         Assert.IsFalse(image.IsResident(coord), "now clean, eviction should succeed");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Evicting_a_chunk_does_not_mark_it_for_deletion()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]);
+
+        var coord = new ImageChunkCoord(0, 0);
+        image.EvictChunk(coord);
+
+        Assert.IsFalse(image.IsResident(coord));
+        Assert.IsTrue(image.IsStored(coord), "eviction must not make Stage think this chunk's content is gone");
+        Assert.IsFalse(image.RemovedSincePersist.Contains(coord));
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Erasing_a_chunk_back_to_all_zero_prunes_it_and_marks_it_removed()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        var fullyPainted = new byte[16 * 16];
+        Array.Fill(fullyPainted, (byte)255);
+        image.LoadChunks([(new ImageChunkCoord(0, 0), fullyPainted)]);
+
+        var coord = new ImageChunkCoord(0, 0);
+        Assert.IsTrue(image.IsResident(coord));
+        Assert.IsTrue(image.IsStored(coord));
+
+        // A radius far larger than the canvas guarantees ~full weight everywhere in the chunk, so a
+        // single erase pass reduces every pixel to zero.
+        bool changed = image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 10.0f, 10.0f, 1.0f, erase: true);
+
+        Assert.IsTrue(changed);
+        Assert.IsFalse(image.IsResident(coord), "a chunk erased back to all-zero should be pruned, not kept resident-but-empty");
+        Assert.IsTrue(image.RemovedSincePersist.Contains(coord));
+        Assert.IsFalse(image.IsStored(coord), "IsStored should reflect the pending removal even before commit");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Committing_after_an_eviction_keeps_the_evicted_chunk_in_the_manifest()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadChunks(
+        [
+            (new ImageChunkCoord(0, 0), new byte[16 * 16]),
+            (new ImageChunkCoord(1, 1), new byte[16 * 16]),
+        ]);
+
+        image.EvictChunk(new ImageChunkCoord(1, 1)); // now stored-but-not-resident
+
+        // Simulate a commit staging only what is currently resident (chunk (1,1) is not, having just
+        // been evicted) — the bug this guards against overwrote the manifest with exactly this set.
+        var current = new List<ImageChunkCoord> { new(0, 0) };
+        image.CommitChunkPersistence(current, deleted: []);
+
+        Assert.IsTrue(image.IsStored(new ImageChunkCoord(1, 1)), "an evicted chunk must stay in the manifest across an unrelated commit");
+        Assert.IsFalse(image.IsResident(new ImageChunkCoord(1, 1)));
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]

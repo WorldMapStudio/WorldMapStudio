@@ -46,6 +46,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     // update" from "gone since last commit, needs a delete" without a synchronous read of its own.
     private readonly HashSet<ImageChunkCoord> _persistedChunkCoords = [];
 
+    // Coordinates an edit has explicitly emptied out (erased to all-zero, or dropped by a canvas
+    // resize/clear) since the last commit, kept separate from "not currently resident" on purpose:
+    // a chunk merely evicted by ImageResidencySystem is not gone, just not in memory right now, and
+    // must never cause Stage to delete its row. Only a coordinate in this set does.
+    private readonly HashSet<ImageChunkCoord> _removedSincePersist = [];
+
     public string Name
     {
         get => _name;
@@ -147,6 +153,29 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _persistedChunkCoords.UnionWith(coords);
     }
 
+    /// <summary>Coordinates explicitly emptied out since the last commit — see the field doc. What
+    /// <see cref="PaintImageFactory.Stage"/> deletes rows for, instead of inferring deletions from
+    /// "not currently resident" (which eviction would also match).</summary>
+    internal IReadOnlyCollection<ImageChunkCoord> RemovedSincePersist => _removedSincePersist;
+
+    /// <summary>Reconciles bookkeeping after a successful commit: <paramref name="upserted"/> joins the
+    /// manifest and is marked clean again (free for <see cref="EvictChunk"/> to drop once nothing needs
+    /// it resident); <paramref name="deleted"/> leaves both the manifest and
+    /// <see cref="RemovedSincePersist"/>. A coordinate that is neither — a stored-but-not-resident
+    /// chunk this commit never touched — is left exactly as it was.</summary>
+    internal void CommitChunkPersistence(IReadOnlyCollection<ImageChunkCoord> upserted, IReadOnlyCollection<ImageChunkCoord> deleted)
+    {
+        _persistedChunkCoords.ExceptWith(deleted);
+        _persistedChunkCoords.UnionWith(upserted);
+
+        foreach (ImageChunkCoord coord in deleted)
+        {
+            _removedSincePersist.Remove(coord);
+        }
+
+        MarkChunksClean(upserted);
+    }
+
     /// <summary>Raw bytes for one currently-resident chunk, or null if that coordinate is absent
     /// (all-zero). For storage staging — everything else goes through <see cref="Paint"/>,
     /// <see cref="CopyPixels"/>, or <see cref="CreateSampler"/>.</summary>
@@ -180,9 +209,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         SetPersistedChunkCoords(coords);
     }
 
-    /// <summary>Whether a coordinate has a row in storage — resident or not. See the four-state table
-    /// in <c>.godot/ImageChunkPlan.md</c>.</summary>
-    internal bool IsStored(ImageChunkCoord coord) => _persistedChunkCoords.Contains(coord);
+    /// <summary>Whether a coordinate's content genuinely exists in storage as far as this session
+    /// currently believes — resident or not. False for a coordinate this session has explicitly
+    /// emptied out (see <see cref="RemovedSincePersist"/>) even before that reaches storage, so neither
+    /// <see cref="Paint"/> nor <see cref="ImageResidencySystem"/> treat an uncommitted erase as
+    /// something still worth reloading. See the four-state table in <c>.godot/ImageChunkPlan.md</c>.</summary>
+    internal bool IsStored(ImageChunkCoord coord) => _persistedChunkCoords.Contains(coord) && !_removedSincePersist.Contains(coord);
 
     internal bool IsResident(ImageChunkCoord coord) => _chunks.ContainsKey(coord);
 
@@ -195,13 +227,16 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     /// <summary>Merges freshly loaded chunk bytes into residency as clean (matches storage). A
     /// coordinate that is already resident is left alone — it raced against a paint or an eviction
-    /// since the load was requested, and whatever is live now is more current than what this load saw.</summary>
+    /// since the load was requested, and whatever is live now is more current than what this load saw.
+    /// Likewise skipped if the coordinate has since been explicitly emptied out and not yet committed
+    /// (<see cref="RemovedSincePersist"/>): the load was requesting what storage held before that
+    /// erase, and applying it now would silently resurrect content the user just removed.</summary>
     internal void PublishLoadedChunks(IEnumerable<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
     {
         bool any = false;
         foreach ((ImageChunkCoord coord, byte[] pixels) in chunks)
         {
-            if (_chunks.ContainsKey(coord))
+            if (_chunks.ContainsKey(coord) || _removedSincePersist.Contains(coord))
             {
                 continue;
             }
@@ -297,10 +332,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             if (pixels == null)
             {
                 any |= _chunks.Remove(coord);
+                _removedSincePersist.Add(coord);
             }
             else
             {
                 _chunks[coord] = new ImageChunk((byte[])pixels.Clone()) { Dirty = true };
+                _removedSincePersist.Remove(coord);
                 any = true;
             }
         }
@@ -319,6 +356,19 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         }
 
         return a.AsSpan().SequenceEqual(b);
+    }
+
+    private static bool IsAllZero(byte[] pixels)
+    {
+        foreach (byte pixel in pixels)
+        {
+            if (pixel != 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public byte[] CopyPixels()
@@ -471,10 +521,22 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             for (int cx = 0; cx < _chunksX; cx++)
             {
+                var coord = new ImageChunkCoord(cx, cy);
                 if (ExtractChunk(dense, cx, cy) is { } pixels)
                 {
-                    chunks[new ImageChunkCoord(cx, cy)] = new ImageChunk(pixels) { Dirty = true };
+                    chunks[coord] = new ImageChunk(pixels) { Dirty = true };
+                    _removedSincePersist.Remove(coord);
                 }
+            }
+        }
+
+        // A chunk resident before the rebuild but not after — including one from a since-shrunk grid,
+        // or one the new content simply no longer touches — is explicitly gone, not just re-chunked.
+        foreach (ImageChunkCoord coord in _chunks.Keys)
+        {
+            if (!chunks.ContainsKey(coord))
+            {
+                _removedSincePersist.Add(coord);
             }
         }
 
@@ -609,11 +671,23 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             if (resident)
             {
-                existing!.Dirty = true;
+                // An erase can bring a chunk back to all-zero, and the invariant is that an all-zero
+                // chunk simply does not exist — pruning it here (rather than waiting for a commit to
+                // notice) keeps that true at every moment, not just eventually.
+                if (IsAllZero(pixels))
+                {
+                    _chunks.Remove(coord);
+                    _removedSincePersist.Add(coord);
+                }
+                else
+                {
+                    existing!.Dirty = true;
+                }
             }
             else
             {
                 _chunks[coord] = new ImageChunk(pixels) { Dirty = true };
+                _removedSincePersist.Remove(coord);
             }
         }
 

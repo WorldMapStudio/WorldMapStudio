@@ -73,12 +73,15 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         var current = new HashSet<ImageChunkCoord>(image.ChunkCoords);
         var previouslyPersisted = new HashSet<ImageChunkCoord>(image.PersistedChunkCoords);
 
-        foreach (ImageChunkCoord coord in previouslyPersisted)
+        // Deletes are driven by RemovedSincePersist — coordinates an edit explicitly emptied out —
+        // never by "absent from ChunkCoords" on its own: a chunk ImageResidencySystem merely evicted
+        // is also absent from ChunkCoords, and deleting its (perfectly intact) row would be data loss
+        // the user never asked for. Intersected with previouslyPersisted so a removal that was never
+        // actually saved does not stage a pointless delete.
+        var toDelete = new HashSet<ImageChunkCoord>(image.RemovedSincePersist.Where(previouslyPersisted.Contains));
+        foreach (ImageChunkCoord coord in toDelete)
         {
-            if (!current.Contains(coord))
-            {
-                db.ImageChunks.Remove(new ImageChunkRecord { ImageId = imageId, ChunkX = coord.X, ChunkY = coord.Y });
-            }
+            db.ImageChunks.Remove(new ImageChunkRecord { ImageId = imageId, ChunkX = coord.X, ChunkY = coord.Y });
         }
 
         foreach (ImageChunkCoord coord in current)
@@ -108,12 +111,13 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         return () =>
         {
             image.IsSaved = true;
-            image.SetPersistedChunkCoords(current);
 
-            // Every chunk just staged now matches storage — clears the way for ImageResidencySystem
-            // to evict it again once nothing needs it resident. Without this, a chunk that was ever
-            // painted would stay dirty (and so pinned in memory) forever, even after being saved.
-            image.MarkChunksClean(current);
+            // Reconciles the manifest incrementally (current joins it, toDelete leaves it) rather than
+            // overwriting it with `current` — a stored-but-not-resident chunk this commit never
+            // touched (because it was evicted, or simply because this image's canvas is too large to
+            // ever be fully resident) must stay recorded as persisted, or the next commit would try to
+            // INSERT a row that already exists.
+            image.CommitChunkPersistence(current, toDelete);
         };
     }
 
