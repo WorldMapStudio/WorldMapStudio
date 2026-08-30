@@ -42,6 +42,8 @@ public sealed class EditorDbContext : DbContext
 
     public DbSet<PaintImageRecord> Images => Set<PaintImageRecord>();
 
+    public DbSet<ImageChunkRecord> ImageChunks => Set<ImageChunkRecord>();
+
     public DbSet<ImageDisplayLayerRecord> ImageDisplayLayers => Set<ImageDisplayLayerRecord>();
 
     public DbSet<PrefabRecord> Prefabs => Set<PrefabRecord>();
@@ -125,6 +127,12 @@ public sealed class EditorDbContext : DbContext
 
             // The editor assigns catalog ids so entities can reference each other before a commit.
             entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+
+        model.Entity<ImageChunkRecord>(entity =>
+        {
+            entity.ToTable("image_chunks");
+            entity.HasKey(record => new { record.ImageId, record.ChunkX, record.ChunkY });
         });
 
         model.Entity<ImageDisplayLayerRecord>(entity =>

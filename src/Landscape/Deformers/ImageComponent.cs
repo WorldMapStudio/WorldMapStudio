@@ -236,6 +236,11 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         int resolution = channel.Resolution;
         Transform3D inverse = Entity.Transform.AffineInverse();
 
+        // Snapshotted once per rasterize rather than sampled straight off the image: this runs on a
+        // landscape build worker while the image may be being painted concurrently on the main
+        // thread — see ImageChunkTable for why a snapshot is what makes that safe.
+        ImageSampler sampler = image.CreateSampler();
+
         for (int y = 0; y < resolution; y++)
         {
             for (int x = 0; x < resolution; x++)
@@ -246,7 +251,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
                     continue;
                 }
 
-                float value = image.Sample(u, v) * Strength;
+                float value = sampler.Sample(u, v) * Strength;
                 if (value <= 0.0f)
                 {
                     continue;

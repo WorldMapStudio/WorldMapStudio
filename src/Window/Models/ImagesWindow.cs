@@ -98,6 +98,7 @@ public sealed class ImagesWindow : Window
     private void Duplicate(PaintImage image)
     {
         var clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Images.Select(m => m.Name)) };
+        clone.ConfigureNew(image.Width, image.Height, image.ChunkSize);
         clone.LoadPixels(image.Width, image.Height, image.CopyPixels());
 
         // Identified before it is added, so a reference created in the same session can target it.
