@@ -70,6 +70,7 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
     protected override LandscapeMaterial ToEntity(LandscapeMaterialRecord record) => new()
     {
         RecordId = record.Id,
+        Map = new MapId(record.MapId),
         Name = record.Name,
         TexturePath = record.TexturePath,
         AlphaFunction = record.AlphaFunction,
@@ -82,6 +83,7 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
 
     protected override void WriteRecord(LandscapeMaterial entity, LandscapeMaterialRecord record)
     {
+        record.MapId = entity.Map.Value;
         record.Name = entity.Name;
         record.TexturePath = entity.TexturePath;
         record.AlphaFunction = entity.AlphaFunction;

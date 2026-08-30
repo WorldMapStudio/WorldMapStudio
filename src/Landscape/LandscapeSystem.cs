@@ -127,10 +127,10 @@ public sealed partial class LandscapeSystem : ISubsystemHost
     private MapId _catalogMap = new(-1);
 
     /// <summary>
-    /// The loaded catalog, as the resolver sees it. Channels and layers are scoped to the open map;
-    /// materials are global. Rebuilt only when entities are added or removed, functions change, or the
-    /// open map changes — edits to an entity's fields show through the references, and the window
-    /// reads this several times a frame.
+    /// The loaded catalog, as the resolver sees it. Channels, layers and materials are all scoped to
+    /// the open map. Rebuilt only when entities are added or removed, functions change, or the open
+    /// map changes — edits to an entity's fields show through the references, and the window reads
+    /// this several times a frame.
     /// </summary>
     public LandscapeCatalog Catalog
     {
@@ -149,7 +149,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost
             _catalog = new LandscapeCatalog(
                 _context.Catalog.OfType<LandscapeChannel>().Where(channel => channel.Map.Equals(map)).ToList(),
                 _context.Catalog.OfType<LandscapeLayer>().Where(layer => layer.Map.Equals(map)).ToList(),
-                _context.Catalog.OfType<LandscapeMaterial>().ToList(),
+                _context.Catalog.OfType<LandscapeMaterial>().Where(material => material.Map.Equals(map)).ToList(),
                 Functions);
             return _catalog;
         }

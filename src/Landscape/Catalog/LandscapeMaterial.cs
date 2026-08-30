@@ -24,6 +24,9 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
 {
+    /// <summary>The map this material belongs to.</summary>
+    public MapId Map { get; set; } = new(0);
+
     public string Name { get; set; } = "Material";
 
     /// <summary>Resource path of the texture image this material paints. Empty for a height-only material.</summary>

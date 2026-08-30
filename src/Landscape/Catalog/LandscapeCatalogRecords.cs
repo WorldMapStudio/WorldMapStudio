@@ -35,6 +35,8 @@ public sealed class LandscapeMaterialRecord : IKeyedRecord
 {
     public int Id { get; set; }
 
+    public int MapId { get; set; }
+
     public string Name { get; set; } = "Material";
 
     public string TexturePath { get; set; } = "";
