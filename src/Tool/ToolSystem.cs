@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 /// registers its factories here and drives switching; the viewport reads <see cref="Active"/> each
 /// frame and delegates interaction to it.
 /// </summary>
-public sealed class ToolSystem
+public sealed class ToolSystem : IWorldParticipant
 {
     private readonly List<IToolFactory> _factories = [];
 
@@ -51,4 +51,16 @@ public sealed class ToolSystem
         Active = factory.Create(Context);
         Active.Activate();
     }
+
+    /// <summary>Recreates the active tool from the same factory, so a reload doesn't leave a tool
+    /// holding references (a paint stroke's target image, say) into a world that just got dropped.
+    /// A fresh instance from the same factory is simpler and more robust than auditing every tool's
+    /// own fields for what to clear.</summary>
+    void IWorldParticipant.UnloadWorld()
+    {
+        Active?.Deactivate();
+        Active = null;
+    }
+
+    void IWorldParticipant.LoadWorld() => EnsureActive();
 }

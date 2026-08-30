@@ -56,6 +56,28 @@ public sealed class ImageResidencySystem
     /// why this eventually wants to be a project setting instead of a constant.</summary>
     public long BudgetBytes { get; set; } = 512L * 1024 * 1024;
 
+    /// <summary>Whether a chunk load is in flight — <see cref="ImageSystem"/> forwards this as its own
+    /// <see cref="IWorldParticipant.IsBusy"/>, gating a reload's unload step the same way
+    /// <see cref="StreamingSystem"/> gates on its own pending scan.</summary>
+    public bool IsBusy => _pendingLoad != null;
+
+    /// <summary>Observes and applies a landed chunk load without starting a new one — see
+    /// <see cref="StreamingSystem.PumpCompletion"/> for why a <see cref="WorldReload"/> needs to call
+    /// this itself instead of relying on <see cref="Update"/>, which does not run once it owns the
+    /// scene.</summary>
+    public void PumpCompletion() => ApplyCompletedLoad();
+
+    /// <summary>Forgets the recency bookkeeping and drops the pending load reference. The resident
+    /// pixel data itself lives on the <see cref="PaintImage"/> catalog entities, which
+    /// <see cref="ImageSystem"/> unloads separately.</summary>
+    public void UnloadWorld()
+    {
+        _pendingLoad = null;
+        _lastWanted.Clear();
+        _lastScanVersion = -1;
+        _generation = 0;
+    }
+
     public void Update()
     {
         ApplyCompletedLoad();

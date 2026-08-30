@@ -5,7 +5,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed partial class ProceduralSystem : ISubsystemHost
+public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
 {
     // Bounds the built-model cache the same way MeshMaterialSystem bounds its built-material cache:
     // dragging a shared model's vertices bumps its Revision every frame, so without an LRU cap a long
@@ -54,6 +54,26 @@ public sealed partial class ProceduralSystem : ISubsystemHost
     public void LoadCatalog()
     {
         Context.Database.LoadCatalog<ProceduralModel>();
+        Version++;
+    }
+
+    float IWorldParticipant.LoadPriority => 3f;
+
+    string? IWorldParticipant.LoadStep => "Loading procedural models";
+
+    void IWorldParticipant.LoadWorld() => LoadCatalog();
+
+    void IWorldParticipant.UnloadWorld()
+    {
+        Context.Database.UnloadCatalog<ProceduralModel>();
+
+        lock (_buildCacheOrder)
+        {
+            _buildCache.Clear();
+            _buildCacheOrder.Clear();
+        }
+
+        _lastUpdateTick = (-1, -1, -1);
         Version++;
     }
 

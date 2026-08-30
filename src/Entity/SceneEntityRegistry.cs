@@ -78,6 +78,22 @@ public sealed class SceneEntityRegistry
         Version++;
     }
 
+    /// <summary>Drops every loaded entity. Does not tear down viewport representations — that is the
+    /// viewport's own <see cref="IWorldParticipant.UnloadWorld"/>, since it is the one holding the
+    /// Godot nodes.</summary>
+    public void Clear()
+    {
+        if (_entities.Count == 0)
+        {
+            return;
+        }
+
+        _entities.Clear();
+        _peripheral.Clear();
+        _resident.Clear();
+        Version++;
+    }
+
     public bool Remove(SceneEntity entity)
     {
         if (!_entities.Remove(entity))

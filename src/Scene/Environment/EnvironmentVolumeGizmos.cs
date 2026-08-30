@@ -106,6 +106,10 @@ public sealed class EnvironmentVolumeGizmos
         },
     };
 
+    /// <summary>Frees every gizmo node. Called both when the toggle turns off and across a world
+    /// reload, since nothing else notices a component's owning entity vanished underneath it.</summary>
+    public void Unload() => ClearAll();
+
     private void ClearAll()
     {
         foreach (SceneComponent component in _gizmos.Keys.ToList())

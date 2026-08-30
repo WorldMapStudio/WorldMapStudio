@@ -36,9 +36,18 @@ public sealed partial class ScriptingSystem : ISubsystemHost
     /// endpoint. Deferred out of the constructor — like <see cref="DatabaseSystem.Startup"/> — so
     /// every module has already been constructed first, and so it runs alongside the rest of
     /// <c>Editor.Start()</c>'s startup work rather than the subsystem-construction phase.
+    ///
+    /// Idempotent: <see cref="Editor.Start"/> runs again every time a <see cref="WorldReload"/> hands
+    /// control back to the same <see cref="Editor"/> instance, and a second engine (or a second
+    /// attempt at the same HTTP port) is not what that should mean.
     /// </summary>
     public void Startup()
     {
+        if (Engine != null)
+        {
+            return;
+        }
+
         Engine = new ScriptEngineHost(Modules);
         _events = Modules.OfType<EventsScriptApi>().FirstOrDefault();
         ScriptTypeDeclarationWriter.Write(Modules);

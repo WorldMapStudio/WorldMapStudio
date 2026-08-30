@@ -24,7 +24,7 @@ public readonly record struct MeshMaterialIssue(MeshMaterialIssueSeverity Severi
 /// description turns into a Godot <see cref="Material"/>, cached by <see cref="MeshMaterial.Key"/> so a
 /// WMO with hundreds of batches sharing a handful of distinct materials builds each one once.
 /// </summary>
-public sealed partial class MeshMaterialSystem : ISubsystemHost
+public sealed partial class MeshMaterialSystem : ISubsystemHost, IWorldParticipant
 {
     // Bounds the built-material cache so a long asset-browsing session cannot grow it without limit
     // (see AssetSystem's own unbounded texture cache, flagged in WowModelsPlan.md, for the failure
@@ -83,6 +83,19 @@ public sealed partial class MeshMaterialSystem : ISubsystemHost
     public void LoadCatalog()
     {
         Context.Database.LoadCatalog<MeshMaterialPreset>();
+        Version++;
+    }
+
+    float IWorldParticipant.LoadPriority => 2f;
+
+    string? IWorldParticipant.LoadStep => "Loading mesh materials";
+
+    void IWorldParticipant.LoadWorld() => LoadCatalog();
+
+    void IWorldParticipant.UnloadWorld()
+    {
+        Context.Database.UnloadCatalog<MeshMaterialPreset>();
+        ClearBuildCache();
         Version++;
     }
 
