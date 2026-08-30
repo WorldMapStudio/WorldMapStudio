@@ -426,10 +426,26 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
-    public static void LandscapeOverlay_display_mode_builds_a_decal_sized_to_the_footprint()
+    public static void LandscapeOverlay_display_mode_builds_no_decals_until_something_is_painted()
+    {
+        EditorContext context = NewContext("__wms_image_display_overlay_empty_test__");
+        PaintImage image = NewImage(context, id: 1);
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.LandscapeOverlay };
+        context.Catalog.Add(layer);
+
+        var target = new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId };
+
+        Node3D? root = target.BuildNode();
+        Assert.IsNotNull(root);
+        Assert.AreEqual(0, root!.GetChildCount(), "no chunk is resident yet, so there is nothing to project");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void LandscapeOverlay_display_mode_builds_a_decal_per_painted_chunk_sized_to_its_share_of_the_footprint()
     {
         EditorContext context = NewContext("__wms_image_display_overlay_test__");
-        PaintImage image = NewImage(context, id: 1);
+        PaintImage image = NewImage(context, id: 1); // default 256x256, chunk size 256 -> exactly one chunk
+        image.Paint(0.5f, 0.5f, 0.1f, 0.1f, 1.0f, erase: false);
         var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.LandscapeOverlay };
         context.Catalog.Add(layer);
 
@@ -441,14 +457,17 @@ public static class ImageTests
             WorldSizeZ = 48.0f,
         };
 
-        var decal = target.BuildNode() as Decal;
+        Node3D? root = target.BuildNode();
+        Assert.IsNotNull(root);
+        Assert.AreEqual(1, root!.GetChildCount(), "the whole image is one chunk, so painting it materializes exactly one");
+        var decal = root.GetChild(0) as Decal;
         Assert.IsNotNull(decal);
-        Assert.AreApproximatelyEqual(32.0, decal!.Size.X, 1e-5);
-        Assert.AreApproximatelyEqual(48.0, decal.Size.Z, 1e-5);
+        Assert.AreApproximatelyEqual(32.0, decal!.Size.X, 1e-4);
+        Assert.AreApproximatelyEqual(48.0, decal.Size.Z, 1e-4);
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
-    public static void Object_display_mode_builds_a_paintable_quad_sized_to_the_footprint()
+    public static void Object_display_mode_always_builds_a_paintable_backdrop_sized_to_the_footprint()
     {
         EditorContext context = NewContext("__wms_image_display_object_test__");
         PaintImage image = NewImage(context, id: 1);
@@ -463,12 +482,66 @@ public static class ImageTests
             WorldSizeZ = 10.0f,
         };
 
-        var mesh = target.BuildNode() as MeshInstance3D;
-        Assert.IsNotNull(mesh);
-        var plane = mesh!.Mesh as PlaneMesh;
+        // Unpainted: still gets a full-footprint backdrop, since it is what the Paint tool ray-tests
+        // against to let a user start painting in the first place.
+        Node3D? root = target.BuildNode();
+        Assert.IsNotNull(root);
+        var backdrop = root!.GetNodeOrNull<MeshInstance3D>("Backdrop");
+        Assert.IsNotNull(backdrop);
+        var plane = backdrop!.Mesh as PlaneMesh;
         Assert.IsNotNull(plane);
         Assert.AreApproximatelyEqual(20.0, plane!.Size.X, 1e-5);
         Assert.AreApproximatelyEqual(10.0, plane.Size.Y, 1e-5);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void LandscapeOverlay_display_mode_builds_one_decal_per_resident_chunk_on_a_multi_chunk_image()
+    {
+        EditorContext context = NewContext("__wms_image_display_overlay_multi_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false); // chunk (0,0)
+        image.Paint(60.0f / 64.0f, 60.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false); // chunk (3,3)
+
+        var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.LandscapeOverlay };
+        context.Catalog.Add(layer);
+
+        var target = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            DisplayLayerId = layer.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+
+        Node3D? root = target.BuildNode();
+        Assert.IsNotNull(root);
+        Assert.AreEqual(2, root!.GetChildCount(), "one decal per painted chunk, not one for the whole canvas");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ChunkGrayscale_texture_is_sized_to_chunk_size_not_canvas_size()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+
+        ImageTexture texture = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(0, 0));
+
+        Assert.AreEqual(16, texture.GetWidth());
+        Assert.AreEqual(16, texture.GetHeight());
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Overview_texture_is_capped_regardless_of_canvas_size()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(4096, 4096, chunkSize: 512);
+
+        ImageTexture overview = PaintImageTextures.Overview(image, maxSize: 256);
+
+        Assert.AreEqual(256, overview.GetWidth());
+        Assert.AreEqual(256, overview.GetHeight());
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]

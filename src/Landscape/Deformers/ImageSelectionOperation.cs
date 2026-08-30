@@ -164,8 +164,7 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
             return _previewTexture;
         }
 
-        Image raw = Image.CreateFromData(image.Width, image.Height, false, Image.Format.R8, image.CopyPixels());
-        _previewTexture = ImageTexture.CreateFromImage(raw);
+        _previewTexture = PaintImageTextures.Overview(image);
         _cachedId = image.RecordId;
         _cachedRevision = image.ViewRevision;
         return _previewTexture;
