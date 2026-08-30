@@ -16,6 +16,8 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 {
     private const float BoundsHeight = 2.0f;
 
+    private static Shader? _objectBackdropShader;
+
     private readonly ImageSystem _system;
     private int? _imageId;
     private int? _displayLayerId;
@@ -37,6 +39,14 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     // and costing one per chunk in the entire image, every frame.
     private Node3D? _root;
     private readonly Dictionary<ImageChunkCoord, ChunkNode> _chunkNodes = [];
+
+    // Object display mode's backdrop cuts a hole for every chunk quad resident over it (see
+    // BuildObjectMesh) instead of racing that quad for the same depth — this is where the "which
+    // cells are covered" data for that cutout lives. One texel per chunk-grid cell, not per canvas
+    // pixel, so it stays tiny regardless of how large the bound image is. Null whenever the
+    // representation isn't Object mode (BuildNode never creates it for LandscapeOverlay).
+    private Image? _objectMaskImage;
+    private ImageTexture? _objectMaskTexture;
 
     private sealed record ChunkNode(Node3D Node, ImageTexture Texture)
     {
@@ -205,6 +215,8 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         _representedDisplayLayerRevision = DisplayLayer?.Revision ?? -1;
         _chunkNodes.Clear();
         _root = null;
+        _objectMaskImage = null;
+        _objectMaskTexture = null;
 
         if (DisplayLayer is not { } layer || Image is not { } image || layer.DisplayMode == ImageDisplayMode.None)
         {
@@ -282,6 +294,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         foreach (ImageChunkCoord coord in gone ?? [])
         {
             _chunkNodes.Remove(coord);
+            SetMaskResident(coord, false);
         }
     }
 
@@ -316,7 +329,23 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
         root.AddChild(built.Node);
         _chunkNodes[coord] = built;
+        SetMaskResident(coord, true);
         return built;
+    }
+
+    /// <summary>Marks one chunk-grid cell resident (covered by a chunk quad, so the backdrop must cut
+    /// a hole there) or not, in the mask <see cref="BuildObjectMesh"/>'s backdrop reads to decide where
+    /// to draw itself. A no-op outside Object display mode, where <see cref="_objectMaskImage"/> is
+    /// never created.</summary>
+    private void SetMaskResident(ImageChunkCoord coord, bool resident)
+    {
+        if (_objectMaskImage is not { } mask || _objectMaskTexture is not { } texture)
+        {
+            return;
+        }
+
+        mask.SetPixel(coord.X, coord.Y, resident ? Colors.White : Colors.Black);
+        texture.Update(mask);
     }
 
     /// <summary>One decal per resident chunk, each ramping from <see cref="ImageDisplayLayer.BaseColor"/>
@@ -373,19 +402,32 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     /// showing that chunk's own grayscale texture. The backdrop is what the Paint tool targets directly
     /// (via <see cref="SceneEntity.TryPickGeometry"/>) instead of projecting through the terrain when
     /// this placement's display mode is <see cref="ImageDisplayMode.Object"/>: it exists even before
-    /// anything has been painted, so there is always something to click and start painting on.</summary>
+    /// anything has been painted, so there is always something to click and start painting on.
+    ///
+    /// Every resident chunk quad sits exactly coplanar with this backdrop, so rather than have the two
+    /// race for the same depth (see <see cref="ObjectBackdropShaderCode"/> for what that looked like —
+    /// a world-space gap that flickered at distance, then a disabled depth test that drew over models
+    /// actually in front of it, then a clip-space depth bias that wasn't a coplanar tie-break at all so
+    /// much as an ever-so-slightly-different depth, which is still exactly what z-fighting is), the
+    /// backdrop's own shader cuts a hole for every resident coordinate: there is only ever one surface
+    /// drawn at a given point on the canvas, so there is nothing left to fight.</summary>
     private Node3D BuildObjectMesh(PaintImage image)
     {
         var root = new Node3D { Name = "ImageObject" };
+
+        // Fully qualified: within this class, the bare name "Image" resolves to the Image property
+        // (this placement's bound PaintImage) rather than Godot's Image type — see the class doc comment.
+        _objectMaskImage = Godot.Image.CreateEmpty(image.ChunksX, image.ChunksY, false, Godot.Image.Format.R8);
+        _objectMaskTexture = ImageTexture.CreateFromImage(_objectMaskImage);
+        var backdropMaterial = new ShaderMaterial { Shader = ObjectBackdropShader() };
+        backdropMaterial.SetShaderParameter("resident_mask", _objectMaskTexture);
+        backdropMaterial.SetShaderParameter("world_size", new Vector2(WorldSizeX, WorldSizeZ));
+
         root.AddChild(new MeshInstance3D
         {
             Name = "Backdrop",
             Mesh = new PlaneMesh { Size = new Vector2(WorldSizeX, WorldSizeZ) },
-            MaterialOverride = new StandardMaterial3D
-            {
-                AlbedoColor = Colors.Black,
-                ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-            },
+            MaterialOverride = backdropMaterial,
         });
 
         foreach (ImageChunkCoord coord in image.ChunkCoords)
@@ -395,6 +437,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
                 root.AddChild(chunk.Node);
                 _chunkNodes[coord] = chunk;
                 chunk.Revision = image.ChunkRevision(coord);
+                SetMaskResident(coord, true);
             }
         }
 
@@ -412,7 +455,9 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         var mesh = new MeshInstance3D
         {
             Name = $"Chunk_{coord.X}_{coord.Y}",
-            // Exactly coplanar with the backdrop — see the material below for how that stays safe.
+            // Exactly coplanar with the backdrop, and safely so — the backdrop's own shader knows to
+            // leave a hole here (see BuildObjectMesh), so this is the only thing ever drawn at this
+            // point on the canvas, tested and written against the depth buffer completely normally.
             Position = new Vector3(placement.CenterX, 0.0f, placement.CenterZ),
             Mesh = new PlaneMesh { Size = new Vector2(placement.SizeX, placement.SizeZ) },
             MaterialOverride = new StandardMaterial3D
@@ -425,20 +470,40 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
                 // from the *opposite* edge of the same chunk — drawing a bright seam along every chunk
                 // boundary wherever the far side happened to be painted.
                 TextureRepeat = false,
-
-                // A tiny Y offset used to separate this from the backdrop instead, but any fixed world-
-                // unit gap is exactly as safe as the depth buffer's precision at the camera's current
-                // distance allows — which flickered badly beyond a few units, since the two are meant
-                // to sit at the same height and the "gap" was really asking floating-point precision to
-                // hold up at painting-editor view distances. Skipping the depth test and drawing after
-                // the backdrop (see RenderPriority) settles the ordering unconditionally instead.
-                NoDepthTest = true,
-                RenderPriority = 1,
             },
         };
 
         return new ChunkNode(mesh, texture);
     }
+
+    private static Shader ObjectBackdropShader() => _objectBackdropShader ??= new Shader { Code = ObjectBackdropShaderCode };
+
+    // One texel per chunk-grid cell (not per canvas pixel — see _objectMaskImage), sampled at a UV
+    // computed the same way TryLocalToUv computes one, rather than trusting PlaneMesh's own implicit
+    // UV to happen to agree with it: a mismatched V direction there would silently cut holes in the
+    // wrong place instead of the right one, which is a much worse failure mode to chase than this
+    // extra varying is worth avoiding.
+    private const string ObjectBackdropShaderCode = """
+shader_type spatial;
+render_mode unshaded, cull_back;
+
+uniform sampler2D resident_mask : hint_default_black, filter_nearest, repeat_disable;
+uniform vec2 world_size = vec2(1.0, 1.0);
+
+varying vec2 canvas_uv;
+
+void vertex() {
+    canvas_uv = (VERTEX.xz / world_size) + vec2(0.5);
+}
+
+void fragment() {
+    if (texture(resident_mask, canvas_uv).r > 0.5) {
+        discard;
+    }
+
+    ALBEDO = vec3(0.0);
+}
+""";
 
     private readonly record struct ChunkPlacement(float CenterX, float CenterZ, float SizeX, float SizeZ);
 
