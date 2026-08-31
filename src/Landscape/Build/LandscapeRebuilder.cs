@@ -207,13 +207,20 @@ public sealed class LandscapeRebuilder
         LandscapeBuildResult result,
         IReadOnlyDictionary<ChunkCoord, (ArrayMesh Mesh, ShaderMaterial Material)> visuals)
     {
+        // Built once rather than re-scanned per applied chunk: a coord's chunk may no longer resolve
+        // if streaming unloaded it while this was building, but that check does not need an O(loaded
+        // chunk count) scan for every one of the (possibly hundreds of) chunks being applied here —
+        // that made a large rebuild at a real view distance quadratic in the chunk count.
+        var loaded = new Dictionary<ChunkCoord, LandscapeChunk>();
+        foreach (LandscapeChunk candidate in _context.Scene.Entities.OfType<LandscapeChunk>())
+        {
+            loaded[candidate.Coord] = candidate;
+        }
+
         int applied = 0;
         foreach (KeyValuePair<ChunkCoord, LandscapeChunkOutput> built in result.Chunks)
         {
-            // Re-resolved each slice: streaming may have unloaded a chunk while this was building.
-            LandscapeChunk? chunk = _context.Scene.Entities
-                .OfType<LandscapeChunk>()
-                .FirstOrDefault(candidate => candidate.Coord == built.Key);
+            loaded.TryGetValue(built.Key, out LandscapeChunk? chunk);
 
             (ArrayMesh mesh, ShaderMaterial material) = visuals[built.Key];
             chunk?.Rebuild(built.Value, mesh, material);
