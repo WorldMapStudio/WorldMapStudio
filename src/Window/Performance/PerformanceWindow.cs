@@ -78,6 +78,7 @@ public sealed class PerformanceWindow : Window
     protected override void DrawContent()
     {
         ImGui.Text($"FPS: {Engine.GetFramesPerSecond():F1}");
+        DrawRenderStats();
         ImGui.Separator();
 
         DrawToolStatus();
@@ -88,6 +89,20 @@ public sealed class PerformanceWindow : Window
 
         DrawTraceControls();
         DrawTraceStatus();
+    }
+
+    // These come from Godot's own RenderingServer accounting, not a dotnet-trace capture — so unlike
+    // CPU sampling, they see cost that lands on the native rendering thread (e.g. draw submission for
+    // thousands of uninstanced MeshInstance3Ds) that a .NET-only trace is structurally blind to. The
+    // custom ImGui backend (ImGuiRenderer) issues its draws directly through RenderingDevice rather
+    // than through the RenderingServer instance pipeline these monitors track, so this is close to a
+    // clean read on the 3D scene's own submission cost, not the editor UI's.
+    private void DrawRenderStats()
+    {
+        double drawCalls = Performance.GetMonitor(Performance.Monitor.RenderTotalDrawCallsInFrame);
+        double objects = Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame);
+        double primitives = Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame);
+        ImGui.Text($"Draw calls: {drawCalls:F0}   Objects: {objects:F0}   Primitives: {primitives:F0}");
     }
 
     private void DrawToolStatus()
