@@ -105,7 +105,9 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
     /// <summary>Extension point for a format-specific plugin to draw extra inspector UI for this component.</summary>
     partial void DrawInspectorExtraHook(InspectorContext context);
 
-    private bool TryGetModel(out ModelAsset? model)
+    /// <summary>The model currently backing this renderer, if it has finished loading. Non-blocking:
+    /// schedules a background load and returns false when it hasn't (see <see cref="_pendingPath"/>).</summary>
+    public bool TryGetModel(out ModelAsset? model)
     {
         model = null;
         if (_modelPath.Length == 0)
