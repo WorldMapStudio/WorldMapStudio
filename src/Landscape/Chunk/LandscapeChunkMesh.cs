@@ -149,19 +149,62 @@ public static class LandscapeChunkMesh
     {
         var material = new ShaderMaterial { Shader = SplatShader() };
 
-        var albedos = new Godot.Collections.Array<Image>();
-        var alphas = new Godot.Collections.Array<Image>();
+        Texture2DArray albedoArray = AlbedoArrayCache.GetOrAdd(AlbedoArrayKey(output.Layers), _ => BuildAlbedoArray(output, assets));
 
+        var alphas = new Godot.Collections.Array<Image>();
         for (int i = 0; i < output.Layers.Count; i++)
         {
-            LandscapeChunkLayer layer = output.Layers[i];
-            albedos.Add(LoadAlbedo(layer.Material, i, assets));
-
             // Slot 0 is the opaque base and has no alpha; the array holds one image per alpha slot.
-            if (layer.Alpha != null)
+            if (output.Layers[i].Alpha is { } alpha)
             {
-                alphas.Add(AlphaImage(layer.Alpha, output.AlphaResolution));
+                alphas.Add(AlphaImage(alpha, output.AlphaResolution));
             }
+        }
+
+        // A sampler2DArray needs at least one layer even when nothing composites over the base.
+        if (alphas.Count == 0)
+        {
+            alphas.Add(Image.CreateEmpty(1, 1, false, Image.Format.R8));
+        }
+
+        var alphaArray = new Texture2DArray();
+        alphaArray.CreateFromImages(alphas);
+
+        material.SetShaderParameter("slot_albedo", albedoArray);
+        material.SetShaderParameter("slot_alpha", alphaArray);
+        material.SetShaderParameter("slot_count", Mathf.Max(1, output.Layers.Count));
+        material.SetShaderParameter("tiling", TextureTiling);
+        material.SetShaderParameter("show_chunk_edges", ShowChunkEdges);
+        return material;
+    }
+
+    // Chunks streamed from disjoint parts of the map routinely resolve to the exact same ordered set
+    // of slot materials (a zone's terrain is typically a handful of recurring texture combinations),
+    // and building a Texture2DArray means real Godot resource construction and a GPU upload — paid
+    // again for every chunk even when its content is byte-identical to one already built. Keyed on
+    // the layers' texture paths in order (order matters: index i is what the shader composites at
+    // slot i) rather than their material identities, so an edit that changes a material's texture in
+    // place naturally invalidates the right entries instead of returning a stale array — the same
+    // invalidation-free reasoning AlbedoCache below already relies on.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Texture2DArray> AlbedoArrayCache = new();
+
+    private static string AlbedoArrayKey(IReadOnlyList<LandscapeChunkLayer> layers)
+    {
+        var key = new System.Text.StringBuilder();
+        foreach (LandscapeChunkLayer layer in layers)
+        {
+            key.Append(layer.Material?.TexturePath ?? "").Append('|');
+        }
+
+        return key.ToString();
+    }
+
+    private static Texture2DArray BuildAlbedoArray(LandscapeChunkOutput output, AssetSystem assets)
+    {
+        var albedos = new Godot.Collections.Array<Image>();
+        for (int i = 0; i < output.Layers.Count; i++)
+        {
+            albedos.Add(LoadAlbedo(output.Layers[i].Material, i, assets));
         }
 
         // A chunk can resolve to no slots at all: nothing claimed a base and the map has no fallback
@@ -173,23 +216,9 @@ public static class LandscapeChunkMesh
             albedos.Add(Placeholder(0));
         }
 
-        // A sampler2DArray needs at least one layer even when nothing composites over the base.
-        if (alphas.Count == 0)
-        {
-            alphas.Add(Image.CreateEmpty(1, 1, false, Image.Format.R8));
-        }
-
-        var albedoArray = new Texture2DArray();
-        albedoArray.CreateFromImages(albedos);
-        var alphaArray = new Texture2DArray();
-        alphaArray.CreateFromImages(alphas);
-
-        material.SetShaderParameter("slot_albedo", albedoArray);
-        material.SetShaderParameter("slot_alpha", alphaArray);
-        material.SetShaderParameter("slot_count", Mathf.Max(1, output.Layers.Count));
-        material.SetShaderParameter("tiling", TextureTiling);
-        material.SetShaderParameter("show_chunk_edges", ShowChunkEdges);
-        return material;
+        var array = new Texture2DArray();
+        array.CreateFromImages(albedos);
+        return array;
     }
 
     // Central difference over the heightmap, clamped at the edges. Edge normals will disagree with
