@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
@@ -21,7 +22,10 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         MeshParameter.Float("post_size", "Post size", 0.18f, 0.02f, 4.0f, "Width and depth of each post's square cross-section.");
 
     public static readonly MeshParameter PostHeight =
-        MeshParameter.Float("post_height", "Post height", 1.1f, 0.05f, 16.0f, "Height of a post above its authored ground point.");
+        MeshParameter.Float("post_height", "Post height", 1.1f, 0.05f, 16.0f, "Height of a post's flat shoulder above its authored ground point (below its cap, if any).");
+
+    public static readonly MeshParameter PostCapHeight =
+        MeshParameter.Float("post_cap_height", "Post cap height", 0.12f, 0.0f, 4.0f, "Height of the pointed cap above a post's shoulder — 0 for a flat-topped post.");
 
     public static readonly MeshParameter EmbedDepth =
         MeshParameter.Float("embed_depth", "Embed depth", 0.4f, 0.0f, 8.0f, "How far a post extends below its authored ground point.");
@@ -30,7 +34,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         MeshParameter.Int("rail_count", "Rail count", 2, 1, 6, "Number of horizontal rails.");
 
     public static readonly MeshParameter RailTopOffset =
-        MeshParameter.Float("rail_top_offset", "Rail top offset", 0.1f, 0.0f, 8.0f, "Distance from a post's top down to the top rail.");
+        MeshParameter.Float("rail_top_offset", "Rail top offset", 0.1f, 0.0f, 8.0f, "Distance from a post's shoulder down to the top rail.");
 
     public static readonly MeshParameter RailGap =
         MeshParameter.Float("rail_gap", "Rail gap", 0.35f, 0.02f, 8.0f, "Vertical spacing between consecutive rails.");
@@ -54,7 +58,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
     public string Description => "Turns a network into a post-and-rail fence: posts at every vertex, welded to straight rails between them.";
 
-    public int Version => 1;
+    public int Version => 2;
 
     public float Priority => 0f;
 
@@ -62,7 +66,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     public bool SnapToTerrainOnPlace => true;
 
     public IReadOnlyList<MeshParameter> Parameters { get; } = MeshParameter.List(
-        PostSpacing, PostSize, PostHeight, EmbedDepth, RailCount, RailTopOffset, RailGap, RailWidth, RailThickness, UvScale);
+        PostSpacing, PostSize, PostHeight, PostCapHeight, EmbedDepth, RailCount, RailTopOffset, RailGap, RailWidth, RailThickness, UvScale);
 
     public IReadOnlyList<ProceduralOutputSlot> Outputs { get; } = [Output];
 
@@ -75,6 +79,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float postSpacing = Mathf.Max(0.1f, context.Float(PostSpacing));
         float postSize = Mathf.Max(0.01f, context.Float(PostSize));
         float postHeight = Mathf.Max(0.01f, context.Float(PostHeight));
+        float postCapHeight = Mathf.Max(0.0f, context.Float(PostCapHeight));
         float embedDepth = Mathf.Max(0.0f, context.Float(EmbedDepth));
         int railCount = Mathf.Clamp(context.Int(RailCount), 1, 6);
         float railTopOffset = Mathf.Max(0.0f, context.Float(RailTopOffset));
@@ -88,6 +93,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         var uvs = new List<Vector2>();
         var indices = new List<int>();
         var postedVertices = new HashSet<int>();
+        Dictionary<int, List<(int Other, int EdgeId)>> adjacency = BuildAdjacency(context.Network);
 
         foreach (NetworkEdge edge in context.Network.Edges)
         {
@@ -100,31 +106,70 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
             if (postedVertices.Add(a.Id))
             {
-                AddPost(a.Position, postSize, postHeight, embedDepth, uvScale, vertices, normals, uvs, indices);
+                Vector3 facing = PrimaryDirection(context.Network, adjacency, a, fallback: b.Position - a.Position);
+                AddPost(a.Position, postSize, postHeight, postCapHeight, embedDepth, facing, uvScale, vertices, normals, uvs, indices);
             }
 
             if (postedVertices.Add(b.Id))
             {
-                AddPost(b.Position, postSize, postHeight, embedDepth, uvScale, vertices, normals, uvs, indices);
+                Vector3 facing = PrimaryDirection(context.Network, adjacency, b, fallback: a.Position - b.Position);
+                AddPost(b.Position, postSize, postHeight, postCapHeight, embedDepth, facing, uvScale, vertices, normals, uvs, indices);
             }
 
             List<Vector3> waypoints = Subdivide(a.Position, b.Position, postSpacing);
+            Vector3 edgeDirection = b.Position - a.Position;
             for (int i = 1; i < waypoints.Count - 1; i++)
             {
-                AddPost(waypoints[i], postSize, postHeight, embedDepth, uvScale, vertices, normals, uvs, indices);
+                AddPost(waypoints[i], postSize, postHeight, postCapHeight, embedDepth, edgeDirection, uvScale, vertices, normals, uvs, indices);
             }
 
+            // Cumulative distance from the edge's own start, not reset per filled-in span, so a rail's
+            // texture runs continuously along the whole edge instead of seaming at every filled post.
+            float travelled = 0.0f;
             for (int i = 0; i < waypoints.Count - 1; i++)
             {
+                float segmentLength = waypoints[i].DistanceTo(waypoints[i + 1]);
                 for (int rail = 0; rail < railCount; rail++)
                 {
                     Vector3 railUp = Vector3.Up * (postHeight - railTopOffset - (rail * railGap));
-                    AddBeam(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWidth, railThickness, uvScale, vertices, normals, uvs, indices);
+                    AddBeam(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWidth, railThickness, travelled, uvScale, vertices, normals, uvs, indices);
                 }
+
+                travelled += segmentLength;
             }
         }
 
         output.AddSurface(Output, "Fence", vertices, indices, context.Material(Output, Surface), normals, uvs);
+    }
+
+    /// <summary>Every vertex's incident (neighbour, edge id) pairs, undirected.</summary>
+    private static Dictionary<int, List<(int Other, int EdgeId)>> BuildAdjacency(VertexNetwork network)
+    {
+        var adjacency = network.Vertices.ToDictionary(vertex => vertex.Id, _ => new List<(int, int)>());
+        foreach (NetworkEdge edge in network.Edges)
+        {
+            adjacency[edge.A].Add((edge.B, edge.Id));
+            adjacency[edge.B].Add((edge.A, edge.Id));
+        }
+
+        return adjacency;
+    }
+
+    /// <summary>The direction a post at <paramref name="vertex"/> should face: towards the neighbour of
+    /// its lowest-id incident edge. An end post therefore aligns with its one rail, and a straight-through
+    /// post aligns with the shared line of both its rails (direction sign does not matter — the post's
+    /// cross-section is symmetric under a 180-degree turn). A branching corner deterministically picks
+    /// one of its rails rather than an exact angle bisector — a deliberate simplification.</summary>
+    private static Vector3 PrimaryDirection(
+        VertexNetwork network, Dictionary<int, List<(int Other, int EdgeId)>> adjacency, NetworkVertex vertex, Vector3 fallback)
+    {
+        if (!adjacency.TryGetValue(vertex.Id, out List<(int Other, int EdgeId)>? neighbours) || neighbours.Count == 0)
+        {
+            return fallback;
+        }
+
+        int otherId = neighbours.OrderBy(neighbour => neighbour.EdgeId).First().Other;
+        return network.Vertex(otherId) is { } other ? other.Position - vertex.Position : fallback;
     }
 
     /// <summary>Points from <paramref name="a"/> to <paramref name="b"/> inclusive, evenly spaced at
@@ -147,17 +192,37 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         Vector3 ground,
         float size,
         float height,
+        float capHeight,
         float embedDepth,
+        Vector3 facingHint,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
         List<Vector2> uvs,
         List<int> indices)
     {
+        Vector3 forward = HorizontalDirection(facingHint);
+        Vector3 right = Vector3.Up.Cross(forward).Normalized();
+
         float halfSize = size * 0.5f;
         float halfHeight = (height + embedDepth) * 0.5f;
-        Vector3 center = ground + Vector3.Up * ((height - embedDepth) * 0.5f);
-        AddBox(center, Vector3.Right, Vector3.Up, Vector3.Back, halfSize, halfHeight, halfSize, uvScale, vertices, normals, uvs, indices);
+        Vector3 center = ground + (Vector3.Up * ((height - embedDepth) * 0.5f));
+        bool hasCap = capHeight > 0.0f;
+        AddBox(center, right, Vector3.Up, forward, halfSize, halfHeight, halfSize, 0.0f, uvScale, includeTop: !hasCap, vertices, normals, uvs, indices);
+
+        if (hasCap)
+        {
+            Vector3 shoulder = ground + (Vector3.Up * height);
+            AddPyramidCap(shoulder, right, forward, halfSize, halfSize, capHeight, uvScale, vertices, normals, uvs, indices);
+        }
+    }
+
+    /// <summary>Flattens <paramref name="hint"/> onto the XZ plane, falling back to a fixed axis when it
+    /// has no meaningful horizontal component (e.g. a lone, perfectly vertical edge).</summary>
+    private static Vector3 HorizontalDirection(Vector3 hint)
+    {
+        Vector3 flat = new(hint.X, 0.0f, hint.Z);
+        return flat.LengthSquared() > 1e-8f ? flat.Normalized() : Vector3.Back;
     }
 
     private static void AddBeam(
@@ -165,6 +230,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         Vector3 b,
         float width,
         float thickness,
+        float forwardOffset,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
@@ -183,12 +249,16 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         Vector3 right = reference.Cross(forward).Normalized();
         Vector3 up = forward.Cross(right).Normalized();
         Vector3 center = (a + b) * 0.5f;
-        AddBox(center, right, up, forward, width * 0.5f, thickness * 0.5f, length * 0.5f, uvScale, vertices, normals, uvs, indices);
+        AddBox(center, right, up, forward, width * 0.5f, thickness * 0.5f, length * 0.5f, forwardOffset, uvScale, includeTop: true, vertices, normals, uvs, indices);
     }
 
     /// <summary>An oriented box, <paramref name="right"/>/<paramref name="up"/>/<paramref name="forward"/>
     /// forming a right-handed basis (<c>right.Cross(up) == forward</c>). One quad per face rather than
-    /// shared corner vertices, so each face keeps its own flat normal and its own 0..1 UV tile.</summary>
+    /// shared corner vertices, so each face keeps its own flat normal and its own UV tile.
+    /// <paramref name="forwardOffset"/> shifts the UV coordinate that runs along <paramref name="forward"/>
+    /// on the 4 side faces — the caller's running length along a chain of boxes, so consecutive boxes'
+    /// textures continue instead of each restarting at 0 (a visible seam). <paramref name="includeTop"/>
+    /// skips the <c>+up</c> face, for a post whose flat shoulder is about to be replaced by a cap.</summary>
     private static void AddBox(
         Vector3 center,
         Vector3 right,
@@ -197,25 +267,81 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float halfRight,
         float halfUp,
         float halfForward,
+        float forwardOffset,
+        float uvScale,
+        bool includeTop,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uvs,
+        List<int> indices)
+    {
+        if (includeTop)
+        {
+            AddQuad(center + (up * halfUp), right, forward, up, halfRight, halfForward, 0.0f, forwardOffset, uvScale, vertices, normals, uvs, indices);
+        }
+
+        AddQuad(center - (up * halfUp), forward, right, -up, halfForward, halfRight, forwardOffset, 0.0f, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center + (right * halfRight), forward, up, right, halfForward, halfUp, forwardOffset, 0.0f, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (right * halfRight), up, forward, -right, halfUp, halfForward, 0.0f, forwardOffset, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center + (forward * halfForward), up, right, forward, halfUp, halfRight, 0.0f, 0.0f, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (forward * halfForward), right, up, -forward, halfRight, halfUp, 0.0f, 0.0f, uvScale, vertices, normals, uvs, indices);
+    }
+
+    /// <summary>A 4-sided point above a box's <c>+up</c> face — a post's chiselled shoulder, sized to the
+    /// same cross-section its box top would have been. Each side is its own flat-shaded triangle.</summary>
+    private static void AddPyramidCap(
+        Vector3 baseCenter,
+        Vector3 right,
+        Vector3 forward,
+        float halfRight,
+        float halfForward,
+        float height,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
         List<Vector2> uvs,
         List<int> indices)
     {
-        AddQuad(center + (up * halfUp), right, forward, up, halfRight, halfForward, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (up * halfUp), forward, right, -up, halfForward, halfRight, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (right * halfRight), forward, up, right, halfForward, halfUp, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (right * halfRight), up, forward, -right, halfUp, halfForward, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (forward * halfForward), up, right, forward, halfUp, halfRight, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (forward * halfForward), right, up, -forward, halfRight, halfUp, uvScale, vertices, normals, uvs, indices);
+        Vector3 r = right * halfRight;
+        Vector3 f = forward * halfForward;
+        Vector3 apex = baseCenter + (Vector3.Up * height);
+        Vector3[] corners =
+        [
+            baseCenter - r - f,
+            baseCenter + r - f,
+            baseCenter + r + f,
+            baseCenter - r + f,
+        ];
+
+        float baseWidth = (halfRight + halfForward) * uvScale;
+        float capV = height * uvScale;
+
+        for (int i = 0; i < 4; i++)
+        {
+            Vector3 p0 = corners[i];
+            Vector3 p1 = corners[(i + 1) % 4];
+
+            // Godot's front face is clockwise as seen from the front (see AddQuad): the outward normal
+            // is the negation of the winding order's own right-hand-rule cross product, not a separately
+            // reasoned-about direction, so this is correct for all 4 sides by the same construction.
+            Vector3 normal = -(p1 - p0).Cross(apex - p0).Normalized();
+
+            int start = vertices.Count;
+            vertices.Add(p0);
+            vertices.Add(p1);
+            vertices.Add(apex);
+            normals.Add(normal);
+            normals.Add(normal);
+            normals.Add(normal);
+            uvs.Add(new Vector2(0.0f, 0.0f));
+            uvs.Add(new Vector2(baseWidth, 0.0f));
+            uvs.Add(new Vector2(baseWidth * 0.5f, capV));
+            indices.Add(start);
+            indices.Add(start + 1);
+            indices.Add(start + 2);
+        }
     }
 
-    /// <summary>One box face. <paramref name="tangent"/>/<paramref name="bitangent"/> must satisfy
-    /// <c>tangent.Cross(bitangent) == -normal</c> — Godot's front face is clockwise as seen from the
-    /// front (the opposite of the OpenGL habit), so a face visible from <paramref name="normal"/>'s
-    /// direction needs its winding built from that inverted relationship, not the plain right-hand
-    /// rule. See <c>LandscapeChunkMesh.BuildIndices</c> for the same rule pinned against a terrain grid.</summary>
     private static void AddQuad(
         Vector3 center,
         Vector3 tangent,
@@ -223,6 +349,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         Vector3 normal,
         float halfTangent,
         float halfBitangent,
+        float tangentOffset,
+        float bitangentOffset,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
@@ -242,12 +370,14 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         normals.Add(normal);
         normals.Add(normal);
 
-        float u = halfTangent * 2.0f * uvScale;
-        float v = halfBitangent * 2.0f * uvScale;
-        uvs.Add(new Vector2(0.0f, 0.0f));
-        uvs.Add(new Vector2(u, 0.0f));
-        uvs.Add(new Vector2(u, v));
-        uvs.Add(new Vector2(0.0f, v));
+        float u0 = tangentOffset * uvScale;
+        float u1 = (tangentOffset + (halfTangent * 2.0f)) * uvScale;
+        float v0 = bitangentOffset * uvScale;
+        float v1 = (bitangentOffset + (halfBitangent * 2.0f)) * uvScale;
+        uvs.Add(new Vector2(u0, v0));
+        uvs.Add(new Vector2(u1, v0));
+        uvs.Add(new Vector2(u1, v1));
+        uvs.Add(new Vector2(u0, v1));
 
         indices.Add(start);
         indices.Add(start + 1);
