@@ -165,7 +165,13 @@ public sealed class StreamingSystem : IWorldParticipant
 
         MapId map = _context.Maps.CurrentMap;
         bool mapChanged = !_scanStarted || !map.Equals(_scanMap);
-        if (!mapChanged && focus.DistanceTo(_lastFocus) < RescanDistance)
+
+        // Horizontal only: the view region's vertical extent is already unbounded (see VerticalRange),
+        // so which chunks are visible depends solely on X/Z. Comparing full 3D distance treated pure
+        // vertical flight — climbing or descending, with the camera's footprint unchanged — as motion
+        // that demanded a re-scan, which drove a full rebuild of the entire visible chunk set on every
+        // 32 units of altitude change for no reason: nothing about what should be loaded had moved.
+        if (!mapChanged && HorizontalDistance(focus, _lastFocus) < RescanDistance)
         {
             return;
         }
@@ -221,6 +227,13 @@ public sealed class StreamingSystem : IWorldParticipant
         }
 
         return margin;
+    }
+
+    private static float HorizontalDistance(Vector3 a, Vector3 b)
+    {
+        float dx = a.X - b.X;
+        float dz = a.Z - b.Z;
+        return Mathf.Sqrt((dx * dx) + (dz * dz));
     }
 
     // Horizontally only: the vertical extent is already effectively unbounded.

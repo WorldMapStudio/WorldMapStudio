@@ -61,9 +61,22 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
     /// mutates the scene registry, so reading either from the scan thread is a race — and one that
     /// fails the whole scan, taking every other entity type down with it.
     /// </summary>
-    public void Prepare() => _snapshot = _landscape.TakeSnapshot();
+    public void Prepare()
+    {
+        _snapshot = _landscape.TakeSnapshot();
+
+        // Also captured here rather than in ScanAsync: which coords are already loaded decides which
+        // ones this scan can skip rebuilding (see ScanAsync), and the scene registry is exactly the
+        // live editor state Prepare exists to snapshot before the scan can hop off the main thread.
+        _loadedCoords.Clear();
+        foreach (LandscapeChunk chunk in _landscape.Context.Scene.Entities.OfType<LandscapeChunk>())
+        {
+            _loadedCoords.Add((chunk.Map, chunk.Coord));
+        }
+    }
 
     private LandscapeSystem.BuildSnapshot? _snapshot;
+    private readonly HashSet<(MapId Map, ChunkCoord Coord)> _loadedCoords = [];
 
     public bool TryRefresh(SceneEntity loaded, SceneEntity rescanned)
     {
@@ -84,7 +97,16 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
         }
 
         var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
-        List<ChunkCoord> coords = builder.Grid.Overlapping(region).ToList();
+
+        // A chunk already loaded at this coordinate needs no rebuilding here: keeping loaded chunks in
+        // step with whatever shapes them is LandscapeRebuilder's job, running independently every
+        // frame regardless of streaming's own scan cadence. Without this filter, every rescan rebuilt
+        // — full height/alpha evaluation, mesh upload, material construction — the *entire* visible
+        // chunk set from scratch, not just whatever newly entered view; at a real view distance that
+        // is hundreds of chunks redone for nothing on every ~32 units of camera travel.
+        List<ChunkCoord> coords = builder.Grid.Overlapping(region)
+            .Where(coord => !_loadedCoords.Contains((map, coord)))
+            .ToList();
         if (coords.Count == 0)
         {
             return [];
