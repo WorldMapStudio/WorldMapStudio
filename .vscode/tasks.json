@@ -35,7 +35,11 @@
             "type": "shell",
             "command": "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release \"Windows Desktop\" build/release/WorldMapStudio.exe",
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-Command"]
+                }
             },
             "problemMatcher": []
         },
