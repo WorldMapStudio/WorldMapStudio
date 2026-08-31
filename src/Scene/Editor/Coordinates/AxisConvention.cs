@@ -97,6 +97,16 @@ public sealed class AxisConvention
         Rebuild();
     }
 
+    /// <summary>Overwrites this convention's axes to match <paramref name="preset"/>, in place — used
+    /// by the preset picker, which must mutate a convention callers already hold a reference to.</summary>
+    public void Apply(AxisConvention preset)
+    {
+        _x = preset._x;
+        _y = preset._y;
+        _z = preset._z;
+        Rebuild();
+    }
+
     // ---- Conversions -------------------------------------------------------
 
     /// <summary>Converts a position or vector from user space to Godot space.</summary>
