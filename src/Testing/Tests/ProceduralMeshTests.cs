@@ -420,6 +420,7 @@ public static class ProceduralMeshTests
         var values = new MeshParameterValues();
         values.Set(FenceNetworkMeshFunction.PostSpacing, 2.0f);
         values.Set(FenceNetworkMeshFunction.RailCount, 2);
+        values.Set(FenceNetworkMeshFunction.RailWaveDetail, 0); // isolate post/weld geometry from waviness subdivision
         var output = new ProceduralOutputBuilder();
         new FenceNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
 
@@ -439,9 +440,46 @@ public static class ProceduralMeshTests
         Assert.AreEqual((3 * 32) + (4 * 24), positions.Length);
         Assert.AreEqual((3 * 42) + (4 * 36), indices.Length);
 
-        // Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests pins
-        // for the terrain grid, generalised here to a box's 6 differently oriented faces: whichever way
-        // a face's normal points, its winding must satisfy (b-a)x(c-a) anti-parallel to that normal.
+        AssertEveryTriangleFacesItsDeclaredNormal(positions, normals, indices);
+    }
+
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
+    public static void Fence_rail_waviness_subdivides_without_moving_endpoints_or_breaking_winding()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(4.0f, 1.0f, 0.0f));
+        network.AddEdge(a, b);
+
+        var values = new MeshParameterValues();
+        values.Set(FenceNetworkMeshFunction.PostSpacing, 5.0f); // longer than the edge: no filled-in posts
+        values.Set(FenceNetworkMeshFunction.RailCount, 1);
+        values.Set(FenceNetworkMeshFunction.PostCapHeight, 0.0f); // isolate the rail geometry from the cap
+        values.Set(FenceNetworkMeshFunction.RailWaveDetail, 3);
+        values.Set(FenceNetworkMeshFunction.RailWaviness, 0.2f);
+        var output = new ProceduralOutputBuilder();
+        new FenceNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
+
+        ProceduralBuildResult result = output.Build([FenceNetworkMeshFunction.Output], _ => MeshModelFormat.FormatId);
+        ModelAsset built = result.Models[0].Asset;
+        Godot.Collections.Array arrays = built.Surfaces[0].Mesh.SurfaceGetArrays(0);
+        var positions = (Vector3[])arrays[(int)Mesh.ArrayType.Vertex];
+        var normals = (Vector3[])arrays[(int)Mesh.ArrayType.Normal];
+        var indices = (int[])arrays[(int)Mesh.ArrayType.Index];
+
+        // 2 flat-topped posts (6-quad box, 24 verts/36 indices) + 1 rail span subdivided 3 times into
+        // 2^3 = 8 mini-beams (6-quad box each) — waviness only ever touches the rail, never the posts.
+        Assert.AreEqual((2 * 24) + (8 * 24), positions.Length);
+        Assert.AreEqual((2 * 36) + (8 * 36), indices.Length);
+
+        AssertEveryTriangleFacesItsDeclaredNormal(positions, normals, indices);
+    }
+
+    /// <summary>Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests
+    /// pins for the terrain grid, generalised here to arbitrarily oriented faces: whichever way a face's
+    /// normal points, its winding must satisfy (b-a)x(c-a) anti-parallel to that normal.</summary>
+    private static void AssertEveryTriangleFacesItsDeclaredNormal(Vector3[] positions, Vector3[] normals, int[] indices)
+    {
         for (int i = 0; i < indices.Length; i += 3)
         {
             Vector3 pa = positions[indices[i]];
