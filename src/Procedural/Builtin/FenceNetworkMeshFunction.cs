@@ -67,7 +67,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
     public string Description => "Turns a network into a post-and-rail fence: posts at every vertex, welded to straight rails between them.";
 
-    public int Version => 4;
+    public int Version => 5;
 
     public float Priority => 0f;
 
@@ -354,10 +354,21 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
             float v0 = (arcLength[i] / totalLength) * uvScale;
             float v1 = (arcLength[i + 1] / totalLength) * uvScale;
 
-            AddQuadExplicit(a3, a2, b2, b3, new Vector2(0.0f, v0), new Vector2(widthUv, v0), new Vector2(widthUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // top
-            AddQuadExplicit(a0, b0, b1, a1, new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(widthUv, v1), new Vector2(widthUv, v0), vertices, normals, uvs, indices); // bottom
-            AddQuadExplicit(a1, b1, b2, a2, new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(thicknessUv, v1), new Vector2(thicknessUv, v0), vertices, normals, uvs, indices); // +right
-            AddQuadExplicit(a0, a3, b3, b0, new Vector2(0.0f, v0), new Vector2(thicknessUv, v0), new Vector2(thicknessUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // -right
+            // Smooth-shaded: each corner keeps its own ring's right/up rather than one flat normal per
+            // quad, so a bend between two slightly different frames reads as a continuous curve instead
+            // of a faceted kink — Godot interpolates a triangle's normal across its face from these.
+            AddQuadWithNormals(
+                a3, a2, b2, b3, up[i], up[i], up[i + 1], up[i + 1],
+                new Vector2(0.0f, v0), new Vector2(widthUv, v0), new Vector2(widthUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // top
+            AddQuadWithNormals(
+                a0, b0, b1, a1, -up[i], -up[i + 1], -up[i + 1], -up[i],
+                new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(widthUv, v1), new Vector2(widthUv, v0), vertices, normals, uvs, indices); // bottom
+            AddQuadWithNormals(
+                a1, b1, b2, a2, right[i], right[i + 1], right[i + 1], right[i],
+                new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(thicknessUv, v1), new Vector2(thicknessUv, v0), vertices, normals, uvs, indices); // +right
+            AddQuadWithNormals(
+                a0, a3, b3, b0, -right[i], -right[i], -right[i + 1], -right[i + 1],
+                new Vector2(0.0f, v0), new Vector2(thicknessUv, v0), new Vector2(thicknessUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // -right
 
             if (i == 0)
             {
@@ -389,16 +400,22 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         List<Vector2> uvs,
         List<int> indices)
     {
+        float rightSpan = halfRight * 2.0f * uvScale;
+        float forwardSpan = halfForward * 2.0f * uvScale;
+
         if (includeTop)
         {
-            AddQuad(center + (up * halfUp), right, forward, halfRight, halfForward, uvScale, vertices, normals, uvs, indices);
+            AddQuad(center + (up * halfUp), right, forward, halfRight, halfForward, rightSpan, forwardSpan, vertices, normals, uvs, indices);
         }
 
-        AddQuad(center - (up * halfUp), forward, right, halfForward, halfRight, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (right * halfRight), forward, up, halfForward, halfUp, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (right * halfRight), up, forward, halfUp, halfForward, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (forward * halfForward), up, right, halfUp, halfRight, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (forward * halfForward), right, up, halfRight, halfUp, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (up * halfUp), forward, right, halfForward, halfRight, forwardSpan, rightSpan, vertices, normals, uvs, indices);
+
+        // The 4 side faces stretch their up-axis UV across the whole post height (0..uvScale) instead of
+        // tiling per unit — the same "one piece, one pass of the texture" treatment as a rail ribbon.
+        AddQuad(center + (right * halfRight), forward, up, halfForward, halfUp, forwardSpan, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (right * halfRight), up, forward, halfUp, halfForward, uvScale, forwardSpan, vertices, normals, uvs, indices);
+        AddQuad(center + (forward * halfForward), up, right, halfUp, halfRight, uvScale, rightSpan, vertices, normals, uvs, indices);
+        AddQuad(center - (forward * halfForward), right, up, halfRight, halfUp, rightSpan, uvScale, vertices, normals, uvs, indices);
     }
 
     /// <summary>A 4-sided point above a box's <c>+up</c> face — a post's chiselled shoulder, sized to the
@@ -465,7 +482,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         Vector3 bitangent,
         float halfTangent,
         float halfBitangent,
-        float uvScale,
+        float uSpan,
+        float vSpan,
         List<Vector3> vertices,
         List<Vector3> normals,
         List<Vector2> uvs,
@@ -473,11 +491,9 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     {
         Vector3 t = tangent * halfTangent;
         Vector3 b = bitangent * halfBitangent;
-        float u = halfTangent * 2.0f * uvScale;
-        float v = halfBitangent * 2.0f * uvScale;
         AddQuadExplicit(
             center - t - b, center + t - b, center + t + b, center - t + b,
-            Vector2.Zero, new Vector2(u, 0.0f), new Vector2(u, v), new Vector2(0.0f, v),
+            Vector2.Zero, new Vector2(uSpan, 0.0f), new Vector2(uSpan, vSpan), new Vector2(0.0f, vSpan),
             vertices, normals, uvs, indices);
     }
 
@@ -502,16 +518,40 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         List<int> indices)
     {
         Vector3 normal = -(p1 - p0).Cross(p2 - p0).Normalized();
+        AddQuadWithNormals(p0, p1, p2, p3, normal, normal, normal, normal, uv0, uv1, uv2, uv3, vertices, normals, uvs, indices);
+    }
+
+    /// <summary>As <see cref="AddQuadExplicit"/>, but for a smooth-shaded face whose 4 corners belong to
+    /// (up to) 2 different frames — each corner keeps the normal its own frame implies rather than one
+    /// flat normal derived from the quad's actual (possibly slightly twisted) geometry.</summary>
+    private static void AddQuadWithNormals(
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        Vector3 p3,
+        Vector3 n0,
+        Vector3 n1,
+        Vector3 n2,
+        Vector3 n3,
+        Vector2 uv0,
+        Vector2 uv1,
+        Vector2 uv2,
+        Vector2 uv3,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uvs,
+        List<int> indices)
+    {
         int start = vertices.Count;
 
         vertices.Add(p0);
         vertices.Add(p1);
         vertices.Add(p2);
         vertices.Add(p3);
-        normals.Add(normal);
-        normals.Add(normal);
-        normals.Add(normal);
-        normals.Add(normal);
+        normals.Add(n0);
+        normals.Add(n1);
+        normals.Add(n2);
+        normals.Add(n3);
         uvs.Add(uv0);
         uvs.Add(uv1);
         uvs.Add(uv2);
