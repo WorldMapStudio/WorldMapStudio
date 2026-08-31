@@ -54,7 +54,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         MeshParameter.Int("rail_wave_detail", "Rail wave detail", 2, 0, 5, "How many times each rail span is subdivided to build its wobble — 0 disables it regardless of waviness.");
 
     public static readonly MeshParameter UvScale =
-        MeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
+        MeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f,
+            "Texture repeats per local unit across a post, or across a rail's width — but along a rail's own length, one repeat is a whole span end to end, so this is how many times it tiles over that span rather than per unit.");
 
     public static readonly MeshMaterialSlot Surface = new("surface", "Surface", "Fence material — rails and posts share it.");
 
@@ -66,7 +67,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
     public string Description => "Turns a network into a post-and-rail fence: posts at every vertex, welded to straight rails between them.";
 
-    public int Version => 3;
+    public int Version => 4;
 
     public float Priority => 0f;
 
@@ -134,9 +135,6 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
                 AddPost(waypoints[i], postSize, postHeight, postCapHeight, embedDepth, edgeDirection, uvScale, vertices, normals, uvs, indices);
             }
 
-            // Cumulative distance from the edge's own start, not reset per filled-in span, so a rail's
-            // texture runs continuously along the whole edge instead of seaming at every filled post.
-            float travelled = 0.0f;
             for (int i = 0; i < waypoints.Count - 1; i++)
             {
                 for (int rail = 0; rail < railCount; rail++)
@@ -144,10 +142,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
                     Vector3 railUp = Vector3.Up * (postHeight - railTopOffset - (rail * railGap));
                     var rng = new Random(HashCode.Combine(edge.Id, i, rail));
                     List<Vector3> wavy = WithWaviness(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWaviness, railWaveDetail, rng);
-                    AddRibbon(wavy, railWidth, railThickness, travelled, uvScale, vertices, normals, uvs, indices);
+                    AddRibbon(wavy, railWidth, railThickness, uvScale, vertices, normals, uvs, indices);
                 }
-
-                travelled += waypoints[i].DistanceTo(waypoints[i + 1]);
             }
         }
 
@@ -298,12 +294,16 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     /// frame — and therefore the exact same corner positions — at the joint between them), and each side
     /// is one quad per segment connecting one frame to the next. End caps are added only at the strip's
     /// two real ends, via <see cref="AddQuadExplicit"/> so the whole ribbon is genuinely gap-free.
+    ///
+    /// The lengthwise UV runs 0 to <paramref name="uvScale"/> across the *whole* ribbon — one span, from
+    /// post to post — rather than tiling once per world-space unit: a real fence plank is one piece with
+    /// one texture stretched along it, not a repeating pattern, so a 6-unit span and a 1-unit span both
+    /// show the same single pass of the texture, just stretched to fit.
     /// </summary>
     private static void AddRibbon(
         IReadOnlyList<Vector3> points,
         float width,
         float thickness,
-        float forwardOffsetStart,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
@@ -320,6 +320,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float halfThickness = thickness * 0.5f;
         var right = new Vector3[count];
         var up = new Vector3[count];
+        var arcLength = new float[count];
         for (int i = 0; i < count; i++)
         {
             Vector3 tangentSource = i == 0 ? points[1] - points[0]
@@ -330,11 +331,12 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
             Vector3 reference = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.95f ? Vector3.Right : Vector3.Up;
             right[i] = reference.Cross(forward).Normalized();
             up[i] = forward.Cross(right[i]).Normalized();
+            arcLength[i] = i == 0 ? 0.0f : arcLength[i - 1] + points[i - 1].DistanceTo(points[i]);
         }
 
+        float totalLength = Mathf.Max(1e-5f, arcLength[count - 1]);
         float widthUv = width * uvScale;
         float thicknessUv = thickness * uvScale;
-        float travelled = forwardOffsetStart;
 
         for (int i = 0; i < count - 1; i++)
         {
@@ -349,8 +351,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
             Vector3 a0 = p0 - r0 - u0, a1 = p0 + r0 - u0, a2 = p0 + r0 + u0, a3 = p0 - r0 + u0;
             Vector3 b0 = p1 - r1 - u1, b1 = p1 + r1 - u1, b2 = p1 + r1 + u1, b3 = p1 - r1 + u1;
 
-            float v0 = travelled * uvScale;
-            float v1 = (travelled + p0.DistanceTo(p1)) * uvScale;
+            float v0 = (arcLength[i] / totalLength) * uvScale;
+            float v1 = (arcLength[i + 1] / totalLength) * uvScale;
 
             AddQuadExplicit(a3, a2, b2, b3, new Vector2(0.0f, v0), new Vector2(widthUv, v0), new Vector2(widthUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // top
             AddQuadExplicit(a0, b0, b1, a1, new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(widthUv, v1), new Vector2(widthUv, v0), vertices, normals, uvs, indices); // bottom
@@ -366,8 +368,6 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
             {
                 AddQuadExplicit(b0, b3, b2, b1, Vector2.Zero, new Vector2(widthUv, 0.0f), new Vector2(widthUv, thicknessUv), new Vector2(0.0f, thicknessUv), vertices, normals, uvs, indices);
             }
-
-            travelled += p0.DistanceTo(p1);
         }
     }
 
