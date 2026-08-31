@@ -19,6 +19,16 @@
             "type": "coreclr",
             "request": "attach",
             "processId": "${command:pickProcess}"
+        },
+        {
+            "name": "Run Release",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "export release",
+            "program": "${workspaceFolder}/build/release/WorldMapStudio.exe",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
         }
     ]
 }
