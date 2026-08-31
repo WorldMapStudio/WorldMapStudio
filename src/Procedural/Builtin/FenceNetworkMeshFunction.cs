@@ -144,12 +144,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
                     Vector3 railUp = Vector3.Up * (postHeight - railTopOffset - (rail * railGap));
                     var rng = new Random(HashCode.Combine(edge.Id, i, rail));
                     List<Vector3> wavy = WithWaviness(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWaviness, railWaveDetail, rng);
-                    float wavyTravelled = travelled;
-                    for (int w = 0; w < wavy.Count - 1; w++)
-                    {
-                        AddBeam(wavy[w], wavy[w + 1], railWidth, railThickness, wavyTravelled, uvScale, vertices, normals, uvs, indices);
-                        wavyTravelled += wavy[w].DistanceTo(wavy[w + 1]);
-                    }
+                    AddRibbon(wavy, railWidth, railThickness, travelled, uvScale, vertices, normals, uvs, indices);
                 }
 
                 travelled += waypoints[i].DistanceTo(waypoints[i + 1]);
@@ -277,7 +272,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float halfHeight = (height + embedDepth) * 0.5f;
         Vector3 center = ground + (Vector3.Up * ((height - embedDepth) * 0.5f));
         bool hasCap = capHeight > 0.0f;
-        AddBox(center, right, Vector3.Up, forward, halfSize, halfHeight, halfSize, 0.0f, uvScale, includeTop: !hasCap, vertices, normals, uvs, indices);
+        AddBox(center, right, Vector3.Up, forward, halfSize, halfHeight, halfSize, uvScale, includeTop: !hasCap, vertices, normals, uvs, indices);
 
         if (hasCap)
         {
@@ -294,40 +289,91 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         return flat.LengthSquared() > 1e-8f ? flat.Normalized() : Vector3.Back;
     }
 
-    private static void AddBeam(
-        Vector3 a,
-        Vector3 b,
+    /// <summary>
+    /// Builds one rail as a single continuous strip along <paramref name="points"/> instead of a chain
+    /// of separately-capped boxes — a box per sub-segment would put a flat end cap at every waviness
+    /// joint, and two adjacent segments' caps are only coplanar when the path is dead straight, so any
+    /// bend showed up as a visible mitred gap or overlap. Instead, one cross-section frame is computed
+    /// per point (its tangent averaged from its neighbours, so consecutive segments share the exact same
+    /// frame — and therefore the exact same corner positions — at the joint between them), and each side
+    /// is one quad per segment connecting one frame to the next. End caps are added only at the strip's
+    /// two real ends, via <see cref="AddQuadExplicit"/> so the whole ribbon is genuinely gap-free.
+    /// </summary>
+    private static void AddRibbon(
+        IReadOnlyList<Vector3> points,
         float width,
         float thickness,
-        float forwardOffset,
+        float forwardOffsetStart,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
         List<Vector2> uvs,
         List<int> indices)
     {
-        Vector3 axis = b - a;
-        float length = axis.Length();
-        if (length <= 1e-5f)
+        int count = points.Count;
+        if (count < 2)
         {
             return;
         }
 
-        Vector3 forward = axis / length;
-        Vector3 reference = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.95f ? Vector3.Right : Vector3.Up;
-        Vector3 right = reference.Cross(forward).Normalized();
-        Vector3 up = forward.Cross(right).Normalized();
-        Vector3 center = (a + b) * 0.5f;
-        AddBox(center, right, up, forward, width * 0.5f, thickness * 0.5f, length * 0.5f, forwardOffset, uvScale, includeTop: true, vertices, normals, uvs, indices);
+        float halfWidth = width * 0.5f;
+        float halfThickness = thickness * 0.5f;
+        var right = new Vector3[count];
+        var up = new Vector3[count];
+        for (int i = 0; i < count; i++)
+        {
+            Vector3 tangentSource = i == 0 ? points[1] - points[0]
+                : i == count - 1 ? points[count - 1] - points[count - 2]
+                : points[i + 1] - points[i - 1];
+            float length = tangentSource.Length();
+            Vector3 forward = length > 1e-5f ? tangentSource / length : Vector3.Back;
+            Vector3 reference = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.95f ? Vector3.Right : Vector3.Up;
+            right[i] = reference.Cross(forward).Normalized();
+            up[i] = forward.Cross(right[i]).Normalized();
+        }
+
+        float widthUv = width * uvScale;
+        float thicknessUv = thickness * uvScale;
+        float travelled = forwardOffsetStart;
+
+        for (int i = 0; i < count - 1; i++)
+        {
+            Vector3 p0 = points[i];
+            Vector3 p1 = points[i + 1];
+            Vector3 r0 = right[i] * halfWidth;
+            Vector3 u0 = up[i] * halfThickness;
+            Vector3 r1 = right[i + 1] * halfWidth;
+            Vector3 u1 = up[i + 1] * halfThickness;
+
+            // Ring corners: 0 = -right-up, 1 = +right-up, 2 = +right+up, 3 = -right+up.
+            Vector3 a0 = p0 - r0 - u0, a1 = p0 + r0 - u0, a2 = p0 + r0 + u0, a3 = p0 - r0 + u0;
+            Vector3 b0 = p1 - r1 - u1, b1 = p1 + r1 - u1, b2 = p1 + r1 + u1, b3 = p1 - r1 + u1;
+
+            float v0 = travelled * uvScale;
+            float v1 = (travelled + p0.DistanceTo(p1)) * uvScale;
+
+            AddQuadExplicit(a3, a2, b2, b3, new Vector2(0.0f, v0), new Vector2(widthUv, v0), new Vector2(widthUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // top
+            AddQuadExplicit(a0, b0, b1, a1, new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(widthUv, v1), new Vector2(widthUv, v0), vertices, normals, uvs, indices); // bottom
+            AddQuadExplicit(a1, b1, b2, a2, new Vector2(0.0f, v0), new Vector2(0.0f, v1), new Vector2(thicknessUv, v1), new Vector2(thicknessUv, v0), vertices, normals, uvs, indices); // +right
+            AddQuadExplicit(a0, a3, b3, b0, new Vector2(0.0f, v0), new Vector2(thicknessUv, v0), new Vector2(thicknessUv, v1), new Vector2(0.0f, v1), vertices, normals, uvs, indices); // -right
+
+            if (i == 0)
+            {
+                AddQuadExplicit(a0, a1, a2, a3, Vector2.Zero, new Vector2(widthUv, 0.0f), new Vector2(widthUv, thicknessUv), new Vector2(0.0f, thicknessUv), vertices, normals, uvs, indices);
+            }
+
+            if (i == count - 2)
+            {
+                AddQuadExplicit(b0, b3, b2, b1, Vector2.Zero, new Vector2(widthUv, 0.0f), new Vector2(widthUv, thicknessUv), new Vector2(0.0f, thicknessUv), vertices, normals, uvs, indices);
+            }
+
+            travelled += p0.DistanceTo(p1);
+        }
     }
 
-    /// <summary>An oriented box, <paramref name="right"/>/<paramref name="up"/>/<paramref name="forward"/>
-    /// forming a right-handed basis (<c>right.Cross(up) == forward</c>). One quad per face rather than
-    /// shared corner vertices, so each face keeps its own flat normal and its own UV tile.
-    /// <paramref name="forwardOffset"/> shifts the UV coordinate that runs along <paramref name="forward"/>
-    /// on the 4 side faces — the caller's running length along a chain of boxes, so consecutive boxes'
-    /// textures continue instead of each restarting at 0 (a visible seam). <paramref name="includeTop"/>
-    /// skips the <c>+up</c> face, for a post whose flat shoulder is about to be replaced by a cap.</summary>
+    /// <summary>An axis-aligned box for a post, sharing no vertices between faces — each keeps its own
+    /// flat normal and its own UV tile. <paramref name="includeTop"/> skips the <c>+up</c> face, for a
+    /// post whose flat shoulder is about to be replaced by a pointed cap.</summary>
     private static void AddBox(
         Vector3 center,
         Vector3 right,
@@ -336,7 +382,6 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float halfRight,
         float halfUp,
         float halfForward,
-        float forwardOffset,
         float uvScale,
         bool includeTop,
         List<Vector3> vertices,
@@ -346,14 +391,14 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     {
         if (includeTop)
         {
-            AddQuad(center + (up * halfUp), right, forward, up, halfRight, halfForward, 0.0f, forwardOffset, uvScale, vertices, normals, uvs, indices);
+            AddQuad(center + (up * halfUp), right, forward, halfRight, halfForward, uvScale, vertices, normals, uvs, indices);
         }
 
-        AddQuad(center - (up * halfUp), forward, right, -up, halfForward, halfRight, forwardOffset, 0.0f, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (right * halfRight), forward, up, right, halfForward, halfUp, forwardOffset, 0.0f, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (right * halfRight), up, forward, -right, halfUp, halfForward, 0.0f, forwardOffset, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center + (forward * halfForward), up, right, forward, halfUp, halfRight, 0.0f, 0.0f, uvScale, vertices, normals, uvs, indices);
-        AddQuad(center - (forward * halfForward), right, up, -forward, halfRight, halfUp, 0.0f, 0.0f, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (up * halfUp), forward, right, halfForward, halfRight, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center + (right * halfRight), forward, up, halfForward, halfUp, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (right * halfRight), up, forward, halfUp, halfForward, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center + (forward * halfForward), up, right, halfUp, halfRight, uvScale, vertices, normals, uvs, indices);
+        AddQuad(center - (forward * halfForward), right, up, halfRight, halfUp, uvScale, vertices, normals, uvs, indices);
     }
 
     /// <summary>A 4-sided point above a box's <c>+up</c> face — a post's chiselled shoulder, sized to the
@@ -411,15 +456,15 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         }
     }
 
+    /// <summary>A quad in a box face's own (tangent, bitangent) plane. The outward normal is not passed
+    /// in — see <see cref="AddQuadExplicit"/> — so the caller's choice of which axis is "tangent" and
+    /// which is "bitangent" is what determines which way this face actually ends up facing.</summary>
     private static void AddQuad(
         Vector3 center,
         Vector3 tangent,
         Vector3 bitangent,
-        Vector3 normal,
         float halfTangent,
         float halfBitangent,
-        float tangentOffset,
-        float bitangentOffset,
         float uvScale,
         List<Vector3> vertices,
         List<Vector3> normals,
@@ -428,25 +473,49 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     {
         Vector3 t = tangent * halfTangent;
         Vector3 b = bitangent * halfBitangent;
+        float u = halfTangent * 2.0f * uvScale;
+        float v = halfBitangent * 2.0f * uvScale;
+        AddQuadExplicit(
+            center - t - b, center + t - b, center + t + b, center - t + b,
+            Vector2.Zero, new Vector2(u, 0.0f), new Vector2(u, v), new Vector2(0.0f, v),
+            vertices, normals, uvs, indices);
+    }
+
+    /// <summary>Adds one quad from 4 explicit corners, each with its own UV — the outward normal is
+    /// derived from the winding order itself rather than passed in, since Godot's front face is
+    /// clockwise as seen from the front (the opposite of the OpenGL habit): for corners <c>p0..p3</c>
+    /// wound so the shape's outside is the front face, the correct shading normal is always
+    /// <c>-(p1-p0) x (p2-p0)</c>, never the plain right-hand-rule cross product of that same winding.
+    /// See <c>LandscapeChunkMesh.BuildIndices</c> for the same rule pinned against a terrain grid.</summary>
+    private static void AddQuadExplicit(
+        Vector3 p0,
+        Vector3 p1,
+        Vector3 p2,
+        Vector3 p3,
+        Vector2 uv0,
+        Vector2 uv1,
+        Vector2 uv2,
+        Vector2 uv3,
+        List<Vector3> vertices,
+        List<Vector3> normals,
+        List<Vector2> uvs,
+        List<int> indices)
+    {
+        Vector3 normal = -(p1 - p0).Cross(p2 - p0).Normalized();
         int start = vertices.Count;
 
-        vertices.Add(center - t - b);
-        vertices.Add(center + t - b);
-        vertices.Add(center + t + b);
-        vertices.Add(center - t + b);
+        vertices.Add(p0);
+        vertices.Add(p1);
+        vertices.Add(p2);
+        vertices.Add(p3);
         normals.Add(normal);
         normals.Add(normal);
         normals.Add(normal);
         normals.Add(normal);
-
-        float u0 = tangentOffset * uvScale;
-        float u1 = (tangentOffset + (halfTangent * 2.0f)) * uvScale;
-        float v0 = bitangentOffset * uvScale;
-        float v1 = (bitangentOffset + (halfBitangent * 2.0f)) * uvScale;
-        uvs.Add(new Vector2(u0, v0));
-        uvs.Add(new Vector2(u1, v0));
-        uvs.Add(new Vector2(u1, v1));
-        uvs.Add(new Vector2(u0, v1));
+        uvs.Add(uv0);
+        uvs.Add(uv1);
+        uvs.Add(uv2);
+        uvs.Add(uv3);
 
         indices.Add(start);
         indices.Add(start + 1);
