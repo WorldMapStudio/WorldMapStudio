@@ -332,25 +332,27 @@ public class SceneEntity : Entity
     private static bool TryPickNode(Node3D node, Vector3 origin, Vector3 dir, ref float best, ref bool hadGeometry)
     {
         bool hit = false;
-        if (node is MeshInstance3D { Mesh: { } mesh, Visible: true })
+        if (node is MeshInstance3D { Mesh: { } mesh, Visible: true } && MeshPicking.HasTriangleSurface(mesh))
         {
-            Vector3[] triangles = MeshPicking.Triangles(mesh);
-            if (triangles.Length > 0)
+            hadGeometry = true;
+
+            Transform3D global = node.GlobalTransform;
+
+            // Broad-phase in world space first: a complex model can have many mesh nodes, and most of
+            // them are nowhere near the ray. This has to gate MeshPicking.Triangles() itself, not just
+            // the triangle loop below it — that call is what populates the triangle cache, via a
+            // marshaled SurfaceGetArrays per surface, and is the expensive part. Checking the box
+            // afterwards (as this used to) meant the very first click anywhere on a heavy model paid
+            // full extraction for every mesh in its entire tree, not just the handful the ray is near;
+            // every click after was fast purely because the cache was already warm by then.
+            if (MeshPicking.TryRayBox(origin, dir, global * mesh.GetAabb()))
             {
-                hadGeometry = true;
+                Vector3[] triangles = MeshPicking.Triangles(mesh);
 
-                Transform3D global = node.GlobalTransform;
-
-                // Broad-phase in world space first: a complex model can have many mesh nodes, and
-                // most of them are nowhere near the ray. This skips both AffineInverse() (a matrix
-                // inversion) and the full triangle loop below for all but the handful that matter.
-                if (MeshPicking.TryRayBox(origin, dir, global * mesh.GetAabb()))
-                {
-                    // Test in mesh-local space so the triangles need no per-click transforming; the
-                    // unnormalised local direction keeps `best` a distance along the original world ray.
-                    Transform3D inv = global.AffineInverse();
-                    hit |= MeshPicking.TryRayTriangles(triangles, inv * origin, inv.Basis * dir, ref best);
-                }
+                // Test in mesh-local space so the triangles need no per-click transforming; the
+                // unnormalised local direction keeps `best` a distance along the original world ray.
+                Transform3D inv = global.AffineInverse();
+                hit |= MeshPicking.TryRayTriangles(triangles, inv * origin, inv.Basis * dir, ref best);
             }
         }
 

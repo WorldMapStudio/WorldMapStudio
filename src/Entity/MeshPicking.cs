@@ -148,6 +148,25 @@ public static class MeshPicking
         return true;
     }
 
+    /// <summary>
+    /// Cheap check for "would <see cref="Triangles"/> return anything" — the same primitive-type
+    /// filter <see cref="ExtractTriangles"/> applies, exposed separately so a caller can tell whether a
+    /// mesh has real geometry at all without paying for the marshaled <c>SurfaceGetArrays</c> call and
+    /// flattened vertex copy that only matters once something is actually worth testing.
+    /// </summary>
+    public static bool HasTriangleSurface(Mesh mesh)
+    {
+        for (int surface = 0; surface < mesh.GetSurfaceCount(); surface++)
+        {
+            if (mesh is not ArrayMesh array || array.SurfaceGetPrimitiveType(surface) == Mesh.PrimitiveType.Triangles)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static Vector3[] ExtractTriangles(Mesh mesh)
     {
         var triangles = new List<Vector3>();
