@@ -3,8 +3,8 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The "View" menu: toggles for viewport display options such as the grid. Self-registers with
-/// <see cref="MenuBarManager"/>, sitting between Edit and Scene.
+/// The "View" menu: toggles and settings for viewport display, such as the grid and streaming
+/// distance. Self-registers with <see cref="MenuBarManager"/>, sitting between Edit and Scene.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
 public sealed class ViewMenu : IMainMenu
@@ -72,6 +72,15 @@ public sealed class ViewMenu : IMainMenu
             if (ImGui.MenuItem("Environment Volumes", _environmentVolumes.ShortcutLabel, ref showEnvironmentVolumes))
             {
                 _view.ShowEnvironmentVolumes = showEnvironmentVolumes;
+            }
+
+            ImGui.Separator();
+
+            int viewDistanceChunks = _view.ViewDistanceChunks;
+            ImGui.SetNextItemWidth(120.0f);
+            if (ImGui.DragInt("Chunk Distance", ref viewDistanceChunks, 0.1f, 1, 64))
+            {
+                _view.ViewDistanceChunks = viewDistanceChunks;
             }
         });
     }

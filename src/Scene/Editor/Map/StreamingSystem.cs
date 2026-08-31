@@ -31,7 +31,9 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class StreamingSystem : IWorldParticipant
 {
-    private const float Range = 160.0f;         // horizontal half-extent of the view box
+    // Used when no landscape is loaded to give the chunk count a size regardless.
+    private const float DefaultChunkWorldSize = 64.0f;
+
     private const float RescanDistance = 32.0f; // focus travel before a re-scan
 
     // Height is not distance. Terrain is addressed on the ground plane and a map is authored from
@@ -181,7 +183,11 @@ public sealed class StreamingSystem : IWorldParticipant
         // Recorded here, on the main thread, and read back when the scan lands: the view a scan was
         // taken over is what every later fate is judged against, so it must not be written from the
         // scan's own thread. Only one scan is ever in flight, so it cannot change underneath one.
-        var extent = new Vector3(Range, VerticalRange, Range);
+        float chunkWorldSize = _context.Landscape.Settings?.ChunkWorldSize is > 0.0f and float size
+            ? size
+            : DefaultChunkWorldSize;
+        float range = _context.View.ViewDistanceChunks * chunkWorldSize;
+        var extent = new Vector3(range, VerticalRange, range);
         _scanView = new Aabb(focus - extent, extent * 2.0f);
         _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()));
     }
