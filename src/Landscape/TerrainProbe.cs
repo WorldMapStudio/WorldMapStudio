@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
@@ -13,28 +14,56 @@ public sealed class TerrainProbe
 {
     private readonly SceneEntityRegistry _scene;
 
+    // Reused across calls (TryHit runs every frame the viewport is hovered) so ordering candidates
+    // by box distance costs one List.Clear() rather than an allocation per pointer move.
+    private readonly List<(LandscapeChunk Chunk, float TMin, float TMax, float BoxT)> _candidates = [];
+
     public TerrainProbe(SceneEntityRegistry scene)
     {
         _scene = scene;
     }
 
-    /// <summary>Casts a ray against every loaded chunk and returns the nearest hit, if any.</summary>
+    /// <summary>
+    /// Nearest ray-vs-terrain hit across every loaded chunk, if any.
+    ///
+    /// Broad-phase first, over every chunk, then only as many narrow-phase (triangle) tests as
+    /// necessary: chunks are ordered nearest-box-first, and once a real hit is found, any chunk whose
+    /// box cannot possibly be closer is skipped outright. A chunk's box is a nominal
+    /// ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab far taller than its actual terrain, so
+    /// without this a ray from a camera sitting inside that slab would otherwise pay for a full
+    /// triangle sweep of every chunk it merely passes over, not just the one it actually lands on.
+    /// </summary>
     public bool TryHit(Vector3 rayOrigin, Vector3 rayDir, out Vector3 world)
     {
         world = default;
-        float bestT = float.PositiveInfinity;
-        bool hit = false;
+        _candidates.Clear();
 
         foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
         {
-            if (!TryHitChunk(chunk, rayOrigin, rayDir, out float t, out Vector3 chunkWorld) || t >= bestT)
+            if (TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out float tMin, out float tMax))
             {
-                continue;
+                float boxT = tMin >= 0.0f ? tMin : tMax;
+                _candidates.Add((chunk, tMin, tMax, boxT));
+            }
+        }
+
+        _candidates.Sort(static (a, b) => a.BoxT.CompareTo(b.BoxT));
+
+        float bestT = float.PositiveInfinity;
+        bool hit = false;
+        foreach ((LandscapeChunk chunk, float tMin, float tMax, float boxT) in _candidates)
+        {
+            if (boxT >= bestT)
+            {
+                break;
             }
 
-            bestT = t;
-            world = chunkWorld;
-            hit = true;
+            if (TryHitChunk(chunk, rayOrigin, rayDir, tMin, tMax, out float t, out Vector3 chunkWorld) && t < bestT)
+            {
+                bestT = t;
+                world = chunkWorld;
+                hit = true;
+            }
         }
 
         return hit;
@@ -94,20 +123,17 @@ public sealed class TerrainProbe
         return true;
     }
 
-    private static bool TryHitChunk(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir, out float bestT, out Vector3 bestWorld)
+    // tMin/tMax are the caller's already-computed world-space box entry/exit — passed in rather than
+    // recomputed so the (cheap but non-free) box test at the bottom of every WorldBounds access
+    // happens once per candidate, not once per candidate per call site.
+    private static bool TryHitChunk(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir, float tMin, float tMax, out float bestT, out Vector3 bestWorld)
     {
         bestT = float.PositiveInfinity;
         bestWorld = default;
 
-        // Broad-phase against the chunk's world-space bounds with the untransformed ray first: at
-        // view distance this rules out nearly every chunk, so it has to happen before the per-chunk
-        // matrix inversion below rather than after it. Chunks are placed with an identity basis (see
-        // the constructor), so the world-space box test is exactly equivalent to the local one.
-        if (!TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out _))
-        {
-            return false;
-        }
-
+        // Chunks are placed with an identity basis (see the constructor), so the world-space box
+        // entry/exit computed by the caller carries over unchanged into this local space: the ray
+        // parametrization is identical, just offset by the chunk's origin.
         Transform3D inverse = chunk.Transform.AffineInverse();
         Vector3 origin = inverse * rayOrigin;
         Vector3 dir = inverse.Basis * rayDir;
@@ -118,9 +144,25 @@ public sealed class TerrainProbe
         float size = chunk.LocalBounds.Size.X;
         float step = size / quads;
 
-        for (int z = 0; z < quads; z++)
+        // The box is a nominal ±NominalHeightExtent slab, far taller than the real terrain it wraps,
+        // so its entry/exit are usually where the ray crosses the *sides* of that slab rather than
+        // the actual surface. What matters here is only the horizontal (X/Z) span the ray sweeps
+        // through the chunk between those two points — every quad the ray could possibly cross lies
+        // within the axis-aligned bounding box of that span, so quads outside it can never be hit and
+        // are skipped rather than tested. A ray starting inside the slab (the common case: the camera
+        // usually sits within a chunk's nominal height range) enters at its current position (t=0).
+        float enterT = Mathf.Max(tMin, 0.0f);
+        Vector3 enter = origin + (dir * enterT);
+        Vector3 exit = origin + (dir * tMax);
+
+        int xStart = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(enter.X, exit.X) / step), 0, quads - 1);
+        int xEnd = Mathf.Clamp(Mathf.FloorToInt(Mathf.Max(enter.X, exit.X) / step), 0, quads - 1);
+        int zStart = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(enter.Z, exit.Z) / step), 0, quads - 1);
+        int zEnd = Mathf.Clamp(Mathf.FloorToInt(Mathf.Max(enter.Z, exit.Z) / step), 0, quads - 1);
+
+        for (int z = zStart; z <= zEnd; z++)
         {
-            for (int x = 0; x < quads; x++)
+            for (int x = xStart; x <= xEnd; x++)
             {
                 Vector3 topLeft = Vertex(output, x, z, step);
                 Vector3 topRight = Vertex(output, x + 1, z, step);
@@ -147,24 +189,23 @@ public sealed class TerrainProbe
     private static Vector3 Vertex(LandscapeChunkOutput output, int x, int z, float step) =>
         new(x * step, output.HeightAt(x, z), z * step);
 
-    private static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds, out float tHit)
+    // Indexes Vector3 components directly rather than copying them into temporary float[]s (as
+    // MeshPicking.TryRayBox already does): this runs once per loaded chunk every time the pointer
+    // moves, and four array allocations per chunk per call was pure GC pressure bought for nothing.
+    private static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds, out float tMin, out float tMax)
     {
-        tHit = 0.0f;
+        tMin = float.NegativeInfinity;
+        tMax = float.PositiveInfinity;
         Vector3 lo = bounds.Position;
         Vector3 hi = bounds.End;
 
-        float[] oc = [origin.X, origin.Y, origin.Z];
-        float[] dc = [dir.X, dir.Y, dir.Z];
-        float[] loc = [lo.X, lo.Y, lo.Z];
-        float[] hic = [hi.X, hi.Y, hi.Z];
-
-        float tMin = float.NegativeInfinity;
-        float tMax = float.PositiveInfinity;
         for (int a = 0; a < 3; a++)
         {
-            if (Mathf.Abs(dc[a]) < 1e-8f)
+            float o = origin[a];
+            float d = dir[a];
+            if (Mathf.Abs(d) < 1e-8f)
             {
-                if (oc[a] < loc[a] || oc[a] > hic[a])
+                if (o < lo[a] || o > hi[a])
                 {
                     return false;
                 }
@@ -172,8 +213,8 @@ public sealed class TerrainProbe
                 continue;
             }
 
-            float t1 = (loc[a] - oc[a]) / dc[a];
-            float t2 = (hic[a] - oc[a]) / dc[a];
+            float t1 = (lo[a] - o) / d;
+            float t2 = (hi[a] - o) / d;
             if (t1 > t2)
             {
                 (t1, t2) = (t2, t1);
@@ -187,13 +228,7 @@ public sealed class TerrainProbe
             }
         }
 
-        if (tMax < 0.0f)
-        {
-            return false;
-        }
-
-        tHit = tMin >= 0.0f ? tMin : tMax;
-        return true;
+        return tMax >= 0.0f;
     }
 
     private static bool TryRayTriangle(Vector3 origin, Vector3 dir, Vector3 a, Vector3 b, Vector3 c, out float t)
