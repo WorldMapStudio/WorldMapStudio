@@ -30,8 +30,8 @@ public static class ProceduralPaintRasterizer
         foreach (ProceduralStroke stroke in paint.Strokes)
         {
             LandscapeChannel? channel = context.Channel(stroke.Channel);
-            float[]? buffer = channel != null ? context.Buffer(stroke.Channel) : null;
-            if (buffer == null || channel == null)
+            LandscapeChannelWriter? writer = channel != null ? context.Writer(stroke.Channel) : null;
+            if (writer is not { } w || channel == null)
             {
                 continue;
             }
@@ -48,18 +48,19 @@ public static class ProceduralPaintRasterizer
                 continue;
             }
 
-            Scatter(buffer, channel.Resolution, context, worldA, worldB, stroke.Radius, stroke.Falloff, minX, maxX, minZ, maxZ);
+            Scatter(w, channel.Resolution, context, worldA, worldB, stroke.Radius, stroke.Falloff, stroke.Value, minX, maxX, minZ, maxZ);
         }
     }
 
     private static void Scatter(
-        float[] buffer,
+        LandscapeChannelWriter writer,
         int resolution,
         in LandscapeRasterContext context,
         Vector3 worldA,
         Vector3 worldB,
         float radius,
         float falloff,
+        Color value,
         float minX,
         float maxX,
         float minZ,
@@ -71,6 +72,7 @@ public static class ProceduralPaintRasterizer
         int xEnd = Math.Clamp(Mathf.CeilToInt(((maxX - origin.X) / step) - 0.5f), 0, resolution - 1);
         int zStart = Math.Clamp(Mathf.FloorToInt(((minZ - origin.Z) / step) - 0.5f), 0, resolution - 1);
         int zEnd = Math.Clamp(Mathf.CeilToInt(((maxZ - origin.Z) / step) - 0.5f), 0, resolution - 1);
+        bool writeColor = writer.Components > 1;
 
         for (int z = zStart; z <= zEnd; z++)
         {
@@ -84,8 +86,19 @@ public static class ProceduralPaintRasterizer
                     continue;
                 }
 
-                int index = (z * resolution) + x;
-                buffer[index] = Mathf.Max(buffer[index], weight);
+                if (writeColor)
+                {
+                    Color current = writer.GetColor(x, z);
+                    writer.SetColor(x, z, new Color(
+                        Mathf.Max(current.R, value.R * weight),
+                        Mathf.Max(current.G, value.G * weight),
+                        Mathf.Max(current.B, value.B * weight),
+                        Mathf.Max(current.A, value.A * weight)));
+                }
+                else
+                {
+                    writer.Set(x, z, Mathf.Max(writer.Get(x, z), weight));
+                }
             }
         }
     }

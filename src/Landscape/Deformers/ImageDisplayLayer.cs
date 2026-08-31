@@ -22,6 +22,23 @@ public enum ImageDisplayMode
 }
 
 /// <summary>
+/// Where a <see cref="ImageDisplayMode.LandscapeOverlay"/> decal's color comes from. Only meaningful in
+/// that mode — <see cref="ImageDisplayMode.Object"/> always shows an image's own pixels regardless,
+/// since "show me the image" needs no ramp to begin with.
+/// </summary>
+public enum ImageColorSource
+{
+    /// <summary>Ramps from <see cref="ImageDisplayLayer.BaseColor"/> to <see cref="ImageDisplayLayer.FullColor"/>
+    /// by the image's first component — the only mode that existed before an image could carry color,
+    /// and still the right one for a scalar mask.</summary>
+    Ramp,
+
+    /// <summary>The image's own RGB(A), unramped — what a painted color image (vertex color, vertex
+    /// light) actually looks like.</summary>
+    Direct,
+}
+
+/// <summary>
 /// A named, saved preview preset an <see cref="ImageComponent"/> placement can opt into. Catalog-backed
 /// like <see cref="PaintImage"/>, so many placements can share one display treatment and changing it
 /// from any of them (or a window, or a script) updates every placement's viewport representation.
@@ -30,6 +47,7 @@ public sealed class ImageDisplayLayer : CatalogEntity, IKeyedCatalogEntity
 {
     private string _name = "Display Layer";
     private ImageDisplayMode _displayMode = ImageDisplayMode.None;
+    private ImageColorSource _colorSource = ImageColorSource.Ramp;
     private Color _baseColor = new(1.0f, 0.35f, 0.1f, 0.0f);
     private Color _fullColor = new(1.0f, 0.35f, 0.1f, 1.0f);
 
@@ -59,6 +77,23 @@ public sealed class ImageDisplayLayer : CatalogEntity, IKeyedCatalogEntity
             }
 
             _displayMode = value;
+            Revision++;
+        }
+    }
+
+    /// <summary>Only meaningful in <see cref="ImageDisplayMode.LandscapeOverlay"/> — see
+    /// <see cref="ImageColorSource"/>.</summary>
+    public ImageColorSource ColorSource
+    {
+        get => _colorSource;
+        set
+        {
+            if (_colorSource == value)
+            {
+                return;
+            }
+
+            _colorSource = value;
             Revision++;
         }
     }

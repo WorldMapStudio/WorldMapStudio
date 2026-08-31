@@ -46,6 +46,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     private int _width = 256;
     private int _height = 256;
     private int _chunkSize = 256;
+    private int _components = 1;
     private int _chunksX = 1;
     private int _chunksY = 1;
     private Dictionary<ImageChunkCoord, ImageChunk> _chunks = [];
@@ -84,6 +85,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// <summary>The fixed tile size chunks are stored and streamed at. See <see cref="ConfigureNew"/>
     /// for why this can only be set on a fresh image.</summary>
     public int ChunkSize => _chunkSize;
+
+    /// <summary>Bytes stored per pixel: 1 for a scalar mask, 3 for RGB, 4 for RGBA — interleaved per
+    /// pixel the same way <see cref="LandscapeChannel.Components"/> interleaves per texel. Fixed for
+    /// an image's whole lifetime like <see cref="Width"/>/<see cref="Height"/>/<see cref="ChunkSize"/>,
+    /// set once via <see cref="ConfigureNew"/>.</summary>
+    public int Components => _components;
 
     /// <summary>The chunk grid's extent — every valid chunk coordinate's X falls in <c>[0, ChunksX)</c>,
     /// Y in <c>[0, ChunksY)</c>. The last column/row typically only partly overlaps the canvas, when
@@ -145,11 +152,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// things for an "edit a field" action to trigger on an image that may already be painted, shared
     /// across placements, and partially committed, so this editor does not offer either. Pick the size
     /// you want at creation.</summary>
-    public void ConfigureNew(int width, int height, int chunkSize)
+    public void ConfigureNew(int width, int height, int chunkSize, int components = 1)
     {
         _width = Math.Clamp(width, MinDimension, MaxDimension);
         _height = Math.Clamp(height, MinDimension, MaxDimension);
         _chunkSize = Math.Clamp(chunkSize, MinChunkSize, MaxChunkSize);
+        _components = components is 1 or 3 or 4 ? components : 1;
         RecomputeGrid();
         _chunks = [];
 
@@ -246,7 +254,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     internal bool IsDirty(ImageChunkCoord coord) => _chunks.TryGetValue(coord, out ImageChunk? chunk) && chunk.Dirty;
 
     /// <summary>Every chunk's fixed storage footprint — what a residency budget is measured in.</summary>
-    internal long ChunkByteSize => (long)_chunkSize * _chunkSize;
+    internal long ChunkByteSize => (long)_chunkSize * _chunkSize * _components;
 
     internal long ResidentByteSize => _chunks.Count * ChunkByteSize;
 
@@ -408,7 +416,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     public byte[] CopyPixels()
     {
-        var dense = new byte[_width * _height];
+        var dense = new byte[_width * _height * _components];
         foreach ((ImageChunkCoord coord, ImageChunk chunk) in _chunks)
         {
             CopyChunkInto(dense, coord, chunk.Pixels);
@@ -418,10 +426,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     }
 
     /// <summary>Replaces the pixel buffer wholesale, keeping the current resolution. Falls back to a
-    /// blank buffer if the given data does not match <see cref="Width"/> x <see cref="Height"/>.</summary>
+    /// blank buffer if the given data does not match <see cref="Width"/> x <see cref="Height"/> x
+    /// <see cref="Components"/>.</summary>
     public void ReplacePixels(byte[] pixels)
     {
-        byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
+        int expected = _width * _height * _components;
+        byte[] dense = pixels.Length == expected ? pixels : new byte[expected];
         RebuildChunks(dense);
         BumpContent();
     }
@@ -442,15 +452,18 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         byte[] old = CopyPixels();
         int oldWidth = _width;
         int oldHeight = _height;
+        int components = _components;
 
-        var resized = new byte[width * height];
+        var resized = new byte[width * height * components];
         for (int y = 0; y < height; y++)
         {
             int oldY = Math.Clamp((int)((y + 0.5f) * oldHeight / height), 0, oldHeight - 1);
             for (int x = 0; x < width; x++)
             {
                 int oldX = Math.Clamp((int)((x + 0.5f) * oldWidth / width), 0, oldWidth - 1);
-                resized[(y * width) + x] = old[(oldY * oldWidth) + oldX];
+                int sourceIndex = ((oldY * oldWidth) + oldX) * components;
+                int targetIndex = ((y * width) + x) * components;
+                Array.Copy(old, sourceIndex, resized, targetIndex, components);
             }
         }
 
@@ -468,7 +481,8 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _width = Math.Clamp(width, MinDimension, MaxDimension);
         _height = Math.Clamp(height, MinDimension, MaxDimension);
         RecomputeGrid();
-        byte[] dense = pixels.Length == _width * _height ? pixels : new byte[_width * _height];
+        int expected = _width * _height * _components;
+        byte[] dense = pixels.Length == expected ? pixels : new byte[expected];
         RebuildChunks(dense);
         BumpContent();
     }
@@ -506,7 +520,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// Every weight is evaluated from the pixel's <em>global</em> centre, never a chunk-local one, so
     /// a stroke that straddles a chunk boundary paints identically to the same stroke on an
     /// unchunked image — there is nothing to blend at the seam because there is no seam in the maths,
-    /// only in how the result happens to be stored.</summary>
+    /// only in how the result happens to be stored.
+    ///
+    /// Touches only a pixel's first component. Exactly what a scalar (<see cref="Components"/> == 1)
+    /// image's only component is — for a color image, use the <see cref="Color"/> overload instead;
+    /// this one is kept for a caller (a plain coverage mask) that never has a color to paint with.</summary>
     public bool Paint(float u, float v, float radiusU, float radiusV, float opacity, bool erase)
     {
         if (radiusU <= 0.0f || radiusV <= 0.0f)
@@ -545,6 +563,59 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         return changed;
     }
 
+    /// <summary>
+    /// Stamps a soft circular brush like the scalar overload, but paints a color: on a 4-component
+    /// (RGBA) image, alpha accumulates exactly like the scalar overload's single byte, and RGB lerps
+    /// toward <paramref name="color"/> weighted by the alpha actually applied this stamp — so a texel
+    /// erased all the way to zero alpha is also zeroed in RGB, keeping "absent chunk means all-zero"
+    /// true through an erase. On a 3-component (RGB, no alpha) image there is no coverage channel to
+    /// drive that weighting, so the brush's own falloff weight is used directly as the lerp factor,
+    /// toward <paramref name="color"/> when painting or toward black when erasing. On a scalar image
+    /// this behaves exactly like the scalar overload — <paramref name="color"/> is unused.
+    /// </summary>
+    public bool Paint(float u, float v, float radiusU, float radiusV, Color color, float opacity, bool erase)
+    {
+        if (_components == 1)
+        {
+            return Paint(u, v, radiusU, radiusV, opacity, erase);
+        }
+
+        if (radiusU <= 0.0f || radiusV <= 0.0f)
+        {
+            return false;
+        }
+
+        int minX = Math.Clamp(Mathf.FloorToInt((u - radiusU) * _width), 0, _width - 1);
+        int maxX = Math.Clamp(Mathf.CeilToInt((u + radiusU) * _width), 0, _width - 1);
+        int minY = Math.Clamp(Mathf.FloorToInt((v - radiusV) * _height), 0, _height - 1);
+        int maxY = Math.Clamp(Mathf.CeilToInt((v + radiusV) * _height), 0, _height - 1);
+        byte amount = (byte)Math.Clamp(Mathf.RoundToInt(Mathf.Clamp(opacity, 0.0f, 1.0f) * 255.0f), 0, 255);
+        bool changed = false;
+
+        int chunkMinX = minX / _chunkSize;
+        int chunkMaxX = maxX / _chunkSize;
+        int chunkMinY = minY / _chunkSize;
+        int chunkMaxY = maxY / _chunkSize;
+
+        for (int cy = chunkMinY; cy <= chunkMaxY; cy++)
+        {
+            for (int cx = chunkMinX; cx <= chunkMaxX; cx++)
+            {
+                if (PaintChunkColor(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, color, amount, erase))
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed)
+        {
+            BumpContent();
+        }
+
+        return changed;
+    }
+
     /// <summary>Converts a UV range on this image into the inclusive, clamped chunk-coordinate rect
     /// that covers it, grown by <paramref name="headroomChunks"/> on every side — what a caller that
     /// needs "this footprint plus some slack" (residency's target computation) asks for, distinct from
@@ -567,7 +638,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Snapshots the current chunk set for a landscape build to sample from — typically off
     /// the main thread while this image may keep being painted on it. See <see cref="ImageChunkTable"/>
     /// for why a snapshot rather than a live view.</summary>
-    public ImageSampler CreateSampler() => new(new ImageChunkTable(new Dictionary<ImageChunkCoord, ImageChunk>(_chunks)), _width, _height, _chunkSize);
+    public ImageSampler CreateSampler() => new(new ImageChunkTable(new Dictionary<ImageChunkCoord, ImageChunk>(_chunks)), _width, _height, _chunkSize, _components);
 
     private void RecomputeGrid()
     {
@@ -609,10 +680,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     /// <summary>Gathers one chunk's worth of pixels out of a dense buffer, or null if every pixel in
     /// its (canvas-clipped) footprint is zero — the source of the "absent chunk means all-zero"
-    /// invariant every other member relies on.</summary>
+    /// invariant every other member relies on. Each pixel is <see cref="Components"/> interleaved
+    /// bytes, copied as one run rather than per-component.</summary>
     private byte[]? ExtractChunk(byte[] dense, int cx, int cy)
     {
-        var pixels = new byte[_chunkSize * _chunkSize];
+        int components = _components;
+        var pixels = new byte[_chunkSize * _chunkSize * components];
         int baseX = cx * _chunkSize;
         int baseY = cy * _chunkSize;
         int width = Math.Min(_chunkSize, _width - baseX);
@@ -621,13 +694,18 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         for (int y = 0; y < height; y++)
         {
-            int denseRow = ((baseY + y) * _width) + baseX;
-            int localRow = y * _chunkSize;
-            for (int x = 0; x < width; x++)
+            int denseRow = (((baseY + y) * _width) + baseX) * components;
+            int localRow = y * _chunkSize * components;
+            int rowBytes = width * components;
+            Array.Copy(dense, denseRow, pixels, localRow, rowBytes);
+
+            for (int i = 0; i < rowBytes; i++)
             {
-                byte value = dense[denseRow + x];
-                pixels[localRow + x] = value;
-                any |= value != 0;
+                if (pixels[localRow + i] != 0)
+                {
+                    any = true;
+                    break;
+                }
             }
         }
 
@@ -636,6 +714,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     private void CopyChunkInto(byte[] dense, ImageChunkCoord coord, byte[] pixels)
     {
+        int components = _components;
         int baseX = coord.X * _chunkSize;
         int baseY = coord.Y * _chunkSize;
         int width = Math.Min(_chunkSize, _width - baseX);
@@ -647,9 +726,9 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         for (int y = 0; y < height; y++)
         {
-            int denseRow = ((baseY + y) * _width) + baseX;
-            int localRow = y * _chunkSize;
-            Array.Copy(pixels, localRow, dense, denseRow, width);
+            int denseRow = (((baseY + y) * _width) + baseX) * components;
+            int localRow = y * _chunkSize * components;
+            Array.Copy(pixels, localRow, dense, denseRow, width * components);
         }
     }
 
@@ -661,6 +740,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// non-erase write and stays absent for a no-op erase, exactly as before chunking existed.</summary>
     private bool PaintChunk(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, byte amount, bool erase)
     {
+        int components = _components;
         int chunkBaseX = coord.X * _chunkSize;
         int chunkBaseY = coord.Y * _chunkSize;
         int loX = Math.Max(minX, chunkBaseX);
@@ -691,7 +771,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             stroke[coord] = resident ? (byte[])existing!.Pixels.Clone() : null;
         }
 
-        byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize];
+        byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize * components];
         bool changed = false;
 
         for (int py = loY; py <= hiY; py++)
@@ -717,7 +797,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
                 int localX = px - chunkBaseX;
                 int localY = py - chunkBaseY;
-                int index = (localY * _chunkSize) + localX;
+                int index = (((localY * _chunkSize) + localX) * components) + 0;
                 byte before = pixels[index];
                 byte after = erase
                     ? (byte)Math.Max(0, before - delta)
@@ -733,29 +813,169 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
-            if (resident)
-            {
-                // An erase can bring a chunk back to all-zero, and the invariant is that an all-zero
-                // chunk simply does not exist — pruning it here (rather than waiting for a commit to
-                // notice) keeps that true at every moment, not just eventually.
-                if (IsAllZero(pixels))
-                {
-                    _chunks.Remove(coord);
-                    _removedSincePersist.Add(coord);
-                }
-                else
-                {
-                    existing!.Dirty = true;
-                    existing.Revision++;
-                }
-            }
-            else
-            {
-                _chunks[coord] = new ImageChunk(pixels) { Dirty = true };
-                _removedSincePersist.Remove(coord);
-            }
+            CommitPaintedChunk(coord, pixels, resident, existing);
         }
 
         return changed;
     }
+
+    /// <summary>The color-aware counterpart to <see cref="PaintChunk"/> — see the type doc on the
+    /// public <see cref="Paint(float,float,float,float,Color,float,bool)"/> overload for the blend
+    /// rules. Only ever called for a 3- or 4-component image.</summary>
+    private bool PaintChunkColor(
+        ImageChunkCoord coord, int minX, int maxX, int minY, int maxY,
+        float u, float v, float radiusU, float radiusV, Color color, byte amount, bool erase)
+    {
+        int components = _components;
+        int chunkBaseX = coord.X * _chunkSize;
+        int chunkBaseY = coord.Y * _chunkSize;
+        int loX = Math.Max(minX, chunkBaseX);
+        int hiX = Math.Min(maxX, chunkBaseX + _chunkSize - 1);
+        int loY = Math.Max(minY, chunkBaseY);
+        int hiY = Math.Min(maxY, chunkBaseY + _chunkSize - 1);
+        if (loX > hiX || loY > hiY)
+        {
+            return false;
+        }
+
+        bool resident = _chunks.TryGetValue(coord, out ImageChunk? existing);
+        if (!resident && IsStored(coord))
+        {
+            return false;
+        }
+
+        if (!resident && erase)
+        {
+            return false;
+        }
+
+        if (_strokeBefore is { } stroke && !stroke.ContainsKey(coord))
+        {
+            stroke[coord] = resident ? (byte[])existing!.Pixels.Clone() : null;
+        }
+
+        byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize * components];
+        bool changed = false;
+        byte targetR = ToByte(color.R);
+        byte targetG = ToByte(color.G);
+        byte targetB = ToByte(color.B);
+
+        for (int py = loY; py <= hiY; py++)
+        {
+            float cy = (py + 0.5f) / _height;
+            float dy = (cy - v) / radiusV;
+            for (int px = loX; px <= hiX; px++)
+            {
+                float cx = (px + 0.5f) / _width;
+                float dx = (cx - u) / radiusU;
+                float distance = Mathf.Sqrt((dx * dx) + (dy * dy));
+                if (distance > 1.0f)
+                {
+                    continue;
+                }
+
+                float weight = Mathf.SmoothStep(0.0f, 1.0f, 1.0f - distance);
+                int delta = Mathf.RoundToInt(amount * weight);
+                if (delta == 0)
+                {
+                    continue;
+                }
+
+                int localX = px - chunkBaseX;
+                int localY = py - chunkBaseY;
+                int index = (((localY * _chunkSize) + localX) * components) + 0;
+
+                if (components == 4)
+                {
+                    int alphaIndex = index + 3;
+                    byte beforeAlpha = pixels[alphaIndex];
+                    byte afterAlpha = erase
+                        ? (byte)Math.Max(0, beforeAlpha - delta)
+                        : (byte)Math.Min(255, beforeAlpha + delta);
+
+                    if (afterAlpha == beforeAlpha)
+                    {
+                        continue;
+                    }
+
+                    pixels[alphaIndex] = afterAlpha;
+                    changed = true;
+
+                    if (afterAlpha == 0)
+                    {
+                        // Keeps "a fully erased texel is all-zero" true through an erase, the same
+                        // invariant IsAllZero/CommitPaintedChunk relies on to prune the chunk back to
+                        // absent — RGB left behind at zero alpha would otherwise never get cleared.
+                        pixels[index] = 0;
+                        pixels[index + 1] = 0;
+                        pixels[index + 2] = 0;
+                    }
+                    else if (!erase)
+                    {
+                        float applied = Math.Abs(afterAlpha - beforeAlpha) / 255.0f;
+                        pixels[index] = LerpByte(pixels[index], targetR, applied);
+                        pixels[index + 1] = LerpByte(pixels[index + 1], targetG, applied);
+                        pixels[index + 2] = LerpByte(pixels[index + 2], targetB, applied);
+                    }
+                }
+                else
+                {
+                    // No alpha channel to weigh by: the brush's own falloff weight is the lerp factor
+                    // directly, toward the brush color when painting or toward black when erasing.
+                    float t = delta / 255.0f;
+                    byte beforeR = pixels[index];
+                    byte beforeG = pixels[index + 1];
+                    byte beforeB = pixels[index + 2];
+                    byte afterR = LerpByte(beforeR, erase ? (byte)0 : targetR, t);
+                    byte afterG = LerpByte(beforeG, erase ? (byte)0 : targetG, t);
+                    byte afterB = LerpByte(beforeB, erase ? (byte)0 : targetB, t);
+
+                    if (afterR != beforeR || afterG != beforeG || afterB != beforeB)
+                    {
+                        pixels[index] = afterR;
+                        pixels[index + 1] = afterG;
+                        pixels[index + 2] = afterB;
+                        changed = true;
+                    }
+                }
+            }
+        }
+
+        if (changed)
+        {
+            CommitPaintedChunk(coord, pixels, resident, existing);
+        }
+
+        return changed;
+    }
+
+    // Shared by PaintChunk and PaintChunkColor: folds a changed chunk's pixels back into residency,
+    // pruning it back to absent if the edit brought it all the way to all-zero — the moment that keeps
+    // "an absent chunk is all-zero" true immediately rather than eventually at the next commit.
+    private void CommitPaintedChunk(ImageChunkCoord coord, byte[] pixels, bool resident, ImageChunk? existing)
+    {
+        if (resident)
+        {
+            if (IsAllZero(pixels))
+            {
+                _chunks.Remove(coord);
+                _removedSincePersist.Add(coord);
+            }
+            else
+            {
+                existing!.Dirty = true;
+                existing.Revision++;
+            }
+        }
+        else
+        {
+            _chunks[coord] = new ImageChunk(pixels) { Dirty = true };
+            _removedSincePersist.Remove(coord);
+        }
+    }
+
+    private static byte ToByte(float channel) => (byte)Math.Clamp(Mathf.RoundToInt(channel * 255.0f), 0, 255);
+
+    private static byte LerpByte(byte from, byte to, float t) =>
+        (byte)Math.Clamp(Mathf.RoundToInt(from + ((to - from) * t)), 0, 255);
 }

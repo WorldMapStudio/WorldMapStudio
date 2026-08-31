@@ -60,7 +60,7 @@ public sealed class ImageComponentType : ISceneComponentType
         if (ImGui.DragFloat("Footprint Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
         _tracker.Track(context.Sessions, image, "depth", image.WorldSizeZ, value => image.WorldSizeZ = value);
 
-        LandscapeDeformerInspector.DrawChannelCombo(context, _landscape.Catalog, image, image.Channel, value => image.Channel = value);
+        DrawChannelBinding(context, image);
 
         float strength = image.Strength;
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { image.Strength = strength; }
@@ -82,6 +82,79 @@ public sealed class ImageComponentType : ISceneComponentType
     {
         _picker.Draw();
         _layerPicker.Draw();
+    }
+
+    private static readonly LandscapeSwizzle[] SwizzleChoices =
+    [
+        LandscapeSwizzle.Native, LandscapeSwizzle.R, LandscapeSwizzle.G, LandscapeSwizzle.B, LandscapeSwizzle.A,
+        LandscapeSwizzle.Rgb, LandscapeSwizzle.Rgba, LandscapeSwizzle.Luminance,
+    ];
+
+    private static string SwizzleLabel(LandscapeSwizzle swizzle) => swizzle switch
+    {
+        LandscapeSwizzle.Native => "Native",
+        LandscapeSwizzle.R => "R",
+        LandscapeSwizzle.G => "G",
+        LandscapeSwizzle.B => "B",
+        LandscapeSwizzle.A => "A",
+        LandscapeSwizzle.Rgb => "RGB",
+        LandscapeSwizzle.Rgba => "RGBA",
+        LandscapeSwizzle.Luminance => "Luminance",
+        _ => swizzle.ToString(),
+    };
+
+    /// <summary>
+    /// Which channel this placement writes, plus — only when the bound image itself carries color —
+    /// which of the image's own components to take: <see cref="ImageComponent.Rasterize"/> parses
+    /// <see cref="ImageComponent.Channel"/> as a <see cref="LandscapeChannelBinding"/> and applies the
+    /// swizzle to what it <em>samples from the image</em>, not to the destination channel — a scalar
+    /// image has only ever one number to give regardless of which swizzle is picked, so the picker is
+    /// hidden rather than offering a choice that cannot change anything.
+    /// </summary>
+    private void DrawChannelBinding(InspectorContext context, ImageComponent image)
+    {
+        LandscapeChannelBinding binding = LandscapeChannelBinding.Parse(image.Channel);
+        string label = binding.IsEmpty ? "(none)" : binding.Channel;
+
+        if (ImGui.BeginCombo("Channel", label))
+        {
+            if (ImGui.Selectable("(none)", binding.IsEmpty))
+            {
+                ComponentFieldRecorder.Record(context, image, "channel", image.Channel, "", value => image.Channel = value);
+            }
+
+            foreach (LandscapeChannel item in _landscape.Catalog.Channels)
+            {
+                if (ImGui.Selectable(item.Name, item.Name == binding.Channel))
+                {
+                    var next = new LandscapeChannelBinding(item.Name, binding.Swizzle);
+                    ComponentFieldRecorder.Record(context, image, "channel", image.Channel, next.ToString(), value => image.Channel = value);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (binding.IsEmpty || (image.Image?.Components ?? 1) == 1)
+        {
+            return;
+        }
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(120.0f);
+        if (ImGui.BeginCombo("Image component", SwizzleLabel(binding.Swizzle)))
+        {
+            foreach (LandscapeSwizzle candidate in SwizzleChoices)
+            {
+                if (ImGui.Selectable(SwizzleLabel(candidate), candidate == binding.Swizzle))
+                {
+                    var next = new LandscapeChannelBinding(binding.Channel, candidate);
+                    ComponentFieldRecorder.Record(context, image, "channel component", image.Channel, next.ToString(), value => image.Channel = value);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
     }
 
     private void DrawImageReference(InspectorContext context, ImageComponent image)

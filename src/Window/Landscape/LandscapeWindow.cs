@@ -295,11 +295,37 @@ public sealed class LandscapeWindow : Window
                 if (ImGui.DragInt("Bit depth", ref bits, 1.0f, 8, 32)) { channel.BitDepth = bits; }
                 _tracker.Track(_context.EditSessions, channel, "bit depth", channel.BitDepth, v => channel.BitDepth = v);
 
+                DrawComponentsCombo(channel);
+
                 ImGui.TextDisabled($"{channel.BytesPerChunk / 1024.0f:0.#} KB per chunk");
                 DrawDelete(channel);
             }
 
             ImGui.PopID();
+        }
+    }
+
+    private static string ComponentsLabel(int components) => components switch
+    {
+        3 => "RGB",
+        4 => "RGBA",
+        _ => "Scalar",
+    };
+
+    private void DrawComponentsCombo(LandscapeChannel channel)
+    {
+        int components = channel.Components;
+        if (ImGui.BeginCombo("Format", ComponentsLabel(components)))
+        {
+            foreach (int candidate in new[] { 1, 3, 4 })
+            {
+                if (ImGui.Selectable(ComponentsLabel(candidate), candidate == components))
+                {
+                    RecordNow(channel, "format", components, candidate, v => channel.Components = v);
+                }
+            }
+
+            ImGui.EndCombo();
         }
     }
 
@@ -403,6 +429,20 @@ public sealed class LandscapeWindow : Window
                     material, "hole", Landscape.Functions.Hole,
                     material.HoleFunction, value => material.HoleFunction = value,
                     material.HoleParameters, value => material.HoleParameters = value,
+                    optional: true);
+
+                Heading("Vertex Color");
+                DrawFunctionBinding(
+                    material, "vertexcolor", Landscape.Functions.VertexColor,
+                    material.VertexColorFunction, value => material.VertexColorFunction = value,
+                    material.VertexColorParameters, value => material.VertexColorParameters = value,
+                    optional: true);
+
+                Heading("Vertex Light");
+                DrawFunctionBinding(
+                    material, "vertexlight", Landscape.Functions.VertexLight,
+                    material.VertexLightFunction, value => material.VertexLightFunction = value,
+                    material.VertexLightParameters, value => material.VertexLightParameters = value,
                     optional: true);
 
                 DrawDelete(material);
@@ -525,6 +565,19 @@ public sealed class LandscapeWindow : Window
                     DrawChannelParameter(material, parameter, values, serialized, setParameters);
                     break;
                 }
+
+                case LandscapeParameterKind.Color:
+                {
+                    Godot.Color color = values.GetColor(parameter);
+                    var value = new Vector4(color.R, color.G, color.B, color.A);
+                    if (ImGui.ColorEdit4(parameter.DisplayName, ref value))
+                    {
+                        values.Set(parameter, new Godot.Color(value.X, value.Y, value.Z, value.W));
+                    }
+
+                    TrackParameter(material, function, values, serialized, setParameters);
+                    break;
+                }
             }
 
             if (parameter.Description.Length > 0 && ImGui.IsItemHovered())
@@ -536,6 +589,25 @@ public sealed class LandscapeWindow : Window
         }
     }
 
+    private static readonly LandscapeSwizzle[] SwizzleChoices =
+    [
+        LandscapeSwizzle.Native, LandscapeSwizzle.R, LandscapeSwizzle.G, LandscapeSwizzle.B, LandscapeSwizzle.A,
+        LandscapeSwizzle.Rgb, LandscapeSwizzle.Rgba, LandscapeSwizzle.Luminance,
+    ];
+
+    private static string SwizzleLabel(LandscapeSwizzle swizzle) => swizzle switch
+    {
+        LandscapeSwizzle.Native => "Native",
+        LandscapeSwizzle.R => "R",
+        LandscapeSwizzle.G => "G",
+        LandscapeSwizzle.B => "B",
+        LandscapeSwizzle.A => "A",
+        LandscapeSwizzle.Rgb => "RGB",
+        LandscapeSwizzle.Rgba => "RGBA",
+        LandscapeSwizzle.Luminance => "Luminance",
+        _ => swizzle.ToString(),
+    };
+
     // Channels belong to the open map, same as the material itself, so the choices offered here are
     // always the material's own map's channels.
     private void DrawChannelParameter(
@@ -545,17 +617,18 @@ public sealed class LandscapeWindow : Window
         string serialized,
         System.Action<string> setParameters)
     {
-        string bound = values.GetChannel(parameter);
+        LandscapeChannelBinding binding = values.GetChannelBinding(parameter);
         string access = parameter.Access == LandscapeChannelAccess.Write ? "writes" : "reads";
-        string label = bound.Length == 0 ? "(unbound)" : bound;
+        string label = binding.IsEmpty ? "(unbound)" : binding.Channel;
 
         if (ImGui.BeginCombo($"{parameter.DisplayName} ({access})", label))
         {
             foreach (LandscapeChannel channel in Landscape.Catalog.Channels)
             {
-                if (ImGui.Selectable(channel.Name, channel.Name == bound))
+                if (ImGui.Selectable(channel.Name, channel.Name == binding.Channel))
                 {
-                    values.Set(parameter, channel.Name);
+                    var next = new LandscapeChannelBinding(channel.Name, binding.Swizzle);
+                    values.Set(parameter, next.ToString());
                     RecordNow(material, parameter.DisplayName, serialized, values.Serialize(), setParameters);
                 }
             }
@@ -563,9 +636,39 @@ public sealed class LandscapeWindow : Window
             ImGui.EndCombo();
         }
 
-        if (bound.Length > 0 && Landscape.Catalog.Channels.All(channel => channel.Name != bound))
+        if (binding.IsEmpty)
         {
-            ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"Channel '{bound}' does not exist on the open map.");
+            return;
+        }
+
+        LandscapeChannel? bound = Landscape.Catalog.Channels.FirstOrDefault(channel => channel.Name == binding.Channel);
+        if (bound == null)
+        {
+            ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"Channel '{binding.Channel}' does not exist on the open map.");
+            return;
+        }
+
+        // A scalar (1-component) channel has nothing to swizzle: native is its only value.
+        if (bound.Components == 1)
+        {
+            return;
+        }
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(110.0f);
+        if (ImGui.BeginCombo($"##{parameter.Name}_swizzle", SwizzleLabel(binding.Swizzle)))
+        {
+            foreach (LandscapeSwizzle candidate in SwizzleChoices)
+            {
+                if (ImGui.Selectable(SwizzleLabel(candidate), candidate == binding.Swizzle))
+                {
+                    var next = new LandscapeChannelBinding(binding.Channel, candidate);
+                    values.Set(parameter, next.ToString());
+                    RecordNow(material, $"{parameter.DisplayName} swizzle", serialized, values.Serialize(), setParameters);
+                }
+            }
+
+            ImGui.EndCombo();
         }
     }
 

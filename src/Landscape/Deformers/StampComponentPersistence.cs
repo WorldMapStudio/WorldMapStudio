@@ -17,6 +17,14 @@ public sealed class SceneStampComponentRecord
 
     public string Channel { get; set; } = "";
 
+    public double ColorR { get; set; } = 1.0;
+
+    public double ColorG { get; set; } = 1.0;
+
+    public double ColorB { get; set; } = 1.0;
+
+    public double ColorA { get; set; } = 1.0;
+
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -61,6 +69,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
                     Falloff = (float)row.Falloff,
                     Strength = (float)row.Strength,
                     Channel = row.Channel,
+                    ColorValue = new Godot.Color((float)row.ColorR, (float)row.ColorG, (float)row.ColorB, (float)row.ColorA),
                 });
             }
         }
@@ -87,6 +96,10 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
             Falloff = stamp.Falloff,
             Strength = stamp.Strength,
             Channel = stamp.Channel,
+            ColorR = stamp.ColorValue.R,
+            ColorG = stamp.ColorValue.G,
+            ColorB = stamp.ColorValue.B,
+            ColorA = stamp.ColorValue.A,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }

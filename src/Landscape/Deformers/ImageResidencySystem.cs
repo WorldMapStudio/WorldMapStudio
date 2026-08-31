@@ -305,7 +305,7 @@ public sealed class ImageResidencySystem
                     continue;
                 }
 
-                byte[] pixels = ImageChunkCodec.Decode(row.Format, row.Pixels, image.ChunkSize);
+                byte[] pixels = ImageChunkCodec.Decode(row.Format, row.Pixels, image.ChunkSize, image.Components);
                 result.Add((image, coord, pixels));
             }
         }

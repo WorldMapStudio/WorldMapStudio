@@ -1,4 +1,6 @@
+using System.Linq;
 using ImGuiNET;
+using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
@@ -38,5 +40,14 @@ public sealed class StampComponentType : ISceneComponentType
         float strength = stamp.Strength;
         if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { stamp.Strength = strength; }
         _tracker.Track(context.Sessions, stamp, "strength", stamp.Strength, value => stamp.Strength = value);
+
+        bool colorMatters = _landscape.Catalog.Channels.FirstOrDefault(c => c.Name == stamp.Channel)?.Components > 1;
+        if (colorMatters)
+        {
+            Godot.Color color = stamp.ColorValue;
+            var value = new NVector4(color.R, color.G, color.B, color.A);
+            if (ImGui.ColorEdit4("Color", ref value)) { stamp.ColorValue = new Godot.Color(value.X, value.Y, value.Z, value.W); }
+            _tracker.Track(context.Sessions, stamp, "color", stamp.ColorValue, value2 => stamp.ColorValue = value2);
+        }
     }
 }

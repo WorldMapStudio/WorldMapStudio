@@ -22,6 +22,12 @@ public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Bits per texel: 8 for a mask, 16 where banding would show, 32 for distance fields.</summary>
     public int BitDepth { get; set; } = 8;
 
+    /// <summary>Values stored per texel: 1 for a scalar mask, 3 for RGB, 4 for RGBA. A function
+    /// declared against a single channel parameter keeps working unchanged against any of these — see
+    /// <see cref="LandscapeChannelBinding"/> for how a binding picks which component(s) it reads or
+    /// writes.</summary>
+    public int Components { get; set; } = 1;
+
     /// <inheritdoc />
     public int? RecordId { get; set; }
 
@@ -31,5 +37,5 @@ public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity
     public override string DisplayName => Name;
 
     /// <summary>Bytes one chunk of this channel occupies, for the pool's budget.</summary>
-    public int BytesPerChunk => Resolution * Resolution * (BitDepth / 8);
+    public int BytesPerChunk => Resolution * Resolution * (BitDepth / 8) * Components;
 }

@@ -136,8 +136,8 @@ public static class ImageTests
         Assert.IsTrue(sparseBytes.Length < sparse.Length, "a mostly-zero chunk should compress smaller than raw");
         Assert.AreEqual(ImageChunkCodec.FormatRaw, denseFormat);
 
-        Assert.IsTrue(ImageChunkCodec.Decode(sparseFormat, sparseBytes, 64).SequenceEqual(sparse));
-        Assert.IsTrue(ImageChunkCodec.Decode(denseFormat, denseBytes, 64).SequenceEqual(dense));
+        Assert.IsTrue(ImageChunkCodec.Decode(sparseFormat, sparseBytes, 64, 1).SequenceEqual(sparse));
+        Assert.IsTrue(ImageChunkCodec.Decode(denseFormat, denseBytes, 64, 1).SequenceEqual(dense));
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
@@ -588,8 +588,8 @@ public static class ImageTests
         image.ConfigureNew(40, 40, chunkSize: 16);
         image.Paint(0.5f, 0.5f, 2.0f, 2.0f, 1.0f, erase: false);
 
-        ImageTexture interior = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(0, 0));
-        ImageTexture edge = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(2, 2));
+        ImageTexture interior = PaintImageTextures.ChunkTexture(image, new ImageChunkCoord(0, 0));
+        ImageTexture edge = PaintImageTextures.ChunkTexture(image, new ImageChunkCoord(2, 2));
 
         Assert.AreEqual(16, interior.GetWidth());
         Assert.AreEqual(8, edge.GetWidth(), "a partly-covered edge chunk must not stretch a full tile over a narrower quad");
@@ -814,7 +814,7 @@ public static class ImageTests
         image.ConfigureNew(64, 64, chunkSize: 16);
         image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
 
-        ImageTexture texture = PaintImageTextures.ChunkGrayscale(image, new ImageChunkCoord(0, 0));
+        ImageTexture texture = PaintImageTextures.ChunkTexture(image, new ImageChunkCoord(0, 0));
 
         Assert.AreEqual(16, texture.GetWidth());
         Assert.AreEqual(16, texture.GetHeight());

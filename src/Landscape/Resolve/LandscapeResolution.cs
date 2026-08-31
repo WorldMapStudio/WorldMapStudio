@@ -49,6 +49,12 @@ public sealed class LandscapeResolution
     /// </summary>
     public required IReadOnlyList<LandscapeClaim> HoleClaims { get; init; }
 
+    /// <summary>Surviving vertex color claims in evaluation order — the layer draw order.</summary>
+    public required IReadOnlyList<LandscapeClaim> VertexColorClaims { get; init; }
+
+    /// <summary>Surviving vertex light claims in evaluation order — the layer draw order.</summary>
+    public required IReadOnlyList<LandscapeClaim> VertexLightClaims { get; init; }
+
     /// <summary>Keys of the groups that did not survive, in the order they were dropped.</summary>
     public required IReadOnlyList<string> DroppedGroups { get; init; }
 

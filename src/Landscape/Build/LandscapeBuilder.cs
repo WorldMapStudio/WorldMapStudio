@@ -222,6 +222,64 @@ public sealed class LandscapeBuilder
             function.Evaluate(context, holes);
         }
 
+        // Vertex color and vertex light live at the height grid itself — no separate resolution — so
+        // they map onto the mesh's own vertex buffer index-for-index, with no resampling step.
+        var vertexColors = new Color[heightResolution * heightResolution];
+        System.Array.Fill(vertexColors, Colors.White);
+        foreach (LandscapeClaim claim in resolution.VertexColorClaims)
+        {
+            if (claim.Material is not { } material)
+            {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingMaterial,
+                    $"Vertex color layer '{claim.Layer.Name}' was claimed without a material, so nothing tints.")));
+                continue;
+            }
+
+            if (_functions.FindVertexColor(material.VertexColorFunction) is not { } function)
+            {
+                string reason = material.VertexColorFunction.Length == 0
+                    ? "binds no vertex color function"
+                    : $"binds vertex color function '{material.VertexColorFunction}', which nothing provides";
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingVertexColorFunction,
+                    $"Vertex color layer '{claim.Layer.Name}' uses material '{material.Name}', which {reason}, so nothing tints.")));
+                continue;
+            }
+
+            var values = LandscapeParameterValues.Parse(material.VertexColorParameters);
+            var context = new LandscapeEvalContext(coord, _pool, _settings, values, heightResolution);
+            function.Evaluate(context, vertexColors);
+        }
+
+        var vertexLight = new Color[heightResolution * heightResolution];
+        System.Array.Fill(vertexLight, Colors.Black);
+        foreach (LandscapeClaim claim in resolution.VertexLightClaims)
+        {
+            if (claim.Material is not { } material)
+            {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingMaterial,
+                    $"Vertex light layer '{claim.Layer.Name}' was claimed without a material, so nothing lights.")));
+                continue;
+            }
+
+            if (_functions.FindVertexLight(material.VertexLightFunction) is not { } function)
+            {
+                string reason = material.VertexLightFunction.Length == 0
+                    ? "binds no vertex light function"
+                    : $"binds vertex light function '{material.VertexLightFunction}', which nothing provides";
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.MissingVertexLightFunction,
+                    $"Vertex light layer '{claim.Layer.Name}' uses material '{material.Name}', which {reason}, so nothing lights.")));
+                continue;
+            }
+
+            var values = LandscapeParameterValues.Parse(material.VertexLightParameters);
+            var context = new LandscapeEvalContext(coord, _pool, _settings, values, heightResolution);
+            function.Evaluate(context, vertexLight);
+        }
+
         var layers = new List<LandscapeChunkLayer>();
         foreach (LandscapeSlot slot in resolution.Slots)
         {
@@ -249,6 +307,8 @@ public sealed class LandscapeBuilder
             Layers = layers,
             HoleResolution = holeResolution,
             Holes = holes,
+            VertexColors = vertexColors,
+            VertexLight = vertexLight,
         };
     }
 

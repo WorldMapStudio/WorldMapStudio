@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 public sealed class ChannelMaskAlpha : ILandscapeAlphaFunction
 {
     public static readonly LandscapeParameter Mask =
-        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel supplying coverage.");
+        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel supplying coverage.", LandscapeChannelFormat.Scalar);
 
     public static readonly LandscapeParameter Threshold =
         LandscapeParameter.Float("threshold", "Threshold", 0.5f, 0.0f, 1.0f, "Mask value that becomes half coverage.");

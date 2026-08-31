@@ -57,13 +57,22 @@ public readonly struct LandscapeEvalContext
         return new Vector3(origin.X + ((x + 0.5f) * texel), 0.0f, origin.Z + ((y + 0.5f) * texel));
     }
 
-    /// <summary>Samples the channel a parameter is bound to, anywhere in the neighbourhood.</summary>
+    /// <summary>Samples the channel a parameter is bound to, anywhere in the neighbourhood, honoring
+    /// the binding's swizzle (see <see cref="LandscapeChannelBinding"/>).</summary>
     public float SampleChannel(LandscapeParameter parameter, Vector3 world) =>
-        Channels.Sample(Values.GetChannel(parameter), world);
+        Channels.SampleScalar(Values.GetChannelBinding(parameter), world);
+
+    /// <summary>Samples the channel a parameter is bound to as a color, honoring the binding's
+    /// swizzle. What a color-consuming function (e.g. a vertex color paint) reads instead of
+    /// <see cref="SampleChannel"/>.</summary>
+    public Color SampleChannelColor(LandscapeParameter parameter, Vector3 world) =>
+        Channels.SampleColor(Values.GetChannelBinding(parameter), world);
 
     public float Float(LandscapeParameter parameter) => Values.GetFloat(parameter);
 
     public int Int(LandscapeParameter parameter) => Values.GetInt(parameter);
 
     public bool Bool(LandscapeParameter parameter) => Values.GetBool(parameter);
+
+    public Color Color(LandscapeParameter parameter) => Values.GetColor(parameter);
 }

@@ -51,8 +51,13 @@ public sealed class ImageDisplayLayersWindow : Window
 
                 if (layer.DisplayMode == ImageDisplayMode.LandscapeOverlay)
                 {
-                    DrawColor("Base Color (value 0)", layer, () => layer.BaseColor, c => layer.BaseColor = c);
-                    DrawColor("Full Color (value 255)", layer, () => layer.FullColor, c => layer.FullColor = c);
+                    DrawColorSource(layer);
+
+                    if (layer.ColorSource == ImageColorSource.Ramp)
+                    {
+                        DrawColor("Base Color (value 0)", layer, () => layer.BaseColor, c => layer.BaseColor = c);
+                        DrawColor("Full Color (value 255)", layer, () => layer.FullColor, c => layer.FullColor = c);
+                    }
                 }
 
                 DrawFooter(layer, uses);
@@ -109,6 +114,30 @@ public sealed class ImageDisplayLayersWindow : Window
         ImGui.EndCombo();
     }
 
+    private void DrawColorSource(ImageDisplayLayer layer)
+    {
+        string label = layer.ColorSource == ImageColorSource.Direct ? "Direct" : "Ramp";
+        if (!ImGui.BeginCombo("Color Source", label))
+        {
+            return;
+        }
+
+        foreach (ImageColorSource source in new[] { ImageColorSource.Ramp, ImageColorSource.Direct })
+        {
+            string sourceLabel = source == ImageColorSource.Direct ? "Direct" : "Ramp";
+            if (ImGui.Selectable(sourceLabel, source == layer.ColorSource) && layer.ColorSource != source)
+            {
+                var command = new SetFieldCommand<ImageColorSource>(layer, "color source", value => layer.ColorSource = value, layer.ColorSource, source);
+                command.Apply();
+                _context.EditSessions.Record(command);
+            }
+        }
+
+        ImGui.EndCombo();
+        ImGui.SameLine();
+        ImGui.TextDisabled(layer.ColorSource == ImageColorSource.Direct ? "(the image's own RGB(A))" : "(ramps a single value)");
+    }
+
     private void DrawColor(string label, ImageDisplayLayer layer, System.Func<Godot.Color> get, System.Action<Godot.Color> set)
     {
         Godot.Color color = get();
@@ -154,6 +183,7 @@ public sealed class ImageDisplayLayersWindow : Window
         {
             Name = UniqueName($"{layer.Name} Copy", Images.DisplayLayers.Select(l => l.Name)),
             DisplayMode = layer.DisplayMode,
+            ColorSource = layer.ColorSource,
             BaseColor = layer.BaseColor,
             FullColor = layer.FullColor,
         };

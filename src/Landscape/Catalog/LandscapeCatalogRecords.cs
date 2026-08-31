@@ -12,6 +12,8 @@ public sealed class LandscapeChannelRecord : IKeyedRecord
     public int Resolution { get; set; } = 64;
 
     public int BitDepth { get; set; } = 8;
+
+    public int Components { get; set; } = 1;
 }
 
 /// <summary>EF Core row backing a <see cref="LandscapeLayer"/> in the Editor storage.</summary>
@@ -52,6 +54,14 @@ public sealed class LandscapeMaterialRecord : IKeyedRecord
     public string HoleFunction { get; set; } = "";
 
     public string HoleParameters { get; set; } = "";
+
+    public string VertexColorFunction { get; set; } = "";
+
+    public string VertexColorParameters { get; set; } = "";
+
+    public string VertexLightFunction { get; set; } = "";
+
+    public string VertexLightParameters { get; set; } = "";
 }
 
 /// <summary>

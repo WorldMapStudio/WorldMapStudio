@@ -226,12 +226,19 @@ public static class LandscapeResolver
         // to be ordered against each other — cutting a hole is a union, not a transform.
         List<LandscapeClaim> holes = ordered.Where(claim => claim.Material!.CutsHole).ToList();
 
+        // Vertex color and vertex light are independent of the slot budget too, and share height's
+        // accumulate-and-transform shape, so they are ordered the same way.
+        List<LandscapeClaim> vertexColors = ordered.Where(claim => claim.Material!.PaintsVertexColor).ToList();
+        List<LandscapeClaim> vertexLight = ordered.Where(claim => claim.Material!.PaintsVertexLight).ToList();
+
         return new LandscapeResolution
         {
             Base = baseSlot,
             AlphaSlots = alphaSlots,
             HeightClaims = heights,
             HoleClaims = holes,
+            VertexColorClaims = vertexColors,
+            VertexLightClaims = vertexLight,
             DroppedGroups = dropped.ToList(),
             Problems = problems.ToList(),
         };

@@ -1,5 +1,6 @@
 
 using System.Collections.Generic;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -47,7 +48,25 @@ public sealed class LandscapeChunkOutput
     /// <summary>Row-major hole flags, <see cref="HoleResolution"/> squared. True cuts the cell out of the mesh.</summary>
     public required bool[] Holes { get; init; }
 
+    /// <summary>
+    /// Row-major vertex color, <see cref="HeightResolution"/> squared — the same grid as
+    /// <see cref="Heights"/>, so it maps onto the mesh's vertex buffer index-for-index. Starts white
+    /// each build; consumed by the shader as a multiplier over the splatted albedo.
+    /// </summary>
+    public required Color[] VertexColors { get; init; }
+
+    /// <summary>
+    /// Row-major vertex light, <see cref="HeightResolution"/> squared — same grid as
+    /// <see cref="VertexColors"/>. Starts black each build; consumed by the shader as an additive term
+    /// over the splatted albedo.
+    /// </summary>
+    public required Color[] VertexLight { get; init; }
+
     public float HeightAt(int x, int y) => Heights[(y * HeightResolution) + x];
 
     public bool IsHole(int x, int y) => Holes[(y * HoleResolution) + x];
+
+    public Color VertexColorAt(int x, int y) => VertexColors[(y * HeightResolution) + x];
+
+    public Color VertexLightAt(int x, int y) => VertexLight[(y * HeightResolution) + x];
 }

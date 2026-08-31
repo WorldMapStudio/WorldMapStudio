@@ -15,6 +15,14 @@ public sealed class SceneTerrainValueComponentRecord
 
     public double Value { get; set; } = 0.1;
 
+    public double ColorR { get; set; } = 1.0;
+
+    public double ColorG { get; set; } = 1.0;
+
+    public double ColorB { get; set; } = 1.0;
+
+    public double ColorA { get; set; } = 1.0;
+
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -90,6 +98,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
                 Width = (float)row.Width,
                 Height = (float)row.Height,
                 Value = (float)row.Value,
+                ColorValue = new Godot.Color((float)row.ColorR, (float)row.ColorG, (float)row.ColorB, (float)row.ColorA),
             };
 
             if (channels.TryGetValue(row.EntityId, out List<SceneTerrainValueChannelRecord>? channelRows))
@@ -121,6 +130,10 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
             Width = terrainValue.Width,
             Height = terrainValue.Height,
             Value = terrainValue.Value,
+            ColorR = terrainValue.ColorValue.R,
+            ColorG = terrainValue.ColorValue.G,
+            ColorB = terrainValue.ColorValue.B,
+            ColorA = terrainValue.ColorValue.A,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
         StageChannels(context, terrainValue, row, entity.RecordId);

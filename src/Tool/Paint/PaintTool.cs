@@ -5,6 +5,7 @@ using ImGuiNET;
 using GVector2 = Godot.Vector2;
 using GVector3 = Godot.Vector3;
 using NVector2 = System.Numerics.Vector2;
+using NVector3 = System.Numerics.Vector3;
 using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
@@ -20,6 +21,7 @@ public sealed class PaintTool : ITool
 
     private float _radius = 4.0f;
     private float _opacity = 0.35f;
+    private Color _color = Colors.White;
     private bool _erase;
     private bool _paintOnObject = true;
     private bool _painting;
@@ -49,6 +51,26 @@ public sealed class PaintTool : ITool
         ImGui.SameLine();
 
         ImGui.Checkbox("Erase", ref _erase);
+        ImGui.SameLine();
+
+        bool colorAvailable = (ActiveTarget()?.Image?.Components ?? 1) > 1;
+        if (!colorAvailable)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        ImGui.SetNextItemWidth(160.0f);
+        var colorValue = new NVector3(_color.R, _color.G, _color.B);
+        if (ImGui.ColorEdit3("Color", ref colorValue))
+        {
+            _color = new Color(colorValue.X, colorValue.Y, colorValue.Z);
+        }
+
+        if (!colorAvailable)
+        {
+            ImGui.EndDisabled();
+        }
+
         ImGui.SameLine();
 
         bool objectAvailable = ActiveTarget()?.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
@@ -103,7 +125,7 @@ public sealed class PaintTool : ITool
                 return;
             }
 
-            if (_strokeTarget == target && hit && target.Paint(local, _radius, _opacity, _erase))
+            if (_strokeTarget == target && hit && target.Paint(local, _radius, _color, _opacity, _erase))
             {
                 _scene.Touch(target.Owner!);
             }

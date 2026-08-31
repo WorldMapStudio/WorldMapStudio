@@ -13,6 +13,11 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
 
     public string Channel { get; set; } = "";
 
+    /// <summary>Only meaningful when the bound channel carries more than one component — see
+    /// <see cref="Rasterize"/>. Ignored on a scalar channel, where <see cref="Strength"/> alone
+    /// decides how much this stamp adds.</summary>
+    public Color ColorValue { get; set; } = Colors.White;
+
     public override string TypeId => "landscape-stamp";
 
     public override string DisplayName => "Landscape Stamp";
@@ -34,7 +39,7 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
     public Aabb InfluenceBounds => Entity.Transform * LocalBounds;
 
     public override int ContentVersion =>
-        System.HashCode.Combine(Radius, Falloff, Strength, Channel);
+        System.HashCode.Combine(Radius, Falloff, Strength, Channel, ColorValue);
 
     public override SceneComponent Clone() => new StampComponent
     {
@@ -42,19 +47,21 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
         Falloff = Falloff,
         Strength = Strength,
         Channel = Channel,
+        ColorValue = ColorValue,
     };
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
     public void Rasterize(in LandscapeRasterContext context)
     {
-        if (context.Channel(Channel) is not { } channel || context.Buffer(Channel) is not { } buffer)
+        if (context.Channel(Channel) is not { } channel || context.Writer(Channel) is not { } writer)
         {
             return;
         }
 
         int resolution = channel.Resolution;
         Vector3 centre = Entity.Transform.Origin;
+        bool writeColor = writer.Components > 1;
 
         for (int y = 0; y < resolution; y++)
         {
@@ -69,8 +76,19 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
                     continue;
                 }
 
-                int index = (y * resolution) + x;
-                buffer[index] = Mathf.Min(1.0f, buffer[index] + value);
+                if (writeColor)
+                {
+                    Color current = writer.GetColor(x, y);
+                    writer.SetColor(x, y, new Color(
+                        Mathf.Min(1.0f, current.R + (ColorValue.R * value)),
+                        Mathf.Min(1.0f, current.G + (ColorValue.G * value)),
+                        Mathf.Min(1.0f, current.B + (ColorValue.B * value)),
+                        Mathf.Min(1.0f, current.A + (ColorValue.A * value))));
+                }
+                else
+                {
+                    writer.Set(x, y, Mathf.Min(1.0f, writer.Get(x, y) + value));
+                }
             }
         }
     }

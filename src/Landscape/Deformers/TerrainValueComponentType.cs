@@ -1,4 +1,6 @@
+using System.Linq;
 using ImGuiNET;
+using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
 
@@ -43,5 +45,15 @@ public sealed class TerrainValueComponentType : ISceneComponentType
             terrainValue,
             terrainValue.Channels,
             terrainValue.ReplaceChannels);
+
+        bool colorMatters = _landscape.Catalog.Channels
+            .Any(c => terrainValue.Channels.Contains(c.Name) && c.Components > 1);
+        if (colorMatters)
+        {
+            Godot.Color color = terrainValue.ColorValue;
+            var colorEdit = new NVector4(color.R, color.G, color.B, color.A);
+            if (ImGui.ColorEdit4("Color", ref colorEdit)) { terrainValue.ColorValue = new Godot.Color(colorEdit.X, colorEdit.Y, colorEdit.Z, colorEdit.W); }
+            _tracker.Track(context.Sessions, terrainValue, "color", terrainValue.ColorValue, v => terrainValue.ColorValue = v);
+        }
     }
 }

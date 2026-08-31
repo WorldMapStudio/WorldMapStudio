@@ -67,6 +67,7 @@ public sealed class LandscapeCatalog
                 hash.Add(channel.Name);
                 hash.Add(channel.Resolution);
                 hash.Add(channel.BitDepth);
+                hash.Add(channel.Components);
             }
 
             foreach (LandscapeLayer layer in Layers)
@@ -87,6 +88,10 @@ public sealed class LandscapeCatalog
                 hash.Add(material.HeightParameters);
                 hash.Add(material.HoleFunction);
                 hash.Add(material.HoleParameters);
+                hash.Add(material.VertexColorFunction);
+                hash.Add(material.VertexColorParameters);
+                hash.Add(material.VertexLightFunction);
+                hash.Add(material.VertexLightParameters);
             }
 
             return hash.ToHashCode();
@@ -136,6 +141,16 @@ public sealed class LandscapeCatalog
         {
             yield return hole;
         }
+
+        if (Functions.Find(material.VertexColorFunction) is { } vertexColor)
+        {
+            yield return vertexColor;
+        }
+
+        if (Functions.Find(material.VertexLightFunction) is { } vertexLight)
+        {
+            yield return vertexLight;
+        }
     }
 
     /// <summary>Layers in draw order — compositing order for whatever paints, evaluation order for
@@ -160,6 +175,14 @@ public sealed class LandscapeCatalog
 
         foreach (LandscapeChannel channel in Channels)
         {
+            // A channel binding serializes as "name:swizzle" (see LandscapeChannelBinding) — a colon
+            // in the name itself would make that unparseable.
+            if (channel.Name.Contains(':'))
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                    $"Channel '{channel.Name}' has a ':' in its name, which a channel binding uses as a separator."));
+            }
+
             if (channel.Resolution < 1)
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
@@ -170,6 +193,12 @@ public sealed class LandscapeCatalog
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
                     $"Channel '{channel.Name}' has bit depth {channel.BitDepth}; expected 8, 16 or 32."));
+            }
+
+            if (channel.Components is not (1 or 3 or 4))
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                    $"Channel '{channel.Name}' has {channel.Components} components; expected 1 (scalar), 3 (RGB) or 4 (RGBA)."));
             }
         }
     }
@@ -204,10 +233,11 @@ public sealed class LandscapeCatalog
             // Which half a material needs depends on the layer it is bound to, and that binding is
             // made per entity and per chunk — so the only thing checkable here is that it does
             // something at all. The builder reports a material missing the half its layer needed.
-            if (!material.PaintsTexture && !material.DeformsHeight && !material.CutsHole)
+            if (!material.PaintsTexture && !material.DeformsHeight && !material.CutsHole &&
+                !material.PaintsVertexColor && !material.PaintsVertexLight)
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
-                    $"Material '{material.Name}' has no alpha, height or hole function, so it does nothing."));
+                    $"Material '{material.Name}' has no alpha, height, hole, vertex color or vertex light function, so it does nothing."));
             }
 
             if (material.PaintsTexture && material.TexturePath.Length == 0)
@@ -219,6 +249,8 @@ public sealed class LandscapeCatalog
             ValidateBinding(issues, material, material.AlphaFunction, material.AlphaParameters, "alpha");
             ValidateBinding(issues, material, material.HeightFunction, material.HeightParameters, "height");
             ValidateBinding(issues, material, material.HoleFunction, material.HoleParameters, "hole");
+            ValidateBinding(issues, material, material.VertexColorFunction, material.VertexColorParameters, "vertexcolor");
+            ValidateBinding(issues, material, material.VertexLightFunction, material.VertexLightParameters, "vertexlight");
         }
     }
 
@@ -247,16 +279,43 @@ public sealed class LandscapeCatalog
         LandscapeParameterValues values = LandscapeParameterValues.Parse(serializedValues);
         foreach (LandscapeParameter parameter in function.Parameters.Where(p => p.Kind == LandscapeParameterKind.Channel))
         {
-            string channel = values.GetChannel(parameter);
-            if (channel.Length == 0)
+            LandscapeChannelBinding binding = values.GetChannelBinding(parameter);
+            if (binding.IsEmpty)
             {
-                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
-                    $"Material '{material.Name}' leaves {role} channel '{parameter.DisplayName}' unbound."));
+                if (!parameter.Optional)
+                {
+                    issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
+                        $"Material '{material.Name}' leaves {role} channel '{parameter.DisplayName}' unbound."));
+                }
+
+                continue;
             }
-            else if (Channels.All(existing => existing.Name != channel))
+
+            if (Channels.FirstOrDefault(existing => existing.Name == binding.Channel) is not { } bound)
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Error,
-                    $"Material '{material.Name}' binds {role} channel '{parameter.DisplayName}' to '{channel}', which does not exist."));
+                    $"Material '{material.Name}' binds {role} channel '{parameter.DisplayName}' to '{binding.Channel}', which does not exist."));
+                continue;
+            }
+
+            // A swizzle can always bridge a scalar parameter to a color channel or vice versa (see
+            // LandscapeChannelBinding), so this is never wrong — just possibly not what the author
+            // meant, e.g. picking "rgb" for a parameter that only ever reads one number back out.
+            if (parameter.ChannelFormat == LandscapeChannelFormat.Scalar &&
+                binding.Swizzle is LandscapeSwizzle.Rgb or LandscapeSwizzle.Rgba)
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
+                    $"Material '{material.Name}' binds {role} channel '{parameter.DisplayName}' with swizzle " +
+                    $"'{LandscapeChannelBinding.SuffixOf(binding.Swizzle)}', but the parameter only reads a single " +
+                    "value — it will see luminance instead."));
+            }
+
+            if (bound.Components == 1 && binding.Swizzle is LandscapeSwizzle.G or LandscapeSwizzle.B or LandscapeSwizzle.A)
+            {
+                issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
+                    $"Material '{material.Name}' binds {role} channel '{parameter.DisplayName}' to '{binding.Channel}' " +
+                    $"with swizzle '{LandscapeChannelBinding.SuffixOf(binding.Swizzle)}', but that channel is scalar " +
+                    "and has no such component."));
             }
         }
     }
