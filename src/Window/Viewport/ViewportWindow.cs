@@ -61,6 +61,8 @@ public sealed class ViewportWindow : Window, IWorldParticipant
 
     private MapId _viewMap;
     private bool _chunkEdgesShown = true;
+    private float? _gridScaleChunkSize;
+    private (SignedAxis X, SignedAxis Y, SignedAxis Z)? _axisLineColorsFor;
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
@@ -327,9 +329,21 @@ public sealed class ViewportWindow : Window, IWorldParticipant
     /// </summary>
     private void UpdateGridScale()
     {
+        float chunk = _landscape.Settings is { ChunkWorldSize: > 0.0f } settings ? settings.ChunkWorldSize : 0.0f;
+
+        // Every parameter here is purely a function of the chunk size, which changes only when the
+        // landscape's own settings change — not every frame. Re-uploading five shader parameters
+        // unconditionally on every DrawContent was a fixed per-frame tax paid regardless of whether
+        // anything changed.
+        if (_gridScaleChunkSize == chunk)
+        {
+            return;
+        }
+
+        _gridScaleChunkSize = chunk;
         var material = (ShaderMaterial)_grid.MaterialOverride;
 
-        if (_landscape.Settings is not { } settings || settings.ChunkWorldSize <= 0.0f)
+        if (chunk <= 0.0f)
         {
             material.SetShaderParameter("chunk_size", 0.0f);
             material.SetShaderParameter("cell_size", 1.0f);
@@ -338,8 +352,6 @@ public sealed class ViewportWindow : Window, IWorldParticipant
             material.SetShaderParameter("fade_end", 90.0f);
             return;
         }
-
-        float chunk = settings.ChunkWorldSize;
 
         // Cells divide the chunk rather than the world, so every line is on a boundary of something
         // real and the major lines land exactly on chunk edges.
@@ -357,6 +369,18 @@ public sealed class ViewportWindow : Window, IWorldParticipant
     // always read as the user's own X/Y/Z (red/green/blue) no matter how they are remapped.
     private void UpdateAxisLineColors()
     {
+        var current = (_axes.X, _axes.Y, _axes.Z);
+
+        // These colors are purely a function of the axis convention, which changes only when the
+        // user remaps an axis — not every frame. Same fix as UpdateGridScale: re-uploading shader
+        // parameters unconditionally on every DrawContent was a fixed per-frame tax for no reason.
+        if (_axisLineColorsFor == current)
+        {
+            return;
+        }
+
+        _axisLineColorsFor = current;
+
         var gridMaterial = (ShaderMaterial)_grid.MaterialOverride;
         gridMaterial.SetShaderParameter("x_axis_color", ColorForSpatialAxis(0));
         gridMaterial.SetShaderParameter("z_axis_color", ColorForSpatialAxis(2));

@@ -39,6 +39,50 @@ public static class MeshPicking
     }
 
     /// <summary>
+    /// Cheap reject against a mesh's world-space bounds, so a click only pays for
+    /// <see cref="TryRayTriangles"/> — and the per-node <c>AffineInverse()</c> that feeds it — on the
+    /// handful of meshes the ray is actually near, not every mesh under the clicked entity.
+    /// </summary>
+    public static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds)
+    {
+        Vector3 lo = bounds.Position;
+        Vector3 hi = bounds.End;
+
+        float tMin = float.NegativeInfinity;
+        float tMax = float.PositiveInfinity;
+        for (int axis = 0; axis < 3; axis++)
+        {
+            float o = origin[axis];
+            float d = dir[axis];
+            if (Mathf.Abs(d) < 1e-8f)
+            {
+                if (o < lo[axis] || o > hi[axis])
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            float t1 = (lo[axis] - o) / d;
+            float t2 = (hi[axis] - o) / d;
+            if (t1 > t2)
+            {
+                (t1, t2) = (t2, t1);
+            }
+
+            tMin = Mathf.Max(tMin, t1);
+            tMax = Mathf.Min(tMax, t2);
+            if (tMin > tMax)
+            {
+                return false;
+            }
+        }
+
+        return tMax >= 0.0f;
+    }
+
+    /// <summary>
     /// Nearest intersection of the ray with <paramref name="triangles"/>, if any is nearer than
     /// <paramref name="best"/>, which it updates in place.
     ///

@@ -99,13 +99,18 @@ public sealed class TerrainProbe
         bestT = float.PositiveInfinity;
         bestWorld = default;
 
-        Transform3D inverse = chunk.Transform.AffineInverse();
-        Vector3 origin = inverse * rayOrigin;
-        Vector3 dir = inverse.Basis * rayDir;
-        if (!TryRayBox(origin, dir, chunk.LocalBounds, out _))
+        // Broad-phase against the chunk's world-space bounds with the untransformed ray first: at
+        // view distance this rules out nearly every chunk, so it has to happen before the per-chunk
+        // matrix inversion below rather than after it. Chunks are placed with an identity basis (see
+        // the constructor), so the world-space box test is exactly equivalent to the local one.
+        if (!TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out _))
         {
             return false;
         }
+
+        Transform3D inverse = chunk.Transform.AffineInverse();
+        Vector3 origin = inverse * rayOrigin;
+        Vector3 dir = inverse.Basis * rayDir;
 
         LandscapeChunkOutput output = chunk.Output;
         int resolution = output.HeightResolution;

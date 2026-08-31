@@ -158,12 +158,13 @@ public sealed class ModelAsset
         var branchVisited = new HashSet<string>(visited, StringComparer.OrdinalIgnoreCase) { reference.Path };
 
         Task<ModelAsset?> task = materials.Context.Assets.LoadModelAssetAsync(reference.Path);
-        if (task.IsCompletedSuccessfully)
-        {
-            AttachResolved(materials, anchor, task.Result, options, depth, branchVisited);
-            return;
-        }
 
+        // Always through the queue, even when the asset is already loaded: a WMO can reference the
+        // same handful of doodad models hundreds of times, and resolving them inline here recurses
+        // straight back into Instantiate for each one — the whole doodad tree built synchronously in
+        // one frame the moment the WMO streams in. Routing every reference through WorkQueue, whose
+        // SwitchToMain always re-queues rather than continuing inline, keeps each one under
+        // PumpMainThread's per-frame budget regardless of how fast it resolves.
         WorkQueue.Schedule("Resolve Model Reference", async work =>
         {
             ModelAsset? resolved = await task.ConfigureAwait(false);

@@ -29,6 +29,12 @@ public static class WorkQueue
     private static readonly object _registryLock = new();
     private static readonly List<WorkHandle> _handles = new();
 
+    // Tracked incrementally as handles finish, rather than recomputed by scanning _handles: a burst of
+    // Schedule calls (e.g. one per doodad reference while a large model streams in) can register
+    // hundreds of items faster than PumpMainThread's budget drains them, and re-counting "how many are
+    // finished" from scratch on every single Register call made that burst O(handles^2).
+    private static int _finishedCount;
+
     private static long _nextId;
     private static bool _initialized;
 
@@ -164,6 +170,19 @@ public static class WorkQueue
         lock (_registryLock)
         {
             _handles.RemoveAll(h => h.State is not WorkState.Queued and not WorkState.Executing);
+            _finishedCount = 0;
+        }
+    }
+
+    /// <summary>Called once a handle reaches a terminal state, from wherever that happens to run
+    /// (a worker thread or the main thread) — keeps <see cref="_finishedCount"/> accurate without
+    /// requiring <see cref="PruneFinishedLocked"/> to rediscover it by scanning every handle.</summary>
+    private static void MarkFinished()
+    {
+        lock (_registryLock)
+        {
+            _finishedCount++;
+            PruneFinishedLocked();
         }
     }
 
@@ -205,6 +224,10 @@ public static class WorkQueue
             handle.Fault(e);
             GD.PushError($"[WorkQueue] '{handle.Name}' faulted: {e}");
         }
+        finally
+        {
+            MarkFinished();
+        }
     }
 
     private static void WorkerLoop()
@@ -234,6 +257,7 @@ public static class WorkQueue
             // Continuations resume async state machines that capture their own exceptions, so reaching
             // here is unexpected; record it rather than tearing down the worker.
             job.Handle.Fault(e);
+            MarkFinished();
             GD.PushError($"[WorkQueue] '{job.Handle.Name}' step threw: {e}");
         }
     }
@@ -243,33 +267,28 @@ public static class WorkQueue
         lock (_registryLock)
         {
             _handles.Add(handle);
-            PruneFinishedLocked();
         }
     }
 
+    // Called under _registryLock from MarkFinished, right after _finishedCount is bumped — the only
+    // place the count can cross MaxFinishedRetained, so nothing else needs to trigger a prune. Uses the
+    // incrementally-tracked count instead of rescanning every handle's .State, which is what made a
+    // burst of registrations (many Schedule calls in a row) cost O(handles^2).
     private static void PruneFinishedLocked()
     {
-        int finished = 0;
-        foreach (WorkHandle handle in _handles)
-        {
-            if (handle.State is not WorkState.Queued and not WorkState.Executing)
-            {
-                finished++;
-            }
-        }
-
-        if (finished <= MaxFinishedRetained)
+        if (_finishedCount <= MaxFinishedRetained)
         {
             return;
         }
 
-        int toRemove = finished - MaxFinishedRetained;
+        int toRemove = _finishedCount - MaxFinishedRetained;
         for (int i = 0; i < _handles.Count && toRemove > 0;)
         {
             if (_handles[i].State is not WorkState.Queued and not WorkState.Executing)
             {
                 _handles.RemoveAt(i);
                 toRemove--;
+                _finishedCount--;
             }
             else
             {
