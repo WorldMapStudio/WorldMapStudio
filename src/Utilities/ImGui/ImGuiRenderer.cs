@@ -19,6 +19,14 @@ internal sealed class ImGuiRenderer : IDisposable
     private readonly Dictionary<Rid, Rid> _framebuffers = [];
     private readonly Dictionary<IntPtr, Rid> _uniformSets = [];
     private readonly HashSet<IntPtr> _usedTextures = [];
+
+    // Godot texture Rid -> its RD-backing texture Rid, from RenderingServer.TextureGetRdTexture. That
+    // mapping is stable for as long as the texture is (font atlas, viewport image), so without this
+    // cache every single ImGui draw command paid for a fresh native round-trip to recompute the exact
+    // same answer it got last frame — one of two redundant per-draw-command native calls in this file
+    // that dominated a session's baseline frame cost regardless of what the 3D scene held.
+    private readonly Dictionary<IntPtr, Rid> _rdTextureCache = [];
+    private readonly HashSet<IntPtr> _usedOriginalTextures = [];
     private readonly ArrayPool<byte> _bufferPool = ArrayPool<byte>.Create();
     private readonly float[] _scale = new float[2];
     private readonly float[] _translate = new float[2];
@@ -223,6 +231,15 @@ internal sealed class ImGuiRenderer : IDisposable
         for (int listIndex = 0; listIndex < drawData.CmdListsCount; listIndex++)
         {
             ImDrawListPtr commandList = drawData.CmdListsRange[listIndex];
+
+            // VtxOffset is the same for every command in a list unless ImGui had to split it (past
+            // 64k vertices, rare for editor UI), so the vertex array it describes only needs rebuilding
+            // when that offset actually changes — not once per draw command. Recreating it every
+            // command was a second native RenderingDevice round-trip per command, on top of the index
+            // array below, for no behavioural difference in the overwhelmingly common case.
+            Rid vertexArray = default;
+            long boundVertexOffset = -1;
+
             for (int commandIndex = 0; commandIndex < commandList.CmdBuffer.Size; commandIndex++)
             {
                 ImDrawCmdPtr drawCommand = commandList.CmdBuffer[commandIndex];
@@ -237,13 +254,22 @@ internal sealed class ImGuiRenderer : IDisposable
                     drawCommand.ElemCount);
 
                 long vertexOffset = (drawCommand.VtxOffset + globalVertexOffset) * vertexSize;
-                _sourceBuffers[0] = _sourceBuffers[1] = _sourceBuffers[2] = _vertexBuffer;
-                _vertexOffsets[0] = _vertexOffsets[1] = _vertexOffsets[2] = vertexOffset;
-                Rid vertexArray = _renderingDevice.VertexArrayCreate(
-                    (uint)commandList.VtxBuffer.Size,
-                    _vertexFormat,
-                    _sourceBuffers,
-                    _vertexOffsets);
+                if (vertexOffset != boundVertexOffset)
+                {
+                    if (vertexArray.IsValid)
+                    {
+                        _renderingDevice.FreeRid(vertexArray);
+                    }
+
+                    _sourceBuffers[0] = _sourceBuffers[1] = _sourceBuffers[2] = _vertexBuffer;
+                    _vertexOffsets[0] = _vertexOffsets[1] = _vertexOffsets[2] = vertexOffset;
+                    vertexArray = _renderingDevice.VertexArrayCreate(
+                        (uint)commandList.VtxBuffer.Size,
+                        _vertexFormat,
+                        _sourceBuffers,
+                        _vertexOffsets);
+                    boundVertexOffset = vertexOffset;
+                }
 
                 Rect2 clipRect = new(
                     drawCommand.ClipRect.X,
@@ -259,6 +285,10 @@ internal sealed class ImGuiRenderer : IDisposable
                 _renderingDevice.DrawListDraw(drawList, true, 1);
 
                 _renderingDevice.FreeRid(indexArray);
+            }
+
+            if (vertexArray.IsValid)
+            {
                 _renderingDevice.FreeRid(vertexArray);
             }
 
@@ -401,20 +431,59 @@ internal sealed class ImGuiRenderer : IDisposable
         return framebuffer;
     }
 
-    private static void ReplaceTextureRids(ImDrawDataPtr drawData)
+    private void ReplaceTextureRids(ImDrawDataPtr drawData)
     {
+        _usedOriginalTextures.Clear();
+
         for (int listIndex = 0; listIndex < drawData.CmdListsCount; listIndex++)
         {
             ImDrawListPtr commandList = drawData.CmdListsRange[listIndex];
             for (int commandIndex = 0; commandIndex < commandList.CmdBuffer.Size; commandIndex++)
             {
                 ImDrawCmdPtr drawCommand = commandList.CmdBuffer[commandIndex];
-                if (drawCommand.TextureId != IntPtr.Zero)
+                if (drawCommand.TextureId == IntPtr.Zero)
                 {
-                    drawCommand.TextureId = (IntPtr)RenderingServer.TextureGetRdTexture(
-                        ConstructRid((ulong)drawCommand.TextureId)).Id;
+                    continue;
                 }
+
+                IntPtr originalId = drawCommand.TextureId;
+                _usedOriginalTextures.Add(originalId);
+
+                if (!_rdTextureCache.TryGetValue(originalId, out Rid rdTexture) || !_renderingDevice.TextureIsValid(rdTexture))
+                {
+                    rdTexture = RenderingServer.TextureGetRdTexture(ConstructRid((ulong)originalId));
+                    _rdTextureCache[originalId] = rdTexture;
+                }
+
+                drawCommand.TextureId = (IntPtr)rdTexture.Id;
             }
+        }
+
+        PruneStaleTextureMappings();
+    }
+
+    // Same shape as FreeUnusedTextures below: drop cache entries for textures no ImGui draw command
+    // referenced this frame (e.g. a closed asset-picker thumbnail), so a long session's churn through
+    // many distinct textures cannot grow this cache without bound.
+    private void PruneStaleTextureMappings()
+    {
+        if (_rdTextureCache.Count <= _usedOriginalTextures.Count)
+        {
+            return;
+        }
+
+        List<IntPtr> stale = [];
+        foreach (IntPtr id in _rdTextureCache.Keys)
+        {
+            if (!_usedOriginalTextures.Contains(id))
+            {
+                stale.Add(id);
+            }
+        }
+
+        foreach (IntPtr id in stale)
+        {
+            _rdTextureCache.Remove(id);
         }
     }
 
