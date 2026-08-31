@@ -1330,8 +1330,11 @@ public sealed class NetworkEditTool : ITool
     }
 
     /// <summary>Where a new vertex lands for a Ctrl+click. Planar networks drop it onto the terrain
-    /// under the cursor (falling back to the world Y=0 plane where no terrain is loaded); others use
-    /// the entity's own local Y=0 plane, so a procedural mesh can still be built above or below it.</summary>
+    /// under the cursor (falling back to the world Y=0 plane where no terrain is loaded) and discard the
+    /// sampled height; a network that only sets <see cref="INetworkEditable.SnapToTerrainOnPlace"/> does
+    /// the same terrain/ground-plane raycast but keeps the real sampled height instead of zeroing it;
+    /// every other network uses the entity's own local Y=0 plane, so a procedural mesh can still be
+    /// built above or below it.</summary>
     private bool TryPlacementPoint(INetworkEditable component, SceneEntity entity, in ViewportContext viewport, out GVector3 local)
     {
         NVector2 mouse = ImGui.GetMousePos();
@@ -1350,6 +1353,18 @@ public sealed class NetworkEditTool : ITool
             local = entity.Transform.AffineInverse() * world;
             local.Y = 0.0f;
             return true;
+        }
+
+        if (component.SnapToTerrainOnPlace)
+        {
+            if (_terrain.TryHit(origin, dir, out GVector3 world) || TerrainProbe.TryGroundPlane(origin, dir, out world))
+            {
+                local = entity.Transform.AffineInverse() * world;
+                return true;
+            }
+
+            local = default;
+            return false;
         }
 
         GVector3 planeNormal = entity.Transform.Basis.Y.Normalized();

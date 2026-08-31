@@ -26,6 +26,14 @@ public interface INetworkEditable
     bool PlanarXZ { get; }
 
     /// <summary>
+    /// Whether a new vertex should snap onto the terrain surface (keeping its real sampled height) when
+    /// placed, even though the network as a whole is not <see cref="PlanarXZ"/> — a fence's control
+    /// points, for instance, which should start out sitting on the ground rather than on the entity's
+    /// local plane. Defaults to false for every network that has no reason to care.
+    /// </summary>
+    bool SnapToTerrainOnPlace => false;
+
+    /// <summary>
     /// What an edit session pins and persists a network edit against — a road's own entity, but a
     /// procedural mesh's <em>model</em> rather than the placement being edited, since the network
     /// lives on the model and may be shared by other placements. Defaults to <see cref="Owner"/> for
