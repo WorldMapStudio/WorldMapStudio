@@ -28,7 +28,8 @@ public sealed class ModelRendererComponentType : ISceneComponentType
     {
         var renderer = (ModelRendererComponent)component;
 
-        DrawAssetPath("Model", renderer.ModelPath);
+        ImGui.AlignTextToFramePadding();
+        ImGui.Text("Model:");
         ImGui.SameLine();
         if (ImGui.Button("Browse##model"))
         {
@@ -45,16 +46,13 @@ public sealed class ModelRendererComponentType : ISceneComponentType
             }
         }
 
+        // Trails the buttons rather than leading them: the path can be arbitrarily long, and putting
+        // it first pushed Browse/Clear off the edge of the inspector unless the panel was made wide.
+        ImGui.SameLine();
+        ImGui.TextDisabled(renderer.ModelPath.Length == 0 ? "(none)" : renderer.ModelPath);
+
         renderer.DrawInspectorExtra(context);
     }
 
     public void DrawModals() => _picker.Draw();
-
-    private static void DrawAssetPath(string label, string path)
-    {
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text($"{label}:");
-        ImGui.SameLine();
-        ImGui.TextDisabled(path.Length == 0 ? "(none)" : path);
-    }
 }
