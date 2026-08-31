@@ -9,12 +9,30 @@ namespace WorldMapStudio;
 /// <summary>A named pointer to another model asset, placed at <paramref name="Transform"/> relative to its owning part.</summary>
 public sealed record ModelReference(string Name, string Path, Transform3D Transform);
 
+/// <summary>
+/// One Godot mesh resource and the material bound to each of its surfaces, in order — usually one
+/// surface and one material, but a format whose native geometry groups several render batches under
+/// one mesh (a WMO group's batches, an M2 model's skin batches) supplies one material per surface
+/// instead of building a separate <see cref="ArrayMesh"/> (and therefore a separate MeshInstance3D)
+/// per batch. The two forms render identically; the difference is purely how many viewport nodes a
+/// heavy model costs to instantiate and tear down.
+/// </summary>
 public sealed record ModelSurface(
     string Name,
     ArrayMesh Mesh,
-    MeshMaterial Material)
+    IReadOnlyList<MeshMaterial> Materials)
 {
+    /// <summary>Convenience for the common case: one mesh, one surface, one material.</summary>
+    public ModelSurface(string name, ArrayMesh mesh, MeshMaterial material)
+        : this(name, mesh, (IReadOnlyList<MeshMaterial>)[material])
+    {
+    }
+
     public Aabb LocalBounds => Mesh.GetAabb();
+
+    /// <summary>The material of a surface known to have exactly one — every consumer except the one
+    /// that instantiates the mesh itself, which must handle several.</summary>
+    public MeshMaterial Material => Materials[0];
 }
 
 /// <summary>A rigid sub-group of a model: its own geometry plus any nested references, at one transform.</summary>
@@ -126,12 +144,21 @@ public sealed class ModelAsset
             for (int i = 0; i < part.Surfaces.Count; i++)
             {
                 ModelSurface surface = part.Surfaces[i];
-                partNode.AddChild(new MeshInstance3D
+                var meshInstance = new MeshInstance3D
                 {
                     Name = surface.Name.Length == 0 ? $"Surface{i}" : surface.Name,
                     Mesh = surface.Mesh,
-                    MaterialOverride = materials.Build(surface.Material),
-                });
+                };
+
+                // A per-surface override rather than MaterialOverride: identical to it when there is
+                // only one surface (the common case), but it is what lets a mesh that groups several
+                // render batches together (see ModelSurface) still show each batch's own material.
+                for (int s = 0; s < surface.Materials.Count; s++)
+                {
+                    meshInstance.SetSurfaceOverrideMaterial(s, materials.Build(surface.Materials[s]));
+                }
+
+                partNode.AddChild(meshInstance);
             }
 
             foreach (ModelReference reference in part.References)
