@@ -63,7 +63,7 @@ public sealed class ImageComponentType : ISceneComponentType
         DrawChannelBinding(context, image);
 
         float strength = image.Strength;
-        if (ImGui.DragFloat("Strength", ref strength, 0.01f, 0.0f, 1.0f)) { image.Strength = strength; }
+        if (ImGui.DragFloat("Strength", ref strength, 0.5f, 0.0f, float.MaxValue)) { image.Strength = strength; }
         _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
 
         ImGui.Separator();

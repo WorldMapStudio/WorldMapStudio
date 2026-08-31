@@ -597,7 +597,11 @@ void fragment() {
                         continue;
                     }
 
-                    writer.Set(x, y, Mathf.Min(1.0f, Mathf.Max(writer.Get(x, y), value)));
+                    // Unclamped: a scalar channel is not necessarily a [0,1] mask — one feeding
+                    // ChannelHeightOffset with Amount left at 1 is a direct world-height buffer, and a
+                    // ceiling here would silently flatten a strength-scaled heightmap image to Amount's
+                    // own value regardless of how high Strength was pushed.
+                    writer.Set(x, y, Mathf.Max(writer.Get(x, y), value));
                 }
             }
         }
