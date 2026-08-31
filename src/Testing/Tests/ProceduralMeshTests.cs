@@ -467,10 +467,17 @@ public static class ProceduralMeshTests
         var normals = (Vector3[])arrays[(int)Mesh.ArrayType.Normal];
         var indices = (int[])arrays[(int)Mesh.ArrayType.Index];
 
-        // 2 flat-topped posts (6-quad box, 24 verts/36 indices) + 1 rail span subdivided 3 times into
-        // 2^3 = 8 mini-beams (6-quad box each) — waviness only ever touches the rail, never the posts.
-        Assert.AreEqual((2 * 24) + (8 * 24), positions.Length);
-        Assert.AreEqual((2 * 36) + (8 * 36), indices.Length);
+        // 2 flat-topped posts (6-quad box, 24 verts/36 indices), plus one rail built as a single ribbon:
+        // 3 subdivisions make 2^3 = 8 segments, each contributing 4 side quads, plus exactly 2 end caps
+        // (not one pair per segment — the whole point of a ribbon over a chain of boxes) = 34 quads.
+        Assert.AreEqual((2 * 24) + (34 * 4), positions.Length);
+        Assert.AreEqual((2 * 36) + (34 * 6), indices.Length);
+
+        // Waviness must never move the rail's actual endpoints — those are what weld it to its posts.
+        Vector3 railStart = new(0.0f, 1.0f, 0.0f); // post a's ground point, lifted by the rail height
+        Vector3 railEnd = new(4.0f, 2.0f, 0.0f); // post b's ground point, lifted by the rail height
+        Assert.IsTrue(positions.Any(p => p.IsEqualApprox(railStart)), "waviness moved the rail's start away from its post");
+        Assert.IsTrue(positions.Any(p => p.IsEqualApprox(railEnd)), "waviness moved the rail's end away from its post");
 
         AssertEveryTriangleFacesItsDeclaredNormal(positions, normals, indices);
     }
