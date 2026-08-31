@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using ImGuiNET;
 
 namespace WorldMapStudio;
@@ -22,9 +23,10 @@ public static class AxisConventionEditor
 
     public static bool Draw(AxisConvention convention)
     {
+        bool changed = DrawPresetRow(convention);
+
         ImGui.TextDisabled("Which Godot direction each of your axes points along.");
 
-        bool changed = false;
         for (int userAxis = 0; userAxis < 3; userAxis++)
         {
             changed |= DrawAxisRow(convention, userAxis);
@@ -36,6 +38,40 @@ public static class AxisConventionEditor
             ImGui.TextDisabled("Matches Godot's default axes (no remapping).");
         }
 
+        return changed;
+    }
+
+    private static bool DrawPresetRow(AxisConvention convention)
+    {
+        IAxisConventionPreset[] presets = AxisConventionPresets.Instance.Presets.ToArray();
+        if (presets.Length == 0)
+        {
+            return false;
+        }
+
+        bool changed = false;
+
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.BeginCombo("Preset", "Apply a preset..."))
+        {
+            foreach (IAxisConventionPreset preset in presets)
+            {
+                if (ImGui.Selectable(preset.Name))
+                {
+                    convention.Apply(preset.CreateConvention());
+                    changed = true;
+                }
+
+                if (ImGui.IsItemHovered() && preset.Description.Length > 0)
+                {
+                    ImGui.SetTooltip(preset.Description);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.Spacing();
         return changed;
     }
 
