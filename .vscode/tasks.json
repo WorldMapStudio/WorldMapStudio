@@ -29,6 +29,26 @@
             },
             "dependsOn": "build",
             "problemMatcher": []
+        },
+        {
+            "label": "export release",
+            "type": "shell",
+            "command": "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release \"Windows Desktop\" build/release/WorldMapStudio.exe",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "run release",
+            "type": "process",
+            "command": "${workspaceFolder}/build/release/WorldMapStudio.exe",
+            "args": [],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "export release",
+            "problemMatcher": []
         }
     ]
 }
