@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Godot;
@@ -7,10 +8,11 @@ namespace WorldMapStudio;
 /// <summary>
 /// Turns a <see cref="VertexNetwork"/> into a post-and-rail fence: a post at every authored vertex,
 /// plus evenly spaced posts filled in along any span longer than <see cref="PostSpacing"/>, with
-/// straight rails welded between them. Vertex height is authored per point (<see cref="SnapToTerrainOnPlace"/>
-/// snaps a new point onto the terrain under the cursor, keeping its real height) rather than resampled
-/// at build time, so a rail's undulation across a hillside is only as accurate as its posts are close
-/// together — the same tradeoff a real fence makes.
+/// straight rails welded between them, given a subtle natural warp by recursive midpoint displacement
+/// (see <see cref="WithWaviness"/>) rather than being razor-straight. Vertex height is authored per
+/// point (<see cref="SnapToTerrainOnPlace"/> snaps a new point onto the terrain under the cursor,
+/// keeping its real height) rather than resampled at build time, so a rail's undulation across a
+/// hillside is only as accurate as its posts are close together — the same tradeoff a real fence makes.
 /// </summary>
 [Subsystem(nameof(ProceduralSystem))]
 public sealed class FenceNetworkMeshFunction : IProceduralFunction
@@ -45,6 +47,12 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     public static readonly MeshParameter RailThickness =
         MeshParameter.Float("rail_thickness", "Rail thickness", 0.06f, 0.01f, 4.0f, "Rail plank thickness.");
 
+    public static readonly MeshParameter RailWaviness =
+        MeshParameter.Float("rail_waviness", "Rail waviness", 0.05f, 0.0f, 4.0f, "Sideways wobble added to each rail span, like a slightly warped natural plank — 0 for dead straight.");
+
+    public static readonly MeshParameter RailWaveDetail =
+        MeshParameter.Int("rail_wave_detail", "Rail wave detail", 2, 0, 5, "How many times each rail span is subdivided to build its wobble — 0 disables it regardless of waviness.");
+
     public static readonly MeshParameter UvScale =
         MeshParameter.Float("uv_scale", "UV scale", 1.0f, 0.01f, 1024.0f, "Texture repeats per local unit.");
 
@@ -58,7 +66,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
     public string Description => "Turns a network into a post-and-rail fence: posts at every vertex, welded to straight rails between them.";
 
-    public int Version => 2;
+    public int Version => 3;
 
     public float Priority => 0f;
 
@@ -66,7 +74,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     public bool SnapToTerrainOnPlace => true;
 
     public IReadOnlyList<MeshParameter> Parameters { get; } = MeshParameter.List(
-        PostSpacing, PostSize, PostHeight, PostCapHeight, EmbedDepth, RailCount, RailTopOffset, RailGap, RailWidth, RailThickness, UvScale);
+        PostSpacing, PostSize, PostHeight, PostCapHeight, EmbedDepth, RailCount, RailTopOffset, RailGap,
+        RailWidth, RailThickness, RailWaviness, RailWaveDetail, UvScale);
 
     public IReadOnlyList<ProceduralOutputSlot> Outputs { get; } = [Output];
 
@@ -86,6 +95,8 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         float railGap = Mathf.Max(0.01f, context.Float(RailGap));
         float railWidth = Mathf.Max(0.01f, context.Float(RailWidth));
         float railThickness = Mathf.Max(0.01f, context.Float(RailThickness));
+        float railWaviness = Mathf.Max(0.0f, context.Float(RailWaviness));
+        int railWaveDetail = Mathf.Clamp(context.Int(RailWaveDetail), 0, 5);
         float uvScale = Mathf.Max(0.001f, context.Float(UvScale));
 
         var vertices = new List<Vector3>();
@@ -128,14 +139,20 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
             float travelled = 0.0f;
             for (int i = 0; i < waypoints.Count - 1; i++)
             {
-                float segmentLength = waypoints[i].DistanceTo(waypoints[i + 1]);
                 for (int rail = 0; rail < railCount; rail++)
                 {
                     Vector3 railUp = Vector3.Up * (postHeight - railTopOffset - (rail * railGap));
-                    AddBeam(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWidth, railThickness, travelled, uvScale, vertices, normals, uvs, indices);
+                    var rng = new Random(HashCode.Combine(edge.Id, i, rail));
+                    List<Vector3> wavy = WithWaviness(waypoints[i] + railUp, waypoints[i + 1] + railUp, railWaviness, railWaveDetail, rng);
+                    float wavyTravelled = travelled;
+                    for (int w = 0; w < wavy.Count - 1; w++)
+                    {
+                        AddBeam(wavy[w], wavy[w + 1], railWidth, railThickness, wavyTravelled, uvScale, vertices, normals, uvs, indices);
+                        wavyTravelled += wavy[w].DistanceTo(wavy[w + 1]);
+                    }
                 }
 
-                travelled += segmentLength;
+                travelled += waypoints[i].DistanceTo(waypoints[i + 1]);
             }
         }
 
@@ -186,6 +203,58 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
         }
 
         return points;
+    }
+
+    /// <summary>Recursive midpoint displacement: starting from the exact endpoints (never moved, so a
+    /// span still welds cleanly to its posts), each pass inserts a midpoint between every consecutive
+    /// pair and nudges it sideways by a random amount, then halves the amplitude for the next pass — the
+    /// same fractal terrain-generation technique, applied to a line instead of a heightmap, to give a
+    /// straight plank a subtle natural warp instead of a razor-straight edge. Seeded by the caller so a
+    /// given span's wobble is stable across rebuilds rather than reshuffling on every edit.</summary>
+    private static List<Vector3> WithWaviness(Vector3 a, Vector3 b, float amplitude, int detail, Random rng)
+    {
+        var points = new List<Vector3> { a, b };
+        if (amplitude <= 0.0f || detail <= 0)
+        {
+            return points;
+        }
+
+        for (int depth = 0; depth < detail; depth++)
+        {
+            float levelAmplitude = amplitude * Mathf.Pow(0.5f, depth);
+            var next = new List<Vector3>((points.Count * 2) - 1);
+            for (int i = 0; i < points.Count - 1; i++)
+            {
+                next.Add(points[i]);
+                next.Add(Displace(points[i], points[i + 1], levelAmplitude, rng));
+            }
+
+            next.Add(points[^1]);
+            points = next;
+        }
+
+        return points;
+    }
+
+    /// <summary>The midpoint of <paramref name="a"/>-<paramref name="b"/>, nudged by a random amount
+    /// within the plane perpendicular to the segment (so the nudge can't stretch or shrink it).</summary>
+    private static Vector3 Displace(Vector3 a, Vector3 b, float amplitude, Random rng)
+    {
+        Vector3 mid = (a + b) * 0.5f;
+        Vector3 segment = b - a;
+        float length = segment.Length();
+        if (length <= 1e-5f)
+        {
+            return mid;
+        }
+
+        Vector3 forward = segment / length;
+        Vector3 reference = Mathf.Abs(forward.Dot(Vector3.Up)) > 0.95f ? Vector3.Right : Vector3.Up;
+        Vector3 axisA = reference.Cross(forward).Normalized();
+        Vector3 axisB = forward.Cross(axisA).Normalized();
+        float offsetA = ((float)rng.NextDouble() - 0.5f) * 2.0f * amplitude;
+        float offsetB = ((float)rng.NextDouble() - 0.5f) * 2.0f * amplitude;
+        return mid + (axisA * offsetA) + (axisB * offsetB);
     }
 
     private static void AddPost(
