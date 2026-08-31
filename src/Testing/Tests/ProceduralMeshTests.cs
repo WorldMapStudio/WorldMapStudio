@@ -409,6 +409,49 @@ public static class ProceduralMeshTests
         Assert.Greater(built.LocalBounds.Size.Y, 0.85f);
     }
 
+    [EditorTest(Category = "Procedural", Thread = TestThread.Main)]
+    public static void Fence_network_welds_posts_to_rails_with_correct_winding()
+    {
+        var network = new VertexNetwork();
+        int a = network.AddVertex(new Vector3(0.0f, 0.0f, 0.0f));
+        int b = network.AddVertex(new Vector3(4.0f, 1.0f, 0.0f));
+        network.AddEdge(a, b);
+
+        var values = new MeshParameterValues();
+        values.Set(FenceNetworkMeshFunction.PostSpacing, 2.0f);
+        values.Set(FenceNetworkMeshFunction.RailCount, 2);
+        var output = new ProceduralOutputBuilder();
+        new FenceNetworkMeshFunction(null!).Build(new ProceduralBuildContext(network, values, null!), output);
+
+        ProceduralBuildResult result = output.Build([FenceNetworkMeshFunction.Output], _ => MeshModelFormat.FormatId);
+        Assert.AreEqual(1, result.Models.Count);
+        ModelAsset built = result.Models[0].Asset;
+        Assert.AreEqual(1, built.Surfaces.Count);
+
+        Godot.Collections.Array arrays = built.Surfaces[0].Mesh.SurfaceGetArrays(0);
+        var positions = (Vector3[])arrays[(int)Mesh.ArrayType.Vertex];
+        var normals = (Vector3[])arrays[(int)Mesh.ArrayType.Normal];
+        var indices = (int[])arrays[(int)Mesh.ArrayType.Index];
+
+        // 3 posts (2 endpoints + 1 filled in at the spacing-implied midpoint) and 2 rail spans of 2
+        // rails each — 7 boxes, 6 quads (24 verts, 36 indices) apiece.
+        Assert.AreEqual(7 * 24, positions.Length);
+        Assert.AreEqual(7 * 36, indices.Length);
+
+        // Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests pins
+        // for the terrain grid, generalised here to a box's 6 differently oriented faces: whichever way
+        // a face's normal points, its winding must satisfy (b-a)x(c-a) anti-parallel to that normal.
+        for (int i = 0; i < indices.Length; i += 3)
+        {
+            Vector3 pa = positions[indices[i]];
+            Vector3 pb = positions[indices[i + 1]];
+            Vector3 pc = positions[indices[i + 2]];
+            Vector3 wound = (pb - pa).Cross(pc - pa);
+            Assert.IsTrue(wound.Dot(normals[indices[i]]) < 0.0f,
+                $"triangle {i / 3} is wound the wrong way and would be culled from its declared normal side");
+        }
+    }
+
     [EditorTest(Category = "Procedural", Thread = TestThread.Background)]
     public static void Model_revision_bumps_on_authored_changes_but_not_on_no_ops()
     {
