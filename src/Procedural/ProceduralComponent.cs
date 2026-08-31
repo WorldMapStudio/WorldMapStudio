@@ -83,6 +83,8 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
     public bool UsesTerrainHeight => BoundFunction?.UsesTerrainHeight ?? false;
 
+    public bool SnapToTerrainOnPlace => BoundFunction?.SnapToTerrainOnPlace ?? false;
+
     public override string TypeId => "procedural-mesh";
 
     public override string DisplayName => "Procedural Mesh";
