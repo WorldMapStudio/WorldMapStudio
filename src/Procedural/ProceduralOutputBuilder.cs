@@ -67,9 +67,10 @@ public sealed class ProceduralOutputBuilder
 
     /// <summary>Adds one landscape paint primitive: a disc when <paramref name="a"/> equals
     /// <paramref name="b"/>, a stroke along the segment otherwise. Composited with the surrounding
-    /// chunk by <c>max</c>, so overlapping strokes never double up.</summary>
-    public void AddStroke(string channel, Vector3 a, Vector3 b, float radius, float falloff) =>
-        _strokes.Add(new ProceduralStroke(channel, a, b, radius, falloff));
+    /// chunk by <c>max</c>, so overlapping strokes never double up. <paramref name="color"/> only
+    /// matters when the target channel carries color — see <see cref="ProceduralStroke.Value"/>.</summary>
+    public void AddStroke(string channel, Vector3 a, Vector3 b, float radius, float falloff, Color? color = null) =>
+        _strokes.Add(new ProceduralStroke(channel, a, b, radius, falloff, color ?? Colors.White));
 
     /// <summary>
     /// Assembles the accumulated output: one <see cref="ProceduralModelOutput"/> per slot in

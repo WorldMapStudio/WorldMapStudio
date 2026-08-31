@@ -28,8 +28,13 @@ public sealed record ProceduralModelOutput(ProceduralOutputSlot Slot, Transform3
 /// to, so chunk-independence and pure scatter hold by construction rather than by every function
 /// author's discipline — see <c>.godot/ProceduralOutputsPlan.md</c> for why a per-function
 /// <c>Rasterize</c> callback was rejected in favour of this.
+///
+/// <see cref="Value"/> only matters when the channel this stroke lands on carries more than one
+/// component — see <see cref="ProceduralPaintRasterizer"/>. Defaults to white so an unmodified caller
+/// painting a scalar mask channel needs no change: white composited by the scalar path's own max is
+/// simply never read.
 /// </summary>
-public readonly record struct ProceduralStroke(string Channel, Vector3 A, Vector3 B, float Radius, float Falloff);
+public readonly record struct ProceduralStroke(string Channel, Vector3 A, Vector3 B, float Radius, float Falloff, Color Value);
 
 /// <summary>
 /// A build's landscape contribution: a flat list of strokes, scattered into named channels by

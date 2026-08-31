@@ -16,6 +16,7 @@ public sealed class ImageDisplayLayerFactory(EditorStorage storage)
         RecordId = record.Id,
         Name = record.Name,
         DisplayMode = (ImageDisplayMode)record.DisplayMode,
+        ColorSource = (ImageColorSource)record.ColorSource,
         BaseColor = new Color(record.BaseColorR, record.BaseColorG, record.BaseColorB, record.BaseColorA),
         FullColor = new Color(record.FullColorR, record.FullColorG, record.FullColorB, record.FullColorA),
     };
@@ -24,6 +25,7 @@ public sealed class ImageDisplayLayerFactory(EditorStorage storage)
     {
         record.Name = entity.Name;
         record.DisplayMode = (int)entity.DisplayMode;
+        record.ColorSource = (int)entity.ColorSource;
         record.BaseColorR = entity.BaseColor.R;
         record.BaseColorG = entity.BaseColor.G;
         record.BaseColorB = entity.BaseColor.B;

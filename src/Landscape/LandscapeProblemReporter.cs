@@ -115,6 +115,8 @@ public sealed class LandscapeProblemReporter
         LandscapeProblemKind.MissingHeightFunction => ProblemSeverity.Warning,
         LandscapeProblemKind.MissingAlphaFunction => ProblemSeverity.Warning,
         LandscapeProblemKind.MissingHoleFunction => ProblemSeverity.Warning,
+        LandscapeProblemKind.MissingVertexColorFunction => ProblemSeverity.Warning,
+        LandscapeProblemKind.MissingVertexLightFunction => ProblemSeverity.Warning,
 
         _ => ProblemSeverity.Error,
     };

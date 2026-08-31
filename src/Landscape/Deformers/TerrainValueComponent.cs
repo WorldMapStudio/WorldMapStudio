@@ -33,6 +33,11 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
 
     public float Value { get; set; } = 0.1f;
 
+    /// <summary>Only meaningful for a bound channel that carries more than one component — see
+    /// <see cref="Rasterize"/>. Applied the same way to every such channel; a scalar-only channel in
+    /// <see cref="Channels"/> uses <see cref="Value"/> instead.</summary>
+    public Color ColorValue { get; set; } = Colors.White;
+
     public IReadOnlyList<string> Channels => _channels;
 
     public override string TypeId => "landscape-terrain-value";
@@ -63,6 +68,7 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
             hash.Add(Width);
             hash.Add(Height);
             hash.Add(Value);
+            hash.Add(ColorValue);
 
             // Order-independent: which channels are selected matters, the order they were toggled
             // in does not, so a plain Combine over the list would invalidate on a no-op reorder.
@@ -90,6 +96,7 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
             Width = Width,
             Height = Height,
             Value = Value,
+            ColorValue = ColorValue,
         };
         clone.ReplaceChannels(_channels);
         return clone;
@@ -110,12 +117,13 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
 
         foreach (string channelName in _channels)
         {
-            if (context.Channel(channelName) is not { } channel || context.Buffer(channelName) is not { } buffer)
+            if (context.Channel(channelName) is not { } channel || context.Writer(channelName) is not { } writer)
             {
                 continue;
             }
 
             int resolution = channel.Resolution;
+            bool writeColor = writer.Components > 1;
             for (int y = 0; y < resolution; y++)
             {
                 for (int x = 0; x < resolution; x++)
@@ -126,8 +134,19 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
                         continue;
                     }
 
-                    int index = (y * resolution) + x;
-                    buffer[index] = Mathf.Clamp(buffer[index] + Value, 0.0f, 1.0f);
+                    if (writeColor)
+                    {
+                        Color current = writer.GetColor(x, y);
+                        writer.SetColor(x, y, new Color(
+                            Mathf.Clamp(current.R + (ColorValue.R * Value), 0.0f, 1.0f),
+                            Mathf.Clamp(current.G + (ColorValue.G * Value), 0.0f, 1.0f),
+                            Mathf.Clamp(current.B + (ColorValue.B * Value), 0.0f, 1.0f),
+                            Mathf.Clamp(current.A + (ColorValue.A * Value), 0.0f, 1.0f)));
+                    }
+                    else
+                    {
+                        writer.Set(x, y, Mathf.Clamp(writer.Get(x, y) + Value, 0.0f, 1.0f));
+                    }
                 }
             }
         }

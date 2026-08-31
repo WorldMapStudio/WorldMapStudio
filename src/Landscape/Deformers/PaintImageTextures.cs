@@ -21,33 +21,39 @@ namespace WorldMapStudio;
 /// </summary>
 public static class PaintImageTextures
 {
-    /// <summary>A true-grayscale image (R=G=B=pixel, fully opaque) for one chunk — what
-    /// <see cref="ImageComponent"/>'s Object display mode paints onto that chunk's quad.</summary>
-    public static Image ChunkGrayscaleImage(PaintImage image, ImageChunkCoord coord)
+    /// <summary>One chunk's own pixels, widened to RGBA8: a scalar image becomes true grayscale
+    /// (R=G=B=pixel, fully opaque) — what <see cref="ImageComponent"/>'s Object display mode painted
+    /// onto that chunk's quad before an image could carry color — an RGB image is opaque with its own
+    /// color, and an RGBA image copies straight through. The same widening
+    /// <see cref="LandscapeChannelPool.SampleColor"/> applies to a channel and <see cref="ImageSampler.SampleColor"/>
+    /// applies to a sample.</summary>
+    public static Image ChunkImage(PaintImage image, ImageChunkCoord coord)
     {
         (int width, int height, int stride, byte[] source) = ChunkSource(image, coord);
+        int components = image.Components;
         byte[] rgba = new byte[width * height * 4];
 
         for (int y = 0; y < height; y++)
         {
-            int sourceRow = y * stride;
+            int sourceRow = y * stride * components;
             int targetRow = y * width * 4;
             for (int x = 0; x < width; x++)
             {
-                byte value = source[sourceRow + x];
+                int s = sourceRow + (x * components);
                 int o = targetRow + (x * 4);
-                rgba[o] = value;
-                rgba[o + 1] = value;
-                rgba[o + 2] = value;
-                rgba[o + 3] = 255;
+                byte r = source[s];
+                rgba[o] = r;
+                rgba[o + 1] = components == 1 ? r : source[s + 1];
+                rgba[o + 2] = components == 1 ? r : source[s + 2];
+                rgba[o + 3] = components == 4 ? source[s + 3] : components == 1 ? r : (byte)255;
             }
         }
 
         return Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
     }
 
-    public static ImageTexture ChunkGrayscale(PaintImage image, ImageChunkCoord coord) =>
-        ImageTexture.CreateFromImage(ChunkGrayscaleImage(image, coord));
+    public static ImageTexture ChunkTexture(PaintImage image, ImageChunkCoord coord) =>
+        ImageTexture.CreateFromImage(ChunkImage(image, coord));
 
     /// <summary>An image ramping from <paramref name="baseColor"/> (including its own alpha) at a
     /// source pixel value of 0 to <paramref name="fullColor"/> at 255, for one chunk — what
@@ -103,21 +109,44 @@ public static class PaintImageTextures
         int width = Math.Min(image.Width, maxSize);
         int height = Math.Min(image.Height, maxSize);
         ImageSampler sampler = image.CreateSampler();
-        var pixels = new byte[width * height];
 
+        if (image.Components == 1)
+        {
+            var pixels = new byte[width * height];
+            for (int y = 0; y < height; y++)
+            {
+                float v = (y + 0.5f) / height;
+                int row = y * width;
+                for (int x = 0; x < width; x++)
+                {
+                    float u = (x + 0.5f) / width;
+                    pixels[row + x] = ToByte(sampler.Sample(u, v));
+                }
+            }
+
+            Image raw = Image.CreateFromData(width, height, false, Image.Format.R8, pixels);
+            return ImageTexture.CreateFromImage(raw);
+        }
+
+        var rgba = new byte[width * height * 4];
         for (int y = 0; y < height; y++)
         {
             float v = (y + 0.5f) / height;
-            int row = y * width;
+            int row = y * width * 4;
             for (int x = 0; x < width; x++)
             {
                 float u = (x + 0.5f) / width;
-                pixels[row + x] = ToByte(sampler.Sample(u, v));
+                Color color = sampler.SampleColor(u, v);
+                int o = row + (x * 4);
+                rgba[o] = ToByte(color.R);
+                rgba[o + 1] = ToByte(color.G);
+                rgba[o + 2] = ToByte(color.B);
+                rgba[o + 3] = ToByte(color.A);
             }
         }
 
-        Image raw = Image.CreateFromData(width, height, false, Image.Format.R8, pixels);
-        return ImageTexture.CreateFromImage(raw);
+        Image colorRaw = Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
+        return ImageTexture.CreateFromImage(colorRaw);
     }
 
     /// <summary>One chunk's pixels plus the size of the region actually inside the canvas. A chunk on

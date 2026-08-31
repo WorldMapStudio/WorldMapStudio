@@ -64,7 +64,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         foreach (PaintImageRecord header in headers)
         {
             var entity = new PaintImage { RecordId = header.Id, Name = header.Name };
-            entity.ConfigureNew(header.Width, header.Height, header.ChunkSize);
+            entity.ConfigureNew(header.Width, header.Height, header.ChunkSize, header.Components);
 
             List<ImageChunkCoord> coords = manifestByImage[header.Id].ToList();
             entity.LoadManifest(coords);
@@ -93,7 +93,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
                 }
 
                 entity.LoadChunks(blobsByImage[imageId].Select(row =>
-                    (new ImageChunkCoord(row.ChunkX, row.ChunkY), ImageChunkCodec.Decode(row.Format, row.Pixels, entity.ChunkSize))));
+                    (new ImageChunkCoord(row.ChunkX, row.ChunkY), ImageChunkCodec.Decode(row.Format, row.Pixels, entity.ChunkSize, entity.Components))));
             }
         }
 
@@ -113,6 +113,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             Width = image.Width,
             Height = image.Height,
             ChunkSize = image.ChunkSize,
+            Components = image.Components,
         };
 
         // Ids are assigned at creation, so having one no longer means a row exists — IsSaved is what

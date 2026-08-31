@@ -32,6 +32,7 @@ public sealed class ImagePicker
     private int _createChunkSize = 256;
     private int _createChunksX = 1;
     private int _createChunksY = 1;
+    private int _createComponents = 1;
 
     public ImagePicker(ImageSystem system)
     {
@@ -56,6 +57,7 @@ public sealed class ImagePicker
         _createChunkSize = 256;
         _createChunksX = 1;
         _createChunksY = 1;
+        _createComponents = 1;
         _createOpenRequested = true;
     }
 
@@ -93,6 +95,7 @@ public sealed class ImagePicker
             ImGui.InputInt("Id", ref _createId);
             ImGui.InputText("Name", ref _createName, 128);
             ImGui.Separator();
+            DrawFormatCombo();
             ImGui.InputInt("Chunk Size (px)", ref _createChunkSize);
             ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
             ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
@@ -131,6 +134,29 @@ public sealed class ImagePicker
         if (!open)
         {
             _createActive = false;
+        }
+    }
+
+    private static string ComponentsLabel(int components) => components switch
+    {
+        3 => "RGB",
+        4 => "RGBA",
+        _ => "Scalar",
+    };
+
+    private void DrawFormatCombo()
+    {
+        if (ImGui.BeginCombo("Format", ComponentsLabel(_createComponents)))
+        {
+            foreach (int candidate in new[] { 1, 3, 4 })
+            {
+                if (ImGui.Selectable(ComponentsLabel(candidate), candidate == _createComponents))
+                {
+                    _createComponents = candidate;
+                }
+            }
+
+            ImGui.EndCombo();
         }
     }
 
@@ -174,7 +200,8 @@ public sealed class ImagePicker
         image.ConfigureNew(
             ClampedPixelSize(_createChunksX, _createChunkSize),
             ClampedPixelSize(_createChunksY, _createChunkSize),
-            _createChunkSize);
+            _createChunkSize,
+            _createComponents);
 
         var command = new CreateCatalogEntityCommand(_createCatalog, image);
         command.Apply();

@@ -18,6 +18,7 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
         Name = record.Name,
         Resolution = record.Resolution,
         BitDepth = record.BitDepth,
+        Components = record.Components,
     };
 
     protected override void WriteRecord(LandscapeChannel entity, LandscapeChannelRecord record)
@@ -26,6 +27,7 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
         record.Name = entity.Name;
         record.Resolution = entity.Resolution;
         record.BitDepth = entity.BitDepth;
+        record.Components = entity.Components;
     }
 }
 
@@ -79,6 +81,10 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         HeightParameters = record.HeightParameters,
         HoleFunction = record.HoleFunction,
         HoleParameters = record.HoleParameters,
+        VertexColorFunction = record.VertexColorFunction,
+        VertexColorParameters = record.VertexColorParameters,
+        VertexLightFunction = record.VertexLightFunction,
+        VertexLightParameters = record.VertexLightParameters,
     };
 
     protected override void WriteRecord(LandscapeMaterial entity, LandscapeMaterialRecord record)
@@ -92,5 +98,9 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         record.HeightParameters = entity.HeightParameters;
         record.HoleFunction = entity.HoleFunction;
         record.HoleParameters = entity.HoleParameters;
+        record.VertexColorFunction = entity.VertexColorFunction;
+        record.VertexColorParameters = entity.VertexColorParameters;
+        record.VertexLightFunction = entity.VertexLightFunction;
+        record.VertexLightParameters = entity.VertexLightParameters;
     }
 }

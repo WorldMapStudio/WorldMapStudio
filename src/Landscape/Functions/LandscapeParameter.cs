@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Globalization;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -13,6 +15,9 @@ public enum LandscapeParameterKind
     /// function which channel to read from or write to, since channels are user-defined data rather
     /// than something source code can name.</summary>
     Channel,
+
+    /// <summary>An RGBA color, e.g. the tint a vertex color or vertex light function paints toward.</summary>
+    Color,
 }
 
 /// <summary>How a function touches a channel it is bound to.</summary>
@@ -26,6 +31,26 @@ public enum LandscapeChannelAccess
 
     /// <summary>Written during channel rasterization, strictly within the chunk being rasterized.</summary>
     Write,
+}
+
+/// <summary>
+/// What shape of value a channel parameter expects — a hint for the binding UI's default and for
+/// <see cref="LandscapeCatalog"/>'s "odd pairing" warning, never something that makes a binding
+/// unrepresentable: a <see cref="LandscapeChannelBinding"/> swizzle can always bridge a scalar
+/// parameter to a color channel or vice versa (see <see cref="LandscapeChannelPool.SampleScalar"/>/
+/// <see cref="LandscapeChannelPool.SampleColor"/>), so a mismatch is only ever worth a warning.
+/// </summary>
+public enum LandscapeChannelFormat
+{
+    /// <summary>No preference — the parameter reads through <see cref="ILandscapeFunction"/>-specific
+    /// code that is comfortable with either.</summary>
+    Any,
+
+    /// <summary>The function reads/writes a single value via <see cref="LandscapeEvalContext.SampleChannel"/>.</summary>
+    Scalar,
+
+    /// <summary>The function reads/writes a color via <see cref="LandscapeEvalContext.SampleChannelColor"/>.</summary>
+    Color,
 }
 
 /// <summary>
@@ -46,6 +71,16 @@ public sealed class LandscapeParameter
 
     /// <summary>Only meaningful for <see cref="LandscapeParameterKind.Channel"/>.</summary>
     public LandscapeChannelAccess Access { get; init; } = LandscapeChannelAccess.None;
+
+    /// <summary>Only meaningful for <see cref="LandscapeParameterKind.Channel"/> — see
+    /// <see cref="LandscapeChannelFormat"/>.</summary>
+    public LandscapeChannelFormat ChannelFormat { get; init; } = LandscapeChannelFormat.Any;
+
+    /// <summary>Only meaningful for <see cref="LandscapeParameterKind.Channel"/>: whether
+    /// <see cref="LandscapeCatalog"/> should accept this parameter left unbound rather than reporting
+    /// it as an error — for a channel a function falls back sensibly without, e.g. a mask that
+    /// defaults to "always fully applies" when nothing narrows it.</summary>
+    public bool Optional { get; init; }
 
     public float Min { get; init; } = float.MinValue;
 
@@ -88,13 +123,35 @@ public sealed class LandscapeParameter
             Description = description,
         };
 
-    public static LandscapeParameter Channel(string name, string displayName, LandscapeChannelAccess access, string description = "") =>
+    public static LandscapeParameter Channel(
+        string name,
+        string displayName,
+        LandscapeChannelAccess access,
+        string description = "",
+        LandscapeChannelFormat format = LandscapeChannelFormat.Any,
+        bool optional = false) =>
         new()
         {
             Name = name,
             DisplayName = displayName,
             Kind = LandscapeParameterKind.Channel,
             Access = access,
+            Description = description,
+            ChannelFormat = format,
+            Optional = optional,
+        };
+
+    public static LandscapeParameter Color(string name, string displayName, Color @default, string description = "") =>
+        new()
+        {
+            Name = name,
+            DisplayName = displayName,
+            Kind = LandscapeParameterKind.Color,
+            Default = string.Join(",",
+                @default.R.ToString(CultureInfo.InvariantCulture),
+                @default.G.ToString(CultureInfo.InvariantCulture),
+                @default.B.ToString(CultureInfo.InvariantCulture),
+                @default.A.ToString(CultureInfo.InvariantCulture)),
             Description = description,
         };
 

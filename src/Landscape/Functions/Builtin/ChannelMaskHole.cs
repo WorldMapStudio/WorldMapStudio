@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 public sealed class ChannelMaskHole : ILandscapeHoleFunction
 {
     public static readonly LandscapeParameter Mask =
-        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel deciding where the hole is.");
+        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel deciding where the hole is.", LandscapeChannelFormat.Scalar);
 
     public static readonly LandscapeParameter Threshold =
         LandscapeParameter.Float("threshold", "Threshold", 0.5f, 0.0f, 1.0f, "Mask value at and above which a cell becomes a hole.");

@@ -312,9 +312,9 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     }
 
     private Image ChunkImage(PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord) =>
-        layer.DisplayMode == ImageDisplayMode.LandscapeOverlay
+        layer.DisplayMode == ImageDisplayMode.LandscapeOverlay && layer.ColorSource == ImageColorSource.Ramp
             ? PaintImageTextures.ChunkTintedImage(image, coord, layer.BaseColor, layer.FullColor)
-            : PaintImageTextures.ChunkGrayscaleImage(image, coord);
+            : PaintImageTextures.ChunkImage(image, coord);
 
     private ChunkNode? AddChunkNode(Node3D root, PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord)
     {
@@ -451,7 +451,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
             return null;
         }
 
-        ImageTexture texture = PaintImageTextures.ChunkGrayscale(image, coord);
+        ImageTexture texture = PaintImageTextures.ChunkTexture(image, coord);
         var mesh = new MeshInstance3D
         {
             Name = $"Chunk_{coord.X}_{coord.Y}",
@@ -543,7 +543,8 @@ void fragment() {
             return;
         }
 
-        if (context.Channel(Channel) is not { } channel || context.Buffer(Channel) is not { } buffer)
+        LandscapeChannelBinding binding = LandscapeChannelBinding.Parse(Channel);
+        if (context.Channel(binding.Channel) is not { } channel || context.Writer(binding.Channel) is not { } writer)
         {
             return;
         }
@@ -556,6 +557,12 @@ void fragment() {
         // thread — see ImageChunkTable for why a snapshot is what makes that safe.
         ImageSampler sampler = image.CreateSampler();
 
+        // Only a color destination fed by an explicit-or-native "give me the color" binding writes a
+        // color; anything else — a scalar destination, or a binding that names one component — reduces
+        // to a single number the same way LandscapeChannelPool.SampleScalar does for a material.
+        bool writeColor = writer.Components > 1 &&
+            binding.Swizzle is LandscapeSwizzle.Native or LandscapeSwizzle.Rgb or LandscapeSwizzle.Rgba;
+
         for (int y = 0; y < resolution; y++)
         {
             for (int x = 0; x < resolution; x++)
@@ -566,20 +573,51 @@ void fragment() {
                     continue;
                 }
 
-                float value = sampler.Sample(u, v) * Strength;
-                if (value <= 0.0f)
-                {
-                    continue;
-                }
+                Color scaled = ScaleForStrength(sampler.SampleColor(u, v), image.Components, Strength);
 
-                int index = (y * resolution) + x;
-                buffer[index] = Mathf.Min(1.0f, Mathf.Max(buffer[index], value));
+                if (writeColor)
+                {
+                    if (scaled.R <= 0.0f && scaled.G <= 0.0f && scaled.B <= 0.0f && scaled.A <= 0.0f)
+                    {
+                        continue;
+                    }
+
+                    Color current = writer.GetColor(x, y);
+                    writer.SetColor(x, y, new Color(
+                        Mathf.Min(1.0f, Mathf.Max(current.R, scaled.R)),
+                        Mathf.Min(1.0f, Mathf.Max(current.G, scaled.G)),
+                        Mathf.Min(1.0f, Mathf.Max(current.B, scaled.B)),
+                        Mathf.Min(1.0f, Mathf.Max(current.A, scaled.A))));
+                }
+                else
+                {
+                    float value = LandscapeChannelBinding.Extract(scaled, binding.Swizzle);
+                    if (value <= 0.0f)
+                    {
+                        continue;
+                    }
+
+                    writer.Set(x, y, Mathf.Min(1.0f, Mathf.Max(writer.Get(x, y), value)));
+                }
             }
         }
     }
 
+    /// <summary>
+    /// Applies <see cref="Strength"/> to a sampled pixel before it is written: an RGBA source scales
+    /// only alpha, since scaling RGB directly would darken the painted color rather than fade its
+    /// contribution; a source with no separate alpha (scalar or RGB) has nothing else to scale, so
+    /// every component is scaled instead — accepting that an RGB source's color does fade with
+    /// strength, which is exactly why a source that needs strength-independent color should be RGBA.
+    /// </summary>
+    private static Color ScaleForStrength(Color sampled, int sourceComponents, float strength) =>
+        sourceComponents == 4
+            ? new Color(sampled.R, sampled.G, sampled.B, sampled.A * strength)
+            : new Color(sampled.R * strength, sampled.G * strength, sampled.B * strength, sampled.A * strength);
+
     /// <summary>Stamps a soft circular brush at a local-space point, in the bound image's pixels.
-    /// False if unbound or the point falls outside this placement's footprint.</summary>
+    /// False if unbound or the point falls outside this placement's footprint. Scalar — has no color
+    /// to paint with; kept for a caller that never has one.</summary>
     public bool Paint(Vector3 local, float radius, float opacity, bool erase)
     {
         if (Image is not { } image || !TryLocalToUv(local, out float u, out float v))
@@ -590,6 +628,22 @@ void fragment() {
         float radiusX = radius / WorldSizeX;
         float radiusY = radius / WorldSizeZ;
         return image.Paint(u, v, radiusX, radiusY, opacity, erase);
+    }
+
+    /// <summary>Color-aware counterpart to the scalar <see cref="Paint(Vector3,float,float,bool)"/> —
+    /// see <see cref="PaintImage.Paint(float,float,float,float,Color,float,bool)"/> for the blend
+    /// rules. Identical to the scalar overload on a scalar-format image, where <paramref name="color"/>
+    /// is unused.</summary>
+    public bool Paint(Vector3 local, float radius, Color color, float opacity, bool erase)
+    {
+        if (Image is not { } image || !TryLocalToUv(local, out float u, out float v))
+        {
+            return false;
+        }
+
+        float radiusX = radius / WorldSizeX;
+        float radiusY = radius / WorldSizeZ;
+        return image.Paint(u, v, radiusX, radiusY, color, opacity, erase);
     }
 
     /// <summary>The bound image's chunks this placement needs resident to cover a world-space region

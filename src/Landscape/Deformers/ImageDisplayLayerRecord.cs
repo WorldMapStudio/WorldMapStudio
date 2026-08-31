@@ -9,6 +9,8 @@ public sealed class ImageDisplayLayerRecord : IKeyedRecord
 
     public int DisplayMode { get; set; }
 
+    public int ColorSource { get; set; }
+
     public float BaseColorR { get; set; } = 1.0f;
 
     public float BaseColorG { get; set; } = 0.35f;

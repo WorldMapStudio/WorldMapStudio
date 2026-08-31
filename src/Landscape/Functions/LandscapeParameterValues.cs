@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text.Json;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -43,8 +44,38 @@ public sealed class LandscapeParameterValues
     public bool GetBool(LandscapeParameter parameter) =>
         GetRaw(parameter).Equals("true", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>The channel name bound to a channel parameter, or empty when unbound.</summary>
-    public string GetChannel(LandscapeParameter parameter) => GetRaw(parameter);
+    /// <summary>The channel name bound to a channel parameter, or empty when unbound. The raw stored
+    /// value may carry a <c>:swizzle</c> suffix (see <see cref="LandscapeChannelBinding"/>) — this
+    /// strips it, for callers that only need the channel's identity, e.g. to check it still exists.</summary>
+    public string GetChannel(LandscapeParameter parameter) => GetChannelBinding(parameter).Channel;
+
+    /// <summary>The channel and which of its components a channel parameter reads or writes.</summary>
+    public LandscapeChannelBinding GetChannelBinding(LandscapeParameter parameter) =>
+        LandscapeChannelBinding.Parse(GetRaw(parameter));
+
+    /// <summary>Parses the "r,g,b,a" a <see cref="Set(LandscapeParameter, Color)"/> writes, falling back
+    /// to white on anything unreadable — an empty or hand-edited value should not crash a build.</summary>
+    public Color GetColor(LandscapeParameter parameter)
+    {
+        string[] parts = GetRaw(parameter).Split(',');
+        if (parts.Length != 4 ||
+            !float.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out float r) ||
+            !float.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out float g) ||
+            !float.TryParse(parts[2], NumberStyles.Float, CultureInfo.InvariantCulture, out float b) ||
+            !float.TryParse(parts[3], NumberStyles.Float, CultureInfo.InvariantCulture, out float a))
+        {
+            return Colors.White;
+        }
+
+        return new Color(r, g, b, a);
+    }
+
+    public void Set(LandscapeParameter parameter, Color value) =>
+        _values[parameter.Name] = string.Join(",",
+            value.R.ToString(CultureInfo.InvariantCulture),
+            value.G.ToString(CultureInfo.InvariantCulture),
+            value.B.ToString(CultureInfo.InvariantCulture),
+            value.A.ToString(CultureInfo.InvariantCulture));
 
     public void Set(LandscapeParameter parameter, float value) =>
         _values[parameter.Name] = value.ToString(CultureInfo.InvariantCulture);

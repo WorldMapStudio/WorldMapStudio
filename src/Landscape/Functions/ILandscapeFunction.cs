@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -87,6 +88,37 @@ public interface ILandscapeHoleFunction : ILandscapeFunction
     /// from another surviving claim.
     /// </summary>
     void Evaluate(in LandscapeEvalContext context, bool[] holes);
+}
+
+/// <summary>
+/// Transforms a chunk's accumulated vertex color, sampled at the same grid as the height vertices.
+/// Starts at white each build, so a chunk nothing binds this on renders unchanged — consumed in the
+/// shader as a multiplier over the splatted albedo. Not restricted to a single blend mode: a function
+/// receives what earlier layers built and rewrites it, the same "accumulate and transform" shape as
+/// <see cref="ILandscapeHeightFunction"/>, so tint, replace and fade are all ordinary implementations.
+/// </summary>
+public interface ILandscapeVertexColorFunction : ILandscapeFunction
+{
+    /// <summary>
+    /// Rewrites <paramref name="colors"/> in place — row-major, <see cref="LandscapeEvalContext.Resolution"/>
+    /// squared, holding what earlier layers built. Draw order, never entity scan order.
+    /// </summary>
+    void Evaluate(in LandscapeEvalContext context, Color[] colors);
+}
+
+/// <summary>
+/// Transforms a chunk's accumulated vertex light, sampled at the same grid as the height vertices.
+/// Starts at black each build, so a chunk nothing binds this on adds nothing — consumed in the shader
+/// as an additive term on top of the splatted albedo. The common case is adding a scaled color, but
+/// like height this is not restricted to addition.
+/// </summary>
+public interface ILandscapeVertexLightFunction : ILandscapeFunction
+{
+    /// <summary>
+    /// Rewrites <paramref name="light"/> in place — row-major, <see cref="LandscapeEvalContext.Resolution"/>
+    /// squared, holding what earlier layers built. Draw order, never entity scan order.
+    /// </summary>
+    void Evaluate(in LandscapeEvalContext context, Color[] light);
 }
 
 /// <summary>Shared helpers over a function's declared parameters.</summary>

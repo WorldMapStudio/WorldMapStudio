@@ -46,7 +46,7 @@ public sealed class ImagesWindow : Window
             string header = uses > 0 ? $"{image.Name} ({uses} uses)##header" : $"{image.Name}##header";
             if (ImGui.CollapsingHeader(header))
             {
-                ImGui.TextDisabled($"Id #{image.RecordId} · {image.Width}x{image.Height}");
+                ImGui.TextDisabled($"Id #{image.RecordId} · {image.Width}x{image.Height} · {ComponentsLabel(image.Components)}");
                 DrawName(image, image.Name, value => image.Name = value);
                 DrawFooter(image, uses);
             }
@@ -95,10 +95,17 @@ public sealed class ImagesWindow : Window
         }
     }
 
+    private static string ComponentsLabel(int components) => components switch
+    {
+        3 => "RGB",
+        4 => "RGBA",
+        _ => "Scalar",
+    };
+
     private void Duplicate(PaintImage image)
     {
         var clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Images.Select(m => m.Name)) };
-        clone.ConfigureNew(image.Width, image.Height, image.ChunkSize);
+        clone.ConfigureNew(image.Width, image.Height, image.ChunkSize, image.Components);
 
         // Chunk-based rather than a dense CopyPixels()/LoadPixels() round-trip, so this stays cheap
         // regardless of canvas size. Only copies what is currently resident — same limitation as

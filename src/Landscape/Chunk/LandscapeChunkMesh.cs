@@ -32,6 +32,12 @@ public static class LandscapeChunkMesh
         var vertices = new Vector3[resolution * resolution];
         var normals = new Vector3[resolution * resolution];
         var uvs = new Vector2[resolution * resolution];
+        var colors = new Color[resolution * resolution];
+
+        // Vertex light has no built-in Godot array slot, so it rides Custom0 as a plain RGB float
+        // channel — flattened because that is the shape AddSurfaceFromArrays expects for a
+        // Mesh.ArrayCustomFormat.RgbFloat channel (a PackedFloat32Array, 3 floats per vertex).
+        var light = new float[resolution * resolution * 3];
 
         for (int y = 0; y < resolution; y++)
         {
@@ -41,6 +47,12 @@ public static class LandscapeChunkMesh
                 vertices[index] = new Vector3(x * step, output.HeightAt(x, y), y * step);
                 uvs[index] = new Vector2((float)x / quads, (float)y / quads);
                 normals[index] = NormalAt(output, x, y, step);
+                colors[index] = output.VertexColorAt(x, y);
+
+                Color glow = output.VertexLightAt(x, y);
+                light[index * 3] = glow.R;
+                light[(index * 3) + 1] = glow.G;
+                light[(index * 3) + 2] = glow.B;
             }
         }
 
@@ -51,10 +63,15 @@ public static class LandscapeChunkMesh
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
         arrays[(int)Mesh.ArrayType.Normal] = normals;
         arrays[(int)Mesh.ArrayType.TexUV] = uvs;
+        arrays[(int)Mesh.ArrayType.Color] = colors;
+        arrays[(int)Mesh.ArrayType.Custom0] = light;
         arrays[(int)Mesh.ArrayType.Index] = indices;
 
+        Mesh.ArrayFormat customFlags =
+            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift);
+
         var mesh = new ArrayMesh();
-        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays);
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, flags: customFlags);
         return mesh;
     }
 
@@ -276,6 +293,14 @@ uniform float tiling = 8.0;
 uniform bool show_chunk_edges = false;
 uniform vec3 chunk_edge_color : source_color = vec3(0.95, 0.75, 0.35);
 
+// CUSTOM0 (vertex light) is a vertex-stage built-in only, so it needs a varying to reach fragment();
+// COLOR (vertex color) is exposed in both stages and needs none.
+varying vec3 vertex_light;
+
+void vertex() {
+    vertex_light = CUSTOM0.rgb;
+}
+
 void fragment() {
     vec2 tiled = UV * tiling;
     vec3 color = texture(slot_albedo, vec3(tiled, 0.0)).rgb;
@@ -284,6 +309,12 @@ void fragment() {
         float coverage = texture(slot_alpha, vec3(UV, float(i - 1))).r;
         color = mix(color, texture(slot_albedo, vec3(tiled, float(i))).rgb, coverage);
     }
+
+    // Traditional vertex color shades the splatted albedo multiplicatively; vertex light is a
+    // separate additive layer on top, matching how the two are evaluated on the CPU (white/black
+    // defaults so a chunk binding neither renders exactly as it did before either existed).
+    color *= COLOR.rgb;
+    color += vertex_light;
 
     // UV spans exactly one chunk, so its 0 and 1 edges are the chunk boundary. Drawing the border
     // here rather than on the ground grid means it follows the terrain over hills and can never

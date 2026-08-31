@@ -48,7 +48,7 @@ public static class LandscapeBuilderTests
         {
             if (context.Resolution.IsDropped(Key) ||
                 context.Channel(MaskChannel) is not { } channel ||
-                context.Buffer(MaskChannel) is not { } buffer)
+                context.Writer(MaskChannel) is not { } writer)
             {
                 return;
             }
@@ -62,7 +62,7 @@ public static class LandscapeBuilderTests
                     float distance = new Vector2(world.X - Centre.X, world.Z - Centre.Z).Length();
                     if (distance <= Radius)
                     {
-                        buffer[(y * resolution) + x] = 1.0f;
+                        writer.Set(x, y, 1.0f);
                     }
                 }
             }

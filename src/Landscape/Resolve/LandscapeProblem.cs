@@ -35,6 +35,14 @@ public enum LandscapeProblemKind
     /// Silent otherwise: the claim resolves fine and simply does nothing.</summary>
     MissingHoleFunction,
 
+    /// <summary>A layer was claimed with a material that binds no vertex color function, so nothing
+    /// tints. Silent otherwise: the claim resolves fine and simply does nothing.</summary>
+    MissingVertexColorFunction,
+
+    /// <summary>A layer was claimed with a material that binds no vertex light function, so nothing
+    /// lights. Silent otherwise: the claim resolves fine and simply does nothing.</summary>
+    MissingVertexLightFunction,
+
     /// <summary>A layer that paints sorts below the chunk's base, which is opaque, so it is never seen.</summary>
     BelowBase,
 

@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 public sealed class ChannelHeightOffset : ILandscapeHeightFunction
 {
     public static readonly LandscapeParameter Mask =
-        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel scaling the offset.");
+        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel scaling the offset.", LandscapeChannelFormat.Scalar);
 
     public static readonly LandscapeParameter Amount =
         LandscapeParameter.Float("amount", "Amount", 1.0f, -1024.0f, 1024.0f, "World units added where the mask is fully set.");
@@ -51,7 +51,7 @@ public sealed class ChannelHeightOffset : ILandscapeHeightFunction
 public sealed class ChannelHeightFlatten : ILandscapeHeightFunction
 {
     public static readonly LandscapeParameter Mask =
-        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel deciding where flattening applies.");
+        LandscapeParameter.Channel("mask", "Mask", LandscapeChannelAccess.Read, "Channel deciding where flattening applies.", LandscapeChannelFormat.Scalar);
 
     public static readonly LandscapeParameter Target =
         LandscapeParameter.Float("target", "Target height", 0.0f, -8192.0f, 8192.0f, "World height to flatten toward.");

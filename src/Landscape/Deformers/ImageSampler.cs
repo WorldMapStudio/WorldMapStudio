@@ -18,24 +18,45 @@ public struct ImageSampler
     private readonly int _width;
     private readonly int _height;
     private readonly int _chunkSize;
+    private readonly int _components;
 
     private ImageChunkCoord _cursorCoord;
     private byte[]? _cursorPixels;
     private bool _cursorValid;
 
-    internal ImageSampler(ImageChunkTable table, int width, int height, int chunkSize)
+    internal ImageSampler(ImageChunkTable table, int width, int height, int chunkSize, int components)
     {
         _table = table;
         _width = width;
         _height = height;
         _chunkSize = chunkSize;
+        _components = components;
         _cursorCoord = default;
         _cursorPixels = null;
         _cursorValid = false;
     }
 
-    /// <summary>Bilinear sample at normalized UV coordinates, returned in the 0..1 range.</summary>
-    public float Sample(float u, float v)
+    /// <summary>Bilinear sample of the image's first component, returned in the 0..1 range — the whole
+    /// value for a scalar image, its red component for a color one.</summary>
+    public float Sample(float u, float v) => SampleComponent(u, v, 0);
+
+    /// <summary>Bilinear sample as a color: native for a 3/4-component image, or the value replicated
+    /// into every channel (fully opaque) for a scalar one — the same widening
+    /// <see cref="LandscapeChannelPool.SampleColor"/> applies to a channel.</summary>
+    public Color SampleColor(float u, float v)
+    {
+        float r = SampleComponent(u, v, 0);
+        if (_components == 1)
+        {
+            return new Color(r, r, r, r);
+        }
+
+        float g = SampleComponent(u, v, 1);
+        float b = SampleComponent(u, v, 2);
+        return _components == 3 ? new Color(r, g, b, 1.0f) : new Color(r, g, b, SampleComponent(u, v, 3));
+    }
+
+    private float SampleComponent(float u, float v, int component)
     {
         float x = Mathf.Clamp((u * _width) - 0.5f, 0.0f, _width - 1.0f);
         float y = Mathf.Clamp((v * _height) - 0.5f, 0.0f, _height - 1.0f);
@@ -46,12 +67,12 @@ public struct ImageSampler
         float tx = x - x0;
         float ty = y - y0;
 
-        float a = Mathf.Lerp(PixelAt(x0, y0), PixelAt(x1, y0), tx);
-        float b = Mathf.Lerp(PixelAt(x0, y1), PixelAt(x1, y1), tx);
+        float a = Mathf.Lerp(PixelAt(x0, y0, component), PixelAt(x1, y0, component), tx);
+        float b = Mathf.Lerp(PixelAt(x0, y1, component), PixelAt(x1, y1, component), tx);
         return Mathf.Lerp(a, b, ty) / 255.0f;
     }
 
-    private byte PixelAt(int x, int y)
+    private byte PixelAt(int x, int y, int component)
     {
         var coord = new ImageChunkCoord(x / _chunkSize, y / _chunkSize);
         if (!_cursorValid || coord != _cursorCoord)
@@ -68,6 +89,6 @@ public struct ImageSampler
 
         int localX = x - (coord.X * _chunkSize);
         int localY = y - (coord.Y * _chunkSize);
-        return pixels[(localY * _chunkSize) + localX];
+        return pixels[(((localY * _chunkSize) + localX) * _components) + component];
     }
 }
