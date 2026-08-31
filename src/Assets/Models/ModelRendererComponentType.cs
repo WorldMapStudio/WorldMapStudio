@@ -17,7 +17,7 @@ public sealed class ModelRendererComponentType : ISceneComponentType
         _assets = registry.Context.Assets;
         _materials = registry.Context.MeshMaterials;
         _picker = new ModelAssetPicker(_assets, _materials, registry.Context.Root);
-        _textureList = new ModelTextureListPopup(_materials);
+        _textureList = new ModelTextureListPopup(_assets, _materials);
     }
 
     public string TypeId => "model-renderer";
