@@ -8,6 +8,7 @@ public sealed class ModelRendererComponentType : ISceneComponentType
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;
     private readonly ModelAssetPicker _picker;
+    private readonly ModelTextureListPopup _textureList;
 
     public float Priority => 4.0f;
 
@@ -16,6 +17,7 @@ public sealed class ModelRendererComponentType : ISceneComponentType
         _assets = registry.Context.Assets;
         _materials = registry.Context.MeshMaterials;
         _picker = new ModelAssetPicker(_assets, _materials, registry.Context.Root);
+        _textureList = new ModelTextureListPopup(_materials);
     }
 
     public string TypeId => "model-renderer";
@@ -44,6 +46,12 @@ public sealed class ModelRendererComponentType : ISceneComponentType
             {
                 ComponentFieldRecorder.Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
             }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Textures##model") && renderer.TryGetModel(out ModelAsset? model))
+            {
+                _textureList.Open(model!);
+            }
         }
 
         // Trails the buttons rather than leading them: the path can be arbitrarily long, and putting
@@ -54,5 +62,9 @@ public sealed class ModelRendererComponentType : ISceneComponentType
         renderer.DrawInspectorExtra(context);
     }
 
-    public void DrawModals() => _picker.Draw();
+    public void DrawModals()
+    {
+        _picker.Draw();
+        _textureList.Draw();
+    }
 }
