@@ -433,10 +433,11 @@ public static class ProceduralMeshTests
         var normals = (Vector3[])arrays[(int)Mesh.ArrayType.Normal];
         var indices = (int[])arrays[(int)Mesh.ArrayType.Index];
 
-        // 3 posts (2 endpoints + 1 filled in at the spacing-implied midpoint) and 2 rail spans of 2
-        // rails each — 7 boxes, 6 quads (24 verts, 36 indices) apiece.
-        Assert.AreEqual(7 * 24, positions.Length);
-        Assert.AreEqual(7 * 36, indices.Length);
+        // 3 posts (2 endpoints + 1 filled in at the spacing-implied midpoint), each an open-topped box
+        // (5 quads = 20 verts/30 indices) plus a 4-triangle pyramid cap (12 verts/12 indices) = 32/42;
+        // and 2 rail spans of 2 rails each — 4 full 6-quad boxes (24 verts/36 indices) apiece.
+        Assert.AreEqual((3 * 32) + (4 * 24), positions.Length);
+        Assert.AreEqual((3 * 42) + (4 * 36), indices.Length);
 
         // Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests pins
         // for the terrain grid, generalised here to a box's 6 differently oriented faces: whichever way
