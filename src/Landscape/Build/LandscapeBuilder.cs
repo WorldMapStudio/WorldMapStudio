@@ -62,18 +62,31 @@ public sealed class LandscapeBuilder
     {
         _pool.Reset();
 
+        // A HashSet rather than testing membership against the interior list directly: that test runs
+        // once per neighbourhood coord below, and at a real view distance neighbourhood and interior
+        // are both large enough that a linear List.Contains scan there was quadratic for no reason.
+        var interiorSet = new HashSet<ChunkCoord>(interior);
+
         // Stage 1–2 cover the halo as well: an interior chunk samples its neighbours' channels, and
         // what went into those depends on how claims resolved over there.
         List<ChunkCoord> neighbourhood = Neighbourhood(interior);
         var resolutions = new Dictionary<ChunkCoord, LandscapeResolution>();
+        var touching = new Dictionary<ChunkCoord, List<ILandscapeDeformer>>();
         var problems = new List<(ChunkCoord, LandscapeProblem)>();
 
         foreach (ChunkCoord coord in neighbourhood)
         {
-            LandscapeResolution resolution = ResolveChunk(coord, deformers);
+            // Computed once and reused for rasterizing below: which deformers touch a chunk depends
+            // only on the chunk's (unchanging) bounds and the (unchanging) deformer list, so resolving
+            // and then rasterizing the same chunk used to filter and sort the full deformer list twice
+            // for an identical answer both times.
+            List<ILandscapeDeformer> chunkDeformers = Touching(deformers, coord);
+            touching[coord] = chunkDeformers;
+
+            LandscapeResolution resolution = ResolveChunk(coord, chunkDeformers);
             resolutions[coord] = resolution;
 
-            if (interior.Contains(coord))
+            if (interiorSet.Contains(coord))
             {
                 problems.AddRange(resolution.Problems.Select(problem => (coord, problem)));
             }
@@ -83,7 +96,7 @@ public sealed class LandscapeBuilder
         foreach (ChunkCoord coord in neighbourhood)
         {
             var context = new LandscapeRasterContext(coord, _pool, resolutions[coord]);
-            foreach (ILandscapeDeformer deformer in Touching(deformers, coord))
+            foreach (ILandscapeDeformer deformer in touching[coord])
             {
                 deformer.Rasterize(context);
             }
@@ -131,17 +144,17 @@ public sealed class LandscapeBuilder
         return coords.OrderBy(coord => coord.Y).ThenBy(coord => coord.X).ToList();
     }
 
-    private LandscapeResolution ResolveChunk(ChunkCoord coord, IReadOnlyList<ILandscapeDeformer> deformers)
+    private LandscapeResolution ResolveChunk(ChunkCoord coord, IReadOnlyList<ILandscapeDeformer> touchingDeformers)
     {
         var context = new LandscapeClaimContext(coord, Grid, _catalog);
-        List<LandscapeClaimGroup> groups = Touching(deformers, coord)
+        List<LandscapeClaimGroup> groups = touchingDeformers
             .SelectMany(deformer => deformer.Claim(context))
             .ToList();
 
         return LandscapeResolver.Resolve(groups, _settings, _catalog);
     }
 
-    private IEnumerable<ILandscapeDeformer> Touching(IReadOnlyList<ILandscapeDeformer> deformers, ChunkCoord coord)
+    private List<ILandscapeDeformer> Touching(IReadOnlyList<ILandscapeDeformer> deformers, ChunkCoord coord)
     {
         Aabb bounds = Grid.BoundsOf(coord);
         return deformers
@@ -149,7 +162,8 @@ public sealed class LandscapeBuilder
             // satisfies Aabb.Intersects at its own position, which would otherwise make every such
             // deformer "touch" whatever chunk contains that point for no reason.
             .Where(deformer => deformer.InfluenceBounds.Size != Vector3.Zero && deformer.InfluenceBounds.Intersects(bounds))
-            .OrderBy(deformer => deformer.DeformerKey, System.StringComparer.Ordinal);
+            .OrderBy(deformer => deformer.DeformerKey, System.StringComparer.Ordinal)
+            .ToList();
     }
 
     private LandscapeChunkOutput Evaluate(
