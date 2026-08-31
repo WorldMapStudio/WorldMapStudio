@@ -17,3 +17,6 @@ bin
 
 # Local
 .local/*
+
+# LLM
+.claude/*
