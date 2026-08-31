@@ -11,6 +11,7 @@ namespace WorldMapStudio;
 public sealed class SceneEntityRegistry : IWorldParticipant
 {
     private readonly List<SceneEntity> _entities = [];
+    private readonly HashSet<SceneEntity> _entitySet = [];
     private readonly HashSet<SceneEntity> _peripheral = [];
     private readonly HashSet<SceneEntity> _resident = [];
 
@@ -25,7 +26,10 @@ public sealed class SceneEntityRegistry : IWorldParticipant
 
     public int Version { get; private set; }
 
-    public bool Contains(SceneEntity entity) => _entities.Contains(entity);
+    // Membership is checked once per loaded entity every frame (SyncRepresentations, ApplyFates), so
+    // this has to be O(1): a List.Contains scan here made those passes O(N^2) in the loaded count,
+    // which is exactly what view distance scales up.
+    public bool Contains(SceneEntity entity) => _entitySet.Contains(entity);
 
     /// <summary>
     /// Whether this entity is loaded only so derived data can be built correctly, rather than because
@@ -75,6 +79,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     public void Add(SceneEntity entity)
     {
         _entities.Add(entity);
+        _entitySet.Add(entity);
         Version++;
     }
 
@@ -90,6 +95,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
         }
 
         _entities.Clear();
+        _entitySet.Clear();
         _peripheral.Clear();
         _resident.Clear();
         Version++;
@@ -114,11 +120,12 @@ public sealed class SceneEntityRegistry : IWorldParticipant
 
     public bool Remove(SceneEntity entity)
     {
-        if (!_entities.Remove(entity))
+        if (!_entitySet.Remove(entity))
         {
             return false;
         }
 
+        _entities.Remove(entity);
         _peripheral.Remove(entity);
         _resident.Remove(entity);
         Version++;
@@ -131,7 +138,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     /// </summary>
     public void Touch(SceneEntity entity)
     {
-        if (_entities.Contains(entity))
+        if (_entitySet.Contains(entity))
         {
             Version++;
         }

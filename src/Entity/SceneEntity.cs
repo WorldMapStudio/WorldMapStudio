@@ -339,10 +339,18 @@ public class SceneEntity : Entity
             {
                 hadGeometry = true;
 
-                // Test in mesh-local space so the triangles need no per-click transforming; the
-                // unnormalised local direction keeps `best` a distance along the original world ray.
-                Transform3D inv = node.GlobalTransform.AffineInverse();
-                hit |= MeshPicking.TryRayTriangles(triangles, inv * origin, inv.Basis * dir, ref best);
+                Transform3D global = node.GlobalTransform;
+
+                // Broad-phase in world space first: a complex model can have many mesh nodes, and
+                // most of them are nowhere near the ray. This skips both AffineInverse() (a matrix
+                // inversion) and the full triangle loop below for all but the handful that matter.
+                if (MeshPicking.TryRayBox(origin, dir, global * mesh.GetAabb()))
+                {
+                    // Test in mesh-local space so the triangles need no per-click transforming; the
+                    // unnormalised local direction keeps `best` a distance along the original world ray.
+                    Transform3D inv = global.AffineInverse();
+                    hit |= MeshPicking.TryRayTriangles(triangles, inv * origin, inv.Basis * dir, ref best);
+                }
             }
         }
 
