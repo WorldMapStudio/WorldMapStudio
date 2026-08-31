@@ -23,4 +23,12 @@ public sealed class ViewSettings
 
     /// <summary>Draws each loaded <see cref="IEnvironmentVolume"/> source's inner/outer spheres.</summary>
     public bool ShowEnvironmentVolumes { get; set; } = true;
+
+    /// <summary>
+    /// How many chunks out from the focus <see cref="StreamingSystem"/> keeps entities loaded and
+    /// visible, in each horizontal direction. Converted to world units against the open map's
+    /// <see cref="LandscapeSettings.ChunkWorldSize"/>, so the same setting covers a fixed amount of
+    /// terrain regardless of a map's chunk size.
+    /// </summary>
+    public int ViewDistanceChunks { get; set; } = 3;
 }
