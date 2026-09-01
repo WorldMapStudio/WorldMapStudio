@@ -119,6 +119,68 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_format_is_forced_back_to_byte_for_a_multi_component_image()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16, components: 4, format: PaintImagePixelFormat.Float32);
+
+        Assert.AreEqual(PaintImagePixelFormat.Byte, image.Format,
+            "a color paint/lerp is only defined in terms of a byte's [0,255] saturation, so Float32 must never coexist with a 3/4-component image");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_images_report_a_four_byte_stride()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16, components: 1, format: PaintImagePixelFormat.Float32);
+
+        Assert.AreEqual(4, image.Stride);
+        Assert.AreEqual(16L * 16L * 4L, image.ChunkByteSize);
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_images_accumulate_unclamped_past_ones_byte_ceiling()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 64, components: 1, format: PaintImagePixelFormat.Float32);
+
+        // A radius covering the whole canvas keeps every dab at full weight, so repeated full-opacity
+        // strokes keep accumulating past what a Byte image's 255 (i.e. 1.0) ceiling would allow.
+        for (int i = 0; i < 4; i++)
+        {
+            image.Paint(0.5f, 0.5f, 10.0f, 10.0f, 1.0f, erase: false);
+        }
+
+        float value = BitConverter.ToSingle(image.CopyPixels(), 0);
+        Assert.Greater(value, 1.0f, "a Float32 image must not saturate at a Byte image's 1.0 ceiling");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_images_can_erase_past_zero_into_negative_values()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(32, 32, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
+        image.Paint(0.5f, 0.5f, 10.0f, 10.0f, 0.3f, erase: false);
+        image.Paint(0.5f, 0.5f, 10.0f, 10.0f, 1.0f, erase: true);
+
+        float value = BitConverter.ToSingle(image.CopyPixels(), 0);
+        Assert.IsTrue(value < 0.0f, "erase should not clamp a Float32 pixel at zero the way a Byte one does");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Sampler_reads_float32_pixels_unclamped_and_unnormalized()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(32, 32, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
+        image.Paint(0.5f, 0.5f, 10.0f, 10.0f, 1.0f, erase: false); // one full-weight dab -> stored value 1.0
+
+        ImageSampler sampler = image.CreateSampler();
+
+        Assert.AreApproximatelyEqual(1.0, sampler.Sample(0.5f, 0.5f), 1e-3,
+            "a Float32 sample must not be divided by 255 the way a Byte one is");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Chunk_codec_round_trips_both_a_sparse_and_a_dense_buffer()
     {
         var sparse = new byte[64 * 64]; // mostly zero, like a real paint mask — should favor deflate
