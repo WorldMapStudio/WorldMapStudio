@@ -275,6 +275,36 @@ public static class LandscapeBuilderTests
     }
 
     [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
+    public static void Neighbouring_chunks_built_in_separate_calls_still_agree_on_their_shared_edge()
+    {
+        // The streaming seam: unlike the test above, this never builds (0,0) and (1,0) together — each
+        // gets its own LandscapeBuilder and its own Build() call, exactly like two chunks that stream in
+        // on separate LandscapeChunkLoader.ScanAsync scans. Without a halo floored to at least one
+        // chunk, each side would sample the other's not-yet-rasterized territory as zero and disagree
+        // right at the edge — a real seam, only papered over once something (e.g. a paint stroke) forces
+        // every loaded chunk to rebuild together in one call.
+        Fixture fixture = Build();
+        Disc disc = DiscAt(fixture, "straddle", new Vector3(64.0f, 0.0f, 32.0f), 28.0f);
+
+        LandscapeChunkOutput left = fixture.Builder().BuildOne(new ChunkCoord(0, 0), [disc]);
+        LandscapeChunkOutput right = fixture.Builder().BuildOne(new ChunkCoord(1, 0), [disc]);
+        int resolution = left.HeightResolution;
+
+        bool sawDeformation = false;
+        for (int y = 0; y < resolution; y++)
+        {
+            float leftEdge = left.HeightAt(resolution - 1, y);
+            float rightEdge = right.HeightAt(0, y);
+
+            Assert.AreApproximatelyEqual(leftEdge, rightEdge, 1e-4,
+                $"height disagrees at shared edge row {y} when the chunks are built separately");
+            sawDeformation |= leftEdge > 0.1f;
+        }
+
+        Assert.IsTrue(sawDeformation, "the disc must actually reach the shared edge for this to prove anything");
+    }
+
+    [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
     public static void A_deformer_reaches_every_chunk_its_bounds_touch()
     {
         Fixture fixture = Build();

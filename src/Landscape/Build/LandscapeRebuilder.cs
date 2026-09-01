@@ -141,9 +141,11 @@ public sealed class LandscapeRebuilder
             return;
         }
 
-        // The halo matters here as much as in the builder: a chunk whose own channels are untouched
-        // can still read a changed neighbour's, so it is stale too.
-        float radius = landscape.Catalog.MaxSampleRadius;
+        // The halo matters here as much as in the builder (see LandscapeBuilder.SampleRadius): a chunk
+        // whose own channels are untouched can still read a changed neighbour's across the shared edge,
+        // so it is stale too — even when nothing declares extra sample radius, which is why this is
+        // floored to one chunk rather than trusting the catalog's possibly-zero raw value.
+        float radius = Mathf.Max(grid.ChunkSize, landscape.Catalog.MaxSampleRadius);
         foreach (ChunkCoord coord in grid.OverlappingWithHalo(region, radius))
         {
             _dirty.Add(coord);
