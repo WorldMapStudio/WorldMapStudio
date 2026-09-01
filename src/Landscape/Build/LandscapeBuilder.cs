@@ -55,8 +55,13 @@ public sealed class LandscapeBuilder
 
     public LandscapeGrid Grid { get; }
 
-    /// <summary>How far outside a chunk any bound function samples. Sizes the halo and the dirty set.</summary>
-    public float SampleRadius => _catalog.MaxSampleRadius;
+    /// <summary>How far outside a chunk any bound function samples. Sizes the halo and the dirty set —
+    /// floored to one chunk, never the raw, possibly-zero <see cref="LandscapeCatalog.MaxSampleRadius"/>:
+    /// <see cref="LandscapeChannelPool.Sample"/> bilinearly blends up to a texel across a shared edge for
+    /// every channel read regardless of what a bound function declares, so even a function that samples
+    /// nothing beyond its own value (radius 0) still needs its immediate neighbour rasterized in the same
+    /// block, or the two sides of that edge disagree.</summary>
+    public float SampleRadius => Mathf.Max(Grid.ChunkSize, _catalog.MaxSampleRadius);
 
     public LandscapeBuildResult Build(IReadOnlyList<ChunkCoord> interior, IReadOnlyList<ILandscapeDeformer> deformers)
     {
@@ -118,11 +123,11 @@ public sealed class LandscapeBuilder
 
     private List<ChunkCoord> Neighbourhood(IReadOnlyList<ChunkCoord> interior)
     {
-        int halo = SampleRadius <= 0.0f ? 0 : Mathf.CeilToInt(SampleRadius / Grid.ChunkSize);
-        if (halo == 0)
-        {
-            return interior.ToList();
-        }
+        // SampleRadius is already floored to at least one chunk (see its doc), so this is never 0 —
+        // an interior chunk built without its true neighbour present in the same call (e.g. two chunks
+        // that stream in on separate scans) would otherwise sample that neighbour's not-yet-rasterized
+        // territory as zero and disagree with it right at the shared edge.
+        int halo = Mathf.CeilToInt(SampleRadius / Grid.ChunkSize);
 
         var coords = new HashSet<ChunkCoord>();
         foreach (ChunkCoord coord in interior)
