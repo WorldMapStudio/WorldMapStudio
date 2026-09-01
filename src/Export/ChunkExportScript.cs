@@ -69,4 +69,9 @@ public sealed class ChunkExportContext
     /// with the data it was asked to export (an unusable texture path, settings that don't match its
     /// target format), the same list the landscape builder itself reports into.</summary>
     public ProblemSystem Problems => _exports.Context.Problems;
+
+    /// <summary>The whole editor context — an escape hatch for a plugin exporter that needs more than
+    /// the narrow slices above (e.g. a background scan already written expecting to take
+    /// <c>EditorContext</c> directly, the way <c>WowLiquidTileBackgroundScan</c> was).</summary>
+    public EditorContext EditorContext => _exports.Context;
 }
