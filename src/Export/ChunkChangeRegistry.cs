@@ -26,7 +26,7 @@ public sealed class ChunkChangeRegistry
         BlockingWork.Run(() => storage.UpsertChunkChangesAsync(chunks, hash));
     }
 
-    public IReadOnlyList<ChunkChange> DirtyFor(string exporterId, ChunkExportScope scope)
+    public IReadOnlyList<ChunkChange> DirtyFor(string profileId, ChunkExportScope scope)
     {
         if (EditorStorage() is not { } storage)
         {
@@ -34,17 +34,56 @@ public sealed class ChunkChangeRegistry
         }
 
         int? map = scope == ChunkExportScope.CurrentMap ? _context.Maps.CurrentMap.Value : null;
-        return BlockingWork.Run(() => storage.LoadDirtyChunksAsync(exporterId, map));
+        return BlockingWork.Run(() => storage.LoadDirtyChunksAsync(profileId, map));
     }
 
-    public void MarkExported(string exporterId, IReadOnlyList<ChunkChange> chunks)
+    /// <summary>Every chunk in a range export's target rectangle, regardless of dirty status.</summary>
+    public IReadOnlyList<ChunkChange> ForRange(ChunkRange range)
+    {
+        if (EditorStorage() is not { } storage)
+        {
+            return [];
+        }
+
+        return BlockingWork.Run(() => storage.LoadChunksInRangeAsync(range.Map, range.Min, range.Max));
+    }
+
+    public void MarkExported(string profileId, IReadOnlyList<ChunkChange> chunks)
     {
         if (chunks.Count == 0 || EditorStorage() is not { } storage)
         {
             return;
         }
 
-        BlockingWork.Run(() => storage.UpsertExportedChunksAsync(exporterId, chunks));
+        BlockingWork.Run(() => storage.UpsertExportedChunksAsync(profileId, chunks));
+    }
+
+    /// <summary>Force-redirties a profile's exported state for a scope, so the next export re-does
+    /// everything in it even though content hasn't changed.</summary>
+    public void ClearExported(string profileId, ChunkExportScope scope)
+    {
+        if (EditorStorage() is not { } storage)
+        {
+            return;
+        }
+
+        int? map = scope == ChunkExportScope.CurrentMap ? _context.Maps.CurrentMap.Value : null;
+        BlockingWork.Run(() => storage.ClearExportedChunksAsync(profileId, map, null, null));
+    }
+
+    /// <summary>Force-redirties a profile's exported state for an explicit chunk range.</summary>
+    public void ClearExported(string profileId, ChunkRange range)
+    {
+        if (EditorStorage() is not { } storage)
+        {
+            return;
+        }
+
+        BlockingWork.Run(() => storage.ClearExportedChunksAsync(
+            profileId,
+            range.Map.Value,
+            (range.Min.X, range.Min.Y),
+            (range.Max.X, range.Max.Y)));
     }
 
     private HashSet<(int Map, int X, int Y)> AffectedChunks(EditSession session, Func<IEntity, bool> wasCommitted)

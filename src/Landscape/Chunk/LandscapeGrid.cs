@@ -27,6 +27,24 @@ public readonly record struct ChunkCoord(int X, int Y)
 }
 
 /// <summary>
+/// An explicit rectangle of chunks on one map — e.g. a user-picked range export target, as opposed to
+/// whatever a <see cref="ChunkExportScope"/> resolves to.
+/// </summary>
+public readonly record struct ChunkRange(MapId Map, ChunkCoord Min, ChunkCoord Max)
+{
+    public IEnumerable<ChunkCoord> Coords()
+    {
+        for (int y = Min.Y; y <= Max.Y; y++)
+        {
+            for (int x = Min.X; x <= Max.X; x++)
+            {
+                yield return new ChunkCoord(x, y);
+            }
+        }
+    }
+}
+
+/// <summary>
 /// Converts between chunk coordinates and world space for one map's settings.
 ///
 /// Chunks tile the world X/Z plane (Godot is Y-up, so Y is height and the grid's second axis is Z).
