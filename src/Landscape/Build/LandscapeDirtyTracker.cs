@@ -47,11 +47,30 @@ public sealed class LandscapeDirtyTracker
             if (!_known.TryGetValue(key, out (Aabb Bounds, int Version) previous))
             {
                 regions.Add(bounds);
+                (deformer as IIncrementalLandscapeDeformer)?.ConsumeDirtyRegions();
             }
-            else if (previous.Version != version || previous.Bounds != bounds)
+            else if (previous.Bounds != bounds)
             {
                 regions.Add(previous.Bounds);
                 regions.Add(bounds);
+                (deformer as IIncrementalLandscapeDeformer)?.ConsumeDirtyRegions();
+            }
+            else if (previous.Version != version)
+            {
+                // A moved-nowhere content edit: most deformers (a stamp's falloff, a material bind)
+                // recompute their whole footprint from parameters anyway, so the whole bounds is the
+                // right answer. One that opts in (ImageComponent, over a possibly huge painted canvas)
+                // instead reports just the sub-region a single brush dab actually touched — the
+                // difference between one paint stroke rebuilding a handful of chunks and rebuilding
+                // every chunk under the entire image on every frame it drags.
+                if (deformer is IIncrementalLandscapeDeformer incremental)
+                {
+                    regions.AddRange(incremental.ConsumeDirtyRegions());
+                }
+                else
+                {
+                    regions.Add(bounds);
+                }
             }
 
             _known[key] = (bounds, version);

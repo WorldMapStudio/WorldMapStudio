@@ -75,6 +75,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             }
 
             _name = value;
+            MarkDirtyAll();
             BumpContent();
         }
     }
@@ -144,6 +145,96 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// know how.</summary>
     public int ViewRevision { get; private set; }
 
+    // A bounded log of recently dirtied pixel rects, each tagged with a monotonically increasing
+    // sequence number. Deliberately not a single "accumulate then clear" rect: several
+    // ImageComponents can share one image (see the type doc), and each needs to consume the same
+    // edits independently, so clearing on the first consumer would starve every other placement.
+    //
+    // Pixel rects rather than chunk coordinates because chunk granularity is far too coarse to be
+    // useful — a default 256x256 image is a single 256px chunk, so "the chunks this stroke touched"
+    // is the whole canvas, and a placement stretched over a large footprint would rebuild every
+    // landscape chunk beneath it for one brush dab.
+    private readonly List<(long Seq, int MinX, int MinY, int MaxX, int MaxY)> _dirtyLog = [];
+    private long _dirtySeq;
+    private long _dirtyDroppedThrough = -1;
+    private const int MaxDirtyLog = 64;
+
+    /// <summary>The newest dirty-log sequence number. A consumer records this after reading, and
+    /// passes it back to <see cref="TryDirtyPixelsSince"/> next time to get only what changed since.</summary>
+    internal long DirtySequence => _dirtySeq;
+
+    /// <summary>Records that a pixel rect changed. Inclusive bounds, clamped to the canvas.</summary>
+    private void MarkDirtyPixels(int minX, int minY, int maxX, int maxY)
+    {
+        minX = Math.Clamp(minX, 0, _width - 1);
+        maxX = Math.Clamp(maxX, 0, _width - 1);
+        minY = Math.Clamp(minY, 0, _height - 1);
+        maxY = Math.Clamp(maxY, 0, _height - 1);
+        if (minX > maxX || minY > maxY)
+        {
+            return;
+        }
+
+        _dirtyLog.Add((++_dirtySeq, minX, minY, maxX, maxY));
+
+        // Oldest entries fall off rather than growing without bound. A consumer that was behind the
+        // dropped entries can no longer reconstruct what it missed, which TryDirtyPixelsSince turns
+        // into a whole-canvas answer — correct, just not narrow.
+        if (_dirtyLog.Count > MaxDirtyLog)
+        {
+            _dirtyDroppedThrough = _dirtyLog[0].Seq;
+            _dirtyLog.RemoveAt(0);
+        }
+    }
+
+    private void MarkDirtyAll() => MarkDirtyPixels(0, 0, _width - 1, _height - 1);
+
+    private void MarkDirtyChunk(ImageChunkCoord coord) => MarkDirtyPixels(
+        coord.X * _chunkSize,
+        coord.Y * _chunkSize,
+        ((coord.X + 1) * _chunkSize) - 1,
+        ((coord.Y + 1) * _chunkSize) - 1);
+
+    /// <summary>The union of every pixel rect dirtied after <paramref name="since"/>, or false when
+    /// nothing has changed. Falls back to the whole canvas when <paramref name="since"/> is older than
+    /// what the log still holds — over-reporting is merely slow, under-reporting leaves stale terrain.</summary>
+    internal bool TryDirtyPixelsSince(long since, out int minX, out int minY, out int maxX, out int maxY)
+    {
+        minX = minY = int.MaxValue;
+        maxX = maxY = int.MinValue;
+
+        if (since >= _dirtySeq)
+        {
+            return false;
+        }
+
+        if (since < _dirtyDroppedThrough)
+        {
+            minX = 0;
+            minY = 0;
+            maxX = _width - 1;
+            maxY = _height - 1;
+            return true;
+        }
+
+        bool any = false;
+        foreach ((long seq, int lo0, int lo1, int hi0, int hi1) in _dirtyLog)
+        {
+            if (seq <= since)
+            {
+                continue;
+            }
+
+            minX = Math.Min(minX, lo0);
+            minY = Math.Min(minY, lo1);
+            maxX = Math.Max(maxX, hi0);
+            maxY = Math.Max(maxY, hi1);
+            any = true;
+        }
+
+        return any;
+    }
+
     private void BumpContent()
     {
         ContentRevision++;
@@ -180,6 +271,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _format = format == PaintImagePixelFormat.Float32 && _components != 1 ? PaintImagePixelFormat.Byte : format;
         RecomputeGrid();
         _chunks = [];
+        MarkDirtyAll();
 
         // Deliberately not clearing _persistedChunkCoords: on every current caller it is already empty
         // (a freshly constructed PaintImage, not yet staged), so this is a no-op today. But a future
@@ -388,6 +480,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         bool any = false;
         foreach ((ImageChunkCoord coord, byte[]? pixels) in edits)
         {
+            // Chunk granularity is all an undo/redo apply has to go on — it replaces whole chunk
+            // buffers — so unlike a paint stamp this cannot narrow below one chunk.
+            MarkDirtyChunk(coord);
+
             if (pixels == null)
             {
                 any |= _chunks.Remove(coord);
@@ -453,6 +549,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         int expected = _width * _height * Stride;
         byte[] dense = pixels.Length == expected ? pixels : new byte[expected];
         RebuildChunks(dense);
+        MarkDirtyAll();
         BumpContent();
     }
 
@@ -491,6 +588,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         _height = height;
         RecomputeGrid();
         RebuildChunks(resized);
+        MarkDirtyAll();
         BumpContent();
     }
 
@@ -504,6 +602,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         int expected = _width * _height * Stride;
         byte[] dense = pixels.Length == expected ? pixels : new byte[expected];
         RebuildChunks(dense);
+        MarkDirtyAll();
         BumpContent();
     }
 
@@ -526,6 +625,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             cleared.Add((coord, chunk.Pixels));
             _removedSincePersist.Add(coord);
+            MarkDirtyChunk(coord);
         }
 
         _chunks = [];
@@ -600,6 +700,9 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
+            // The stamp's own pixel bbox, which is as narrow as this gets — the whole point of the
+            // dirty log is that this is brush-sized rather than chunk- or canvas-sized.
+            MarkDirtyPixels(minX, minY, maxX, maxY);
             BumpContent();
         }
 
@@ -653,6 +756,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
+            MarkDirtyPixels(minX, minY, maxX, maxY);
             BumpContent();
         }
 

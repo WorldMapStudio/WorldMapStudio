@@ -80,11 +80,17 @@ public struct ImageSampler
     private float PixelAt(int x, int y, int component)
     {
         var coord = new ImageChunkCoord(x / _chunkSize, y / _chunkSize);
+
+        // Caches an absent chunk as well as a present one. _cursorValid used to mean "the lookup
+        // found something", so every tap landing on an unpainted chunk missed the cache and repeated
+        // the dictionary lookup — the common case on a large, mostly-empty canvas, where all four
+        // bilinear taps of every texel paid a fresh lookup only to return zero.
         if (!_cursorValid || coord != _cursorCoord)
         {
-            _cursorValid = _table.TryGet(coord, out ImageChunk? chunk);
+            _table.TryGet(coord, out ImageChunk? chunk);
             _cursorPixels = chunk?.Pixels;
             _cursorCoord = coord;
+            _cursorValid = true;
         }
 
         if (_cursorPixels is not { } pixels)
