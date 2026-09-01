@@ -64,4 +64,9 @@ public sealed class ChunkExportContext
     /// <summary>A map's landscape settings — the chunk sizing/resolution a tile-shaped exporter needs
     /// to build a <see cref="LandscapeGrid"/> of its own, e.g. for chunk-to-world-position math.</summary>
     public LandscapeSettings? LoadLandscapeSettings(MapId map) => _exports.LoadLandscapeSettings(map);
+
+    /// <summary>The editor's general problem list — where an exporter reports things it found wrong
+    /// with the data it was asked to export (an unusable texture path, settings that don't match its
+    /// target format), the same list the landscape builder itself reports into.</summary>
+    public ProblemSystem Problems => _exports.Context.Problems;
 }
