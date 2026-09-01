@@ -124,6 +124,28 @@ public sealed partial class ExportSystem : ISubsystemHost
         return builder.Build(coords, deformers);
     }
 
+    /// <summary>An exporter's previously-assigned stable ids, keyed by <see cref="EntityId"/> — for a
+    /// target format that needs one but has no id of its own to reuse (e.g. an ADT placement's unique
+    /// id). Empty when the editor storage isn't the default <see cref="EditorStorage"/>.</summary>
+    public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string exporterId)
+    {
+        if (Context.Database.Storages.OfType<EditorStorage>().FirstOrDefault() is not { } storage)
+        {
+            return new Dictionary<long, long>();
+        }
+
+        return await storage.LoadExportedEntityIdsAsync(exporterId).ConfigureAwait(false);
+    }
+
+    /// <summary>Persists newly-assigned or changed entity ids from <see cref="LoadExportedEntityIdsAsync"/>.</summary>
+    public async Task UpsertExportedEntityIdsAsync(string exporterId, IReadOnlyDictionary<long, long> ids)
+    {
+        if (Context.Database.Storages.OfType<EditorStorage>().FirstOrDefault() is { } storage)
+        {
+            await storage.UpsertExportedEntityIdsAsync(exporterId, ids).ConfigureAwait(false);
+        }
+    }
+
     internal async Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region)
     {
         var result = new List<SceneEntity>();

@@ -54,6 +54,8 @@ public sealed class EditorDbContext : DbContext
 
     public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
 
+    public DbSet<ExportedEntityIdRecord> ExportedEntityIds => Set<ExportedEntityIdRecord>();
+
     protected override void OnModelCreating(ModelBuilder model)
     {
         model.Entity<SceneEntityRecord>(entity =>
@@ -175,6 +177,13 @@ public sealed class EditorDbContext : DbContext
             entity.HasKey(record => new { record.ExporterId, record.MapId, record.ChunkX, record.ChunkY });
             entity.Property(record => record.ExporterId).HasMaxLength(128);
             entity.Property(record => record.ContentHash).HasMaxLength(64);
+        });
+
+        model.Entity<ExportedEntityIdRecord>(entity =>
+        {
+            entity.ToTable("exported_entity_ids");
+            entity.HasKey(record => new { record.ExporterId, record.EntityId });
+            entity.Property(record => record.ExporterId).HasMaxLength(128);
         });
 
         foreach (ISceneComponentPersistence persistence in _componentPersistence)
