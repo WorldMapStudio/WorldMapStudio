@@ -82,6 +82,27 @@ public sealed partial class ExportSystem : ISubsystemHost
         LandscapeCatalog catalog,
         LandscapeFunctions functions)
     {
+        LandscapeBuildResult? result = await BuildLandscapeChunksAsync(map, [coord], catalog, functions).ConfigureAwait(false);
+        return result?.Chunks.GetValueOrDefault(coord);
+    }
+
+    /// <summary>
+    /// Builds any number of chunks with one scene scan and one <see cref="LandscapeBuilder.Build"/>
+    /// call, rather than one of each per chunk — an exporter writing a whole ADT tile needs its 256
+    /// chunks built as a block, not scanned 256 times over. Returns every requested chunk's problems
+    /// alongside its output, so a caller does not need a second pass to surface them.
+    /// </summary>
+    internal async Task<LandscapeBuildResult?> BuildLandscapeChunksAsync(
+        MapId map,
+        IReadOnlyList<ChunkCoord> coords,
+        LandscapeCatalog catalog,
+        LandscapeFunctions functions)
+    {
+        if (coords.Count == 0)
+        {
+            return null;
+        }
+
         LandscapeSettings? settings = LoadLandscapeSettings(map);
         if (settings == null)
         {
@@ -89,16 +110,21 @@ public sealed partial class ExportSystem : ISubsystemHost
         }
 
         var builder = new LandscapeBuilder(settings, catalog, functions);
-        Aabb scan = ScanBounds(builder, coord);
+        Aabb scan = ScanBounds(builder, coords[0]);
+        for (int i = 1; i < coords.Count; i++)
+        {
+            scan = scan.Merge(ScanBounds(builder, coords[i]));
+        }
+
         IReadOnlyList<SceneEntity> entities = await ScanSceneAsync(map, scan).ConfigureAwait(false);
         List<ILandscapeDeformer> deformers = entities
             .SelectMany(entity => entity.Components)
             .OfType<ILandscapeDeformer>()
             .ToList();
-        return builder.BuildOne(coord, deformers);
+        return builder.Build(coords, deformers);
     }
 
-    private async Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region)
+    internal async Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region)
     {
         var result = new List<SceneEntity>();
         foreach (Storage storage in Context.Database.Storages)

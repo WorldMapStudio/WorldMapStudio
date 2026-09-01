@@ -1,5 +1,7 @@
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -44,4 +46,18 @@ public sealed class ChunkExportContext
 
     public Task<LandscapeChunkOutput?> BuildLandscapeChunkAsync(MapId map, ChunkCoord coord) =>
         _exports.BuildLandscapeChunkAsync(map, coord, _catalog, _functions);
+
+    /// <summary>Builds any number of chunks with one scene scan, rather than one per chunk — the
+    /// batch counterpart of <see cref="BuildLandscapeChunkAsync"/> a tile-shaped exporter needs.</summary>
+    public Task<LandscapeBuildResult?> BuildLandscapeChunksAsync(MapId map, IReadOnlyList<ChunkCoord> coords) =>
+        _exports.BuildLandscapeChunksAsync(map, coords, _catalog, _functions);
+
+    /// <summary>Scene entities overlapping <paramref name="region"/> — placements, procedural models,
+    /// anything an exporter needs beyond the landscape itself.</summary>
+    public Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region) =>
+        _exports.ScanSceneAsync(map, region);
+
+    /// <summary>The map an export scope's <see cref="ChunkChange.Map"/> refers to, or null if it no
+    /// longer exists.</summary>
+    public Map? FindMap(MapId map) => _exports.Context.Maps.Maps.FirstOrDefault(candidate => candidate.Id == map);
 }
