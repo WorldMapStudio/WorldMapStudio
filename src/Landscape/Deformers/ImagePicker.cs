@@ -33,6 +33,7 @@ public sealed class ImagePicker
     private int _createChunksX = 1;
     private int _createChunksY = 1;
     private int _createComponents = 1;
+    private PaintImagePixelFormat _createFormat = PaintImagePixelFormat.Byte;
 
     public ImagePicker(ImageSystem system)
     {
@@ -58,6 +59,7 @@ public sealed class ImagePicker
         _createChunksX = 1;
         _createChunksY = 1;
         _createComponents = 1;
+        _createFormat = PaintImagePixelFormat.Byte;
         _createOpenRequested = true;
     }
 
@@ -96,6 +98,7 @@ public sealed class ImagePicker
             ImGui.InputText("Name", ref _createName, 128);
             ImGui.Separator();
             DrawFormatCombo();
+            DrawPrecisionCombo();
             ImGui.InputInt("Chunk Size (px)", ref _createChunkSize);
             ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
             ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
@@ -160,6 +163,43 @@ public sealed class ImagePicker
         }
     }
 
+    private static string PrecisionLabel(PaintImagePixelFormat format) => format switch
+    {
+        PaintImagePixelFormat.Float32 => "Float32 (heightmap)",
+        _ => "Byte",
+    };
+
+    /// <summary>Only meaningful on a Scalar image — see <see cref="PaintImage.ConfigureNew"/> — so this
+    /// disables itself and snaps back to Byte the moment "Format" leaves Scalar, rather than letting the
+    /// user set up a combination <see cref="PaintImage.ConfigureNew"/> would silently downgrade anyway.</summary>
+    private void DrawPrecisionCombo()
+    {
+        bool available = _createComponents == 1;
+        if (!available)
+        {
+            _createFormat = PaintImagePixelFormat.Byte;
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.BeginCombo("Precision", PrecisionLabel(_createFormat)))
+        {
+            foreach (PaintImagePixelFormat candidate in new[] { PaintImagePixelFormat.Byte, PaintImagePixelFormat.Float32 })
+            {
+                if (ImGui.Selectable(PrecisionLabel(candidate), candidate == _createFormat))
+                {
+                    _createFormat = candidate;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        if (!available)
+        {
+            ImGui.EndDisabled();
+        }
+    }
+
     private string? ValidationError()
     {
         if (_createId <= 0)
@@ -201,7 +241,8 @@ public sealed class ImagePicker
             ClampedPixelSize(_createChunksX, _createChunkSize),
             ClampedPixelSize(_createChunksY, _createChunkSize),
             _createChunkSize,
-            _createComponents);
+            _createComponents,
+            _createFormat);
 
         var command = new CreateCatalogEntityCommand(_createCatalog, image);
         command.Apply();

@@ -26,18 +26,18 @@ public static class ImageChunkCodec
         return deflated.Length < pixels.Length ? (FormatDeflate, deflated) : (FormatRaw, pixels);
     }
 
-    /// <summary><paramref name="chunkSize"/> is the tile's side length and <paramref name="components"/>
-    /// its bytes per pixel — the decompressed length is always <c>chunkSize * chunkSize * components</c>,
-    /// since every chunk is stored at its image's fixed tile size regardless of how much of it falls
-    /// inside the canvas.</summary>
-    public static byte[] Decode(byte format, byte[] bytes, int chunkSize, int components)
+    /// <summary><paramref name="chunkSize"/> is the tile's side length and <paramref name="stride"/> its
+    /// bytes per pixel (<see cref="PaintImage.Stride"/>) — the decompressed length is always
+    /// <c>chunkSize * chunkSize * stride</c>, since every chunk is stored at its image's fixed tile size
+    /// regardless of how much of it falls inside the canvas.</summary>
+    public static byte[] Decode(byte format, byte[] bytes, int chunkSize, int stride)
     {
         if (format != FormatDeflate)
         {
             return bytes;
         }
 
-        var pixels = new byte[chunkSize * chunkSize * components];
+        var pixels = new byte[chunkSize * chunkSize * stride];
         using var source = new MemoryStream(bytes);
         using var deflate = new DeflateStream(source, CompressionMode.Decompress);
 

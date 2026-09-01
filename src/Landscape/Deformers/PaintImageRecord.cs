@@ -15,6 +15,9 @@ public sealed class PaintImageRecord : IKeyedRecord
     public int ChunkSize { get; set; } = 256;
 
     public int Components { get; set; } = 1;
+
+    /// <summary>One of <see cref="PaintImagePixelFormat"/>.</summary>
+    public int PixelFormat { get; set; }
 }
 
 /// <summary>EF Core row for one non-empty chunk of a <see cref="PaintImage"/>. A chunk coordinate with

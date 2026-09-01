@@ -19,25 +19,29 @@ public struct ImageSampler
     private readonly int _height;
     private readonly int _chunkSize;
     private readonly int _components;
+    private readonly PaintImagePixelFormat _format;
 
     private ImageChunkCoord _cursorCoord;
     private byte[]? _cursorPixels;
     private bool _cursorValid;
 
-    internal ImageSampler(ImageChunkTable table, int width, int height, int chunkSize, int components)
+    internal ImageSampler(ImageChunkTable table, int width, int height, int chunkSize, int components, PaintImagePixelFormat format)
     {
         _table = table;
         _width = width;
         _height = height;
         _chunkSize = chunkSize;
         _components = components;
+        _format = format;
         _cursorCoord = default;
         _cursorPixels = null;
         _cursorValid = false;
     }
 
-    /// <summary>Bilinear sample of the image's first component, returned in the 0..1 range — the whole
-    /// value for a scalar image, its red component for a color one.</summary>
+    /// <summary>Bilinear sample of the image's first component, returned in the 0..1 range for a
+    /// <see cref="PaintImagePixelFormat.Byte"/> image — the whole value for a scalar image, its red
+    /// component for a color one — or unclamped, straight from storage, for a
+    /// <see cref="PaintImagePixelFormat.Float32"/> one.</summary>
     public float Sample(float u, float v) => SampleComponent(u, v, 0);
 
     /// <summary>Bilinear sample as a color: native for a 3/4-component image, or the value replicated
@@ -69,10 +73,11 @@ public struct ImageSampler
 
         float a = Mathf.Lerp(PixelAt(x0, y0, component), PixelAt(x1, y0, component), tx);
         float b = Mathf.Lerp(PixelAt(x0, y1, component), PixelAt(x1, y1, component), tx);
-        return Mathf.Lerp(a, b, ty) / 255.0f;
+        float raw = Mathf.Lerp(a, b, ty);
+        return _format == PaintImagePixelFormat.Float32 ? raw : raw / 255.0f;
     }
 
-    private byte PixelAt(int x, int y, int component)
+    private float PixelAt(int x, int y, int component)
     {
         var coord = new ImageChunkCoord(x / _chunkSize, y / _chunkSize);
         if (!_cursorValid || coord != _cursorCoord)
@@ -84,11 +89,12 @@ public struct ImageSampler
 
         if (_cursorPixels is not { } pixels)
         {
-            return 0;
+            return 0.0f;
         }
 
         int localX = x - (coord.X * _chunkSize);
         int localY = y - (coord.Y * _chunkSize);
-        return pixels[(((localY * _chunkSize) + localX) * _components) + component];
+        int elementIndex = (((localY * _chunkSize) + localX) * _components) + component;
+        return PaintImagePixelIO.Read(pixels, elementIndex, _format);
     }
 }

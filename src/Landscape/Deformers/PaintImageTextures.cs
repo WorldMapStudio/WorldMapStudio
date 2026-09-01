@@ -31,6 +31,7 @@ public static class PaintImageTextures
     {
         (int width, int height, int stride, byte[] source) = ChunkSource(image, coord);
         int components = image.Components;
+        PaintImagePixelFormat format = image.Format;
         byte[] rgba = new byte[width * height * 4];
 
         for (int y = 0; y < height; y++)
@@ -41,11 +42,11 @@ public static class PaintImageTextures
             {
                 int s = sourceRow + (x * components);
                 int o = targetRow + (x * 4);
-                byte r = source[s];
+                byte r = ReadByte(source, s, format);
                 rgba[o] = r;
-                rgba[o + 1] = components == 1 ? r : source[s + 1];
-                rgba[o + 2] = components == 1 ? r : source[s + 2];
-                rgba[o + 3] = components == 4 ? source[s + 3] : components == 1 ? r : (byte)255;
+                rgba[o + 1] = components == 1 ? r : ReadByte(source, s + 1, format);
+                rgba[o + 2] = components == 1 ? r : ReadByte(source, s + 2, format);
+                rgba[o + 3] = components == 4 ? ReadByte(source, s + 3, format) : components == 1 ? r : (byte)255;
             }
         }
 
@@ -78,13 +79,14 @@ public static class PaintImageTextures
                 ToByte(Mathf.Lerp(baseColor.A, fullColor.A, t)));
         }
 
+        PaintImagePixelFormat format = image.Format;
         for (int y = 0; y < height; y++)
         {
             int sourceRow = y * stride;
             int targetRow = y * width * 4;
             for (int x = 0; x < width; x++)
             {
-                (byte r, byte g, byte b, byte a) = ramp[source[sourceRow + x]];
+                (byte r, byte g, byte b, byte a) = ramp[ReadByte(source, sourceRow + x, format)];
                 int o = targetRow + (x * 4);
                 rgba[o] = r;
                 rgba[o + 1] = g;
@@ -160,9 +162,18 @@ public static class PaintImageTextures
         int size = image.ChunkSize;
         int width = Math.Clamp(image.Width - (coord.X * size), 0, size);
         int height = Math.Clamp(image.Height - (coord.Y * size), 0, size);
-        byte[] source = image.CopyChunkBytes(coord) ?? new byte[size * size];
+        byte[] source = image.CopyChunkBytes(coord) ?? new byte[size * size * image.Stride];
         return (Math.Max(1, width), Math.Max(1, height), size, source);
     }
+
+    /// <summary>One component's value at <paramref name="elementIndex"/>, widened to a display byte —
+    /// the raw byte as-is for <see cref="PaintImagePixelFormat.Byte"/>, or a stored float clamped into
+    /// [0,255] for <see cref="PaintImagePixelFormat.Float32"/>, the same way an unbounded scalar (e.g. a
+    /// heightmap image) is squashed down for a preview everywhere else a sampler is used.</summary>
+    private static byte ReadByte(byte[] source, int elementIndex, PaintImagePixelFormat format) =>
+        format == PaintImagePixelFormat.Float32
+            ? ToByte(PaintImagePixelIO.Read(source, elementIndex, format))
+            : source[elementIndex];
 
     private static byte ToByte(float channel) => (byte)Mathf.Clamp(Mathf.RoundToInt(channel * 255.0f), 0, 255);
 }
