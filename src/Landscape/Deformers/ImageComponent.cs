@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 /// updates every placement. See <see cref="ProceduralComponent"/> for the same split applied to
 /// procedural meshes.
 /// </summary>
-public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, ISceneNodeComponent, IMeshPickable
+public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, IIncrementalLandscapeDeformer, ISceneNodeComponent, IMeshPickable
 {
     private const float BoundsHeight = 2.0f;
 
@@ -39,6 +39,16 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     // and costing one per chunk in the entire image, every frame.
     private Node3D? _root;
     private readonly Dictionary<ImageChunkCoord, ChunkNode> _chunkNodes = [];
+
+    // What ConsumeDirtyRegions last saw, kept separate from _chunkNodes above: that one only exists
+    // while a display layer is bound to something other than None, but the landscape rebuild this
+    // drives needs to work for a placement with no viewport representation at all. The sequence is
+    // this placement's own cursor into the bound image's shared dirty log, so several placements of
+    // one image each consume the same edits independently.
+    private int? _dirtyTrackedImageId;
+    private float _dirtyTrackedStrength;
+    private string _dirtyTrackedChannel = "";
+    private long _dirtyTrackedSeq = -1;
 
     // Object display mode's backdrop cuts a hole for every chunk quad resident over it (see
     // BuildObjectMesh) instead of racing that quad for the same depth — this is where the "which
@@ -549,6 +559,17 @@ void fragment() {
             return;
         }
 
+        // Nothing painted under this chunk: every sample below would read zero from an absent image
+        // chunk, and a zero contributes nothing (both write paths skip a non-positive value, and the
+        // write is a Max against an already-zeroed buffer), so skipping is exactly equivalent to
+        // running the full loop. This is what keeps a big footprint cheap — without it, one small
+        // painted spot on a large canvas still costs a full resolution² bilinear sweep on every
+        // landscape chunk the footprint happens to cover, almost all of it sampling nothing.
+        if (!HasResidentChunksIn(context.Grid.BoundsOf(context.Coord)))
+        {
+            return;
+        }
+
         int resolution = channel.Resolution;
         Transform3D inverse = Entity.Transform.AffineInverse();
 
@@ -702,6 +723,29 @@ void fragment() {
         return image.ChunkRectForUv(uMin, uMax, vMin, vMax, headroomChunks: 1);
     }
 
+    /// <summary>Whether the bound image has any resident chunk under a world region — the cheap
+    /// "is there anything painted here at all" test <see cref="Rasterize"/> early-outs on. Reuses
+    /// <see cref="ChunksNeededFor"/>, so it inherits that method's one-chunk headroom: over-inclusive
+    /// by design, since a bilinear tap near a resident chunk's edge reads into its neighbour, and
+    /// answering "yes" when the region is in fact empty only costs a sweep that writes nothing.</summary>
+    private bool HasResidentChunksIn(Aabb worldRegion)
+    {
+        if (Image is not { } image || ChunksNeededFor(worldRegion) is not { } rect)
+        {
+            return false;
+        }
+
+        foreach (ImageChunkCoord coord in rect.Coords())
+        {
+            if (image.IsResident(coord))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>The world-space AABB covering a set of the bound image's chunk coordinates — the
     /// inverse of the mapping <see cref="ChunksNeededFor"/> uses. What a paint stroke's undo command
     /// narrows <see cref="ChunkChangeSnapshot"/> bounds to, so a small stroke on a huge image marks
@@ -731,6 +775,69 @@ void fragment() {
         float hiX = (maxU - 0.5f) * WorldSizeX;
         float loZ = (minV - 0.5f) * WorldSizeZ;
         float hiZ = (maxV - 0.5f) * WorldSizeZ;
+
+        var local = new Aabb(
+            new Vector3(loX, -BoundsHeight * 0.5f, loZ),
+            new Vector3(hiX - loX, BoundsHeight, hiZ - loZ));
+        return Entity.Transform * local;
+    }
+
+    /// <summary>
+    /// <see cref="IIncrementalLandscapeDeformer.ConsumeDirtyRegions"/>: the world bounds of just the
+    /// <em>pixels</em> edited since the last call, so a brush dab dirties only the terrain actually
+    /// under it. Pixel-level rather than chunk-level on purpose — a default 256x256 image is one
+    /// 256px chunk, so a chunk-level answer is the whole canvas, and a placement stretched over a
+    /// large footprint would rebuild every landscape chunk beneath it for a single dab.
+    ///
+    /// Falls back to the whole <see cref="InfluenceBounds"/> whenever the image identity, strength, or
+    /// channel changed instead: any of those changes what every already-painted pixel contributes
+    /// regardless of which pixel it is, so narrowing would under-report.
+    /// </summary>
+    public IReadOnlyList<Aabb> ConsumeDirtyRegions()
+    {
+        if (Image is not { } image)
+        {
+            _dirtyTrackedImageId = ImageId;
+            _dirtyTrackedSeq = -1;
+            return [];
+        }
+
+        bool wide = _dirtyTrackedImageId != ImageId || _dirtyTrackedStrength != Strength || _dirtyTrackedChannel != Channel;
+        _dirtyTrackedImageId = ImageId;
+        _dirtyTrackedStrength = Strength;
+        _dirtyTrackedChannel = Channel;
+
+        bool any = image.TryDirtyPixelsSince(_dirtyTrackedSeq, out int minX, out int minY, out int maxX, out int maxY);
+        _dirtyTrackedSeq = image.DirtySequence;
+
+        if (wide)
+        {
+            return [InfluenceBounds];
+        }
+
+        return any && WorldBoundsForPixels(minX, minY, maxX, maxY) is { } bounds ? [bounds] : [];
+    }
+
+    /// <summary>The world-space AABB covering an inclusive pixel rect of the bound image — the
+    /// pixel-granular counterpart to <see cref="WorldBoundsForChunks"/>. Grown by one pixel on every
+    /// side, since a landscape texel bilinearly samples its neighbours and would otherwise be able to
+    /// read an edited pixel from just outside the reported region.</summary>
+    private Aabb? WorldBoundsForPixels(int minX, int minY, int maxX, int maxY)
+    {
+        if (Image is not { } image)
+        {
+            return null;
+        }
+
+        float u0 = (float)Mathf.Max(minX - 1, 0) / image.Width;
+        float u1 = (float)Mathf.Min(maxX + 2, image.Width) / image.Width;
+        float v0 = (float)Mathf.Max(minY - 1, 0) / image.Height;
+        float v1 = (float)Mathf.Min(maxY + 2, image.Height) / image.Height;
+
+        float loX = (u0 - 0.5f) * WorldSizeX;
+        float hiX = (u1 - 0.5f) * WorldSizeX;
+        float loZ = (v0 - 0.5f) * WorldSizeZ;
+        float hiZ = (v1 - 0.5f) * WorldSizeZ;
 
         var local = new Aabb(
             new Vector3(loX, -BoundsHeight * 0.5f, loZ),

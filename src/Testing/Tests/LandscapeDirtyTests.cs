@@ -116,4 +116,73 @@ public static class LandscapeDirtyTests
         Assert.IsFalse(Covers(regions, still.Centre), "an untouched deformer's region stays clean");
         Assert.AreEqual(2, regions.Count, "just the vacated and the occupied region");
     }
+
+    private sealed class IncrementalDeformer : ILandscapeDeformer, IIncrementalLandscapeDeformer
+    {
+        public required string Key { get; init; }
+        public Vector3 Centre { get; set; }
+        public float Radius { get; set; } = 10.0f;
+        public int Version { get; set; }
+        public List<Aabb> NextDirtyRegions { get; } = [];
+
+        public string DeformerKey => Key;
+
+        public int ContentVersion => Version;
+
+        public Aabb InfluenceBounds => new(
+            Centre - new Vector3(Radius, Radius, Radius),
+            new Vector3(Radius * 2.0f, Radius * 2.0f, Radius * 2.0f));
+
+        public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
+
+        public void Rasterize(in LandscapeRasterContext context) { }
+
+        public IReadOnlyList<Aabb> ConsumeDirtyRegions()
+        {
+            var result = NextDirtyRegions.ToList();
+            NextDirtyRegions.Clear();
+            return result;
+        }
+    }
+
+    [EditorTest(Category = "LandscapeDirty", Thread = TestThread.Background)]
+    public static void An_incremental_deformer_reports_its_own_narrowed_region_instead_of_its_whole_bounds()
+    {
+        // The bug this guards against: a huge-footprint image placement whose bound changed nowhere,
+        // but whose content moved in one small spot, used to dirty its entire footprint every paint
+        // dab. An opted-in deformer gets to report just the sub-region that actually changed instead.
+        var tracker = new LandscapeDirtyTracker();
+        var stamp = new IncrementalDeformer { Key = "a", Centre = Vector3.Zero, Radius = 500.0f };
+        tracker.Collect([stamp]);
+
+        stamp.Version = 7;
+        var touched = new Aabb(new Vector3(1.0f, 0.0f, 1.0f), new Vector3(2.0f, 2.0f, 2.0f));
+        stamp.NextDirtyRegions.Add(touched);
+
+        IReadOnlyList<Aabb> regions = tracker.Collect([stamp]);
+
+        Assert.AreEqual(1, regions.Count);
+        Assert.AreEqual(touched.Position, regions[0].Position);
+        Assert.AreEqual(touched.Size, regions[0].Size);
+    }
+
+    [EditorTest(Category = "LandscapeDirty", Thread = TestThread.Background)]
+    public static void A_moved_incremental_deformer_still_dirties_its_whole_bounds()
+    {
+        // Narrowing only applies to a content-only change — a moved deformer still needs its old and
+        // new footprint dirtied in full, exactly like a non-incremental one.
+        var tracker = new LandscapeDirtyTracker();
+        var stamp = new IncrementalDeformer { Key = "a", Centre = Vector3.Zero };
+        tracker.Collect([stamp]);
+
+        var from = Vector3.Zero;
+        var to = new Vector3(500.0f, 0.0f, 0.0f);
+        stamp.Centre = to;
+        stamp.NextDirtyRegions.Add(new Aabb(Vector3.One, Vector3.One)); // must be ignored on a move
+
+        IReadOnlyList<Aabb> regions = tracker.Collect([stamp]);
+
+        Assert.IsTrue(Covers(regions, from), "the vacated region must be rebuilt");
+        Assert.IsTrue(Covers(regions, to), "and so must the new one");
+    }
 }

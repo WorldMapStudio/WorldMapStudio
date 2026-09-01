@@ -171,6 +171,23 @@ public readonly struct LandscapeRasterContext
 /// The two calls are deliberately separate. Claiming is cheap and side-effect free so the resolver
 /// can decide the whole chunk before anything is drawn; rasterizing is told the outcome.
 /// </summary>
+/// <summary>
+/// Opt-in for a deformer whose <see cref="ILandscapeDeformer.ContentVersion"/> can change without its
+/// whole <see cref="ILandscapeDeformer.InfluenceBounds"/> having gone stale — e.g. one paint stroke on
+/// a small corner of a huge image touches only a few chunks, not the whole footprint.
+/// <see cref="LandscapeDirtyTracker"/> calls <see cref="ConsumeDirtyRegions"/> instead of dirtying the
+/// whole bounds whenever <see cref="ILandscapeDeformer.InfluenceBounds"/> itself did not move.
+/// </summary>
+public interface IIncrementalLandscapeDeformer
+{
+    /// <summary>
+    /// The world regions that actually changed since the last call (or since this deformer started
+    /// being tracked). Consumes whatever it reports — the next call reports only what changed since
+    /// <em>this</em> call, not a running total.
+    /// </summary>
+    IReadOnlyList<Aabb> ConsumeDirtyRegions();
+}
+
 public interface ILandscapeDeformer
 {
     /// <summary>

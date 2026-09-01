@@ -984,6 +984,144 @@ public static class ImageTests
         Assert.IsTrue(output.Layers[1].Alpha!.Any(alpha => alpha == 0), "unpainted pixels should stay transparent");
     }
 
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ConsumeDirtyRegions_narrows_a_dab_to_brush_size_on_a_single_chunk_image()
+    {
+        // The regression this guards against, and the reason chunk-granular narrowing was not enough:
+        // a default image is ONE 256px chunk, so narrowing to "the chunks the stroke touched" is the
+        // whole canvas. Stretched over a large footprint that dirtied every landscape chunk beneath
+        // the placement for a single small dab.
+        EditorContext context = NewContext("__wms_image_dirty_narrow_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(256, 256, chunkSize: 256); // exactly one chunk, like a default image
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 4096.0f,
+            WorldSizeZ = 4096.0f,
+        };
+        entity.AddComponent(component);
+        var incremental = (IIncrementalLandscapeDeformer)component;
+        incremental.ConsumeDirtyRegions(); // establish a baseline
+
+        // A dab covering ~4 pixels of the 256px canvas, in the middle.
+        image.Paint(0.5f, 0.5f, 2.0f / 256.0f, 2.0f / 256.0f, 1.0f, erase: false);
+        Assert.AreEqual(1, image.ChunkCount, "the whole canvas is a single chunk");
+
+        IReadOnlyList<Aabb> regions = incremental.ConsumeDirtyRegions();
+
+        Assert.AreEqual(1, regions.Count);
+        Assert.IsTrue(regions[0].Size.X < 400.0f,
+            $"a few-pixel dab must stay a small world region, not the 4096-wide footprint (got {regions[0].Size.X})");
+
+        Assert.AreEqual(0, incremental.ConsumeDirtyRegions().Count,
+            "already reported, so a second call with nothing new painted reports nothing");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Two_placements_sharing_one_image_each_see_the_same_paint()
+    {
+        // The dirty log is shared but consumed per-placement, so the first consumer must not starve
+        // the second — that would leave one placement's terrain stale after a stroke.
+        EditorContext context = NewContext("__wms_image_dirty_shared_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(256, 256, chunkSize: 256);
+
+        var entityA = new SceneEntity();
+        var entityB = new SceneEntity();
+        var a = new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = 512.0f, WorldSizeZ = 512.0f };
+        var b = new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = 512.0f, WorldSizeZ = 512.0f };
+        entityA.AddComponent(a);
+        entityB.AddComponent(b);
+        ((IIncrementalLandscapeDeformer)a).ConsumeDirtyRegions();
+        ((IIncrementalLandscapeDeformer)b).ConsumeDirtyRegions();
+
+        image.Paint(0.5f, 0.5f, 2.0f / 256.0f, 2.0f / 256.0f, 1.0f, erase: false);
+
+        Assert.AreEqual(1, ((IIncrementalLandscapeDeformer)a).ConsumeDirtyRegions().Count);
+        Assert.AreEqual(1, ((IIncrementalLandscapeDeformer)b).ConsumeDirtyRegions().Count,
+            "the second placement must still see the edit after the first consumed it");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void ConsumeDirtyRegions_falls_back_to_the_whole_footprint_when_strength_changes()
+    {
+        // Strength scales every already-painted pixel's contribution, not just one chunk's, so a
+        // per-chunk-revision diff would under-report here — this must stay a full-bounds edit.
+        EditorContext context = NewContext("__wms_image_dirty_wide_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(256, 256, chunkSize: 16);
+        image.Paint(4.0f / 256.0f, 4.0f / 256.0f, 2.0f / 256.0f, 2.0f / 256.0f, 1.0f, erase: false);
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 2048.0f,
+            WorldSizeZ = 2048.0f,
+        };
+        entity.AddComponent(component);
+        ((IIncrementalLandscapeDeformer)component).ConsumeDirtyRegions(); // establish a baseline
+
+        component.Strength = 2.0f;
+        IReadOnlyList<Aabb> regions = ((IIncrementalLandscapeDeformer)component).ConsumeDirtyRegions();
+
+        Assert.AreEqual(1, regions.Count);
+        Assert.AreApproximatelyEqual(2048.0, regions[0].Size.X, 1e-3, "a strength edit dirties the whole footprint");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Rasterizing_a_chunk_with_nothing_painted_under_it_matches_rasterizing_it_fully()
+    {
+        // The early-out that keeps a large footprint cheap: a landscape chunk with no resident image
+        // chunk under it is skipped entirely. That must be indistinguishable from running the full
+        // sweep, which would sample zero everywhere and write nothing.
+        var functions = new LandscapeFunctions();
+        functions.Discover(typeof(ChannelMaskAlpha).Assembly);
+
+        var channel = new LandscapeChannel { Name = MaskChannel, RecordId = 1, Resolution = 32 };
+        var baseLayer = new LandscapeLayer { Name = "base", RecordId = 1, DrawOrder = 0, IsBase = true };
+        var settings = new LandscapeSettings
+        {
+            ChunkWorldSize = 64.0f,
+            ChunkHeightResolution = 9,
+            ChunkAlphaResolution = 32,
+            TextureLimit = 4,
+            FallbackMaterialId = 1,
+        };
+        var catalog = new LandscapeCatalog([channel], [baseLayer], [], functions);
+
+        EditorContext context = NewContext("__wms_image_rasterize_skip_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(1024, 1024, chunkSize: 64);
+
+        var entity = new SceneEntity();
+        var target = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            Channel = MaskChannel,
+            // A footprint far larger than one chunk, so chunk (0,0) is covered by the placement but
+            // the single painted dot sits nowhere near it.
+            WorldSizeX = 4096.0f,
+            WorldSizeZ = 4096.0f,
+        };
+        entity.AddComponent(target);
+
+        // Paint one dot in the far corner of the canvas — nothing resident anywhere near chunk (0,0).
+        image.Paint(0.99f, 0.99f, 0.002f, 0.002f, 1.0f, erase: false);
+        Assert.AreEqual(1, image.ChunkCount);
+
+        LandscapeChunkOutput output = new LandscapeBuilder(settings, catalog, functions)
+            .BuildOne(new ChunkCoord(0, 0), entity.Components.OfType<ILandscapeDeformer>().ToList());
+
+        // Chunk (0,0) is inside the footprint but has no paint under it, so it must come out exactly
+        // as it would with no contribution at all.
+        Assert.IsTrue(output.Layers.All(layer => layer.Alpha == null || layer.Alpha.All(alpha => alpha == 0)),
+            "a chunk with no resident image chunk under it must receive no paint");
+    }
+
     private static EditorContext NewContext(string name) =>
         new(new Node3D(), new Project { Name = name });
 

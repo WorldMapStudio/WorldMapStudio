@@ -74,15 +74,21 @@ public sealed class TerrainProbe
     {
         foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
         {
-            Vector3 local = chunk.Transform.AffineInverse() * new Vector3(worldX, 0.0f, worldZ);
+            // Chunks are placed with an identity basis (see the LandscapeChunk constructor), so
+            // world->local is a plain subtraction of the origin. AffineInverse() here was a full
+            // matrix inverse per chunk per call, and this runs once per brush-outline point — the
+            // Paint tool alone probes it ~50 times a frame while the pointer is over the viewport.
+            Vector3 origin = chunk.Transform.Origin;
+            float localX = worldX - origin.X;
+            float localZ = worldZ - origin.Z;
             Aabb bounds = chunk.LocalBounds;
-            if (local.X < bounds.Position.X || local.Z < bounds.Position.Z ||
-                local.X > bounds.End.X || local.Z > bounds.End.Z)
+            if (localX < bounds.Position.X || localZ < bounds.Position.Z ||
+                localX > bounds.End.X || localZ > bounds.End.Z)
             {
                 continue;
             }
 
-            height = SampleChunkHeight(chunk.Output, bounds.Size.X, local.X, local.Z);
+            height = SampleChunkHeight(chunk.Output, bounds.Size.X, localX, localZ);
             return true;
         }
 
