@@ -74,4 +74,13 @@ public sealed class ChunkExportContext
     /// the narrow slices above (e.g. a background scan already written expecting to take
     /// <c>EditorContext</c> directly, the way <c>WowLiquidTileBackgroundScan</c> was).</summary>
     public EditorContext EditorContext => _exports.Context;
+
+    /// <summary>This exporter's previously-assigned stable entity ids — for a target format that
+    /// needs one but has no id of its own to reuse.</summary>
+    public Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string exporterId) =>
+        _exports.LoadExportedEntityIdsAsync(exporterId);
+
+    /// <summary>Persists newly-assigned or changed entity ids from <see cref="LoadExportedEntityIdsAsync"/>.</summary>
+    public Task SaveExportedEntityIdsAsync(string exporterId, IReadOnlyDictionary<long, long> ids) =>
+        _exports.UpsertExportedEntityIdsAsync(exporterId, ids);
 }
