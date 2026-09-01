@@ -174,16 +174,16 @@ public sealed class EditorDbContext : DbContext
         model.Entity<ExportedChunkRecord>(entity =>
         {
             entity.ToTable("exported_chunks");
-            entity.HasKey(record => new { record.ExporterId, record.MapId, record.ChunkX, record.ChunkY });
-            entity.Property(record => record.ExporterId).HasMaxLength(128);
+            entity.HasKey(record => new { record.ProfileId, record.MapId, record.ChunkX, record.ChunkY });
+            entity.Property(record => record.ProfileId).HasMaxLength(128);
             entity.Property(record => record.ContentHash).HasMaxLength(64);
         });
 
         model.Entity<ExportedEntityIdRecord>(entity =>
         {
             entity.ToTable("exported_entity_ids");
-            entity.HasKey(record => new { record.ExporterId, record.EntityId });
-            entity.Property(record => record.ExporterId).HasMaxLength(128);
+            entity.HasKey(record => new { record.ProfileId, record.EntityId });
+            entity.Property(record => record.ProfileId).HasMaxLength(128);
         });
 
         foreach (ISceneComponentPersistence persistence in _componentPersistence)

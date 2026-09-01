@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using ImGuiNET;
 
@@ -26,6 +27,18 @@ public sealed class SampleAlphaMapExportScript : IChunkExportScript
     {
         ImGui.InputTextWithHint("Output", "Project exports/alphamaps", ref _folder, 512);
         ImGui.Checkbox("Write empty slots", ref _writeEmptySlots);
+    }
+
+    public JsonObject SaveSettings() => new()
+    {
+        ["folder"] = _folder,
+        ["writeEmptySlots"] = _writeEmptySlots,
+    };
+
+    public void LoadSettings(JsonObject settings)
+    {
+        _folder = settings["folder"]?.GetValue<string>() ?? "";
+        _writeEmptySlots = settings["writeEmptySlots"]?.GetValue<bool>() ?? false;
     }
 
     public async Task<ChunkExportResult> ExportAsync(

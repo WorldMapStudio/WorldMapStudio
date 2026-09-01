@@ -1,10 +1,17 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using ImGuiNET;
 using NVector2 = System.Numerics.Vector2;
 using NVector4 = System.Numerics.Vector4;
 
 namespace WorldMapStudio;
+
+public enum ExportTargetMode
+{
+    Dirty,
+    Range,
+}
 
 [Subsystem(nameof(WindowManager))]
 public sealed class ExportWindow : Window
@@ -12,19 +19,38 @@ public sealed class ExportWindow : Window
     public override string? Category => "World";
 
     private const string ProgressPopupId = "Export Progress";
+    private const string CreatePopupId = "New Export Profile";
+    private const string RenamePopupId = "Rename Export Profile";
 
     private static readonly NVector4 FaultedColor = new(1.0f, 0.45f, 0.40f, 1.0f);
     private static readonly NVector4 CompletedColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 MutedColor = new(0.60f, 0.60f, 0.60f, 1.0f);
 
     private readonly ExportSystem _exports;
-    private int _selected;
+
+    private string? _selectedProfileId;
+    private string? _loadedSettingsProfileId;
+    private string _lastSavedSettingsJson = "";
+
+    private ExportTargetMode _mode;
     private ChunkExportScope _scope;
+    private int _rangeMapIndex;
+    private int _rangeMinX, _rangeMinY, _rangeMaxX, _rangeMaxY;
+
+    private bool _createOpenRequested;
+    private bool _createActive;
+    private string _createName = "";
+    private int _createExporterIndex;
+
+    private bool _renameOpenRequested;
+    private bool _renameActive;
+    private string _renameBuffer = "";
+
     private WorkHandle? _running;
     private bool _popupOpenRequested;
 
     public ExportWindow(WindowManager manager)
-        : base("Export", startOpen: false, defaultSize: new NVector2(480.0f, 360.0f))
+        : base("Export", startOpen: false, defaultSize: new NVector2(480.0f, 400.0f))
     {
         _exports = manager.Context.Exports;
     }
@@ -46,28 +72,135 @@ public sealed class ExportWindow : Window
     protected override void DrawContent()
     {
         List<IChunkExportScript> exporters = _exports.Exporters.ToList();
-        if (exporters.Count == 0)
-        {
-            ImGui.TextDisabled("No exporters registered.");
-            return;
-        }
-
+        IReadOnlyList<ExportProfile> profiles = _exports.Profiles.Profiles;
         bool running = _running is { } handle && handle.Snapshot().IsActive;
 
         ImGui.BeginDisabled(running);
-        _selected = System.Math.Clamp(_selected, 0, exporters.Count - 1);
-        string preview = exporters[_selected].DisplayName;
-        if (ImGui.BeginCombo("Exporter", preview))
+        DrawProfileSelector(profiles, exporters);
+        ImGui.EndDisabled();
+
+        DrawCreatePopup(exporters);
+
+        ExportProfile? profile = profiles.FirstOrDefault(candidate => candidate.Id == _selectedProfileId);
+        DrawRenamePopup(profile);
+
+        if (profile == null)
         {
-            for (int i = 0; i < exporters.Count; i++)
+            ImGui.TextDisabled(exporters.Count == 0
+                ? "No exporters registered."
+                : "Create a profile to configure and run an export.");
+            return;
+        }
+
+        if (exporters.FirstOrDefault(candidate => candidate.Id == profile.ExporterId) is not { } exporter)
+        {
+            ImGui.TextColored(FaultedColor, $"Exporter '{profile.ExporterId}' is not registered (plugin missing?).");
+            return;
+        }
+
+        CheckoutSettings(exporter, profile);
+
+        ImGui.BeginDisabled(running);
+
+        int mode = (int)_mode;
+        if (ImGui.Combo("Target", ref mode, "Dirty\0Range\0"))
+        {
+            _mode = (ExportTargetMode)mode;
+        }
+
+        int dirty = 0;
+        ChunkRange? range = null;
+
+        if (_mode == ExportTargetMode.Dirty)
+        {
+            int scope = (int)_scope;
+            if (ImGui.Combo("Scope", ref scope, "Current map\0All maps\0"))
             {
-                bool selected = i == _selected;
-                if (ImGui.Selectable(exporters[i].DisplayName, selected))
+                _scope = (ChunkExportScope)scope;
+            }
+
+            dirty = _exports.Changes.DirtyFor(profile.Id, _scope).Count;
+            ImGui.TextDisabled($"{dirty} dirty chunks");
+        }
+        else
+        {
+            range = DrawRangeControls(_exports.Context.Maps.Maps);
+        }
+
+        ImGui.Separator();
+        exporter.DrawSettings();
+        ImGui.Separator();
+
+        ImGui.EndDisabled();
+
+        CheckinSettings(exporter, profile);
+
+        // Checked up front, not just left to Run()'s own refusal, so a disabled button and its reason
+        // show before the click rather than only a console warning after it.
+        string? blocker = running ? null : _exports.Context.Operations.Blocker;
+
+        if (_mode == ExportTargetMode.Dirty)
+        {
+            ImGui.BeginDisabled(running || dirty == 0 || blocker != null);
+            if (ImGui.Button("Export Dirty", new NVector2(130.0f, 0.0f)))
+            {
+                _running = _exports.Run(profile, _scope);
+                _popupOpenRequested = _running != null;
+            }
+            ImGui.EndDisabled();
+        }
+        else
+        {
+            ImGui.BeginDisabled(running || range == null || blocker != null);
+            if (ImGui.Button("Export Range", new NVector2(130.0f, 0.0f)))
+            {
+                _running = _exports.RunRange(profile, range!.Value);
+                _popupOpenRequested = _running != null;
+            }
+            ImGui.EndDisabled();
+        }
+
+        ImGui.SameLine();
+        ImGui.BeginDisabled(running);
+        if (ImGui.Button("Clear Dirty", new NVector2(130.0f, 0.0f)))
+        {
+            if (_mode == ExportTargetMode.Dirty)
+            {
+                _exports.ClearDirty(profile, _scope);
+            }
+            else if (range is { } clearRange)
+            {
+                _exports.ClearDirty(profile, clearRange);
+            }
+        }
+        ImGui.EndDisabled();
+
+        if (blocker != null)
+        {
+            ImGui.TextColored(MutedColor, blocker);
+        }
+    }
+
+    private void DrawProfileSelector(IReadOnlyList<ExportProfile> profiles, List<IChunkExportScript> exporters)
+    {
+        if (_selectedProfileId == null || profiles.All(candidate => candidate.Id != _selectedProfileId))
+        {
+            _selectedProfileId = profiles.FirstOrDefault()?.Id;
+        }
+
+        ExportProfile? selected = profiles.FirstOrDefault(candidate => candidate.Id == _selectedProfileId);
+        string preview = selected?.Name ?? "(none)";
+        if (ImGui.BeginCombo("Profile", preview))
+        {
+            foreach (ExportProfile candidate in profiles)
+            {
+                bool isSelected = candidate.Id == _selectedProfileId;
+                if (ImGui.Selectable(candidate.Name, isSelected))
                 {
-                    _selected = i;
+                    _selectedProfileId = candidate.Id;
                 }
 
-                if (selected)
+                if (isSelected)
                 {
                     ImGui.SetItemDefaultFocus();
                 }
@@ -76,37 +209,204 @@ public sealed class ExportWindow : Window
             ImGui.EndCombo();
         }
 
-        int scope = (int)_scope;
-        if (ImGui.Combo("Scope", ref scope, "Current map\0All maps\0"))
+        ImGui.SameLine();
+        ImGui.BeginDisabled(exporters.Count == 0);
+        if (ImGui.Button("+"))
         {
-            _scope = (ChunkExportScope)scope;
-        }
-
-        IChunkExportScript exporter = exporters[_selected];
-        int dirty = _exports.Changes.DirtyFor(exporter.Id, _scope).Count;
-        ImGui.TextDisabled($"{dirty} dirty chunks");
-
-        ImGui.Separator();
-        exporter.DrawSettings();
-        ImGui.Separator();
-        ImGui.EndDisabled();
-
-        // Checked up front, not just left to Run()'s own refusal, so a disabled button and its reason
-        // show before the click rather than only a console warning after it.
-        string? blocker = running ? null : _exports.Context.Operations.Blocker;
-
-        ImGui.BeginDisabled(running || dirty == 0 || blocker != null);
-        if (ImGui.Button("Export Dirty", new NVector2(130.0f, 0.0f)))
-        {
-            _running = _exports.Run(exporter, _scope);
-            _popupOpenRequested = _running != null;
+            _createName = "";
+            _createExporterIndex = 0;
+            _createOpenRequested = true;
+            _createActive = true;
         }
         ImGui.EndDisabled();
 
-        if (blocker != null)
+        if (selected == null)
         {
-            ImGui.TextColored(MutedColor, blocker);
+            return;
         }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Rename"))
+        {
+            _renameBuffer = selected.Name;
+            _renameOpenRequested = true;
+            _renameActive = true;
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Delete"))
+        {
+            _exports.Profiles.Delete(selected);
+            _selectedProfileId = null;
+        }
+    }
+
+    private void DrawCreatePopup(List<IChunkExportScript> exporters)
+    {
+        if (_createOpenRequested)
+        {
+            ImGui.OpenPopup(CreatePopupId);
+            _createOpenRequested = false;
+        }
+
+        if (!_createActive)
+        {
+            return;
+        }
+
+        bool open = true;
+        ImGuiEx.PopupModal(CreatePopupId, true, ref open, ImGuiWindowFlags.AlwaysAutoResize, () =>
+        {
+            ImGui.InputText("Name", ref _createName, 128);
+
+            _createExporterIndex = System.Math.Clamp(_createExporterIndex, 0, exporters.Count - 1);
+            if (ImGui.BeginCombo("Exporter", exporters[_createExporterIndex].DisplayName))
+            {
+                for (int i = 0; i < exporters.Count; i++)
+                {
+                    bool isSelected = i == _createExporterIndex;
+                    if (ImGui.Selectable(exporters[i].DisplayName, isSelected))
+                    {
+                        _createExporterIndex = i;
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            ImGui.BeginDisabled(string.IsNullOrWhiteSpace(_createName));
+            if (ImGui.Button("Create", new NVector2(120.0f, 0.0f)))
+            {
+                IChunkExportScript exporter = exporters[_createExporterIndex];
+                ExportProfile created = _exports.Profiles.Create(_createName.Trim(), exporter.Id, exporter.SaveSettings());
+                _selectedProfileId = created.Id;
+                open = false;
+            }
+            ImGui.EndDisabled();
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new NVector2(120.0f, 0.0f)))
+            {
+                open = false;
+            }
+        });
+
+        if (!open)
+        {
+            _createActive = false;
+        }
+    }
+
+    private void DrawRenamePopup(ExportProfile? profile)
+    {
+        if (_renameOpenRequested)
+        {
+            ImGui.OpenPopup(RenamePopupId);
+            _renameOpenRequested = false;
+        }
+
+        if (!_renameActive)
+        {
+            return;
+        }
+
+        bool open = true;
+        ImGuiEx.PopupModal(RenamePopupId, true, ref open, ImGuiWindowFlags.AlwaysAutoResize, () =>
+        {
+            ImGui.InputText("Name", ref _renameBuffer, 128);
+
+            ImGui.BeginDisabled(string.IsNullOrWhiteSpace(_renameBuffer));
+            if (ImGui.Button("Rename", new NVector2(120.0f, 0.0f)))
+            {
+                if (profile != null)
+                {
+                    _exports.Profiles.Rename(profile, _renameBuffer.Trim());
+                }
+
+                open = false;
+            }
+            ImGui.EndDisabled();
+
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel", new NVector2(120.0f, 0.0f)))
+            {
+                open = false;
+            }
+        });
+
+        if (!open)
+        {
+            _renameActive = false;
+        }
+    }
+
+    private ChunkRange? DrawRangeControls(IReadOnlyList<Map> maps)
+    {
+        if (maps.Count == 0)
+        {
+            ImGui.TextDisabled("No maps available.");
+            return null;
+        }
+
+        _rangeMapIndex = System.Math.Clamp(_rangeMapIndex, 0, maps.Count - 1);
+        if (ImGui.BeginCombo("Map", maps[_rangeMapIndex].DisplayName))
+        {
+            for (int i = 0; i < maps.Count; i++)
+            {
+                bool isSelected = i == _rangeMapIndex;
+                if (ImGui.Selectable(maps[i].DisplayName, isSelected))
+                {
+                    _rangeMapIndex = i;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.InputInt("Min X", ref _rangeMinX);
+        ImGui.InputInt("Min Y", ref _rangeMinY);
+        ImGui.InputInt("Max X", ref _rangeMaxX);
+        ImGui.InputInt("Max Y", ref _rangeMaxY);
+        _rangeMaxX = System.Math.Max(_rangeMaxX, _rangeMinX);
+        _rangeMaxY = System.Math.Max(_rangeMaxY, _rangeMinY);
+
+        int chunkCount = (_rangeMaxX - _rangeMinX + 1) * (_rangeMaxY - _rangeMinY + 1);
+        ImGui.TextDisabled($"{chunkCount} chunk(s) in range");
+
+        return new ChunkRange(
+            maps[_rangeMapIndex].Id,
+            new ChunkCoord(_rangeMinX, _rangeMinY),
+            new ChunkCoord(_rangeMaxX, _rangeMaxY));
+    }
+
+    /// <summary>Loads a newly-selected profile's settings into the (singleton) exporter instance's own
+    /// fields, since <see cref="IChunkExportScript.DrawSettings"/> still renders those fields directly —
+    /// a no-op once the exporter already reflects this profile.</summary>
+    private void CheckoutSettings(IChunkExportScript exporter, ExportProfile profile)
+    {
+        if (_loadedSettingsProfileId == profile.Id)
+        {
+            return;
+        }
+
+        exporter.LoadSettings(profile.Settings);
+        _loadedSettingsProfileId = profile.Id;
+        _lastSavedSettingsJson = profile.Settings.ToJsonString();
+    }
+
+    /// <summary>Persists the exporter's current field values back into the profile whenever they've
+    /// actually changed since the last checkout/checkin, rather than writing to disk every frame.</summary>
+    private void CheckinSettings(IChunkExportScript exporter, ExportProfile profile)
+    {
+        JsonObject settings = exporter.SaveSettings();
+        string json = settings.ToJsonString();
+        if (json == _lastSavedSettingsJson)
+        {
+            return;
+        }
+
+        _exports.Profiles.SaveSettings(profile, settings);
+        _lastSavedSettingsJson = json;
     }
 
     /// <summary>The actual progress feedback — a blocking modal, not inline window text, so it's

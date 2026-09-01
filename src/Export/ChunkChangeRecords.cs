@@ -17,7 +17,7 @@ public sealed class ChunkChangeRecord
 
 public sealed class ExportedChunkRecord
 {
-    public string ExporterId { get; set; } = "";
+    public string ProfileId { get; set; } = "";
 
     public int MapId { get; set; }
 
@@ -31,15 +31,15 @@ public sealed class ExportedChunkRecord
 }
 
 /// <summary>
-/// A stable id an exporter has assigned to an entity — for a target format that needs one (e.g. an
-/// ADT placement's unique id) but has no id of its own to reuse. Scoped per exporter, keyed on the
+/// A stable id an export profile has assigned to an entity — for a target format that needs one (e.g.
+/// an ADT placement's unique id) but has no id of its own to reuse. Scoped per profile, keyed on the
 /// entity's runtime <see cref="EntityId"/> rather than any catalog/record id, since the same entity
 /// keeps this assignment across saves that change nothing else about it. See
 /// <see cref="ExportSystem.LoadExportedEntityIdsAsync"/>/<see cref="ExportSystem.UpsertExportedEntityIdsAsync"/>.
 /// </summary>
 public sealed class ExportedEntityIdRecord
 {
-    public string ExporterId { get; set; } = "";
+    public string ProfileId { get; set; } = "";
 
     public long EntityId { get; set; }
 

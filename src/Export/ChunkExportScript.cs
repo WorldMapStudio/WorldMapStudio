@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using Godot;
 
@@ -23,6 +24,14 @@ public interface IChunkExportScript : ISubsystem
 
     void DrawSettings();
 
+    /// <summary>Captures this exporter's current settings fields into a profile-storable blob.</summary>
+    JsonObject SaveSettings();
+
+    /// <summary>Restores settings fields from a profile-storable blob produced by <see cref="SaveSettings"/>.
+    /// Missing keys (a freshly-created profile, or a settings shape from an older version) must fall
+    /// back to sensible defaults rather than throwing.</summary>
+    void LoadSettings(JsonObject settings);
+
     Task<ChunkExportResult> ExportAsync(
         ChunkExportContext context,
         IReadOnlyList<ChunkChange> chunks,
@@ -34,12 +43,14 @@ public sealed class ChunkExportContext
     private readonly ExportSystem _exports;
     private readonly LandscapeCatalog _catalog;
     private readonly LandscapeFunctions _functions;
+    private readonly string _profileId;
 
-    internal ChunkExportContext(ExportSystem exports, LandscapeCatalog catalog, LandscapeFunctions functions)
+    internal ChunkExportContext(ExportSystem exports, LandscapeCatalog catalog, LandscapeFunctions functions, string profileId)
     {
         _exports = exports;
         _catalog = catalog;
         _functions = functions;
+        _profileId = profileId;
     }
 
     public string ProjectFolder => ProjectStore.ProjectFolder(_exports.Context.Project.Name);
@@ -75,12 +86,12 @@ public sealed class ChunkExportContext
     /// <c>EditorContext</c> directly, the way <c>WowLiquidTileBackgroundScan</c> was).</summary>
     public EditorContext EditorContext => _exports.Context;
 
-    /// <summary>This exporter's previously-assigned stable entity ids — for a target format that
+    /// <summary>This export profile's previously-assigned stable entity ids — for a target format that
     /// needs one but has no id of its own to reuse.</summary>
-    public Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string exporterId) =>
-        _exports.LoadExportedEntityIdsAsync(exporterId);
+    public Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync() =>
+        _exports.LoadExportedEntityIdsAsync(_profileId);
 
     /// <summary>Persists newly-assigned or changed entity ids from <see cref="LoadExportedEntityIdsAsync"/>.</summary>
-    public Task SaveExportedEntityIdsAsync(string exporterId, IReadOnlyDictionary<long, long> ids) =>
-        _exports.UpsertExportedEntityIdsAsync(exporterId, ids);
+    public Task SaveExportedEntityIdsAsync(IReadOnlyDictionary<long, long> ids) =>
+        _exports.UpsertExportedEntityIdsAsync(_profileId, ids);
 }

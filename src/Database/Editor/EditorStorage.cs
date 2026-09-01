@@ -134,14 +134,14 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<ChunkChange>> LoadDirtyChunksAsync(string exporterId, int? map)
+    public async Task<IReadOnlyList<ChunkChange>> LoadDirtyChunksAsync(string profileId, int? map)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
         var query =
             from change in context.ChunkChanges.AsNoTracking()
-            join exported in context.ExportedChunks.AsNoTracking().Where(record => record.ExporterId == exporterId)
+            join exported in context.ExportedChunks.AsNoTracking().Where(record => record.ProfileId == profileId)
                 on new { change.MapId, change.ChunkX, change.ChunkY }
                 equals new { exported.MapId, exported.ChunkX, exported.ChunkY }
                 into exportedJoin
@@ -164,7 +164,37 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return rows.Select(ToChange).ToList();
     }
 
-    public async Task UpsertExportedChunksAsync(string exporterId, IReadOnlyList<ChunkChange> chunks)
+    /// <summary>Every chunk in a coordinate rectangle, regardless of dirty status — the source for a
+    /// range export. A chunk never touched by an edit has no <see cref="ChunkChangeRecord"/> row, so
+    /// it reports an empty content hash; that's fine, since it only starts looking dirty once a real
+    /// edit inserts a row with an actual hash.</summary>
+    public async Task<IReadOnlyList<ChunkChange>> LoadChunksInRangeAsync(MapId map, ChunkCoord min, ChunkCoord max)
+    {
+        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        List<ChunkChangeRecord> rows = await context.ChunkChanges.AsNoTracking()
+            .Where(change => change.MapId == map.Value
+                && change.ChunkX >= min.X && change.ChunkX <= max.X
+                && change.ChunkY >= min.Y && change.ChunkY <= max.Y)
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        Dictionary<(int X, int Y), string> hashes = rows.ToDictionary(row => (row.ChunkX, row.ChunkY), row => row.ContentHash);
+
+        var result = new List<ChunkChange>();
+        for (int y = min.Y; y <= max.Y; y++)
+        {
+            for (int x = min.X; x <= max.X; x++)
+            {
+                result.Add(new ChunkChange(map, new ChunkCoord(x, y), hashes.GetValueOrDefault((x, y), "")));
+            }
+        }
+
+        return result;
+    }
+
+    public async Task UpsertExportedChunksAsync(string profileId, IReadOnlyList<ChunkChange> chunks)
     {
         if (chunks.Count == 0)
         {
@@ -177,13 +207,13 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
         foreach (ChunkChange chunk in chunks)
         {
-            object[] key = [exporterId, chunk.Map.Value, chunk.Coord.X, chunk.Coord.Y];
+            object[] key = [profileId, chunk.Map.Value, chunk.Coord.X, chunk.Coord.Y];
             ExportedChunkRecord? record = await context.ExportedChunks.FindAsync(key).ConfigureAwait(false);
             if (record == null)
             {
                 context.ExportedChunks.Add(new ExportedChunkRecord
                 {
-                    ExporterId = exporterId,
+                    ProfileId = profileId,
                     MapId = chunk.Map.Value,
                     ChunkX = chunk.Coord.X,
                     ChunkY = chunk.Coord.Y,
@@ -201,23 +231,49 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
+    /// <summary>Force-redirties a profile's exported state for a scope/range by deleting its tracked
+    /// exported-chunk rows, so the next export re-does them even though content hasn't changed.</summary>
+    public async Task ClearExportedChunksAsync(string profileId, int? map, (int X, int Y)? min, (int X, int Y)? max)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        IQueryable<ExportedChunkRecord> query = context.ExportedChunks.Where(record => record.ProfileId == profileId);
+
+        if (map is { } mapId)
+        {
+            query = query.Where(record => record.MapId == mapId);
+        }
+
+        if (min is { } lo && max is { } hi)
+        {
+            query = query.Where(record =>
+                record.ChunkX >= lo.X && record.ChunkX <= hi.X &&
+                record.ChunkY >= lo.Y && record.ChunkY <= hi.Y);
+        }
+
+        List<ExportedChunkRecord> rows = await query.ToListAsync().ConfigureAwait(false);
+        context.ExportedChunks.RemoveRange(rows);
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
     private static ChunkChange ToChange(ChunkChangeRecord record) =>
         new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.ContentHash);
 
-    public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string exporterId)
+    public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string profileId)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
         List<ExportedEntityIdRecord> rows = await context.ExportedEntityIds.AsNoTracking()
-            .Where(record => record.ExporterId == exporterId)
+            .Where(record => record.ProfileId == profileId)
             .ToListAsync()
             .ConfigureAwait(false);
 
         return rows.ToDictionary(record => record.EntityId, record => record.AllocatedId);
     }
 
-    public async Task UpsertExportedEntityIdsAsync(string exporterId, IReadOnlyDictionary<long, long> ids)
+    public async Task UpsertExportedEntityIdsAsync(string profileId, IReadOnlyDictionary<long, long> ids)
     {
         if (ids.Count == 0)
         {
@@ -229,13 +285,13 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
         foreach ((long entityId, long allocatedId) in ids)
         {
-            object[] key = [exporterId, entityId];
+            object[] key = [profileId, entityId];
             ExportedEntityIdRecord? record = await context.ExportedEntityIds.FindAsync(key).ConfigureAwait(false);
             if (record == null)
             {
                 context.ExportedEntityIds.Add(new ExportedEntityIdRecord
                 {
-                    ExporterId = exporterId,
+                    ProfileId = profileId,
                     EntityId = entityId,
                     AllocatedId = allocatedId,
                 });
