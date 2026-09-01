@@ -52,23 +52,27 @@ public sealed class WorldOperations
     }
 
     /// <summary>
-    /// Runs <paramref name="work"/> on <see cref="WorkQueue"/> with exclusive ownership of the world.
-    /// Returns false with <paramref name="blocker"/> set, and does not schedule anything, if the world
-    /// is not currently free to take one — see <see cref="Blocker"/>.
+    /// Runs <paramref name="work"/> on <see cref="WorkQueue"/> with exclusive ownership of the world:
+    /// no session edit can be recorded (<see cref="EditSessionManager.Record"/> throws) and no other
+    /// exclusive operation can start until it finishes. Returns null with <paramref name="blocker"/>
+    /// set, and does not schedule anything, if the world is not currently free to take one — see
+    /// <see cref="Blocker"/>.
     /// </summary>
     /// <param name="reloadAfter">Whether to request a world reload once <paramref name="work"/>
     /// completes (successfully or not). Defaults on: an operation that earns this gate is, by
-    /// definition, one that just rewrote what the loaded world was showing.</param>
-    public bool TryRun(string name, Func<WorkContext, Task> work, out string? blocker, bool reloadAfter = true)
+    /// definition, one that just rewrote what the loaded world was showing. A caller whose work
+    /// doesn't touch the loaded world's own content (e.g. an export, which only reads committed state
+    /// and writes elsewhere) should pass false — there's nothing to reload.</param>
+    public WorkHandle? TryRun(string name, Func<WorkContext, Task> work, out string? blocker, bool reloadAfter = true)
     {
         blocker = Blocker;
         if (blocker != null)
         {
-            return false;
+            return null;
         }
 
         _activeOperation = name;
-        WorkQueue.Schedule(name, async ctx =>
+        return WorkQueue.Schedule(name, async ctx =>
         {
             // A plain try/finally, not a catch: WorkQueue's own runner already logs and records a
             // fault for whatever work(ctx) throws. This only needs to run regardless of the outcome.
@@ -85,7 +89,5 @@ public sealed class WorldOperations
                 }
             }
         });
-
-        return true;
     }
 }

@@ -46,34 +46,42 @@ public sealed partial class ExportSystem : ISubsystemHost
         return null;
     }
 
-    /// <summary>Schedules an export, or refuses (returning null) while an exclusive world operation
-    /// (see <see cref="WorldOperations"/>) is rewriting the database an export would read from. Not
-    /// gated on the edit session being dirty — an export only ever reads *committed* chunk changes,
-    /// so mid-edit is not a reason to refuse one.</summary>
+    /// <summary>Schedules an export behind <see cref="WorldOperations"/>' exclusive gate — refuses
+    /// (returning null) if the edit session is dirty or another exclusive operation is already running,
+    /// and no session edit can be recorded until the export finishes. An export only ever reads
+    /// *committed* chunk changes, so this isn't about correctness so much as making sure nobody starts
+    /// painting terrain a running export is about to read, or loses track of an export that's still
+    /// in flight; it doesn't touch the loaded world's own content, so it skips the reload
+    /// <see cref="WorldOperations.TryRun"/> would otherwise request afterward.</summary>
     public WorkHandle? Run(IChunkExportScript exporter, ChunkExportScope scope)
     {
-        if (Context.Operations.ActiveOperation is { } operation)
-        {
-            GD.PushWarning($"[Export] Refused to start '{exporter.DisplayName}': '{operation}' is running.");
-            return null;
-        }
-
         IReadOnlyList<ChunkChange> chunks = Changes.DirtyFor(exporter.Id, scope);
         LandscapeCatalog catalog = Context.Landscape.Catalog;
         LandscapeFunctions functions = Context.Landscape.Functions;
 
-        return WorkQueue.Schedule($"{exporter.DisplayName}: {chunks.Count} chunks", async work =>
-        {
-            work.Step("Exporting");
-            var context = new ChunkExportContext(this, catalog, functions);
-            ChunkExportResult result = await exporter.ExportAsync(context, chunks, work).ConfigureAwait(false);
-
-            if (result.ExportedChunks == chunks.Count && chunks.Count > 0)
+        WorkHandle? handle = Context.Operations.TryRun(
+            $"{exporter.DisplayName}: {chunks.Count} chunks",
+            async work =>
             {
-                work.Step("Updating export state");
-                Changes.MarkExported(exporter.Id, chunks);
-            }
-        });
+                work.Step("Exporting");
+                var context = new ChunkExportContext(this, catalog, functions);
+                ChunkExportResult result = await exporter.ExportAsync(context, chunks, work).ConfigureAwait(false);
+
+                if (result.ExportedChunks == chunks.Count && chunks.Count > 0)
+                {
+                    work.Step("Updating export state");
+                    Changes.MarkExported(exporter.Id, chunks);
+                }
+            },
+            out string? blocker,
+            reloadAfter: false);
+
+        if (handle == null)
+        {
+            GD.PushWarning($"[Export] Refused to start '{exporter.DisplayName}': {blocker}");
+        }
+
+        return handle;
     }
 
     internal async Task<LandscapeChunkOutput?> BuildLandscapeChunkAsync(
