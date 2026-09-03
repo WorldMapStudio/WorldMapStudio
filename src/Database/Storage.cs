@@ -52,36 +52,60 @@ public abstract class Storage : ISubsystem
     /// </summary>
     protected abstract IEnumerable<ISubsystem> HostedSubsystems { get; }
 
+    // Subsystems are constructed once at startup and never change afterward — the same assumption
+    // ISceneComponentPersistence's doc relies on for EF's model cache — so each facet below only ever
+    // needs to filter HostedSubsystems once, the first time it's read, rather than on every access.
+    // Storage.EntityFactories is enumerated once per entity inside the Persist/CommitAsync loop, so an
+    // uncached OfType<> here was rescanning every subsystem in the whole editor per entity committed.
+    private readonly Dictionary<Type, object> _facetCache = new();
+
+    /// <summary>Caches the subsystems of type <typeparamref name="T"/> from <see cref="HostedSubsystems"/>
+    /// on first access, for a concrete storage's own extra facets (e.g. <c>EditorStorage.ComponentPersistence</c>)
+    /// that don't otherwise go through one of the facets already declared here.</summary>
+    protected IReadOnlyList<T> Facet<T>()
+    {
+        if (_facetCache.TryGetValue(typeof(T), out object? cached))
+        {
+            return (IReadOnlyList<T>)cached;
+        }
+
+        List<T> list = HostedSubsystems.OfType<T>().ToList();
+        _facetCache[typeof(T)] = list;
+        return list;
+    }
+
     /// <summary>The scene-entity factories registered into this storage. A storage that needs entries
     /// from somewhere other than its own subsystem tree can still override this.</summary>
-    public virtual IEnumerable<ISceneEntityFactory> SceneFactories => HostedSubsystems.OfType<ISceneEntityFactory>();
+    public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Facet<ISceneEntityFactory>();
 
     /// <summary>The catalog-entity factories registered into this storage.</summary>
-    public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => HostedSubsystems.OfType<ICatalogEntityFactory>();
+    public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => Facet<ICatalogEntityFactory>();
 
     /// <summary>The lazily-loaded catalog-entity factories registered into this storage — see
     /// <see cref="ILazyCatalogEntityFactory"/>.</summary>
-    public virtual IEnumerable<ILazyCatalogEntityFactory> LazyCatalogFactories => HostedSubsystems.OfType<ILazyCatalogEntityFactory>();
+    public virtual IEnumerable<ILazyCatalogEntityFactory> LazyCatalogFactories => Facet<ILazyCatalogEntityFactory>();
+
+    private IReadOnlyList<IEntityFactory>? _entityFactories;
 
     /// <summary>Every factory in this storage, whatever kind of entity it persists.</summary>
-    public IEnumerable<IEntityFactory> EntityFactories =>
-        SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories).Concat(LazyCatalogFactories);
+    public IEnumerable<IEntityFactory> EntityFactories => _entityFactories ??=
+        SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories).Concat(LazyCatalogFactories).ToList();
 
     /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
-    public virtual IEnumerable<IMapSource> MapSources => HostedSubsystems.OfType<IMapSource>();
+    public virtual IEnumerable<IMapSource> MapSources => Facet<IMapSource>();
 
     /// <summary>The landscape settings sources registered into this storage.</summary>
-    public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => HostedSubsystems.OfType<ILandscapeSettingsSource>();
+    public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Facet<ILandscapeSettingsSource>();
 
     /// <summary>The table configurations registered into this storage — see
     /// <see cref="ITableConfiguration"/>. Gathered by <c>CreateContext</c> and passed to the storage's
     /// <c>DbContext</c>, so its <c>OnModelCreating</c> never has to name a table's owner by hand.</summary>
-    public virtual IEnumerable<ITableConfiguration> TableConfigurations => HostedSubsystems.OfType<ITableConfiguration>();
+    public virtual IEnumerable<ITableConfiguration> TableConfigurations => Facet<ITableConfiguration>();
 
     /// <summary>Catalogs browsable in a catalog browser window — see <see cref="ICatalogBrowser"/>.
     /// Storage-agnostic, so consumers do <c>Storages.SelectMany(s => s.CatalogBrowsers)</c> instead of
     /// naming a specific storage.</summary>
-    public virtual IEnumerable<ICatalogBrowser> CatalogBrowsers => HostedSubsystems.OfType<ICatalogBrowser>();
+    public virtual IEnumerable<ICatalogBrowser> CatalogBrowsers => Facet<ICatalogBrowser>();
 
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
