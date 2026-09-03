@@ -47,8 +47,15 @@ public sealed class EnvironmentSystem : IWorldParticipant
     /// <summary>Bumps whenever <see cref="Current"/> is recomputed, so views can tell when to refresh.</summary>
     public int Version { get; private set; }
 
-    private IEnumerable<IEnvironmentSource> Sources =>
-        _context.Scene.Entities.SelectMany(entity => entity.Components).OfType<IEnvironmentSource>();
+    // Scoped to the currently open map, not every loaded entity: an edit session can keep another
+    // map's entities pinned in the registry for as long as it holds undo commands into them (see
+    // MapSystem's own docs), and an IEnvironmentSource among those has no business affecting what's
+    // rendered here — most importantly a global source, since picking the wrong map's would silently
+    // override the current map's own default.
+    private IEnumerable<IEnvironmentSource> Sources => _context.Scene.Entities
+        .Where(entity => entity.Map == _context.Maps.CurrentMap)
+        .SelectMany(entity => entity.Components)
+        .OfType<IEnvironmentSource>();
 
     /// <summary>
     /// Forces the next <see cref="Update"/> to recompute regardless of what moved. An edit to a
