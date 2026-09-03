@@ -8,15 +8,13 @@ namespace WorldMapStudio;
 /// committed — a stamp created alongside a new layer silently bound to nothing, and pickers had no
 /// id to offer. The <c>maps</c> table already works this way, with a non-generated primary key.
 ///
-/// That splits two things the database used to conflate: <see cref="RecordId"/> is <em>who this is</em>,
-/// and <see cref="IsSaved"/> is <em>whether a row exists yet</em>. A factory needs the second to know
-/// whether to insert or update.
+/// <see cref="RecordId"/> is <em>who this is</em>; <see cref="ISavedCatalogEntity.IsSaved"/> (inherited)
+/// is <em>whether a row exists yet</em>. A catalog keyed by a game-authored value instead of an
+/// editor-allocated one has no <c>RecordId</c> to give, so it implements <see cref="ISavedCatalogEntity"/>
+/// directly rather than this interface.
 /// </summary>
-public interface IKeyedCatalogEntity
+public interface IKeyedCatalogEntity : ISavedCatalogEntity
 {
     /// <summary>Row id, assigned at creation so references work before anything is saved.</summary>
     int? RecordId { get; set; }
-
-    /// <summary>Whether a row already exists for this entity in its storage.</summary>
-    bool IsSaved { get; set; }
 }
