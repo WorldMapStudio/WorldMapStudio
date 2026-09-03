@@ -65,33 +65,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return ModelSchema.Extract(context);
     }
 
-    public override async Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes)
-    {
-        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using EditorDbContext context = CreateContext();
-
-        var writeBacks = new List<Action>();
-        foreach (IEntity entity in saves)
-        {
-            if (FactoryFor(entity) is { } factory)
-            {
-                writeBacks.Add(factory.Stage(context, entity));
-            }
-        }
-
-        foreach (IEntity entity in deletes)
-        {
-            FactoryFor(entity)?.StageDelete(context, entity);
-        }
-
-        // A single SaveChanges wraps all staged inserts/updates/deletes in one transaction.
-        await context.SaveChangesAsync().ConfigureAwait(false);
-
-        foreach (Action writeBack in writeBacks)
-        {
-            writeBack();
-        }
-    }
+    public override Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
+        CommitAsync(CreateContext, saves, deletes);
 
     public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks, string contentHash)
     {

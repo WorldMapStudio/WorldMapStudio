@@ -115,6 +115,41 @@ public abstract class Storage : ISubsystem
     /// </summary>
     public virtual Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) => Task.CompletedTask;
 
+    /// <summary>
+    /// Shared body for a concrete storage's <see cref="CommitAsync(IReadOnlyList{IEntity}, IReadOnlyList{IEntity})"/>
+    /// override: opens a context via <paramref name="createContext"/> under the write lock, stages every
+    /// save/delete through <see cref="FactoryFor"/>, saves once, then runs the write-backs the factories
+    /// queued. <see cref="EditorStorage"/> and <see cref="CataStorage"/> differ only in which concrete
+    /// <see cref="DbContext"/> type they open.
+    /// </summary>
+    protected async Task CommitAsync(Func<DbContext> createContext, IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using DbContext context = createContext();
+
+        var writeBacks = new List<Action>();
+        foreach (IEntity entity in saves)
+        {
+            if (FactoryFor(entity) is { } factory)
+            {
+                writeBacks.Add(factory.Stage(context, entity));
+            }
+        }
+
+        foreach (IEntity entity in deletes)
+        {
+            FactoryFor(entity)?.StageDelete(context, entity);
+        }
+
+        // A single SaveChanges wraps all staged inserts/updates/deletes in one transaction.
+        await context.SaveChangesAsync().ConfigureAwait(false);
+
+        foreach (Action writeBack in writeBacks)
+        {
+            writeBack();
+        }
+    }
+
     protected IEntityFactory? FactoryFor(IEntity entity) =>
         EntityFactories.FirstOrDefault(factory => factory.Handles(entity));
 
