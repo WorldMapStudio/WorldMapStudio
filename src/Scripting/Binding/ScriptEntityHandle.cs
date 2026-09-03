@@ -83,22 +83,9 @@ public sealed class ScriptEntityHandle
     }
 
     /// <summary>Resolves the live entity this handle points to. Internal — the proxy handler and modules use it directly.</summary>
-    internal Entity Resolve()
-    {
-        SceneEntity? scene = _scene.Entities.FirstOrDefault(e => e.Id == _id);
-        if (scene is not null)
-        {
-            return scene;
-        }
-
-        CatalogEntity? catalog = _catalog.Entities.FirstOrDefault(e => e.Id == _id);
-        if (catalog is not null)
-        {
-            return catalog;
-        }
-
-        throw new InvalidOperationException($"Entity {_id} is no longer loaded — it may have streamed out, been deleted, or been unloaded from its catalog.");
-    }
+    internal Entity Resolve() =>
+        (Entity?)_scene.Find(_id) ?? _catalog.Find(_id)
+        ?? throw new InvalidOperationException($"Entity {_id} is no longer loaded — it may have streamed out, been deleted, or been unloaded from its catalog.");
 
     private static PropertyInfo FindProperty(Entity entity, string property) =>
         ScriptReflection.Properties(entity.GetType()).FirstOrDefault(p => p.Name == property)
