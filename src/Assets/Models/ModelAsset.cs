@@ -9,6 +9,16 @@ namespace WorldMapStudio;
 /// <summary>A named pointer to another model asset, placed at <paramref name="Transform"/> relative to its owning part.</summary>
 public sealed record ModelReference(string Name, string Path, Transform3D Transform);
 
+/// <summary>A named point on a model, in the model's own local space, that other geometry can be
+/// positioned at — an M2's weapon/shield attachment points, keyed by <see cref="Id"/> (a format-specific
+/// raw value, e.g. <c>M2AttachmentSlot</c>'s POSITION_SLOTS ids, the same "caller knows the vocabulary"
+/// shape <c>MeshMaterial</c>'s <c>TextureSlot</c> already uses). Unlike <see cref="ModelReference"/>,
+/// nothing here is resolved automatically at instantiate time: what (if anything) sits at an attachment
+/// point is per-instance state a format's own file data can't know about — a creature's equipped
+/// weapon depends on the spawn, not the model — so a consumer reads <see cref="ModelAsset.AttachmentPoints"/>
+/// and attaches its own node.</summary>
+public sealed record ModelAttachmentPoint(uint Id, Vector3 Position);
+
 /// <summary>
 /// One Godot mesh resource and the material bound to each of its surfaces, in order — usually one
 /// surface and one material, but a format whose native geometry groups several render batches under
@@ -80,13 +90,15 @@ public sealed class ModelAsset
         new(0.70f, 0.58f, 0.68f),
     ];
 
-    public ModelAsset(string path, IEnumerable<ModelPart> parts, Aabb? boundsHint = null, string formatId = "")
+    public ModelAsset(string path, IEnumerable<ModelPart> parts, Aabb? boundsHint = null, string formatId = "",
+        IEnumerable<ModelAttachmentPoint>? attachmentPoints = null)
     {
         Path = path;
         FormatId = formatId;
         Parts = parts.Select(FilterEmptySurfaces).ToList();
         Surfaces = Parts.SelectMany(part => part.Surfaces).ToList();
         LocalBounds = boundsHint ?? CombineBounds(Parts.Where(part => part.Surfaces.Count > 0).Select(part => part.LocalBounds));
+        AttachmentPoints = attachmentPoints?.ToList() ?? [];
     }
 
     public ModelAsset(string path, IEnumerable<ModelSurface> surfaces, Aabb? boundsHint = null, string formatId = "")
@@ -104,6 +116,10 @@ public sealed class ModelAsset
 
     /// <summary>Convenience projection of every surface across every part, ignoring transforms and references.</summary>
     public IReadOnlyList<ModelSurface> Surfaces { get; }
+
+    /// <summary>Named local-space points a consumer can attach its own geometry to. Empty for every
+    /// format that doesn't expose any — see <see cref="ModelAttachmentPoint"/>'s own doc.</summary>
+    public IReadOnlyList<ModelAttachmentPoint> AttachmentPoints { get; }
 
     public Aabb LocalBounds { get; }
 
