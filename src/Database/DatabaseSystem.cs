@@ -40,6 +40,11 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
     {
         foreach (Storage storage in Storages)
         {
+            if (!storage.OwnsConnection)
+            {
+                continue;
+            }
+
             StorageConnection connection = _context.Project.GetOrAddStorageConnection(storage.Name, storage.CreateDefaultConnection());
             storage.BindConnection(connection);
         }
@@ -54,25 +59,32 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
     {
         foreach (Storage storage in Storages)
         {
-            StorageConnection connection = storage.Connection;
-            if (connection.LaunchServer)
+            // A storage that shares another's connection (see Storage.OwnsConnection) neither launches
+            // its own server nor creates its own database — the owning storage already did both — but
+            // it still gets its own EnsureSchema() call, since it owns a disjoint set of tables within
+            // that shared database.
+            if (storage.OwnsConnection)
             {
-                if (connection.RepositoryPath.Length == 0)
+                StorageConnection connection = storage.Connection;
+                if (connection.LaunchServer)
                 {
-                    connection.RepositoryPath = DefaultDataDirectory();
+                    if (connection.RepositoryPath.Length == 0)
+                    {
+                        connection.RepositoryPath = DefaultDataDirectory();
+                    }
+
+                    var server = new DoltServer(connection.RepositoryPath, connection.Host, connection.Port);
+                    if (!server.Start(StartTimeout, confirmKillStray))
+                    {
+                        GD.PushError($"[Database] Storage '{storage.Name}' server failed to start.");
+                        continue;
+                    }
+
+                    _servers.Add(server);
                 }
 
-                var server = new DoltServer(connection.RepositoryPath, connection.Host, connection.Port);
-                if (!server.Start(StartTimeout, confirmKillStray))
-                {
-                    GD.PushError($"[Database] Storage '{storage.Name}' server failed to start.");
-                    continue;
-                }
-
-                _servers.Add(server);
+                EnsureDatabase(storage);
             }
-
-            EnsureDatabase(storage);
 
             try
             {
