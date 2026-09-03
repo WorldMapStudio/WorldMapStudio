@@ -19,6 +19,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override string Name => StorageName;
 
+    protected override IEnumerable<ISubsystem> HostedSubsystems => Subsystems;
+
     public EditorStorage(DatabaseSystem database)
     {
         _database = database;
@@ -42,16 +44,6 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     };
 
     public override StorageConnection CreateDefaultConnection() => DefaultConnection();
-
-    public override IEnumerable<ISceneEntityFactory> SceneFactories => Subsystems.OfType<ISceneEntityFactory>();
-
-    public override IEnumerable<ICatalogEntityFactory> CatalogFactories => Subsystems.OfType<ICatalogEntityFactory>();
-
-    public override IEnumerable<IMapSource> MapSources => Subsystems.OfType<IMapSource>();
-
-    public override IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Subsystems.OfType<ILandscapeSettingsSource>();
-
-    public override IEnumerable<ITableConfiguration> TableConfigurations => Subsystems.OfType<ITableConfiguration>();
 
     /// <summary>Registered scene-component persisters, so a plugin's component is stored the same way
     /// a built-in one is. See <see cref="ISceneComponentPersistence"/>.</summary>
