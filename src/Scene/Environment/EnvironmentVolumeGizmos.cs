@@ -5,13 +5,13 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Draws a translucent inner/outer sphere pair for every selected entity carrying an
-/// <see cref="IEnvironmentVolume"/> component — the generic counterpart of Noggit's light-sphere
-/// visualisation. This is purely an editing aid for placing/sizing the volume, so it stays hidden
-/// for anything not selected rather than cluttering the view (and, up close, filling the screen)
-/// for every light in the level. The actual environment blend it represents (fog, sky, ambient —
-/// see <see cref="EnvironmentRenderer"/>) is unaffected by selection. Owned and updated once per
-/// frame by <see cref="ViewportWindow"/>, gated on <see cref="ViewSettings.ShowEnvironmentVolumes"/>.
+/// Draws a wireframe inner/outer sphere pair for the selected entity carrying an
+/// <see cref="IEnvironmentVolume"/> component, purely as a placement/sizing aid — it has no bearing
+/// on the actual environment blend (sky, fog, ambient), which <see cref="EnvironmentSystem"/> and
+/// <see cref="EnvironmentRenderer"/> compute and apply every frame for every loaded source regardless
+/// of selection. Line geometry rather than a filled mesh so it never washes the screen out the way a
+/// solid translucent sphere does when the camera sits inside it. Owned and updated once per frame by
+/// <see cref="ViewportWindow"/>, gated on <see cref="ViewSettings.ShowEnvironmentVolumes"/>.
 /// </summary>
 public sealed class EnvironmentVolumeGizmos
 {
@@ -94,28 +94,60 @@ public sealed class EnvironmentVolumeGizmos
         ApplySphere(gizmo.Outer, origin, volume.OuterRadius, volume.OuterColor);
     }
 
-    // Unit sphere mesh, scaled per frame, so no geometry needs rebuilding as a radius is dragged.
+    // Unit-radius wireframe mesh, scaled per frame, so no geometry needs rebuilding as a radius is
+    // dragged.
     private static void ApplySphere(MeshInstance3D node, Vector3 origin, float radius, Color color)
     {
         node.Visible = radius > 0.001f;
         node.GlobalPosition = origin;
         node.Scale = Vector3.One * radius;
-        ((StandardMaterial3D)node.MaterialOverride).AlbedoColor = new Color(color.R, color.G, color.B, 0.12f);
+        ((StandardMaterial3D)node.MaterialOverride).AlbedoColor = new Color(color.R, color.G, color.B, 0.85f);
     }
 
     private static MeshInstance3D BuildSphere(string name) => new()
     {
         Name = name,
-        Mesh = new SphereMesh { Radius = 1.0f, Height = 2.0f, RadialSegments = 24, Rings = 12 },
+        Mesh = BuildWireSphereMesh(),
         CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
         MaterialOverride = new StandardMaterial3D
         {
             ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
             Transparency = BaseMaterial3D.TransparencyEnum.Alpha,
-            CullMode = BaseMaterial3D.CullModeEnum.Disabled,
             DepthDrawMode = BaseMaterial3D.DepthDrawModeEnum.Disabled,
         },
     };
+
+    // Three orthogonal great circles rather than a filled SphereMesh: cheap, unmistakably a debug
+    // aid rather than scene geometry, and — since lines have no interior — never fills the screen
+    // when the camera ends up inside the radius.
+    private const int WireSegments = 48;
+
+    private static Mesh BuildWireSphereMesh()
+    {
+        var vertices = new List<Vector3>();
+        AddCircleLines(vertices, Vector3.Right, Vector3.Up);
+        AddCircleLines(vertices, Vector3.Up, Vector3.Back);
+        AddCircleLines(vertices, Vector3.Right, Vector3.Back);
+
+        var arrays = new Godot.Collections.Array();
+        arrays.Resize((int)Mesh.ArrayType.Max);
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
+
+        var mesh = new ArrayMesh();
+        mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Lines, arrays);
+        return mesh;
+    }
+
+    private static void AddCircleLines(List<Vector3> vertices, Vector3 u, Vector3 v)
+    {
+        for (int i = 0; i < WireSegments; i++)
+        {
+            float t0 = i / (float)WireSegments * Mathf.Tau;
+            float t1 = (i + 1) / (float)WireSegments * Mathf.Tau;
+            vertices.Add((u * Mathf.Cos(t0)) + (v * Mathf.Sin(t0)));
+            vertices.Add((u * Mathf.Cos(t1)) + (v * Mathf.Sin(t1)));
+        }
+    }
 
     /// <summary>Frees every gizmo node. Called both when the toggle turns off and across a world
     /// reload, since nothing else notices a component's owning entity vanished underneath it.</summary>
