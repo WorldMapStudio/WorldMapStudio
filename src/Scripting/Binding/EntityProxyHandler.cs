@@ -51,9 +51,18 @@ internal sealed class EntityProxyHandler : ProxyHandler
         }
 
         MethodInfo? scriptFunction = ScriptReflection.Functions(type).FirstOrDefault(m => m.Name == name);
-        return scriptFunction is not null
-            ? JsValue.FromObject(_engine, BindDelegate(entity, scriptFunction))
-            : JsValue.Undefined;
+        if (scriptFunction is null)
+        {
+            return JsValue.Undefined;
+        }
+
+        // A function that returns an IEditCommand is a *mutating* one: it builds the command
+        // describing its own change (only the entity knows how to invert it) and this applies and
+        // records it, so the edit is undoable and survives a commit exactly like a UI edit. Anything
+        // else is a plain read and binds directly.
+        return JsValue.FromObject(_engine, typeof(IEditCommand).IsAssignableFrom(scriptFunction.ReturnType)
+            ? BindRecordingDelegate(entity, scriptFunction)
+            : BindDelegate(entity, scriptFunction));
     }
 
     public override bool? Set(ObjectInstance target, JsValue property, JsValue value, JsValue receiver)
@@ -70,5 +79,28 @@ internal sealed class EntityProxyHandler : ProxyHandler
         Type[] signature = method.GetParameters().Select(p => p.ParameterType).Append(method.ReturnType).ToArray();
         Type delegateType = Expression.GetDelegateType(signature);
         return method.CreateDelegate(delegateType, entity);
+    }
+
+    // Same exact-signature binding as BindDelegate, but with the returned command fed straight into
+    // ApplyAndRecord and the result dropped: JS calls a mutator as a plain void function and never
+    // sees (or has to remember to record) the command object itself.
+    private Delegate BindRecordingDelegate(Entity entity, MethodInfo method)
+    {
+        ParameterExpression[] parameters = method.GetParameters()
+            .Select(p => Expression.Parameter(p.ParameterType, p.Name))
+            .ToArray();
+
+        MethodInfo record = typeof(ScriptEntityHandle).GetMethod(
+            nameof(ScriptEntityHandle.ApplyAndRecord),
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        Expression body = Expression.Call(
+            Expression.Constant(_handle),
+            record,
+            Expression.Call(Expression.Constant(entity), method, parameters));
+
+        Type delegateType = Expression.GetDelegateType(
+            parameters.Select(p => p.Type).Append(typeof(void)).ToArray());
+        return Expression.Lambda(delegateType, body, parameters).Compile();
     }
 }
