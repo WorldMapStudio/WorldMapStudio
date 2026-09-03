@@ -108,6 +108,13 @@ public static class ScriptTypeDeclarationWriter
             return $"{TsType(type.GetElementType()!, visited, worklist)}[]";
         }
 
+        // A mutating [ScriptFunction] returns the command describing its change, but the proxy applies
+        // and records that itself (see EntityProxyHandler) — JS only ever sees a void call.
+        if (typeof(IEditCommand).IsAssignableFrom(type))
+        {
+            return "void";
+        }
+
         if (type.IsGenericType && typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
         {
             return $"{TsType(type.GetGenericArguments()[0], visited, worklist)}[]";

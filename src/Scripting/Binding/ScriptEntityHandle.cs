@@ -69,6 +69,19 @@ public sealed class ScriptEntityHandle
         _sessions.Record(new ScriptPropertyEditCommand(entity, info, before, converted));
     }
 
+    /// <summary>
+    /// Applies a command an entity's own <c>[ScriptFunction]</c> built and records it into the active
+    /// edit session — the "recorded already-applied" convention every UI path already follows (see
+    /// <see cref="SetFieldCommand{T}"/>). Recording is what makes the edit undoable *and* what makes
+    /// <see cref="EditSessionManager.Commit"/> persist it at all, so a mutating script function that
+    /// skipped this would be silently dropped on commit.
+    /// </summary>
+    internal void ApplyAndRecord(IEditCommand command)
+    {
+        command.Apply();
+        _sessions.Record(command);
+    }
+
     /// <summary>Resolves the live entity this handle points to. Internal — the proxy handler and modules use it directly.</summary>
     internal Entity Resolve()
     {
