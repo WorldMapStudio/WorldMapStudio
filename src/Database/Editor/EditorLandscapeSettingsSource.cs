@@ -3,6 +3,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
+public sealed partial class EditorDbContext
+{
+    public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
+}
+
 /// <summary>
 /// Keeps each map's landscape settings in the Editor storage's <c>landscape_settings</c> table, one
 /// row per map. Written outside the edit session: settings are not an entity and changing them is a

@@ -47,6 +47,15 @@ public sealed class ExportedEntityIdRecord
     public long AllocatedId { get; set; }
 }
 
+public sealed partial class EditorDbContext
+{
+    public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
+
+    public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
+
+    public DbSet<ExportedEntityIdRecord> ExportedEntityIds => Set<ExportedEntityIdRecord>();
+}
+
 /// <summary>
 /// Declares the three chunk-export tracking tables above. None of them back an <see cref="IEntity"/> or
 /// have any other self-registered owner — they're written directly by <see cref="EditorStorage"/>'s own

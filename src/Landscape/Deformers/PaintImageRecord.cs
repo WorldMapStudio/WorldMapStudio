@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace WorldMapStudio;
 
 /// <summary>EF Core row backing a <see cref="PaintImage"/>'s header in the Editor storage — its pixel
@@ -34,4 +36,11 @@ public sealed class ImageChunkRecord
     public byte Format { get; set; }
 
     public byte[] Pixels { get; set; } = [];
+}
+
+public sealed partial class EditorDbContext
+{
+    public DbSet<PaintImageRecord> Images => Set<PaintImageRecord>();
+
+    public DbSet<ImageChunkRecord> ImageChunks => Set<ImageChunkRecord>();
 }

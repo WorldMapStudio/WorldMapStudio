@@ -5,6 +5,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
+public sealed partial class EditorDbContext
+{
+    public DbSet<MapRecord> Maps => Set<MapRecord>();
+}
+
 /// <summary>
 /// The built-in map source: maps the Editor storage's <c>maps</c> table to and from <see cref="Map"/>.
 /// Unlike the scene factories (whose scans are locked by the streaming system), it takes the storage's

@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-
 namespace WorldMapStudio;
 
 /// <summary>Maps <see cref="ProceduralModel"/> to and from the Editor storage's <c>procedural_models</c> table.</summary>
@@ -7,8 +5,6 @@ namespace WorldMapStudio;
 public sealed class ProceduralModelFactory(EditorStorage storage)
     : EditorCatalogFactory<ProceduralModel, ProceduralModelRecord>(storage)
 {
-    protected override DbSet<ProceduralModelRecord> Set(EditorDbContext context) => context.ProceduralModels;
-
     protected override string TableName => "procedural_models";
 
     protected override ProceduralModel ToEntity(ProceduralModelRecord record)

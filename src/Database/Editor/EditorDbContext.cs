@@ -14,8 +14,14 @@ namespace WorldMapStudio;
 /// all) implements <see cref="ITableConfiguration"/> instead. See
 /// <see cref="EditorStorage.CreateContext"/> for where those lists come from, and
 /// <see cref="ISceneComponentPersistence"/> for the model-caching assumption this relies on.
+///
+/// Declares no <c>DbSet</c> either — <c>context.Set&lt;TRecord&gt;()</c> works identically to a named
+/// property and needs nothing declared here, so a named one exists only where it earns its keep
+/// (readability at a call site used more than once): as a <c>partial</c> addition in that table's own
+/// owning file, right next to the <see cref="ITableConfiguration"/>/<see cref="IEntityFactory"/> that
+/// declares the table itself. See e.g. <see cref="SceneEntityFactory"/> or <c>ChunkChangeRecords.cs</c>.
 /// </summary>
-public sealed class EditorDbContext : DbContext
+public sealed partial class EditorDbContext : DbContext
 {
     private readonly IReadOnlyList<ISceneComponentPersistence> _componentPersistence;
     private readonly IReadOnlyList<IEntityFactory> _entityFactories;
@@ -32,36 +38,6 @@ public sealed class EditorDbContext : DbContext
         _entityFactories = entityFactories;
         _tableConfigurations = tableConfigurations;
     }
-
-    public DbSet<SceneEntityRecord> SceneEntities => Set<SceneEntityRecord>();
-
-    public DbSet<MapRecord> Maps => Set<MapRecord>();
-
-    public DbSet<LandscapeChannelRecord> LandscapeChannels => Set<LandscapeChannelRecord>();
-
-    public DbSet<LandscapeLayerRecord> LandscapeLayers => Set<LandscapeLayerRecord>();
-
-    public DbSet<LandscapeMaterialRecord> LandscapeMaterials => Set<LandscapeMaterialRecord>();
-
-    public DbSet<MeshMaterialPresetRecord> MeshMaterialPresets => Set<MeshMaterialPresetRecord>();
-
-    public DbSet<ProceduralModelRecord> ProceduralModels => Set<ProceduralModelRecord>();
-
-    public DbSet<PaintImageRecord> Images => Set<PaintImageRecord>();
-
-    public DbSet<ImageChunkRecord> ImageChunks => Set<ImageChunkRecord>();
-
-    public DbSet<ImageDisplayLayerRecord> ImageDisplayLayers => Set<ImageDisplayLayerRecord>();
-
-    public DbSet<PrefabRecord> Prefabs => Set<PrefabRecord>();
-
-    public DbSet<LandscapeSettingsRecord> LandscapeSettings => Set<LandscapeSettingsRecord>();
-
-    public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
-
-    public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
-
-    public DbSet<ExportedEntityIdRecord> ExportedEntityIds => Set<ExportedEntityIdRecord>();
 
     protected override void OnModelCreating(ModelBuilder model)
     {
