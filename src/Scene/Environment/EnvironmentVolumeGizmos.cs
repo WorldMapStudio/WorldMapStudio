@@ -5,9 +5,13 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Draws a translucent inner/outer sphere pair for every loaded, in-view <see cref="IEnvironmentVolume"/>
-/// component — the generic counterpart of Noggit's light-sphere visualisation. Owned and updated once
-/// per frame by <see cref="ViewportWindow"/>, gated on <see cref="ViewSettings.ShowEnvironmentVolumes"/>.
+/// Draws a translucent inner/outer sphere pair for every selected entity carrying an
+/// <see cref="IEnvironmentVolume"/> component — the generic counterpart of Noggit's light-sphere
+/// visualisation. This is purely an editing aid for placing/sizing the volume, so it stays hidden
+/// for anything not selected rather than cluttering the view (and, up close, filling the screen)
+/// for every light in the level. The actual environment blend it represents (fog, sky, ambient —
+/// see <see cref="EnvironmentRenderer"/>) is unaffected by selection. Owned and updated once per
+/// frame by <see cref="ViewportWindow"/>, gated on <see cref="ViewSettings.ShowEnvironmentVolumes"/>.
 /// </summary>
 public sealed class EnvironmentVolumeGizmos
 {
@@ -20,13 +24,15 @@ public sealed class EnvironmentVolumeGizmos
     private readonly Node _root;
     private readonly SceneEntityRegistry _scene;
     private readonly ViewSettings _view;
+    private readonly SelectionSystem _selection;
     private readonly Dictionary<SceneComponent, VolumeGizmo> _gizmos = new();
 
-    public EnvironmentVolumeGizmos(Node viewport, SceneEntityRegistry scene, ViewSettings view)
+    public EnvironmentVolumeGizmos(Node viewport, SceneEntityRegistry scene, ViewSettings view, SelectionSystem selection)
     {
         _root = viewport;
         _scene = scene;
         _view = view;
+        _selection = selection;
     }
 
     public void Update()
@@ -40,6 +46,11 @@ public sealed class EnvironmentVolumeGizmos
         var seen = new HashSet<SceneComponent>();
         foreach (SceneEntity entity in _scene.InView)
         {
+            if (!_selection.IsSelected(entity))
+            {
+                continue;
+            }
+
             Vector3 origin = entity.Transform.Origin;
             foreach (SceneComponent component in entity.Components)
             {
