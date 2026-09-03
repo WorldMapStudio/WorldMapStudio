@@ -126,7 +126,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant
 
         _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _view);
         _camera.Environment = _environmentRenderer.Environment;
-        _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _scene, _view);
+        _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _scene, _view, context.Selection);
 
         // The map picker previews each map with a snapshot of this view; only the viewport can take one.
         _maps.CaptureView = () => _viewport.GetTexture()?.GetImage();
