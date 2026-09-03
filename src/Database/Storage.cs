@@ -46,8 +46,13 @@ public abstract class Storage : ISubsystem
     /// <summary>The catalog-entity factories registered into this storage.</summary>
     public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => Enumerable.Empty<ICatalogEntityFactory>();
 
+    /// <summary>The lazily-loaded catalog-entity factories registered into this storage — see
+    /// <see cref="ILazyCatalogEntityFactory"/>.</summary>
+    public virtual IEnumerable<ILazyCatalogEntityFactory> LazyCatalogFactories => Enumerable.Empty<ILazyCatalogEntityFactory>();
+
     /// <summary>Every factory in this storage, whatever kind of entity it persists.</summary>
-    public IEnumerable<IEntityFactory> EntityFactories => SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories);
+    public IEnumerable<IEntityFactory> EntityFactories =>
+        SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories).Concat(LazyCatalogFactories);
 
     /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
     public virtual IEnumerable<IMapSource> MapSources => Enumerable.Empty<IMapSource>();
