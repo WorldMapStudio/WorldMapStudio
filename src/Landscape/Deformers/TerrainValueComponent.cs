@@ -52,8 +52,6 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
 
     public SelfScale SelfScale => SelfScale.None;
 
-    public bool UsesTerrainHeight => true;
-
     public Aabb LocalBounds => new(
         new Vector3(-Width * 0.5f, -BoundsHeight * 0.5f, -Height * 0.5f),
         new Vector3(Width, BoundsHeight, Height));

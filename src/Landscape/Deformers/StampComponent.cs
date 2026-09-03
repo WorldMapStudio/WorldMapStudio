@@ -30,8 +30,6 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
 
     public SelfScale SelfScale => SelfScale.None;
 
-    public bool UsesTerrainHeight => false;
-
     public Aabb LocalBounds => new(
         new Vector3(-Radius, -Radius, -Radius),
         new Vector3(Radius * 2.0f, Radius * 2.0f, Radius * 2.0f));

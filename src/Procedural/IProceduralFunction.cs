@@ -56,10 +56,6 @@ public interface IProceduralFunction : ISubsystem
     /// <summary>How a placement bound to this function may be scaled.</summary>
     SelfScale SelfScale => SelfScale.PerAxis;
 
-    /// <summary>Whether a placement bound to this function follows terrain height rather than its own
-    /// authored Y — true for a road, which paints at whatever height the terrain under it already is.</summary>
-    bool UsesTerrainHeight => false;
-
     /// <summary>Whether a new vertex, for a network that is not <see cref="PlanarNetwork"/>, should still
     /// snap onto the terrain surface when placed (keeping its real sampled height) rather than landing on
     /// the entity's local Y=0 plane — true for a fence, whose control points should start out sitting on

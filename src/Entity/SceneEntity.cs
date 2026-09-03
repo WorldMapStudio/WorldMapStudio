@@ -100,12 +100,6 @@ public class SceneEntity : Entity
     public virtual Aabb LocalBounds => EffectiveLocalBounds;
 
     /// <summary>
-    /// True when this entity is positioned only by its horizontal coordinates and derives its visible
-    /// height from the terrain. The stored world Y is ignored.
-    /// </summary>
-    public virtual bool UsesTerrainHeight => Components.OfType<ITransformPolicy>().Any(policy => policy.UsesTerrainHeight);
-
-    /// <summary>
     /// <see cref="LocalBounds"/> placed by <see cref="Transform"/>, enclosed axis-aligned. This is the
     /// entity's extent in the world: what streaming and the landscape system query against, because an
     /// entity is in range when its bounds overlap a region, not when its origin happens to fall inside
@@ -372,11 +366,6 @@ public class SceneEntity : Entity
 
     protected virtual Transform3D SanitizeTransform(Transform3D transform)
     {
-        if (UsesTerrainHeight)
-        {
-            transform.Origin = new Vector3(transform.Origin.X, 0.0f, transform.Origin.Z);
-        }
-
         Basis rotation = transform.Basis.Orthonormalized();
         if (SelfRotation == SelfRotation.HeightOnly)
         {

@@ -158,12 +158,6 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     public SelfScale SelfScale => SelfScale.None;
 
-    // Free height: neither Rasterize nor Paint below ever read local.Y, so an entity's Y position has
-    // no bearing on the terrain projection — only rotation does (see SelfRotation above), which is
-    // why this is the only one of the two that's unlocked. StampComponent already establishes that
-    // "free height, still an ILandscapeDeformer" is a safe combination in this codebase.
-    public bool UsesTerrainHeight => false;
-
     public Aabb LocalBounds => new(
         new Vector3(-WorldSizeX * 0.5f, -BoundsHeight * 0.5f, -WorldSizeZ * 0.5f),
         new Vector3(WorldSizeX, BoundsHeight, WorldSizeZ));

@@ -65,8 +65,6 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
     /// <summary>How this format may be scaled, as declared by the <see cref="IModelFormat"/> that would load it.</summary>
     public SelfScale SelfScale => _assets.FindModelFormat(_modelPath)?.SelfScale ?? SelfScale.PerAxis;
 
-    public bool UsesTerrainHeight => false;
-
     public override SceneComponent Clone()
     {
         var clone = new ModelRendererComponent(_assets, _materials) { ModelPath = ModelPath };

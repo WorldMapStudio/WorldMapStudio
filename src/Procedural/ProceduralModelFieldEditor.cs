@@ -105,8 +105,8 @@ public sealed class ProceduralModelFieldEditor
 
     /// <summary>
     /// A bound function's transform policy (<see cref="IProceduralFunction.SelfRotation"/>,
-    /// <see cref="IProceduralFunction.SelfScale"/>, <see cref="IProceduralFunction.UsesTerrainHeight"/>,
-    /// <see cref="IProceduralFunction.PlanarNetwork"/>) applies to every placement of this model —
+    /// <see cref="IProceduralFunction.SelfScale"/>, <see cref="IProceduralFunction.PlanarNetwork"/>)
+    /// applies to every placement of this model —
     /// switching to a more restrictive function (e.g. picking the road function on a model that used
     /// to be an unrestricted mesh) can silently change what an existing placement's transform means.
     /// Shown whenever the bound function restricts anything and the model has placements, not only at
@@ -116,7 +116,6 @@ public sealed class ProceduralModelFieldEditor
     {
         bool restricts = bound.SelfRotation != SelfRotation.Full
             || bound.SelfScale != SelfScale.PerAxis
-            || bound.UsesTerrainHeight
             || bound.PlanarNetwork;
         if (!restricts)
         {
