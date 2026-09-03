@@ -49,24 +49,16 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     public int UsageCount(int modelId) =>
         Context.Scene.Entities.Count(entity => entity.Component<ProceduralComponent>()?.ModelId == modelId);
 
-    /// <summary>Loads the model catalog whole, replacing what is loaded. Called after the migration
-    /// gate, like <see cref="MeshMaterialSystem.LoadCatalog"/>.</summary>
-    public void LoadCatalog()
-    {
-        Context.Database.LoadCatalog<ProceduralModel>();
-        Version++;
-    }
-
+    // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
+    // registered catalog type before anything that resolves against one.
     float IWorldParticipant.LoadPriority => 3f;
 
     string? IWorldParticipant.LoadStep => "Loading procedural models";
 
-    void IWorldParticipant.LoadWorld() => LoadCatalog();
+    void IWorldParticipant.LoadWorld() => Version++;
 
     void IWorldParticipant.UnloadWorld()
     {
-        Context.Database.UnloadCatalog<ProceduralModel>();
-
         lock (_buildCacheOrder)
         {
             _buildCache.Clear();

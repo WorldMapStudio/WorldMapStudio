@@ -48,26 +48,15 @@ public sealed class ImageSystem : IWorldParticipant
     public int DisplayLayerUsageCount(int layerId) =>
         Context.Scene.Entities.Count(entity => entity.Component<ImageComponent>()?.DisplayLayerId == layerId);
 
-    /// <summary>Loads both catalogs whole, replacing what is loaded. Called after the migration gate,
-    /// like <see cref="ProceduralSystem.LoadCatalog"/>.</summary>
-    public void LoadCatalog()
-    {
-        Context.Database.LoadCatalog<PaintImage>();
-        Context.Database.LoadCatalog<ImageDisplayLayer>();
-    }
-
+    // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
+    // registered catalog type before anything that resolves against one — nothing else to do on load.
+    // Priority still matters for UnloadWorld's ordering (WorldLifecycle unloads in exact reverse).
     float IWorldParticipant.LoadPriority => 4f;
-
-    string? IWorldParticipant.LoadStep => "Loading images";
-
-    void IWorldParticipant.LoadWorld() => LoadCatalog();
 
     // A resident chunk's pixel data lives on the PaintImage catalog entity itself, so dropping the
     // catalog already drops it — nothing here needs its own eviction pass.
     void IWorldParticipant.UnloadWorld()
     {
-        Context.Database.UnloadCatalog<PaintImage>();
-        Context.Database.UnloadCatalog<ImageDisplayLayer>();
         _lastUpdateTick = (-1, -1, -1);
         Residency.UnloadWorld();
     }

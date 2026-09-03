@@ -20,7 +20,7 @@ public readonly record struct MeshMaterialIssue(MeshMaterialIssueSeverity Severi
 
 /// <summary>
 /// Registry of <see cref="IMeshMaterialType"/>s and the catalog of saved <see cref="MeshMaterialPreset"/>s
-/// built from them (see <see cref="LoadCatalog"/>). Also the single place a <see cref="MeshMaterial"/>
+/// built from them. Also the single place a <see cref="MeshMaterial"/>
 /// description turns into a Godot <see cref="Material"/>, cached by <see cref="MeshMaterial.Key"/> so a
 /// WMO with hundreds of batches sharing a handful of distinct materials builds each one once.
 /// </summary>
@@ -79,22 +79,16 @@ public sealed partial class MeshMaterialSystem : ISubsystemHost, IWorldParticipa
         }
     }
 
-    /// <summary>Loads the preset catalog whole, replacing what is loaded. Called after the migration gate, like <c>LandscapeSystem.LoadCatalog</c>.</summary>
-    public void LoadCatalog()
-    {
-        Context.Database.LoadCatalog<MeshMaterialPreset>();
-        Version++;
-    }
-
+    // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
+    // registered catalog type before anything that resolves against one.
     float IWorldParticipant.LoadPriority => 2f;
 
     string? IWorldParticipant.LoadStep => "Loading mesh materials";
 
-    void IWorldParticipant.LoadWorld() => LoadCatalog();
+    void IWorldParticipant.LoadWorld() => Version++;
 
     void IWorldParticipant.UnloadWorld()
     {
-        Context.Database.UnloadCatalog<MeshMaterialPreset>();
         ClearBuildCache();
         Version++;
     }
