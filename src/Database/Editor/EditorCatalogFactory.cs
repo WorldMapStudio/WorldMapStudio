@@ -57,7 +57,7 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
     public async Task<IReadOnlyList<CatalogEntity>> LoadAllAsync()
     {
         await using EditorDbContext context = Storage.CreateContext();
-        List<TRecord> rows = await Set(context).AsNoTracking().ToListAsync().ConfigureAwait(false);
+        List<TRecord> rows = await context.Set<TRecord>().AsNoTracking().ToListAsync().ConfigureAwait(false);
         return rows.Select(row =>
         {
             TEntity entity = ToEntity(row);
@@ -68,7 +68,6 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
 
     public Action Stage(DbContext context, IEntity entity)
     {
-        var db = (EditorDbContext)context;
         var typed = (TEntity)entity;
 
         var record = new TRecord { Id = typed.RecordId ?? 0 };
@@ -78,11 +77,11 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
         // separates an insert from an update.
         if (typed.IsSaved)
         {
-            Set(db).Update(record);
+            context.Set<TRecord>().Update(record);
         }
         else
         {
-            Set(db).Add(record);
+            context.Set<TRecord>().Add(record);
         }
 
         return () => typed.IsSaved = true;
@@ -90,19 +89,15 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
 
     public void StageDelete(DbContext context, IEntity entity)
     {
-        var db = (EditorDbContext)context;
         var typed = (TEntity)entity;
 
         // A never-saved entity has no row to remove; its id was only ever an in-memory reference.
         if (typed.IsSaved && typed.RecordId is int id)
         {
-            Set(db).Remove(new TRecord { Id = id });
+            context.Set<TRecord>().Remove(new TRecord { Id = id });
             typed.IsSaved = false;
         }
     }
-
-    /// <summary>The table this catalog lives in.</summary>
-    protected abstract DbSet<TRecord> Set(EditorDbContext context);
 
     protected abstract TEntity ToEntity(TRecord record);
 

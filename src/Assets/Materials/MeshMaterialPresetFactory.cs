@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-
 namespace WorldMapStudio;
 
 /// <summary>Maps <see cref="MeshMaterialPreset"/> to and from the Editor storage's <c>mesh_material_presets</c> table.</summary>
@@ -7,8 +5,6 @@ namespace WorldMapStudio;
 public sealed class MeshMaterialPresetFactory(EditorStorage storage)
     : EditorCatalogFactory<MeshMaterialPreset, MeshMaterialPresetRecord>(storage)
 {
-    protected override DbSet<MeshMaterialPresetRecord> Set(EditorDbContext context) => context.MeshMaterialPresets;
-
     protected override string TableName => "mesh_material_presets";
 
     protected override MeshMaterialPreset ToEntity(MeshMaterialPresetRecord record) => new()

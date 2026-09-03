@@ -52,6 +52,13 @@ public sealed class SceneEntityRecord
     public SceneEntityRecord? Parent { get; set; }
 }
 
+/// <summary>Named for readability at the many call sites below — see the type doc on the other part of
+/// this partial class for why a table's DbSet lives beside its owner instead of being centrally listed.</summary>
+public sealed partial class EditorDbContext
+{
+    public DbSet<SceneEntityRecord> SceneEntities => Set<SceneEntityRecord>();
+}
+
 [Subsystem(nameof(EditorStorage))]
 public sealed class SceneEntityFactory : ISceneEntityFactory
 {
