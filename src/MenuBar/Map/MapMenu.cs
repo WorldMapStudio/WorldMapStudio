@@ -14,14 +14,14 @@ public sealed class MapMenu : IMainMenu
     private readonly EditorContext _context;
     private readonly ShortcutAction _openMap;
 
-    private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal =
-        new("SelectMap", () => new MapSelectOperation(), new Vector2(700, 0));
+    private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal;
 
     public float Priority => 0.85f;
 
     public MapMenu(MenuBarManager manager)
     {
         _context = manager.Context;
+        _selectModal = new("SelectMap", () => new MapSelectOperation(_context), new Vector2(700, 0));
         _openMap = _context.Shortcuts.Register(
             "map.open",
             "Map",

@@ -62,6 +62,10 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
+    /// <summary>Registered per-map settings sections, drawn in the map picker's properties area.
+    /// Plugins add their own kinds here instead of the picker naming them.</summary>
+    public MapPropertiesRegistry MapProperties { get; private set; } = null!;
+
     /// <summary>Registered model formats (what kind of model a path or a procedural mesh is).</summary>
     public ModelFormatSystem ModelFormats { get; }
 
@@ -146,6 +150,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Focus = new ViewportFocus();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);
+        MapProperties = new MapPropertiesRegistry(this);
         ModelFormats = new ModelFormatSystem(this);
         Assets = new AssetSystem(this);
         MeshMaterials = new MeshMaterialSystem(this);
