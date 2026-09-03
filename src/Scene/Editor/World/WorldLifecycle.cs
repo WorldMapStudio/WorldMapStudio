@@ -51,6 +51,25 @@ public sealed class WorldLifecycle
     public void Load(Action<string>? onStep = null) => RunLoad(Participants, onStep);
 
     /// <summary>
+    /// Reverts a still-dirty session first — its pins are the only thing keeping uncommitted edits
+    /// alive in the scene/catalog registries, and no participant's <see cref="IWorldParticipant.UnloadWorld"/>
+    /// checks for a pin before it clears its own registry. Doing this after teardown (which is where it
+    /// used to live, inside <see cref="Verify"/>) was too late: by then the pinned entities were already
+    /// gone, so aborting found nothing left to revert and a create-then-reload sequence lost work
+    /// silently instead of behaving like the abort it actually was. Every reload path funnels through
+    /// here for exactly this reason — see <see cref="EditorScriptApi.Reload"/>, which documents this
+    /// exact guarantee and, before this fix, did not actually get it.
+    /// </summary>
+    private void RevertDirtySession()
+    {
+        if (_context.EditSessions.Active.IsDirty)
+        {
+            GD.PushWarning("[World] Reverting dirty edit session before unload.");
+            _context.EditSessions.AbortInMemory();
+        }
+    }
+
+    /// <summary>
     /// Drops every participant's state, in exact reverse of <see cref="Load"/>'s order, then verifies
     /// the core registries actually ended up empty. Returns a description of anything that had to be
     /// force-cleared (a participant that forgot its half of the contract) — empty when everything
@@ -58,6 +77,8 @@ public sealed class WorldLifecycle
     /// </summary>
     public IReadOnlyList<string> Unload()
     {
+        RevertDirtySession();
+
         List<string> report = RunUnload(Participants);
         report.AddRange(Verify());
         Generation++;

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -64,10 +65,17 @@ public sealed class CatalogEntityRegistry
         return true;
     }
 
-    /// <summary>Drops every loaded entity of a type, e.g. before reloading it from storage.</summary>
-    public void RemoveAll<TEntity>() where TEntity : CatalogEntity
+    /// <summary>
+    /// Drops every loaded entity of a type, e.g. before reloading it from storage. An entity for which
+    /// <paramref name="keep"/> returns true is left alone rather than dropped — used to protect a
+    /// pinned-but-uncommitted entity from a type-scoped reload it has nothing to do with, the same way
+    /// <c>StreamingSystem</c> protects a pinned scene entity from incidental streaming eviction.
+    /// </summary>
+    public void RemoveAll<TEntity>(Func<TEntity, bool>? keep = null) where TEntity : CatalogEntity
     {
-        if (_entities.RemoveAll(entity => entity is TEntity) > 0)
+        bool ShouldRemove(CatalogEntity entity) => entity is TEntity typed && keep?.Invoke(typed) != true;
+
+        if (_entities.RemoveAll(ShouldRemove) > 0)
         {
             Version++;
         }
