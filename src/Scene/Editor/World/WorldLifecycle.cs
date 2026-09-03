@@ -229,6 +229,9 @@ public sealed class WorldLifecycle
         Visit(context.Environments);
         Visit(context.Exports);
         Visit(context.ComponentTypes);
+        Visit(context.MapProperties);
+        Visit(context.Scripting);
+        Visit(context.Migrations);
 
         // Recurses into every self-registered subsystem: MenuBarManager -> WindowManager -> each
         // Window, and any plugin type that hangs directly off EditorContext the same way.
