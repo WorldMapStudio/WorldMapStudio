@@ -60,26 +60,6 @@ public sealed class SetSceneEntityParentCommand : IEditCommand
         }
     }
 
-    public static bool CanParentTo(SceneEntity entity, SceneEntity? parent)
-    {
-        if (parent == null)
-        {
-            return true;
-        }
-
-        if (ReferenceEquals(entity, parent) || parent.Map != entity.Map)
-        {
-            return false;
-        }
-
-        for (SceneEntity? current = parent; current != null; current = current.Parent)
-        {
-            if (ReferenceEquals(current, entity))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    public static bool CanParentTo(SceneEntity entity, SceneEntity? parent) =>
+        parent == null || (parent.Map == entity.Map && !entity.WouldCycle(parent));
 }
