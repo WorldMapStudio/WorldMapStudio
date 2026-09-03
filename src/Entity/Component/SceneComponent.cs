@@ -45,6 +45,4 @@ public interface ITransformPolicy
     SelfRotation SelfRotation { get; }
 
     SelfScale SelfScale { get; }
-
-    bool UsesTerrainHeight { get; }
 }

@@ -50,8 +50,6 @@ public sealed class RoadNetworkFunction : IProceduralFunction
 
     public SelfScale SelfScale => SelfScale.None;
 
-    public bool UsesTerrainHeight => true;
-
     public IReadOnlyList<MeshParameter> Parameters { get; } =
         MeshParameter.List(CentreWidth, ShoulderWidth, Falloff, CentreChannel, ShoulderChannel);
 

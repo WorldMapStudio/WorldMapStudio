@@ -85,8 +85,6 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
     public SelfScale SelfScale => BoundFunction?.SelfScale ?? SelfScale.PerAxis;
 
-    public bool UsesTerrainHeight => BoundFunction?.UsesTerrainHeight ?? false;
-
     public bool SnapToTerrainOnPlace => BoundFunction?.SnapToTerrainOnPlace ?? false;
 
     public override string TypeId => Kind;
