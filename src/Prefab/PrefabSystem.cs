@@ -43,12 +43,9 @@ public sealed class PrefabSystem : IWorldParticipant
 
     public IEnumerable<Prefab> All => _context.Catalog.OfType<Prefab>();
 
-    /// <summary>Loads every saved <see cref="Prefab"/> row. Called once from <see cref="EditorContext.LoadContent"/>,
-    /// like <see cref="ProceduralSystem.LoadCatalog"/>.</summary>
-    public void LoadCatalog() => _context.Database.LoadCatalog<Prefab>();
-
-    /// <summary>Loads every prefab template subtree once. Called from <see cref="EditorContext.LoadContent"/>
-    /// right after <see cref="LoadCatalog"/>.</summary>
+    /// <summary>Loads every prefab template subtree once. Called from <see cref="EditorContext.LoadContent"/>;
+    /// the <see cref="Prefab"/> catalog itself is loaded earlier, by <see cref="DatabaseSystem"/>'s own
+    /// <see cref="IWorldParticipant"/>.</summary>
     public void LoadLibrary()
     {
         List<SceneEntity> entities = BlockingWork.Run(ScanLibraryAsync);
@@ -66,11 +63,7 @@ public sealed class PrefabSystem : IWorldParticipant
 
     string? IWorldParticipant.LoadStep => "Loading prefabs";
 
-    void IWorldParticipant.LoadWorld()
-    {
-        LoadCatalog();
-        LoadLibrary();
-    }
+    void IWorldParticipant.LoadWorld() => LoadLibrary();
 
     // Resident entities are exempt from streaming, so nothing else ever removes them from the scene
     // registry — unlike an ordinary streamed entity, which simply stops being re-added once streaming
@@ -83,8 +76,6 @@ public sealed class PrefabSystem : IWorldParticipant
             entity.DestroyRepresentation();
             _context.Scene.Remove(entity);
         }
-
-        _context.Database.UnloadCatalog<Prefab>();
     }
 
     /// <summary>The template's root entity, or null if the prefab's row exists but its subtree isn't

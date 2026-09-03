@@ -159,24 +159,14 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         _context.Database.Storages.SelectMany(storage => storage.LandscapeSettingsSources);
 
     /// <summary>
-    /// Loads the landscape catalog and the open map's settings. Called when the editor opens — after
-    /// the migration gate, like <see cref="MapSystem.Load"/>, since the tables may not exist until it
-    /// has run.
+    /// Loads the open map's settings. Called when the editor opens — after the migration gate, like
+    /// <see cref="MapSystem.Load"/>, since the tables may not exist until it has run. The landscape
+    /// catalog itself is loaded earlier, by <see cref="DatabaseSystem"/>'s own <see cref="IWorldParticipant"/>.
     /// </summary>
     public void Load()
     {
         Error = null;
-        LoadCatalog();
         LoadSettings(_context.Maps.CurrentMap);
-        Version++;
-    }
-
-    /// <summary>Re-reads the catalog from every storage, replacing what is loaded.</summary>
-    public void LoadCatalog()
-    {
-        _context.Database.LoadCatalog<LandscapeChannel>();
-        _context.Database.LoadCatalog<LandscapeLayer>();
-        _context.Database.LoadCatalog<LandscapeMaterial>();
         Version++;
     }
 
@@ -195,8 +185,6 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
 
     void IWorldParticipant.UnloadWorld()
     {
-        _context.Database.UnloadCatalog<LandscapeChannel>();
-        _context.Database.UnloadCatalog<LandscapeLayer>();
         _context.Database.UnloadCatalog<LandscapeMaterial>();
 
         Settings = null;

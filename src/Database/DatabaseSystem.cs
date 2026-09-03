@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 /// On <see cref="Startup"/> it launches a managed <c>dolt sql-server</c> for each storage configured
 /// to launch one, then ensures each storage's database exists.
 /// </summary>
-public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
+public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, IWorldParticipant
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
 
@@ -105,16 +105,21 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
     /// nothing streams these — so it calls this when it needs the set and
     /// <see cref="UnloadCatalog{TEntity}"/> when it is done.
     /// </summary>
-    public IReadOnlyList<TEntity> LoadCatalog<TEntity>() where TEntity : CatalogEntity
-    {
-        _context.Catalog.RemoveAll<TEntity>(IsPinned);
+    public IReadOnlyList<TEntity> LoadCatalog<TEntity>() where TEntity : CatalogEntity =>
+        LoadCatalog(typeof(TEntity)).Cast<TEntity>().ToList();
 
-        var loaded = new List<TEntity>();
+    /// <summary>Type-based counterpart of <see cref="LoadCatalog{TEntity}"/> — what <see cref="IWorldParticipant.LoadWorld"/>
+    /// uses to bulk-load every registered catalog type without naming each one.</summary>
+    private IReadOnlyList<CatalogEntity> LoadCatalog(Type entityType)
+    {
+        _context.Catalog.RemoveAll(entityType, IsPinned);
+
+        var loaded = new List<CatalogEntity>();
         foreach (Storage storage in Storages)
         {
             foreach (ICatalogEntityFactory factory in storage.CatalogFactories)
             {
-                if (!typeof(TEntity).IsAssignableFrom(factory.EntityType))
+                if (!entityType.IsAssignableFrom(factory.EntityType))
                 {
                     continue;
                 }
@@ -123,16 +128,16 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
                 {
                     foreach (CatalogEntity entity in Read(storage, factory.LoadAllAsync))
                     {
-                        if (entity is TEntity typed)
+                        if (entityType.IsInstanceOfType(entity))
                         {
-                            _context.Catalog.Add(typed);
-                            loaded.Add(typed);
+                            _context.Catalog.Add(entity);
+                            loaded.Add(entity);
                         }
                     }
                 }
                 catch (Exception e)
                 {
-                    GD.PushError($"[Database] Loading catalog {typeof(TEntity).Name} from '{storage.Name}' failed: {e.Message}");
+                    GD.PushError($"[Database] Loading catalog {entityType.Name} from '{storage.Name}' failed: {e.Message}");
                 }
             }
         }
@@ -142,6 +147,38 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
 
     /// <summary>Drops a loaded catalog. Entities the edit session pinned stay alive until it ends.</summary>
     public void UnloadCatalog<TEntity>() where TEntity : CatalogEntity => _context.Catalog.RemoveAll<TEntity>(IsPinned);
+
+    /// <summary>
+    /// Every distinct <see cref="ICatalogEntityFactory.EntityType"/> registered across every storage —
+    /// what <see cref="IWorldParticipant"/> loads/unloads as one project-wide bulk operation instead of
+    /// each catalog's owning system (or, for a plugin catalog with no owning system, a bespoke
+    /// <see cref="IWorldParticipant"/> written solely to shuttle it in and out) doing so itself.
+    /// </summary>
+    private IEnumerable<Type> CatalogEntityTypes() =>
+        Storages.SelectMany(storage => storage.CatalogFactories).Select(factory => factory.EntityType).Distinct();
+
+    // Loads before anything that resolves against a catalog (landscape channels, mesh material
+    // presets, ...), and — since WorldLifecycle unloads in exact reverse — unloads only after every
+    // other participant's UnloadWorld has already dropped whatever referenced them.
+    float IWorldParticipant.LoadPriority => -1f;
+
+    string? IWorldParticipant.LoadStep => "Loading catalogs";
+
+    void IWorldParticipant.LoadWorld()
+    {
+        foreach (Type entityType in CatalogEntityTypes())
+        {
+            LoadCatalog(entityType);
+        }
+    }
+
+    void IWorldParticipant.UnloadWorld()
+    {
+        foreach (Type entityType in CatalogEntityTypes())
+        {
+            _context.Catalog.RemoveAll(entityType, IsPinned);
+        }
+    }
 
     // Mirrors StreamingSystem.IsPinned — the same "is the active session still holding this for an
     // uncommitted edit" check, applied to a catalog entity instead of a scene one. Untyped (rather than

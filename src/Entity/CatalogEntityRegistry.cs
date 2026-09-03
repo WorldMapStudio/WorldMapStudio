@@ -81,6 +81,19 @@ public sealed class CatalogEntityRegistry
         }
     }
 
+    /// <summary>Type-based counterpart of <see cref="RemoveAll{TEntity}"/>, for a caller that only has
+    /// a runtime <see cref="Type"/> to filter by — e.g. looping every registered catalog factory's
+    /// <see cref="ICatalogEntityFactory.EntityType"/> rather than naming each concrete type.</summary>
+    public void RemoveAll(Type entityType, Func<CatalogEntity, bool>? keep = null)
+    {
+        bool ShouldRemove(CatalogEntity entity) => entityType.IsInstanceOfType(entity) && keep?.Invoke(entity) != true;
+
+        if (_entities.RemoveAll(ShouldRemove) > 0)
+        {
+            Version++;
+        }
+    }
+
     /// <summary>Drops every loaded entity of every type.</summary>
     public void Clear()
     {
