@@ -12,9 +12,9 @@ public static class SchemaTests
     public static void Model_schema_matches_the_editor_context()
     {
         // Building the model does not connect, so a placeholder connection string is fine here.
-        // A handful of persisters stand in for the full registered set (some need a live AssetSystem
-        // or ProceduralSystem to construct, which this schema-only test has no reason to spin up);
-        // proving the persister-driven model wiring works generically for a couple of them is enough.
+        // A handful of persisters/factories stand in for the full registered set (some need a live
+        // AssetSystem or ProceduralSystem to construct, which this schema-only test has no reason to
+        // spin up); proving the self-registered-config wiring works generically for a couple is enough.
         var options = new DbContextOptionsBuilder<EditorDbContext>()
             .UseMySql("Server=localhost;Database=x;Uid=root", new MySqlServerVersion(new Version(8, 0, 0)))
             .Options;
@@ -23,7 +23,8 @@ public static class SchemaTests
             new MarkerComponentPersistence(null!),
             new StampComponentPersistence(null!),
         };
-        using var context = new EditorDbContext(options, persistence, []);
+        var entityFactories = new IEntityFactory[] { new SceneEntityFactory(null!) };
+        using var context = new EditorDbContext(options, persistence, entityFactories, []);
 
         Schema schema = ModelSchema.Extract(context);
 

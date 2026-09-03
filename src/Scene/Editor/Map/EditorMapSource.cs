@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 /// reader/writer lock itself, since the map system is its only caller.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
-public sealed class EditorMapSource : IMapSource
+public sealed class EditorMapSource : IMapSource, ITableConfiguration
 {
     private readonly EditorStorage _storage;
 
@@ -22,6 +22,18 @@ public sealed class EditorMapSource : IMapSource
     public EditorMapSource(EditorStorage storage)
     {
         _storage = storage;
+    }
+
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<MapRecord>(entity =>
+        {
+            entity.ToTable("maps");
+            entity.HasKey(record => record.Id);
+
+            // The map id is the user's own (it matches the game's map ids), not a generated key.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
     }
 
     public async Task<IReadOnlyList<Map>> LoadAsync()

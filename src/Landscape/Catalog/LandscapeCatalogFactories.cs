@@ -9,7 +9,7 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
 {
     protected override DbSet<LandscapeChannelRecord> Set(EditorDbContext context) => context.LandscapeChannels;
 
-
+    protected override string TableName => "landscape_channels";
 
     protected override LandscapeChannel ToEntity(LandscapeChannelRecord record) => new()
     {
@@ -38,7 +38,7 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
 {
     protected override DbSet<LandscapeLayerRecord> Set(EditorDbContext context) => context.LandscapeLayers;
 
-
+    protected override string TableName => "landscape_layers";
 
     protected override LandscapeLayer ToEntity(LandscapeLayerRecord record) => new()
     {
@@ -67,7 +67,7 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
 {
     protected override DbSet<LandscapeMaterialRecord> Set(EditorDbContext context) => context.LandscapeMaterials;
 
-
+    protected override string TableName => "landscape_materials";
 
     protected override LandscapeMaterial ToEntity(LandscapeMaterialRecord record) => new()
     {

@@ -9,7 +9,7 @@ namespace WorldMapStudio;
 /// map-wide rebuild, not an undoable edit.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
-public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource
+public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, ITableConfiguration
 {
     private readonly EditorStorage _storage;
 
@@ -21,6 +21,18 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource
     public float Priority => 0.0f;
 
     public bool CanEdit => true;
+
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<LandscapeSettingsRecord>(entity =>
+        {
+            entity.ToTable("landscape_settings");
+
+            // One landscape per map, so the map id is the key rather than a generated one.
+            entity.HasKey(record => record.MapId);
+            entity.Property(record => record.MapId).ValueGeneratedNever();
+        });
+    }
 
     public async Task<LandscapeSettings?> LoadAsync(MapId map)
     {

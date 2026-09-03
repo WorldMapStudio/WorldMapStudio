@@ -1,4 +1,5 @@
 using System;
+using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
@@ -44,4 +45,45 @@ public sealed class ExportedEntityIdRecord
     public long EntityId { get; set; }
 
     public long AllocatedId { get; set; }
+}
+
+/// <summary>
+/// Declares the three chunk-export tracking tables above. None of them back an <see cref="IEntity"/> or
+/// have any other self-registered owner — they're written directly by <see cref="EditorStorage"/>'s own
+/// Upsert/Load methods — so this is a standalone <see cref="ITableConfiguration"/> rather than a
+/// side effect of some other seam.
+/// </summary>
+[Subsystem(nameof(EditorStorage))]
+public sealed class ChunkChangeTableConfiguration : ITableConfiguration
+{
+    public float Priority => 0.0f;
+
+    public ChunkChangeTableConfiguration(EditorStorage storage)
+    {
+    }
+
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<ChunkChangeRecord>(entity =>
+        {
+            entity.ToTable("chunk_changes");
+            entity.HasKey(record => new { record.MapId, record.ChunkX, record.ChunkY });
+            entity.Property(record => record.ContentHash).HasMaxLength(64);
+        });
+
+        model.Entity<ExportedChunkRecord>(entity =>
+        {
+            entity.ToTable("exported_chunks");
+            entity.HasKey(record => new { record.ProfileId, record.MapId, record.ChunkX, record.ChunkY });
+            entity.Property(record => record.ProfileId).HasMaxLength(128);
+            entity.Property(record => record.ContentHash).HasMaxLength(64);
+        });
+
+        model.Entity<ExportedEntityIdRecord>(entity =>
+        {
+            entity.ToTable("exported_entity_ids");
+            entity.HasKey(record => new { record.ProfileId, record.EntityId });
+            entity.Property(record => record.ProfileId).HasMaxLength(128);
+        });
+    }
 }

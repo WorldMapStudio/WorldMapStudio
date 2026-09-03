@@ -51,13 +51,15 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Subsystems.OfType<ILandscapeSettingsSource>();
 
+    public override IEnumerable<ITableConfiguration> TableConfigurations => Subsystems.OfType<ITableConfiguration>();
+
     /// <summary>Registered scene-component persisters, so a plugin's component is stored the same way
     /// a built-in one is. See <see cref="ISceneComponentPersistence"/>.</summary>
     public IEnumerable<ISceneComponentPersistence> ComponentPersistence => Subsystems.OfType<ISceneComponentPersistence>();
 
     /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
     public EditorDbContext CreateContext() =>
-        new(BuildOptions<EditorDbContext>(), ComponentPersistence.ToList(), EntityFactories.ToList());
+        new(BuildOptions<EditorDbContext>(), ComponentPersistence.ToList(), EntityFactories.ToList(), TableConfigurations.ToList());
 
     public override void EnsureSchema()
     {

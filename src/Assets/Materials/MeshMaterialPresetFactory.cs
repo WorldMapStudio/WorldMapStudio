@@ -9,6 +9,8 @@ public sealed class MeshMaterialPresetFactory(EditorStorage storage)
 {
     protected override DbSet<MeshMaterialPresetRecord> Set(EditorDbContext context) => context.MeshMaterialPresets;
 
+    protected override string TableName => "mesh_material_presets";
+
     protected override MeshMaterialPreset ToEntity(MeshMaterialPresetRecord record) => new()
     {
         RecordId = record.Id,

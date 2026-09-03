@@ -60,6 +60,11 @@ public abstract class Storage : ISubsystem
     /// <summary>The landscape settings sources registered into this storage.</summary>
     public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Enumerable.Empty<ILandscapeSettingsSource>();
 
+    /// <summary>The table configurations registered into this storage — see
+    /// <see cref="ITableConfiguration"/>. Gathered by <c>CreateContext</c> and passed to the storage's
+    /// <c>DbContext</c>, so its <c>OnModelCreating</c> never has to name a table's owner by hand.</summary>
+    public virtual IEnumerable<ITableConfiguration> TableConfigurations => Enumerable.Empty<ITableConfiguration>();
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 

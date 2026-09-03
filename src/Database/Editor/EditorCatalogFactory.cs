@@ -35,7 +35,24 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
 
     public Type EntityType => typeof(TEntity);
 
+    /// <summary>The table this catalog lives in — the only thing that differs between one of these
+    /// factories and another's <see cref="Configure"/>, since every keyed-record catalog shares the
+    /// same editor-assigned, never-generated <c>Id</c> key.</summary>
+    protected abstract string TableName { get; }
+
     public bool Handles(IEntity entity) => entity is TEntity;
+
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<TRecord>(entity =>
+        {
+            entity.ToTable(TableName);
+            entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+    }
 
     public async Task<IReadOnlyList<CatalogEntity>> LoadAllAsync()
     {

@@ -9,6 +9,8 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
 {
     protected override DbSet<ProceduralModelRecord> Set(EditorDbContext context) => context.ProceduralModels;
 
+    protected override string TableName => "procedural_models";
+
     protected override ProceduralModel ToEntity(ProceduralModelRecord record)
     {
         var entity = new ProceduralModel
