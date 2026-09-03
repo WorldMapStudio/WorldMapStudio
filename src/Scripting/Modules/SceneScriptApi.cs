@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -90,6 +92,89 @@ public sealed class SceneScriptApi : IScriptModule
     public string[] Components(ScriptEntityHandle handle) =>
         RequireSceneEntity(handle).Components.Select(component => component.TypeId).ToArray();
 
+    /// <summary>The entity's world position as [x, y, z].</summary>
+    [ScriptFunction]
+    public double[] GetPosition(ScriptEntityHandle handle)
+    {
+        Vector3 origin = RequireSceneEntity(handle).Transform.Origin;
+        return [origin.X, origin.Y, origin.Z];
+    }
+
+    /// <summary>Moves the entity, keeping its current rotation/scale, undoably — the same command a gizmo drag applies.</summary>
+    [ScriptFunction]
+    public void SetPosition(ScriptEntityHandle handle, double x, double y, double z)
+    {
+        SceneEntity entity = RequireSceneEntity(handle);
+        Transform3D before = entity.Transform;
+        Transform3D after = new(before.Basis, new Vector3((float)x, (float)y, (float)z));
+        var command = new TransformEntitiesCommand([entity], [before], [after]);
+        command.Apply();
+        _context.EditSessions.Record(command);
+    }
+
+    /// <summary>Reads a <c>[ScriptProperty]</c> field of a named component attached to the entity.</summary>
+    [ScriptFunction]
+    public object? GetComponentField(ScriptEntityHandle handle, string componentType, string field)
+    {
+        SceneComponent component = RequireComponent(handle, componentType);
+        return FindComponentProperty(component, field).GetValue(component);
+    }
+
+    /// <summary>Writes a <c>[ScriptProperty(Mutable = true)]</c> field of a named component, undoably.</summary>
+    [ScriptFunction]
+    public void SetComponentField(ScriptEntityHandle handle, string componentType, string field, object? value)
+    {
+        SceneComponent component = RequireComponent(handle, componentType);
+        PropertyInfo property = FindComponentProperty(component, field);
+        if (!ScriptReflection.IsMutable(property))
+        {
+            throw new InvalidOperationException($"'{field}' is not mutable from scripts.");
+        }
+
+        object? before = property.GetValue(component);
+        object? after = ScriptEntityHandle.ConvertForClr(value, property.PropertyType);
+        var command = new ScriptComponentFieldEditCommand(component, field,
+            () => property.SetValue(component, after),
+            () => property.SetValue(component, before));
+        command.Apply();
+        _context.EditSessions.Record(command);
+    }
+
+    /// <summary>Reads one element of an array-typed <c>[ScriptProperty]</c> field of a named component
+    /// (e.g. a WoW light's <c>ParamIds</c> slots), which have no whole-property setter to go through
+    /// <see cref="GetComponentField"/>/<see cref="SetComponentField"/> instead.</summary>
+    [ScriptFunction]
+    public object? GetComponentArrayField(ScriptEntityHandle handle, string componentType, string field, int index)
+    {
+        SceneComponent component = RequireComponent(handle, componentType);
+        PropertyInfo property = FindComponentProperty(component, field);
+        var array = (Array)(property.GetValue(component) ?? throw new InvalidOperationException($"'{field}' is null."));
+        return array.GetValue(index);
+    }
+
+    /// <summary>Writes one element of an array-typed <c>[ScriptProperty(Mutable = true)]</c> field, undoably.</summary>
+    [ScriptFunction]
+    public void SetComponentArrayField(ScriptEntityHandle handle, string componentType, string field, int index, object? value)
+    {
+        SceneComponent component = RequireComponent(handle, componentType);
+        PropertyInfo property = FindComponentProperty(component, field);
+        if (!ScriptReflection.IsMutable(property))
+        {
+            throw new InvalidOperationException($"'{field}' is not mutable from scripts.");
+        }
+
+        var array = (Array)(property.GetValue(component) ?? throw new InvalidOperationException($"'{field}' is null."));
+        Type elementType = property.PropertyType.GetElementType()
+            ?? throw new InvalidOperationException($"'{field}' is not an array.");
+        object? converted = ScriptEntityHandle.ConvertForClr(value, elementType);
+        object? before = array.GetValue(index);
+        var command = new ScriptComponentFieldEditCommand(component, $"{field}[{index}]",
+            () => array.SetValue(converted, index),
+            () => array.SetValue(before, index));
+        command.Apply();
+        _context.EditSessions.Record(command);
+    }
+
     /// <summary>Deletes the entity a handle refers to, undoably.</summary>
     [ScriptFunction]
     public void Delete(ScriptEntityHandle handle)
@@ -109,23 +194,22 @@ public sealed class SceneScriptApi : IScriptModule
             ? entity
             : throw new InvalidOperationException("That handle does not refer to a scene entity.");
 
-    private SceneComponent CreateComponent(string typeId) => typeId switch
-    {
-        "marker" => new MarkerComponent(),
-        "landscape-stamp" => new StampComponent(),
-        "image" => new ImageComponent(_context.Images),
-        "landscape-material-bind" => new LandscapeMaterialBindComponent(),
-        "procedural-mesh" => new ProceduralComponent(_context.Procedural),
-        _ => throw new InvalidOperationException($"No scene component type named '{typeId}'."),
-    };
+    private static SceneComponent RequireComponent(ScriptEntityHandle handle, string componentType) =>
+        RequireSceneEntity(handle).Components.FirstOrDefault(component => component.TypeId == componentType)
+            ?? throw new InvalidOperationException($"Entity has no '{componentType}' component.");
 
-    private static string DefaultName(string typeId) => typeId switch
-    {
-        "marker" => "Empty",
-        "landscape-stamp" => "Stamp",
-        "image" => "Image",
-        "landscape-material-bind" => "Landscape Material Bind",
-        "procedural-mesh" => "Procedural Mesh",
-        _ => "Entity",
-    };
+    private static PropertyInfo FindComponentProperty(SceneComponent component, string field) =>
+        ScriptReflection.Properties(component.GetType()).FirstOrDefault(p => p.Name == field)
+            ?? throw new InvalidOperationException($"'{field}' is not a script-visible property of {component.GetType().Name}.");
+
+    // Delegates to the self-registering component registry — the same one the inspector's own "Add
+    // Component" UI goes through (ISceneComponentType.Create()) — rather than hardcoding a switch over
+    // a few built-in types, so any current or future plugin-registered component (like WoW lights) is
+    // creatable from script without this module needing to know about it.
+    private SceneComponent CreateComponent(string typeId) =>
+        _context.ComponentTypes.Find(typeId)?.Create()
+            ?? throw new InvalidOperationException($"No scene component type named '{typeId}'.");
+
+    private string DefaultName(string typeId) =>
+        _context.ComponentTypes.Find(typeId)?.DisplayName ?? "Entity";
 }

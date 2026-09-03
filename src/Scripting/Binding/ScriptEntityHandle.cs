@@ -101,11 +101,16 @@ public sealed class ScriptEntityHandle
             return value;
         }
 
-        if (targetType.IsEnum)
+        // Nullable<T> (e.g. WowLightComponent.ParamIds' int? elements): convert against the underlying
+        // type — a boxed non-nullable value implicitly widens into the Nullable<T> slot it's written
+        // into (PropertyInfo.SetValue/Array.SetValue both do this), so there's nothing further to do.
+        Type target = Nullable.GetUnderlyingType(targetType) ?? targetType;
+
+        if (target.IsEnum)
         {
-            return Enum.ToObject(targetType, Convert.ToInt64(value));
+            return Enum.ToObject(target, Convert.ToInt64(value));
         }
 
-        return Convert.ChangeType(value, targetType);
+        return Convert.ChangeType(value, target);
     }
 }
