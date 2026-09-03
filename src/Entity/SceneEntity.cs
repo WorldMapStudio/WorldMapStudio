@@ -46,6 +46,12 @@ public class SceneEntity : Entity
                 return;
             }
 
+            if (value != null && WouldCycle(value))
+            {
+                GD.PushError($"[Scene] Refusing to parent {DisplayName} to {value.DisplayName}: would create a cycle.");
+                return;
+            }
+
             _parent?._children.Remove(this);
             _parent = value;
             if (_parent != null && !_parent._children.Contains(this))
@@ -56,6 +62,20 @@ public class SceneEntity : Entity
     }
 
     public IReadOnlyList<SceneEntity> Children => _children;
+
+    /// <summary>Whether <paramref name="parent"/> is this entity itself or one of its own descendants.</summary>
+    public bool WouldCycle(SceneEntity parent)
+    {
+        for (SceneEntity? current = parent; current != null; current = current.Parent)
+        {
+            if (ReferenceEquals(current, this))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Entity";
