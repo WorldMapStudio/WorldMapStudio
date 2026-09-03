@@ -279,13 +279,12 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
         _servers.Clear();
     }
 
-    // Whether the entity is still loaded, which is what separates a save from a delete. System
-    // entities are always loaded, so they are always a save.
+    // Whether the entity is still loaded, which is what separates a save from a delete.
     private bool IsLoaded(IEntity entity) => entity switch
     {
         SceneEntity scene => _context.Scene.Contains(scene),
         CatalogEntity catalog => _context.Catalog.Contains(catalog),
-        _ => true,
+        _ => throw new ArgumentOutOfRangeException(nameof(entity), entity.GetType(), "Unknown entity kind."),
     };
 
     // Reads under the storage's reader lock. Blocks the caller — see <see cref="BlockingWork"/>.
