@@ -257,6 +257,43 @@ f 1/1 2/2 3/3
     }
 
     [EditorTest(Category = "Project")]
+    public static void Model_instantiate_material_override_rewrites_surface_material()
+    {
+        ArrayMesh mesh = BuildTriangleMesh(Vector3.Zero);
+        MeshMaterial original = StandardMeshMaterial.Describe(albedo: Colors.Red);
+        var part = new ModelPart("root", Transform3D.Identity, [new ModelSurface("tri", mesh, original)], []);
+        var model = new ModelAsset("material-override.synthetic", [part]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_material_override_test__" });
+
+        MeshMaterial replacement = StandardMeshMaterial.Describe(albedo: Colors.Blue);
+        var options = new ModelInstantiateOptions { MaterialOverride = (_, _, _) => replacement };
+
+        Node3D node = model.Instantiate(context.MeshMaterials, options);
+        var partNode = (Node3D)node.GetChild(0);
+        var meshInstance = (MeshInstance3D)partNode.GetChild(0);
+        var built = (StandardMaterial3D)meshInstance.GetSurfaceOverrideMaterial(0)!;
+
+        Assert.IsTrue(built.AlbedoColor.IsEqualApprox(Colors.Blue));
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Model_instantiate_without_material_override_leaves_material_unchanged()
+    {
+        ArrayMesh mesh = BuildTriangleMesh(Vector3.Zero);
+        MeshMaterial original = StandardMeshMaterial.Describe(albedo: Colors.Red);
+        var part = new ModelPart("root", Transform3D.Identity, [new ModelSurface("tri", mesh, original)], []);
+        var model = new ModelAsset("material-no-override.synthetic", [part]);
+        var context = new EditorContext(new Godot.Node3D(), new Project { Name = "__wms_model_material_no_override_test__" });
+
+        Node3D node = model.Instantiate(context.MeshMaterials);
+        var partNode = (Node3D)node.GetChild(0);
+        var meshInstance = (MeshInstance3D)partNode.GetChild(0);
+        var built = (StandardMaterial3D)meshInstance.GetSurfaceOverrideMaterial(0)!;
+
+        Assert.IsTrue(built.AlbedoColor.IsEqualApprox(Colors.Red));
+    }
+
+    [EditorTest(Category = "Project")]
     public static void Model_local_bounds_ignore_reference_only_parts()
     {
         ArrayMesh mesh = BuildTriangleMesh(new Vector3(10, 0, 0));

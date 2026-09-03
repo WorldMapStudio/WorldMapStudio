@@ -57,6 +57,17 @@ public sealed class ModelInstantiateOptions
     /// for the rest); when null, every part's own <see cref="ModelPart.DefaultVisible"/> applies.
     /// </summary>
     public Func<ModelPart, bool>? PartFilter { get; init; }
+
+    /// <summary>
+    /// Rewrites one of a surface's materials before it is built, e.g. substituting a creature's
+    /// resolved skin texture onto a replaceable slot a format's material description tags itself with
+    /// (a format-specific <c>TextureSlot</c> parameter on the <see cref="MeshMaterial"/> — see
+    /// <c>M2Material.TextureSlot</c>). Every asset instance shares one <see cref="ModelAsset"/>, so
+    /// this is what lets per-instance variation (a hundred guards, one mesh) exist without forking
+    /// the asset cache. Identity (the surface's own material, unchanged) when null, which is every
+    /// caller before this was added.
+    /// </summary>
+    public Func<ModelPart, ModelSurface, MeshMaterial, MeshMaterial>? MaterialOverride { get; init; }
 }
 
 public sealed class ModelAsset
@@ -150,12 +161,18 @@ public sealed class ModelAsset
                     Mesh = surface.Mesh,
                 };
 
-                // A per-surface override rather than MaterialOverride: identical to it when there is
+                // A per-surface override rather than a per-mesh one: identical to it when there is
                 // only one surface (the common case), but it is what lets a mesh that groups several
                 // render batches together (see ModelSurface) still show each batch's own material.
                 for (int s = 0; s < surface.Materials.Count; s++)
                 {
-                    meshInstance.SetSurfaceOverrideMaterial(s, materials.Build(surface.Materials[s]));
+                    MeshMaterial material = surface.Materials[s];
+                    if (options.MaterialOverride != null)
+                    {
+                        material = options.MaterialOverride(part, surface, material);
+                    }
+
+                    meshInstance.SetSurfaceOverrideMaterial(s, materials.Build(material));
                 }
 
                 partNode.AddChild(meshInstance);
