@@ -66,6 +66,19 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
     public bool Handles(IEntity entity) => entity.GetType() == typeof(SceneEntity);
 
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<SceneEntityRecord>(entity =>
+        {
+            entity.ToTable("scene_entities");
+            entity.HasKey(record => record.Id);
+            entity.HasOne(record => record.Parent)
+                .WithMany()
+                .HasForeignKey(record => record.ParentId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+    }
+
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
 
     public async Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)

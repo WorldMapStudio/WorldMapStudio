@@ -46,6 +46,24 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
 
     public bool Handles(IEntity entity) => entity is PaintImage;
 
+    public void Configure(ModelBuilder model)
+    {
+        model.Entity<PaintImageRecord>(entity =>
+        {
+            entity.ToTable("images");
+            entity.HasKey(record => record.Id);
+
+            // The editor assigns catalog ids so entities can reference each other before a commit.
+            entity.Property(record => record.Id).ValueGeneratedNever();
+        });
+
+        model.Entity<ImageChunkRecord>(entity =>
+        {
+            entity.ToTable("image_chunks");
+            entity.HasKey(record => new { record.ImageId, record.ChunkX, record.ChunkY });
+        });
+    }
+
     public async Task<IReadOnlyList<CatalogEntity>> LoadAllAsync()
     {
         await using EditorDbContext context = _storage.CreateContext();

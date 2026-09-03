@@ -16,6 +16,8 @@ public sealed class PrefabFactory(EditorStorage storage)
 {
     protected override DbSet<PrefabRecord> Set(EditorDbContext context) => context.Prefabs;
 
+    protected override string TableName => "prefabs";
+
     protected override Prefab ToEntity(PrefabRecord record) => new()
     {
         RecordId = record.Id,

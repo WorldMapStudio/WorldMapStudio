@@ -11,6 +11,8 @@ public sealed class ImageDisplayLayerFactory(EditorStorage storage)
 {
     protected override DbSet<ImageDisplayLayerRecord> Set(EditorDbContext context) => context.ImageDisplayLayers;
 
+    protected override string TableName => "image_display_layers";
+
     protected override ImageDisplayLayer ToEntity(ImageDisplayLayerRecord record) => new()
     {
         RecordId = record.Id,
