@@ -93,6 +93,18 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             catch (Exception e)
             {
                 GD.PushError($"[Database] Storage '{storage.Name}' schema check failed: {e.Message}");
+                continue;
+            }
+
+            // Seeds run here, before the caller checks for schema drift (see EditorContext.Startup),
+            // so a plugin's reference data lands before the migration gate ever sees the database.
+            try
+            {
+                BlockingWork.Run(storage.ApplySeedsAsync);
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"[Database] Storage '{storage.Name}' seed apply failed: {e.Message}");
             }
         }
     }

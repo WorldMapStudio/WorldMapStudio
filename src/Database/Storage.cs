@@ -111,6 +111,13 @@ public abstract class Storage : ISubsystem
     /// <see cref="ISpawnFactory"/>. Storage-agnostic, like <see cref="CatalogBrowsers"/>.</summary>
     public virtual IEnumerable<ISpawnFactory> Spawners => Facet<ISpawnFactory>();
 
+    /// <summary>One-time seed scripts registered into this storage — see <see cref="ISeedSql"/>.</summary>
+    public virtual IEnumerable<ISeedSql> Seeds => Facet<ISeedSql>();
+
+    /// <summary>Table name the seed-history tracking table gets in any storage database — excluded
+    /// from <see cref="MigrationSystem"/>'s drop-table proposals, since no EF model ever declares it.</summary>
+    public const string SeedHistoryTableName = "_wms_seed_history";
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 
@@ -121,14 +128,65 @@ public abstract class Storage : ISubsystem
     public Task<Schema> ReadLiveSchemaAsync() =>
         LiveSchema.ReadAsync(Connection.BuildConnectionString(), Connection.Database);
 
-    /// <summary>Runs the given migration SQL (statements split on ';') under the write lock.</summary>
+    /// <summary>Runs the given migration SQL (see <see cref="SqlScript.SplitStatements"/>) under the write lock.</summary>
     public async Task ApplySqlAsync(string sql)
     {
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using var connection = new MySqlConnection(Connection.BuildConnectionString());
         await connection.OpenAsync().ConfigureAwait(false);
+        await RunStatementsAsync(connection, sql).ConfigureAwait(false);
+    }
 
-        foreach (string statement in sql.Split(';').Select(s => s.Trim()).Where(s => s.Length > 0))
+    /// <summary>
+    /// Runs every registered <see cref="ISeedSql"/> not already recorded in this storage database's
+    /// seed-history table, under the write lock — each seed's statements, then a row recording it
+    /// done, so a seed that fails partway through is retried whole next startup rather than left
+    /// half-applied and marked complete.
+    /// </summary>
+    public async Task ApplySeedsAsync()
+    {
+        List<ISeedSql> seeds = Seeds.ToList();
+        if (seeds.Count == 0)
+        {
+            return;
+        }
+
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using var connection = new MySqlConnection(Connection.BuildConnectionString());
+        await connection.OpenAsync().ConfigureAwait(false);
+
+        await using (MySqlCommand create = connection.CreateCommand())
+        {
+            create.CommandText =
+                $"CREATE TABLE IF NOT EXISTS `{SeedHistoryTableName}` (`name` VARCHAR(255) NOT NULL PRIMARY KEY, `applied_at` DATETIME NOT NULL);";
+            await create.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        var applied = new HashSet<string>(StringComparer.Ordinal);
+        await using (MySqlCommand select = connection.CreateCommand())
+        {
+            select.CommandText = $"SELECT `name` FROM `{SeedHistoryTableName}`;";
+            await using MySqlDataReader reader = await select.ExecuteReaderAsync().ConfigureAwait(false);
+            while (await reader.ReadAsync().ConfigureAwait(false))
+            {
+                applied.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (ISeedSql seed in seeds.Where(seed => !applied.Contains(seed.Name)))
+        {
+            await RunStatementsAsync(connection, seed.Sql).ConfigureAwait(false);
+
+            await using MySqlCommand record = connection.CreateCommand();
+            record.CommandText = $"INSERT INTO `{SeedHistoryTableName}` (`name`, `applied_at`) VALUES (@name, UTC_TIMESTAMP());";
+            record.Parameters.AddWithValue("@name", seed.Name);
+            await record.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task RunStatementsAsync(MySqlConnection connection, string sql)
+    {
+        foreach (string statement in SqlScript.SplitStatements(sql))
         {
             await using MySqlCommand command = connection.CreateCommand();
             command.CommandText = statement;
