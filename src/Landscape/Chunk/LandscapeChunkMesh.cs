@@ -145,7 +145,7 @@ public static class LandscapeChunkMesh
     public static bool ShowChunkEdges { get; set; } = true;
 
     /// <summary>Builds the splatting material for a chunk's slots.</summary>
-    public static ShaderMaterial BuildMaterial(LandscapeChunkOutput output, AssetSystem assets)
+    public static ShaderMaterial BuildMaterial(LandscapeChunkOutput output, AssetSystem assets, LandscapeSettings settings)
     {
         var material = new ShaderMaterial { Shader = SplatShader() };
 
@@ -175,6 +175,16 @@ public static class LandscapeChunkMesh
         material.SetShaderParameter("slot_count", Mathf.Max(1, output.Layers.Count));
         material.SetShaderParameter("tiling", TextureTiling);
         material.SetShaderParameter("show_chunk_edges", ShowChunkEdges);
+        material.SetShaderParameter("blend_mode", (int)settings.TextureBlendMode);
+
+        // Only built for HeightBased mode: every other mode ignores slot_height entirely, so there is
+        // no reason to decode+upload a texture array nothing will sample.
+        if (settings.TextureBlendMode == LandscapeTextureBlendMode.HeightBased)
+        {
+            Texture2DArray heightArray = HeightArrayCache.GetOrAdd(HeightArrayKey(output.Layers), _ => BuildHeightArray(output, assets));
+            material.SetShaderParameter("slot_height", heightArray);
+        }
+
         return material;
     }
 
@@ -219,6 +229,78 @@ public static class LandscapeChunkMesh
         var array = new Texture2DArray();
         array.CreateFromImages(albedos);
         return array;
+    }
+
+    // Cache/key follow AlbedoArrayCache/AlbedoArrayKey's own reasoning exactly, just over
+    // BlendHeightTexturePath instead of TexturePath — kept as a separate cache (rather than reusing the
+    // albedo one) since two materials can share a texture but differ in height, or vice versa.
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Texture2DArray> HeightArrayCache = new();
+
+    private static string HeightArrayKey(IReadOnlyList<LandscapeChunkLayer> layers)
+    {
+        var key = new System.Text.StringBuilder();
+        foreach (LandscapeChunkLayer layer in layers)
+        {
+            key.Append(layer.Material?.BlendHeightTexturePath ?? "").Append('|');
+        }
+
+        return key.ToString();
+    }
+
+    private static Texture2DArray BuildHeightArray(LandscapeChunkOutput output, AssetSystem assets)
+    {
+        var heights = new Godot.Collections.Array<Image>();
+        for (int i = 0; i < output.Layers.Count; i++)
+        {
+            heights.Add(LoadHeight(output.Layers[i].Material, assets));
+        }
+
+        if (heights.Count == 0)
+        {
+            heights.Add(NeutralHeight());
+        }
+
+        var array = new Texture2DArray();
+        array.CreateFromImages(heights);
+        return array;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Image> HeightCache = new();
+
+    // A slot with no height texture reads as a flat mid-value (0.5) rather than 0, so it neither always
+    // wins nor always loses a soft-max comparison against a slot that does define one.
+    private static Image LoadHeight(LandscapeMaterial? material, AssetSystem assets)
+    {
+        if (material is not { BlendHeightTexturePath.Length: > 0 } materialWithHeight)
+        {
+            return NeutralHeight();
+        }
+
+        if (HeightCache.TryGetValue(materialWithHeight.BlendHeightTexturePath, out Image? cached))
+        {
+            return cached;
+        }
+
+        if (assets.LoadTextureAsset(materialWithHeight.BlendHeightTexturePath) is not { } texture)
+        {
+            return NeutralHeight();
+        }
+
+        Image image = texture.GetImage();
+        image.Resize(PlaceholderSize, PlaceholderSize);
+        image.Convert(Image.Format.R8);
+        return HeightCache.GetOrAdd(materialWithHeight.BlendHeightTexturePath, image);
+    }
+
+    // Sized to match LoadHeight's real-texture output (PlaceholderSize square, like the albedo
+    // Placeholder()) rather than a 1x1 image: Texture2DArray.CreateFromImages requires every layer to
+    // share one size, and a bare 1x1 image would fail to build the array the moment any slot in the
+    // same chunk does define a real height texture.
+    private static Image NeutralHeight()
+    {
+        var pixels = new byte[PlaceholderSize * PlaceholderSize];
+        System.Array.Fill<byte>(pixels, 128);
+        return Image.CreateFromData(PlaceholderSize, PlaceholderSize, false, Image.Format.R8, pixels);
     }
 
     // Central difference over the heightmap, clamped at the edges. Edge normals will disagree with
@@ -308,35 +390,101 @@ public static class LandscapeChunkMesh
 
     private static Shader SplatShader() => _shader ??= new Shader { Code = SplatShaderCode };
 
-    // Kept in source rather than a .gdshader resource so it needs no Godot import step. Slots
-    // composite back to front, each alpha slot over everything below it — the "over" rule the
-    // resolver's merge maths assumes.
+    // Kept in source rather than a .gdshader resource so it needs no Godot import step. blend_mode
+    // selects how slots composite (see LandscapeTextureBlendMode): SequentialOver is the editor's
+    // original "over" rule the resolver's merge maths assumes; WeightedSum and HeightBased are
+    // additional, purely visual alternatives that don't change what the resolver produced.
     private const string SplatShaderCode = """
 shader_type spatial;
 render_mode cull_back, diffuse_burley;
 
 uniform sampler2DArray slot_albedo : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2DArray slot_alpha : filter_linear, repeat_disable;
+uniform sampler2DArray slot_height : filter_linear, repeat_enable;
 uniform int slot_count = 1;
+uniform int blend_mode = 0; // LandscapeTextureBlendMode: 0 SequentialOver, 1 WeightedSum, 2 HeightBased
 uniform float tiling = 8.0;
 uniform bool show_chunk_edges = false;
 uniform vec3 chunk_edge_color : source_color = vec3(0.95, 0.75, 0.35);
 
+// Soft-max sharpness for HeightBased mode: how decisively the highest layer wins over close
+// runners-up. Not yet exposed as a setting — a fixed constant is a reasonable starting point since
+// this mode is purely a rendering preference, not resolved chunk data.
+const float height_blend_sharpness = 8.0;
+
+// Pushed once per frame by EnvironmentRenderer.ApplyEnvironmentGlobals alongside the fog/sun-glow
+// globals FogFunctionCode below declares — kept as its own declaration here since it's read only by
+// this shader's specular term, not by the shared fog function itself.
+global uniform float wms_terrain_specular_intensity = 1.0;
+
+""" + EnvironmentShaderLibrary.FogFunctionCode + """
+
 // CUSTOM0 (vertex light) is a vertex-stage built-in only, so it needs a varying to reach fragment();
-// COLOR (vertex color) is exposed in both stages and needs none.
+// COLOR (vertex color) is exposed in both stages and needs none. world_pos likewise needs computing
+// in vertex() while VERTEX is still object-space, before Godot transforms it to view space.
 varying vec3 vertex_light;
+varying vec3 world_pos;
 
 void vertex() {
     vertex_light = CUSTOM0.rgb;
+    world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+// uv is passed explicitly rather than read as the UV built-in directly: Godot's shader stage built-ins
+// (UV, VERTEX, COLOR, TIME, ...) are only valid inside vertex()/fragment() themselves, not in a
+// separately declared function alongside them — the same constraint WowLiquidMaterialType's own
+// fragment() comment already notes for SCREEN_UV/VERTEX, just needing to hold for every helper here too.
+float slot_coverage(int i, vec2 uv) {
+    return i == 0 ? 1.0 : texture(slot_alpha, vec3(uv, float(i - 1))).r;
+}
+
+vec3 composite_sequential_over(vec2 tiled, vec2 uv) {
+    vec3 color = texture(slot_albedo, vec3(tiled, 0.0)).rgb;
+    for (int i = 1; i < slot_count; i++) {
+        color = mix(color, texture(slot_albedo, vec3(tiled, float(i))).rgb, slot_coverage(i, uv));
+    }
+    return color;
+}
+
+vec3 composite_weighted_sum(vec2 tiled, vec2 uv) {
+    float alpha_sum = 0.0;
+    for (int i = 1; i < slot_count; i++) {
+        alpha_sum += slot_coverage(i, uv);
+    }
+
+    vec3 color = texture(slot_albedo, vec3(tiled, 0.0)).rgb * clamp(1.0 - alpha_sum, 0.0, 1.0);
+    for (int i = 1; i < slot_count; i++) {
+        color += texture(slot_albedo, vec3(tiled, float(i))).rgb * slot_coverage(i, uv);
+    }
+    return color;
+}
+
+vec3 composite_height_based(vec2 tiled, vec2 uv) {
+    float weight_sum = 0.0;
+    for (int i = 0; i < slot_count; i++) {
+        float h = texture(slot_height, vec3(tiled, float(i))).r;
+        weight_sum += slot_coverage(i, uv) * exp(h * height_blend_sharpness);
+    }
+    weight_sum = max(weight_sum, 0.0001);
+
+    vec3 color = vec3(0.0);
+    for (int i = 0; i < slot_count; i++) {
+        float h = texture(slot_height, vec3(tiled, float(i))).r;
+        float w = (slot_coverage(i, uv) * exp(h * height_blend_sharpness)) / weight_sum;
+        color += texture(slot_albedo, vec3(tiled, float(i))).rgb * w;
+    }
+    return color;
 }
 
 void fragment() {
     vec2 tiled = UV * tiling;
-    vec3 color = texture(slot_albedo, vec3(tiled, 0.0)).rgb;
-
-    for (int i = 1; i < slot_count; i++) {
-        float coverage = texture(slot_alpha, vec3(UV, float(i - 1))).r;
-        color = mix(color, texture(slot_albedo, vec3(tiled, float(i))).rgb, coverage);
+    vec3 color;
+    if (blend_mode == 2) {
+        color = composite_height_based(tiled, UV);
+    } else if (blend_mode == 1) {
+        color = composite_weighted_sum(tiled, UV);
+    } else {
+        color = composite_sequential_over(tiled, UV);
     }
 
     // Traditional vertex color shades the splatted albedo multiplicatively; vertex light is a
@@ -357,7 +505,18 @@ void fragment() {
 
     ALBEDO = color;
     ROUGHNESS = 0.9;
-    SPECULAR = 0.1;
+
+    // Specular strength from the base layer's albedo alpha channel (a texture with no meaningful alpha
+    // reads as fully opaque, i.e. full strength — a neutral default until real specular-encoded
+    // textures exist), globally scaled by wms_terrain_specular_intensity so a source can dampen/boost
+    // terrain shininess per-zone without touching individual materials.
+    float spec_alpha = texture(slot_albedo, vec3(tiled, 0.0)).a;
+    SPECULAR = clamp(spec_alpha * wms_terrain_specular_intensity * 0.5, 0.0, 1.0);
+
+    vec3 view_vec = world_pos - CAMERA_POSITION_WORLD;
+    vec3 fog_color;
+    float fog_visibility = wms_evaluate_fog(view_vec, world_pos.y, normalize(view_vec), 0, fog_color);
+    FOG = vec4(fog_color, 1.0 - fog_visibility);
 }
 """;
 }

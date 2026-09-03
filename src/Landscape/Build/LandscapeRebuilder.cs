@@ -191,7 +191,7 @@ public sealed class LandscapeRebuilder
             {
                 visuals[built.Key] = (
                     LandscapeChunkMesh.BuildMesh(built.Value, grid.ChunkSize),
-                    LandscapeChunkMesh.BuildMaterial(built.Value, _context.Assets));
+                    LandscapeChunkMesh.BuildMaterial(built.Value, _context.Assets, snapshot.Settings));
             }
 
             await ctx.SwitchToMain();
