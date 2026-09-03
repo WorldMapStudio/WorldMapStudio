@@ -99,13 +99,15 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
 
     /// <summary>
     /// Loads a catalog whole into <see cref="EditorContext.Catalog"/>, replacing anything of that type
-    /// already loaded, and returns it. Catalog lifetime belongs to whichever system owns the catalog —
+    /// already loaded — except an entity the active edit session still has pinned, which survives
+    /// untouched (see <see cref="IsPinned"/>), so a type-scoped reload can never silently discard an
+    /// uncommitted create or edit. Catalog lifetime belongs to whichever system owns the catalog —
     /// nothing streams these — so it calls this when it needs the set and
     /// <see cref="UnloadCatalog{TEntity}"/> when it is done.
     /// </summary>
     public IReadOnlyList<TEntity> LoadCatalog<TEntity>() where TEntity : CatalogEntity
     {
-        _context.Catalog.RemoveAll<TEntity>();
+        _context.Catalog.RemoveAll<TEntity>(IsPinned);
 
         var loaded = new List<TEntity>();
         foreach (Storage storage in Storages)
@@ -139,7 +141,24 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore
     }
 
     /// <summary>Drops a loaded catalog. Entities the edit session pinned stay alive until it ends.</summary>
-    public void UnloadCatalog<TEntity>() where TEntity : CatalogEntity => _context.Catalog.RemoveAll<TEntity>();
+    public void UnloadCatalog<TEntity>() where TEntity : CatalogEntity => _context.Catalog.RemoveAll<TEntity>(IsPinned);
+
+    // Mirrors StreamingSystem.IsPinned — the same "is the active session still holding this for an
+    // uncommitted edit" check, applied to a catalog entity instead of a scene one. Untyped (rather than
+    // generic over TEntity) on purpose: Func<in T> is contravariant, so this satisfies
+    // RemoveAll<TEntity>'s Func<TEntity, bool> for whatever TEntity the caller asks for.
+    private bool IsPinned(CatalogEntity entity)
+    {
+        foreach (IEntity pinned in _context.EditSessions.Active.Pinned)
+        {
+            if (ReferenceEquals(pinned, entity))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Persists everything the session touched, grouped per storage into one transaction each — scene
