@@ -43,7 +43,7 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
 /// changes and renames are intentionally ignored.</summary>
 public static class SchemaDiff
 {
-    public static List<SchemaChange> Compute(Schema expected, Schema live)
+    public static List<SchemaChange> Compute(Schema expected, Schema live, IReadOnlySet<string>? ignoreExtraTables = null)
     {
         var changes = new List<SchemaChange>();
 
@@ -88,7 +88,10 @@ public static class SchemaDiff
             }
         }
 
-        foreach (SchemaTable table in live.Tables.Values.Where(t => !expected.Tables.ContainsKey(t.Name)))
+        // A table another storage sharing this database owns (see Storage.OwnsConnection) is not this
+        // storage's "extra" table to propose dropping.
+        foreach (SchemaTable table in live.Tables.Values
+                     .Where(t => !expected.Tables.ContainsKey(t.Name) && !(ignoreExtraTables?.Contains(t.Name) ?? false)))
         {
             changes.Add(new SchemaChange(SchemaChangeKind.DropTable, table.Name));
         }

@@ -55,7 +55,9 @@ public sealed class MigrationSystem
     public void Check()
     {
         Migrations.Clear();
-        foreach (Storage storage in _context.Database.Storages)
+        List<Storage> storages = _context.Database.Storages.ToList();
+
+        foreach (Storage storage in storages)
         {
             if (storage.ExpectedSchema() is not { } expected)
             {
@@ -66,7 +68,7 @@ public sealed class MigrationSystem
             try
             {
                 Schema live = BlockingWork.Run(storage.ReadLiveSchemaAsync);
-                migration.Set(SchemaDiff.Compute(expected, live));
+                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(storage, storages)));
             }
             catch (Exception e)
             {
@@ -96,8 +98,9 @@ public sealed class MigrationSystem
         {
             if (migration.Storage.ExpectedSchema() is { } expected)
             {
+                List<Storage> storages = _context.Database.Storages.ToList();
                 Schema live = BlockingWork.Run(migration.Storage.ReadLiveSchemaAsync);
-                migration.Set(SchemaDiff.Compute(expected, live));
+                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(migration.Storage, storages)));
             }
         }
         catch (Exception e)
@@ -105,4 +108,13 @@ public sealed class MigrationSystem
             migration.Error = e.Message;
         }
     }
+
+    // Tables owned by another storage that shares this one's connection (see Storage.OwnsConnection) —
+    // e.g. CataStorage sharing EditorStorage's database — aren't this storage's tables to propose
+    // dropping just because its own EF model doesn't declare them.
+    private static IReadOnlySet<string> SiblingTables(Storage storage, IReadOnlyList<Storage> storages) =>
+        storages
+            .Where(other => other != storage && ReferenceEquals(other.Connection, storage.Connection))
+            .SelectMany(other => other.ExpectedSchema()?.Tables.Keys ?? Enumerable.Empty<string>())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 }

@@ -20,7 +20,17 @@ public abstract class Storage : ISubsystem
     public virtual float Priority => 0f;
 
     /// <summary>How this storage reaches its database. Bound from project settings at startup.</summary>
-    public StorageConnection Connection { get; private set; } = new();
+    public virtual StorageConnection Connection { get; private set; } = new();
+
+    /// <summary>
+    /// Whether this storage's <see cref="Connection"/> is its own, persisted per-project setting.
+    /// A storage that shares another's connection instead (overriding <see cref="Connection"/> to
+    /// proxy it, so both point at one physical database) returns false, so
+    /// <see cref="DatabaseSystem.BindConnections"/> does not seed a redundant, unused project entry
+    /// for it and <see cref="DatabaseSystem.Startup"/> does not try to launch a second server for the
+    /// same repository.
+    /// </summary>
+    public virtual bool OwnsConnection => true;
 
     /// <summary>Guards this storage's database: concurrent scans (readers), exclusive commit (writer).</summary>
     public AsyncReaderWriterLock Lock { get; } = new();
