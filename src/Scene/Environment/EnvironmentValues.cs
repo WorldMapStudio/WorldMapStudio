@@ -60,6 +60,65 @@ public sealed record EnvironmentValues
 
     public float FogCurve { get; init; } = 1.0f;
 
+    /// <summary>
+    /// Cubic-curve fog coefficients (in <c>ax³+bx²+cx+d</c> order), evaluated over distance normalized
+    /// by <see cref="FogCurveStart"/>/<see cref="FogCurveEnd"/>, as an alternative to the simple
+    /// <see cref="FogStart"/>/<see cref="FogEnd"/>/<see cref="FogCurve"/> falloff above — not a
+    /// replacement for it. Empty means "no curve data, use the simple falloff", exactly like
+    /// <see cref="SkyGradient"/>'s "empty means leave alone" convention, so a source that only ever
+    /// knows the simple model (or one built before curve data existed) still renders correctly.
+    /// </summary>
+    public IReadOnlyList<float> FogCurveCoefficients { get; init; } = [];
+
+    public float FogCurveStart { get; init; }
+
+    public float FogCurveEnd { get; init; } = 1000.0f;
+
+    /// <summary>
+    /// A second, independent fog blended in near the ground: <see cref="HeightFogCoefficients"/>
+    /// evaluated over a fragment's height relative to <see cref="HeightFogReferenceZ"/> (scaled by
+    /// <see cref="HeightFogScale"/>) produces a 0..1 weight that mixes <see cref="HeightFogColor"/> into
+    /// the base fog color — not a separate fog pass. Empty coefficients mean "no height fog".
+    /// </summary>
+    public Color HeightFogColor { get; init; } = Godot.Colors.Gray;
+
+    public IReadOnlyList<float> HeightFogCoefficients { get; init; } = [];
+
+    public float HeightFogReferenceZ { get; init; }
+
+    public float HeightFogScale { get; init; } = 1.0f;
+
+    /// <summary>
+    /// The color fog blends toward when a fragment's view direction is near <see cref="SunDirection"/>
+    /// (within <see cref="SunGlowCosAngle"/>, falling off by <see cref="SunGlowExponent"/>) — the halo
+    /// around the sun a fogged horizon shows in real skies. Defaults to a no-op glow: a cos-angle of 1
+    /// (a single, unreachable direction) means nothing actually glows until a source sets it deliberately.
+    /// </summary>
+    public Color SunGlowColor { get; init; } = Godot.Colors.White;
+
+    public float SunGlowCosAngle { get; init; } = 1.0f;
+
+    public float SunGlowExponent { get; init; } = 3.0f;
+
+    /// <summary>
+    /// A separate ambient/direct set for indoor surfaces (a building's interior shouldn't simply
+    /// inherit outdoor sky ambient). Consuming materials blend between this and the normal exterior
+    /// ambient by their own per-vertex/per-surface factor — <see cref="EnvironmentValues"/> itself just
+    /// carries the two endpoints. Defaults equal to a plausible dim interior rather than black, so a
+    /// surface that blends toward "interior" before any source configures this still reads as lit.
+    /// </summary>
+    public Color InteriorAmbientColor { get; init; } = new(0.25f, 0.24f, 0.26f);
+
+    public Color InteriorHorizonColor { get; init; } = new(0.3f, 0.29f, 0.31f);
+
+    public Color InteriorGroundColor { get; init; } = new(0.18f, 0.17f, 0.19f);
+
+    public Color InteriorDirectColor { get; init; } = new(0.35f, 0.33f, 0.3f);
+
+    /// <summary>Global multiplier on terrain specular highlight strength, the generic analogue of a
+    /// per-zone specular intensity a source may want to tune (e.g. a stormy zone dampening it).</summary>
+    public float TerrainSpecularIntensity { get; init; } = 1.0f;
+
     /// <summary>Camera far plane a source would like, or 0 to leave it alone.</summary>
     public float ViewDistance { get; init; }
 
@@ -103,6 +162,21 @@ public sealed record EnvironmentValues
             FogStart = Mathf.Lerp(under.FogStart, over.FogStart, weight),
             FogEnd = Mathf.Lerp(under.FogEnd, over.FogEnd, weight),
             FogCurve = Mathf.Lerp(under.FogCurve, over.FogCurve, weight),
+            FogCurveCoefficients = BlendFloatArray(under.FogCurveCoefficients, over.FogCurveCoefficients, weight),
+            FogCurveStart = Mathf.Lerp(under.FogCurveStart, over.FogCurveStart, weight),
+            FogCurveEnd = Mathf.Lerp(under.FogCurveEnd, over.FogCurveEnd, weight),
+            HeightFogColor = under.HeightFogColor.Lerp(over.HeightFogColor, weight),
+            HeightFogCoefficients = BlendFloatArray(under.HeightFogCoefficients, over.HeightFogCoefficients, weight),
+            HeightFogReferenceZ = Mathf.Lerp(under.HeightFogReferenceZ, over.HeightFogReferenceZ, weight),
+            HeightFogScale = Mathf.Lerp(under.HeightFogScale, over.HeightFogScale, weight),
+            SunGlowColor = under.SunGlowColor.Lerp(over.SunGlowColor, weight),
+            SunGlowCosAngle = Mathf.Lerp(under.SunGlowCosAngle, over.SunGlowCosAngle, weight),
+            SunGlowExponent = Mathf.Lerp(under.SunGlowExponent, over.SunGlowExponent, weight),
+            InteriorAmbientColor = under.InteriorAmbientColor.Lerp(over.InteriorAmbientColor, weight),
+            InteriorHorizonColor = under.InteriorHorizonColor.Lerp(over.InteriorHorizonColor, weight),
+            InteriorGroundColor = under.InteriorGroundColor.Lerp(over.InteriorGroundColor, weight),
+            InteriorDirectColor = under.InteriorDirectColor.Lerp(over.InteriorDirectColor, weight),
+            TerrainSpecularIntensity = Mathf.Lerp(under.TerrainSpecularIntensity, over.TerrainSpecularIntensity, weight),
             ViewDistance = Mathf.Lerp(under.ViewDistance, over.ViewDistance, weight),
             SkyLayers = BlendLayers(under.SkyLayers, over.SkyLayers, weight),
             Floats = BlendDict(under.Floats, over.Floats, weight, Mathf.Lerp),
@@ -136,6 +210,37 @@ public sealed record EnvironmentValues
             blended[i] = new SkyGradientStop(
                 Mathf.Lerp(a.ElevationDegrees, b.ElevationDegrees, weight),
                 a.Color.Lerp(b.Color, weight));
+        }
+
+        return blended;
+    }
+
+    /// <summary>Same "empty means leave alone" convention as <see cref="BlendGradient"/>: a source with
+    /// no curve data (e.g. one built before <see cref="FogCurveCoefficients"/>/
+    /// <see cref="HeightFogCoefficients"/> existed) passes the other side through untouched rather than
+    /// lerping toward zero coefficients, which would silently fade the curve out.</summary>
+    private static IReadOnlyList<float> BlendFloatArray(
+        IReadOnlyList<float> under, IReadOnlyList<float> over, float weight)
+    {
+        if (under.Count == 0)
+        {
+            return over;
+        }
+
+        if (over.Count == 0)
+        {
+            return under;
+        }
+
+        if (under.Count != over.Count)
+        {
+            return weight >= 0.5f ? over : under;
+        }
+
+        var blended = new float[under.Count];
+        for (int i = 0; i < under.Count; i++)
+        {
+            blended[i] = Mathf.Lerp(under[i], over[i], weight);
         }
 
         return blended;

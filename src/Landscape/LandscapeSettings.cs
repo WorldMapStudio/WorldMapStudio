@@ -2,6 +2,31 @@ using System.Collections.Generic;
 
 namespace WorldMapStudio;
 
+/// <summary>
+/// How a chunk's texture slots composite together in the renderer. A rendering-only choice — it
+/// changes no resolved chunk data, so switching modes needs no rebuild or re-resolve (see
+/// <see cref="LandscapeSettings.ChangeCost"/>, which deliberately doesn't look at this).
+/// </summary>
+public enum LandscapeTextureBlendMode
+{
+    /// <summary>Each slot composites over everything below it by its own coverage alpha — simple, and
+    /// the editor's original behavior, but layers can "overdraw" each other rather than conserving
+    /// energy when several overlap at partial coverage.</summary>
+    SequentialOver,
+
+    /// <summary>Every slot's coverage is treated as a weight in one normalized sum instead of a
+    /// sequential over — energy-conserving, so overlapping partial-coverage layers blend rather than
+    /// one simply painting over the last.</summary>
+    WeightedSum,
+
+    /// <summary>Coverage-weighted soft-max over each slot's height texture (a slot with no height
+    /// texture reads as neutral mid-height): the highest-value layer per pixel dominates, the
+    /// Legion-era "height blend" look. Needs a <see cref="LandscapeMaterial.BlendHeightTexturePath"/> on
+    /// slots that want to participate; slots without one still blend, just without height preference.
+    /// </summary>
+    HeightBased,
+}
+
 /// <summary>How a chunk's heightmap is stored, chosen to match the export target.</summary>
 public enum HeightEncoding
 {
@@ -63,6 +88,9 @@ public sealed class LandscapeSettings
 
     /// <summary>Textures one chunk may reference, <em>including</em> the base layer.</summary>
     public int TextureLimit { get; set; } = 4;
+
+    /// <summary>How the renderer composites a chunk's texture slots. Purely a rendering choice.</summary>
+    public LandscapeTextureBlendMode TextureBlendMode { get; set; } = LandscapeTextureBlendMode.SequentialOver;
 
     /// <summary>
     /// Material for the base slot when no layer claims one, so a chunk whose claims were all dropped

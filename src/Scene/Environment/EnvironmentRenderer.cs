@@ -75,6 +75,74 @@ public sealed class EnvironmentRenderer
 
         _skyLayerRoot = new Node3D { Name = "EnvironmentSkyLayers" };
         viewport.AddChild(_skyLayerRoot);
+
+        RegisterGlobalShaderParameters();
+    }
+
+    // Global shader parameters are process-wide RenderingServer state, not tied to this instance's
+    // lifetime — GlobalShaderParameterAdd asserts (ERR_FAIL_COND) if a name is already registered, which
+    // a second EnvironmentRenderer construction within the same running process (e.g. closing and
+    // reopening a project without restarting the app) would trigger. Guarded by a static bool, same as
+    // WowLiquidMaterialType.EnsureTintUpdater()'s own once-per-process registration.
+    //
+    // GlobalShaderParameterGet — which would make this check against the engine's actual state instead
+    // of a C# assumption — looks like the more robust option, but it's explicitly restricted to the
+    // editor ("This function should never be used outside the editor, it can severely damage
+    // performance", confirmed by hitting exactly that error here) and WorldMapStudio runs as a plain
+    // Godot application, not inside the editor — so it isn't actually usable for this check. A static
+    // bool is what's available; this app has no in-process C# hot-reload path that would reset it out
+    // from under already-registered native state (unlike an editor plugin), so it's sufficient here.
+    //
+    // Every consuming shader (terrain splat, sky, liquid, model materials) declares a matching
+    // `global uniform` for the ones it needs — see EnvironmentShaderLibrary — and reads a value pushed
+    // here every frame by ApplyEnvironmentGlobals, the same mechanism WowLiquidTintUpdater already uses
+    // for ocean/river tint.
+    private static bool _globalsRegistered;
+
+    private static void RegisterGlobalShaderParameters()
+    {
+        if (_globalsRegistered)
+        {
+            return;
+        }
+
+        _globalsRegistered = true;
+
+        Add("wms_fog_enabled", RenderingServer.GlobalShaderParameterType.Bool, false);
+        Add("wms_fog_color", RenderingServer.GlobalShaderParameterType.Vec3, Vector3.One * 0.5f);
+        Add("wms_fog_start", RenderingServer.GlobalShaderParameterType.Float, 0.0f);
+        Add("wms_fog_end", RenderingServer.GlobalShaderParameterType.Float, 1000.0f);
+        Add("wms_fog_curve", RenderingServer.GlobalShaderParameterType.Float, 1.0f);
+
+        Add("wms_fog_curve_enabled", RenderingServer.GlobalShaderParameterType.Bool, false);
+        Add("wms_fog_curve_coeffs", RenderingServer.GlobalShaderParameterType.Vec4, Vector4.Zero);
+        Add("wms_fog_curve_start", RenderingServer.GlobalShaderParameterType.Float, 0.0f);
+        Add("wms_fog_curve_end", RenderingServer.GlobalShaderParameterType.Float, 1000.0f);
+
+        Add("wms_height_fog_enabled", RenderingServer.GlobalShaderParameterType.Bool, false);
+        Add("wms_height_fog_color", RenderingServer.GlobalShaderParameterType.Vec3, Vector3.One * 0.5f);
+        Add("wms_height_fog_coeffs", RenderingServer.GlobalShaderParameterType.Vec4, Vector4.Zero);
+        Add("wms_height_fog_reference_z", RenderingServer.GlobalShaderParameterType.Float, 0.0f);
+        Add("wms_height_fog_scale", RenderingServer.GlobalShaderParameterType.Float, 1.0f);
+
+        Add("wms_sun_glow_color", RenderingServer.GlobalShaderParameterType.Vec3, Vector3.One);
+        Add("wms_sun_glow_cos_angle", RenderingServer.GlobalShaderParameterType.Float, 1.0f);
+        Add("wms_sun_glow_exponent", RenderingServer.GlobalShaderParameterType.Float, 3.0f);
+        Add("wms_sun_direction", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.35f, -0.85f, 0.4f));
+
+        Add("wms_exterior_ambient_color", RenderingServer.GlobalShaderParameterType.Vec3, Vector3.One * 0.28f);
+        Add("wms_exterior_ambient_energy", RenderingServer.GlobalShaderParameterType.Float, 1.0f);
+        Add("wms_interior_ambient_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.25f, 0.24f, 0.26f));
+        Add("wms_interior_horizon_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.3f, 0.29f, 0.31f));
+        Add("wms_interior_ground_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.18f, 0.17f, 0.19f));
+        Add("wms_interior_direct_color", RenderingServer.GlobalShaderParameterType.Vec3, new Vector3(0.35f, 0.33f, 0.3f));
+
+        Add("wms_terrain_specular_intensity", RenderingServer.GlobalShaderParameterType.Float, 1.0f);
+
+        return;
+
+        static void Add(string name, RenderingServer.GlobalShaderParameterType type, Variant defaultValue) =>
+            RenderingServer.GlobalShaderParameterAdd(name, type, defaultValue);
     }
 
     /// <summary>
@@ -110,6 +178,7 @@ public sealed class EnvironmentRenderer
         ApplyAmbient(values);
         ApplySun(values);
         ApplyFog(values);
+        ApplyEnvironmentGlobals(values);
         ApplyViewDistance(values);
         ApplySkyLayers(values);
     }
@@ -123,6 +192,16 @@ public sealed class EnvironmentRenderer
         Environment.AmbientLightEnergy = 1.0f;
         Environment.FogEnabled = false;
         _sun.Visible = false;
+
+        RenderingServer.GlobalShaderParameterSet("wms_fog_enabled", false);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve_enabled", false);
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_enabled", false);
+        RenderingServer.GlobalShaderParameterSet("wms_exterior_ambient_color", ToVec3(FlatAmbient));
+        RenderingServer.GlobalShaderParameterSet("wms_exterior_ambient_energy", 1.0f);
+        RenderingServer.GlobalShaderParameterSet("wms_interior_ambient_color", ToVec3(FlatAmbient));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_horizon_color", ToVec3(FlatAmbient));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_ground_color", ToVec3(FlatAmbient));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_direct_color", Vector3.Zero);
 
         foreach (SkyLayerSlot slot in _skyLayerSlots.Values)
         {
@@ -198,20 +277,62 @@ public sealed class EnvironmentRenderer
         _sun.LightEnergy = values.SunEnergy;
     }
 
+    // Godot's own environment fog is never used (Environment.FogEnabled always stays false, set once in
+    // the constructor and in ApplyFlatDefault): fog is instead computed per-fragment by every consuming
+    // shader itself via EnvironmentShaderLibrary.FogFunctionCode, driven by the global shader parameters
+    // ApplyEnvironmentGlobals pushes below. That's what lets a single fog model support the curve, height,
+    // and sun-glow terms Godot's built-in depth fog has no equivalent for, and lets model materials skip
+    // fog per-material (see Phase 3's "unfogged" bypass) the way the built-in fog never could.
     private void ApplyFog(EnvironmentValues values)
     {
-        Environment.FogEnabled = values.FogEnabled;
-        if (!values.FogEnabled)
-        {
-            return;
-        }
+        RenderingServer.GlobalShaderParameterSet("wms_fog_enabled", values.FogEnabled);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_color", ToVec3(values.FogColor));
+        RenderingServer.GlobalShaderParameterSet("wms_fog_start", values.FogStart);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_end", Mathf.Max(values.FogStart + 0.1f, values.FogEnd));
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve", Mathf.Max(0.01f, values.FogCurve));
 
-        Environment.FogMode = Godot.Environment.FogModeEnum.Depth;
-        Environment.FogLightColor = values.FogColor;
-        Environment.FogDepthBegin = values.FogStart;
-        Environment.FogDepthEnd = Mathf.Max(values.FogStart + 0.1f, values.FogEnd);
-        Environment.FogDepthCurve = Mathf.Max(0.01f, values.FogCurve);
+        bool hasCurve = values.FogCurveCoefficients.Count == 4;
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve_enabled", hasCurve);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve_coeffs", hasCurve ? ToVec4(values.FogCurveCoefficients) : Vector4.Zero);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve_start", values.FogCurveStart);
+        RenderingServer.GlobalShaderParameterSet("wms_fog_curve_end", Mathf.Max(values.FogCurveStart + 0.1f, values.FogCurveEnd));
+
+        bool hasHeightFog = values.HeightFogCoefficients.Count == 4;
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_enabled", hasHeightFog);
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_color", ToVec3(values.HeightFogColor));
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_coeffs", hasHeightFog ? ToVec4(values.HeightFogCoefficients) : Vector4.Zero);
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_reference_z", values.HeightFogReferenceZ);
+        RenderingServer.GlobalShaderParameterSet("wms_height_fog_scale", values.HeightFogScale);
     }
+
+    private void ApplyEnvironmentGlobals(EnvironmentValues values)
+    {
+        RenderingServer.GlobalShaderParameterSet("wms_sun_glow_color", ToVec3(values.SunGlowColor));
+        RenderingServer.GlobalShaderParameterSet("wms_sun_glow_cos_angle", values.SunGlowCosAngle);
+        RenderingServer.GlobalShaderParameterSet("wms_sun_glow_exponent", values.SunGlowExponent);
+        RenderingServer.GlobalShaderParameterSet("wms_sun_direction", values.SunDirection);
+
+        RenderingServer.GlobalShaderParameterSet("wms_exterior_ambient_color", ToVec3(values.AmbientColor));
+        RenderingServer.GlobalShaderParameterSet("wms_exterior_ambient_energy", values.AmbientEnergy);
+        RenderingServer.GlobalShaderParameterSet("wms_interior_ambient_color", ToVec3(values.InteriorAmbientColor));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_horizon_color", ToVec3(values.InteriorHorizonColor));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_ground_color", ToVec3(values.InteriorGroundColor));
+        RenderingServer.GlobalShaderParameterSet("wms_interior_direct_color", ToVec3(values.InteriorDirectColor));
+
+        RenderingServer.GlobalShaderParameterSet("wms_terrain_specular_intensity", values.TerrainSpecularIntensity);
+    }
+
+    // sRGB -> linear, matching WowLiquidTintUpdater's convention for every colour pushed as a global
+    // shader parameter: ALBEDO and the values it's mixed with in-shader are linear, so an un-converted
+    // sRGB colour would read too bright/washed out once blended in.
+    private static Vector3 ToVec3(Color color)
+    {
+        Color linear = color.SrgbToLinear();
+        return new Vector3(linear.R, linear.G, linear.B);
+    }
+
+    private static Vector4 ToVec4(IReadOnlyList<float> values) =>
+        new(values[0], values[1], values[2], values[3]);
 
     private void ApplyViewDistance(EnvironmentValues values)
     {
@@ -389,6 +510,8 @@ uniform int stop_count = 0;
 uniform vec3 stop_colors[8] : source_color;
 uniform float stop_elevations[8];
 
+""" + EnvironmentShaderLibrary.FogFunctionCode + EnvironmentShaderLibrary.SunGlowFunctionCode + """
+
 void sky() {
     vec3 result = flat_color;
 
@@ -409,6 +532,11 @@ void sky() {
             }
         }
     }
+
+    // Sun-glow halo: a cubic-falloff blend toward wms_sun_glow_color around the sun direction, on top
+    // of the elevation gradient. wms_sun_glow_cos_angle defaults to 1.0 (unreachable) so this is a no-op
+    // until a source deliberately configures it.
+    result = wms_apply_sun_glow(result, EYEDIR);
 
     COLOR = result;
 }

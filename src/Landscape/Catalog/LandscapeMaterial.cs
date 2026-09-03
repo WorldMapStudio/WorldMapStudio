@@ -34,6 +34,16 @@ public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Resource path of the texture image this material paints. Empty for a height-only material.</summary>
     public string TexturePath { get; set; } = "";
 
+    /// <summary>
+    /// Resource path of a grayscale texture driving this material's weight under
+    /// <see cref="LandscapeTextureBlendMode.HeightBased"/> splatting — higher pixel values dominate over
+    /// competing slots at that point, independent of <see cref="AlphaFunction"/> coverage. Empty means
+    /// "no height preference" (a neutral mid-value), so a material authored before this existed still
+    /// blends reasonably under height-based mode. Unused by <see cref="LandscapeTextureBlendMode.SequentialOver"/>/
+    /// <see cref="LandscapeTextureBlendMode.WeightedSum"/>.
+    /// </summary>
+    public string BlendHeightTexturePath { get; set; } = "";
+
     /// <summary>Id of the alpha function deciding coverage. Required only on a texture layer.</summary>
     public string AlphaFunction { get; set; } = "";
 

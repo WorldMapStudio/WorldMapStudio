@@ -130,7 +130,7 @@ public sealed class LandscapeChunkLoader : ISceneEntityLoader
             {
                 LandscapeChunkOutput output = result.Chunks[coord];
                 ArrayMesh mesh = LandscapeChunkMesh.BuildMesh(output, builder.Grid.ChunkSize);
-                ShaderMaterial material = LandscapeChunkMesh.BuildMaterial(output, assets);
+                ShaderMaterial material = LandscapeChunkMesh.BuildMaterial(output, assets, snapshot.Settings);
                 return (SceneEntity)new LandscapeChunk(output, mesh, material, builder.Grid, map);
             })
             .ToList();
