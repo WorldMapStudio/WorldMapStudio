@@ -199,8 +199,15 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
         foreach (SceneComponent component in entity.Components.ToList())
         {
             ISceneComponentType? type = _editor.ComponentTypes.Find(component.TypeId);
-            string label = type?.DisplayName ?? component.DisplayName;
-            if (!ImGui.CollapsingHeader($"{label}##{component.TypeId}", ImGuiTreeNodeFlags.DefaultOpen))
+            if (type == null)
+            {
+                // No registered type to recreate it from, so a Remove here couldn't be redone
+                // consistently — e.g. PrefabRootComponent, which is deliberately not user-addable or
+                // -removable via the inspector.
+                continue;
+            }
+
+            if (!ImGui.CollapsingHeader($"{type.DisplayName}##{component.TypeId}", ImGuiTreeNodeFlags.DefaultOpen))
             {
                 continue;
             }
@@ -216,7 +223,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             }
 
             ImGui.Separator();
-            type?.DrawInspector(context, component);
+            type.DrawInspector(context, component);
             ImGui.PopID();
         }
     }
