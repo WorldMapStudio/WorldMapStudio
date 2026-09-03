@@ -47,7 +47,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     /// <summary>Registered scene-component persisters, so a plugin's component is stored the same way
     /// a built-in one is. See <see cref="ISceneComponentPersistence"/>.</summary>
-    public IEnumerable<ISceneComponentPersistence> ComponentPersistence => Subsystems.OfType<ISceneComponentPersistence>();
+    public IEnumerable<ISceneComponentPersistence> ComponentPersistence => Facet<ISceneComponentPersistence>();
 
     /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
     public EditorDbContext CreateContext() =>
