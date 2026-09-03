@@ -16,12 +16,17 @@ namespace WorldMapStudio;
 public sealed class CatalogEntityRegistry
 {
     private readonly List<CatalogEntity> _entities = [];
+    private readonly HashSet<CatalogEntity> _entitySet = [];
+    private readonly Dictionary<EntityId, CatalogEntity> _byId = [];
 
     public IReadOnlyList<CatalogEntity> Entities => _entities;
 
     public int Version { get; private set; }
 
-    public bool Contains(CatalogEntity entity) => _entities.Contains(entity);
+    public bool Contains(CatalogEntity entity) => _entitySet.Contains(entity);
+
+    /// <summary>Looks up a loaded entity by id in O(1), instead of scanning <see cref="Entities"/>.</summary>
+    public CatalogEntity? Find(EntityId id) => _byId.GetValueOrDefault(id);
 
     /// <summary>The loaded entities of one catalog type, in load order.</summary>
     public IEnumerable<TEntity> OfType<TEntity>() where TEntity : CatalogEntity =>
@@ -51,16 +56,20 @@ public sealed class CatalogEntityRegistry
     public void Add(CatalogEntity entity)
     {
         _entities.Add(entity);
+        _entitySet.Add(entity);
+        _byId[entity.Id] = entity;
         Version++;
     }
 
     public bool Remove(CatalogEntity entity)
     {
-        if (!_entities.Remove(entity))
+        if (!_entitySet.Remove(entity))
         {
             return false;
         }
 
+        _entities.Remove(entity);
+        _byId.Remove(entity.Id);
         Version++;
         return true;
     }
@@ -74,11 +83,7 @@ public sealed class CatalogEntityRegistry
     public void RemoveAll<TEntity>(Func<TEntity, bool>? keep = null) where TEntity : CatalogEntity
     {
         bool ShouldRemove(CatalogEntity entity) => entity is TEntity typed && keep?.Invoke(typed) != true;
-
-        if (_entities.RemoveAll(ShouldRemove) > 0)
-        {
-            Version++;
-        }
+        RemoveWhere(ShouldRemove);
     }
 
     /// <summary>Type-based counterpart of <see cref="RemoveAll{TEntity}"/>, for a caller that only has
@@ -87,11 +92,25 @@ public sealed class CatalogEntityRegistry
     public void RemoveAll(Type entityType, Func<CatalogEntity, bool>? keep = null)
     {
         bool ShouldRemove(CatalogEntity entity) => entityType.IsInstanceOfType(entity) && keep?.Invoke(entity) != true;
+        RemoveWhere(ShouldRemove);
+    }
 
-        if (_entities.RemoveAll(ShouldRemove) > 0)
+    private void RemoveWhere(Func<CatalogEntity, bool> shouldRemove)
+    {
+        List<CatalogEntity> removed = _entities.Where(shouldRemove).ToList();
+        if (removed.Count == 0)
         {
-            Version++;
+            return;
         }
+
+        foreach (CatalogEntity entity in removed)
+        {
+            _entities.Remove(entity);
+            _entitySet.Remove(entity);
+            _byId.Remove(entity.Id);
+        }
+
+        Version++;
     }
 
     /// <summary>Drops every loaded entity of every type.</summary>
@@ -103,6 +122,8 @@ public sealed class CatalogEntityRegistry
         }
 
         _entities.Clear();
+        _entitySet.Clear();
+        _byId.Clear();
         Version++;
     }
 }

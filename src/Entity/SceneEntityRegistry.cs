@@ -14,6 +14,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     private readonly HashSet<SceneEntity> _entitySet = [];
     private readonly HashSet<SceneEntity> _peripheral = [];
     private readonly HashSet<SceneEntity> _resident = [];
+    private readonly Dictionary<EntityId, SceneEntity> _byId = [];
 
     /// <summary>Everything loaded, including entities held only so derived data can be built.</summary>
     public IReadOnlyList<SceneEntity> Entities => _entities;
@@ -30,6 +31,9 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     // this has to be O(1): a List.Contains scan here made those passes O(N^2) in the loaded count,
     // which is exactly what view distance scales up.
     public bool Contains(SceneEntity entity) => _entitySet.Contains(entity);
+
+    /// <summary>Looks up a loaded entity by id in O(1), instead of scanning <see cref="Entities"/>.</summary>
+    public SceneEntity? Find(EntityId id) => _byId.GetValueOrDefault(id);
 
     /// <summary>
     /// Whether this entity is loaded only so derived data can be built correctly, rather than because
@@ -80,6 +84,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     {
         _entities.Add(entity);
         _entitySet.Add(entity);
+        _byId[entity.Id] = entity;
         Version++;
     }
 
@@ -96,6 +101,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
 
         _entities.Clear();
         _entitySet.Clear();
+        _byId.Clear();
         _peripheral.Clear();
         _resident.Clear();
         Version++;
@@ -126,6 +132,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
         }
 
         _entities.Remove(entity);
+        _byId.Remove(entity.Id);
         _peripheral.Remove(entity);
         _resident.Remove(entity);
         Version++;
