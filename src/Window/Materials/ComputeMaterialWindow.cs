@@ -13,6 +13,7 @@ namespace WorldMapStudio;
 public sealed class ComputeMaterialWindow : Window
 {
     public override string? Category => "Materials";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.N, ShortcutModifiers.Alt);
 
     private const uint ShaderNameMaxLength = 128;
     private const uint MaterialNameMaxLength = 128;

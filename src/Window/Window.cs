@@ -16,6 +16,10 @@ public abstract class Window : ISubsystem
     /// </summary>
     public virtual string? Category => null;
 
+    /// <summary>Default Alt+key shortcut to toggle this window, registered by <see cref="WindowManager"/>.
+    /// Windows that leave this as <see cref="KeyboardShortcut.None"/> get no default binding.</summary>
+    public virtual KeyboardShortcut DefaultShortcut => KeyboardShortcut.None;
+
     private readonly Vector2? _defaultSize;
     private readonly Vector2? _defaultPosition;
 

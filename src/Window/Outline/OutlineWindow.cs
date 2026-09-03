@@ -14,6 +14,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class OutlineWindow : Window
 {
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.O, ShortcutModifiers.Alt);
+
     private const string DragDropPayload = "WMS_SCENE_ENTITY";
 
     private readonly SceneEntityRegistry _scene;

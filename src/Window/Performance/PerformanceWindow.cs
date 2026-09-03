@@ -21,6 +21,7 @@ namespace WorldMapStudio;
 public sealed class PerformanceWindow : Window
 {
     public override string? Category => "Debug";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.P, ShortcutModifiers.Alt);
 
     private static readonly NVector4 OkColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 WarnColor = new(1.0f, 0.72f, 0.22f, 1.0f);

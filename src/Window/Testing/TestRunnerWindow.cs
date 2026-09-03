@@ -16,6 +16,7 @@ namespace WorldMapStudio;
 public sealed class TestRunnerWindow : Window
 {
     public override string? Category => "Developer";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.J, ShortcutModifiers.Alt);
 
     private static readonly NVector4 PassedColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 FailedColor = new(1.0f, 0.45f, 0.40f, 1.0f);

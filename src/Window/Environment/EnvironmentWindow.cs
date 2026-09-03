@@ -13,6 +13,7 @@ namespace WorldMapStudio;
 public sealed class EnvironmentWindow : Window
 {
     public override string? Category => "World";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.Y, ShortcutModifiers.Alt);
 
     private readonly WorldClock _clock;
     private readonly EnvironmentSystem _environments;

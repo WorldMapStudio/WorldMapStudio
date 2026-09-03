@@ -14,6 +14,7 @@ namespace WorldMapStudio;
 public sealed class WorkTestWindow : Window
 {
     public override string? Category => "Work Queue";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.Q, ShortcutModifiers.Alt);
 
     private static readonly Random _rng = new();
 

@@ -202,37 +202,11 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
                 $"window.{StableId(window.Title)}",
                 "Window",
                 window.Title,
-                DefaultWindowShortcut(window.Title),
+                window.DefaultShortcut,
                 () => window.IsOpen = !window.IsOpen);
             _windowShortcuts[window] = action;
         }
     }
-
-    private static KeyboardShortcut DefaultWindowShortcut(string title) => title switch
-    {
-        "Chunks" => Alt(ImGuiKey.Z),
-        "Compute Materials" => Alt(ImGuiKey.N),
-        "Environment" => Alt(ImGuiKey.Y),
-        "Export" => Alt(ImGuiKey.X),
-        "Inspector" => Alt(ImGuiKey.I),
-        "Keybindings" => Alt(ImGuiKey.K),
-        "Landscape" => Alt(ImGuiKey.H),
-        "Landscape Debug" => Alt(ImGuiKey.B),
-        "Mesh Materials" => Alt(ImGuiKey.G),
-        "Outline" => Alt(ImGuiKey.O),
-        "Performance" => Alt(ImGuiKey.P),
-        "Problems" => Alt(ImGuiKey.R),
-        "Script Console" => Alt(ImGuiKey.F),
-        "Test Runner" => Alt(ImGuiKey.J),
-        "Tools" => Alt(ImGuiKey.T),
-        "Undo History" => Alt(ImGuiKey.U),
-        "Viewport" => Alt(ImGuiKey.V),
-        "Work Queue" => Alt(ImGuiKey.W),
-        "Work Queue Tester" => Alt(ImGuiKey.Q),
-        _ => KeyboardShortcut.None,
-    };
-
-    private static KeyboardShortcut Alt(ImGuiKey key) => new(key, ShortcutModifiers.Alt);
 
     private static string StableId(string value)
     {

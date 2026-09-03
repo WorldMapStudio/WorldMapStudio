@@ -13,6 +13,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed partial class InspectorWindow : Window, ISubsystemHost
 {
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.I, ShortcutModifiers.Alt);
+
     private readonly SelectionSystem _selection;
     private readonly InspectorContext _context;
 

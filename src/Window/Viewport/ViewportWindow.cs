@@ -18,6 +18,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class ViewportWindow : Window, IWorldParticipant
 {
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.V, ShortcutModifiers.Alt);
+
     // Dim red/green/blue for the grid's axis lines, indexed by *user* axis (0 = X, 1 = Y, 2 = Z)
     // so the line for whichever Godot axis a user axis is mapped onto always reads as that color.
     private static readonly Color[] UserAxisLineColors =
