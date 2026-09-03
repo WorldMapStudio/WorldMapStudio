@@ -34,6 +34,13 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
 
     protected override void DrawContent()
     {
+        // Must run every frame regardless of selection: a component can open a modal from inside
+        // DrawInspector, and that modal needs to keep drawing even if the selection changes underneath it.
+        foreach (ISceneComponentType type in Context.ComponentTypes.All)
+        {
+            type.DrawModals();
+        }
+
         IReadOnlyList<IEntity> selected = _selection.Selected;
         if (selected.Count == 0)
         {

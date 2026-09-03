@@ -56,11 +56,6 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             }
         }
 
-        foreach (ISceneComponentType type in _editor.ComponentTypes.All)
-        {
-            type.DrawModals();
-        }
-
         _savePrefabPopup.Draw();
     }
 
