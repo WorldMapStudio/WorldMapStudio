@@ -107,5 +107,5 @@ public sealed class EditSessionManager : IWorldParticipant
 
     /// <summary>A reload's own unload step: the in-memory revert alone, never the reload request —
     /// the reload already in progress is what called this.</summary>
-    public void UnloadWorld() => AbortInMemory();
+    void IWorldParticipant.UnloadWorld() => AbortInMemory();
 }
