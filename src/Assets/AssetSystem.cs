@@ -33,6 +33,8 @@ public sealed partial class AssetSystem : ISubsystemHost
         InitializeSubsystems();
     }
 
+    public EditorContext Context => _context;
+
     public IEnumerable<IAssetProvider> Providers => Subsystems.OfType<IAssetProvider>();
     public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
     public IEnumerable<IModelLoader> ModelLoaders => Subsystems.OfType<IModelLoader>();
