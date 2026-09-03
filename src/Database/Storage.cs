@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
+using WorldMapStudio.Cata;
 
 namespace WorldMapStudio;
 
@@ -40,30 +41,47 @@ public abstract class Storage : ISubsystem
 
     internal void BindConnection(StorageConnection connection) => Connection = connection;
 
-    /// <summary>The scene-entity factories registered into this storage.</summary>
-    public virtual IEnumerable<ISceneEntityFactory> SceneFactories => Enumerable.Empty<ISceneEntityFactory>();
+    /// <summary>
+    /// This storage's own subsystem tree — its self-registered factories, sources, browsers, etc. Each
+    /// concrete storage implements this as a one-line forward to its own generated <c>Subsystems</c>
+    /// (from <c>[Subsystem(nameof(ConcreteStorage))]</c>), so the facets below only have to be written
+    /// once instead of every concrete storage re-declaring the same <c>Subsystems.OfType&lt;X&gt;()</c>
+    /// boilerplate. Abstract rather than routed through <see cref="ISubsystemHost"/>'s default
+    /// implementation on purpose: a storage that forgets to implement this fails to compile instead of
+    /// silently reporting every facet as empty.
+    /// </summary>
+    protected abstract IEnumerable<ISubsystem> HostedSubsystems { get; }
+
+    /// <summary>The scene-entity factories registered into this storage. A storage that needs entries
+    /// from somewhere other than its own subsystem tree can still override this.</summary>
+    public virtual IEnumerable<ISceneEntityFactory> SceneFactories => HostedSubsystems.OfType<ISceneEntityFactory>();
 
     /// <summary>The catalog-entity factories registered into this storage.</summary>
-    public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => Enumerable.Empty<ICatalogEntityFactory>();
+    public virtual IEnumerable<ICatalogEntityFactory> CatalogFactories => HostedSubsystems.OfType<ICatalogEntityFactory>();
 
     /// <summary>The lazily-loaded catalog-entity factories registered into this storage — see
     /// <see cref="ILazyCatalogEntityFactory"/>.</summary>
-    public virtual IEnumerable<ILazyCatalogEntityFactory> LazyCatalogFactories => Enumerable.Empty<ILazyCatalogEntityFactory>();
+    public virtual IEnumerable<ILazyCatalogEntityFactory> LazyCatalogFactories => HostedSubsystems.OfType<ILazyCatalogEntityFactory>();
 
     /// <summary>Every factory in this storage, whatever kind of entity it persists.</summary>
     public IEnumerable<IEntityFactory> EntityFactories =>
         SceneFactories.Cast<IEntityFactory>().Concat(CatalogFactories).Concat(LazyCatalogFactories);
 
     /// <summary>The map sources registered into this storage; empty if it holds no maps.</summary>
-    public virtual IEnumerable<IMapSource> MapSources => Enumerable.Empty<IMapSource>();
+    public virtual IEnumerable<IMapSource> MapSources => HostedSubsystems.OfType<IMapSource>();
 
     /// <summary>The landscape settings sources registered into this storage.</summary>
-    public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => Enumerable.Empty<ILandscapeSettingsSource>();
+    public virtual IEnumerable<ILandscapeSettingsSource> LandscapeSettingsSources => HostedSubsystems.OfType<ILandscapeSettingsSource>();
 
     /// <summary>The table configurations registered into this storage — see
     /// <see cref="ITableConfiguration"/>. Gathered by <c>CreateContext</c> and passed to the storage's
     /// <c>DbContext</c>, so its <c>OnModelCreating</c> never has to name a table's owner by hand.</summary>
-    public virtual IEnumerable<ITableConfiguration> TableConfigurations => Enumerable.Empty<ITableConfiguration>();
+    public virtual IEnumerable<ITableConfiguration> TableConfigurations => HostedSubsystems.OfType<ITableConfiguration>();
+
+    /// <summary>Catalogs browsable in a catalog browser window — see <see cref="ICatalogBrowser"/>.
+    /// Storage-agnostic, so consumers do <c>Storages.SelectMany(s => s.CatalogBrowsers)</c> instead of
+    /// naming a specific storage.</summary>
+    public virtual IEnumerable<ICatalogBrowser> CatalogBrowsers => HostedSubsystems.OfType<ICatalogBrowser>();
 
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
