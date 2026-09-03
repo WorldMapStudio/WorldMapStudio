@@ -107,6 +107,10 @@ public abstract class Storage : ISubsystem
     /// naming a specific storage.</summary>
     public virtual IEnumerable<ICatalogBrowser> CatalogBrowsers => Facet<ICatalogBrowser>();
 
+    /// <summary>Scene-entity factories creatable by script and UI through one shared method — see
+    /// <see cref="ISpawnFactory"/>. Storage-agnostic, like <see cref="CatalogBrowsers"/>.</summary>
+    public virtual IEnumerable<ISpawnFactory> Spawners => Facet<ISpawnFactory>();
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 
