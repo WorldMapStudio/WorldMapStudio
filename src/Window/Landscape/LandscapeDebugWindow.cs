@@ -19,6 +19,7 @@ namespace WorldMapStudio;
 public sealed class LandscapeDebugWindow : Window
 {
     public override string? Category => "Landscape";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.B, ShortcutModifiers.Alt);
 
     private const int PreviewSize = 128;
 

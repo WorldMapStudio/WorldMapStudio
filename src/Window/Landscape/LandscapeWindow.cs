@@ -17,6 +17,7 @@ namespace WorldMapStudio;
 public sealed class LandscapeWindow : Window
 {
     public override string? Category => "Landscape";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.H, ShortcutModifiers.Alt);
 
     private const uint NameMaxLength = 128;
     private const uint PathMaxLength = 512;

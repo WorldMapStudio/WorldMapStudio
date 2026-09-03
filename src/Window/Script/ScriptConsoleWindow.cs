@@ -21,6 +21,7 @@ namespace WorldMapStudio;
 public sealed class ScriptConsoleWindow : Window
 {
     public override string? Category => "Developer";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.F, ShortcutModifiers.Alt);
 
     private sealed class Entry(string input, Task<ScriptResult> pending)
     {

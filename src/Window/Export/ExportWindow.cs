@@ -17,6 +17,7 @@ public enum ExportTargetMode
 public sealed class ExportWindow : Window
 {
     public override string? Category => "World";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.X, ShortcutModifiers.Alt);
 
     private const string ProgressPopupId = "Export Progress";
     private const string CreatePopupId = "New Export Profile";

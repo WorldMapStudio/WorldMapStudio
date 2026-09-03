@@ -12,6 +12,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed partial class ToolWindow : Window, ISubsystemHost
 {
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.T, ShortcutModifiers.Alt);
+
     private readonly ToolSystem _tools;
 
     public ToolWindow(WindowManager manager)

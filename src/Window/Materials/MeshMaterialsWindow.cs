@@ -15,6 +15,7 @@ namespace WorldMapStudio;
 public sealed class MeshMaterialsWindow : Window
 {
     public override string? Category => "Materials";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.G, ShortcutModifiers.Alt);
 
     private const uint NameMaxLength = 128;
 

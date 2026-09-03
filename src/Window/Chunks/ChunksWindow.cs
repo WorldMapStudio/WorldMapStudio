@@ -14,6 +14,7 @@ namespace WorldMapStudio;
 public sealed class ChunksWindow : Window
 {
     public override string? Category => "Landscape";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.Z, ShortcutModifiers.Alt);
 
     private readonly SceneEntityRegistry _scene;
     private readonly SelectionSystem _selection;

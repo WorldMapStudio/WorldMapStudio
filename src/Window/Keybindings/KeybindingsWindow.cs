@@ -7,6 +7,8 @@ namespace WorldMapStudio;
 [Subsystem(nameof(WindowManager))]
 public sealed class KeybindingsWindow : Window
 {
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.K, ShortcutModifiers.Alt);
+
     private readonly ShortcutSystem _shortcuts;
     private ShortcutAction? _capturing;
     private string _filter = string.Empty;

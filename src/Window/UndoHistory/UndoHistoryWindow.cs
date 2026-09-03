@@ -12,6 +12,7 @@ namespace WorldMapStudio;
 public sealed class UndoHistoryWindow : Window
 {
     public override string? Category => "Debug";
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.U, ShortcutModifiers.Alt);
 
     private static readonly Vector4 CurrentColor = new(0.42f, 0.85f, 0.46f, 1.0f);
 
