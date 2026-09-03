@@ -19,6 +19,13 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
     private static readonly Vector4 ErrorColor = new(0.95f, 0.5f, 0.4f, 1.0f);
     private static readonly Vector2 BodySize = new(768, 432);
 
+    private readonly EditorContext _context;
+
+    public MapSelectOperation(EditorContext context)
+    {
+        _context = context;
+    }
+
     private const float CardWidth = 240.0f;
     private const float ThumbnailHeight = 135.0f;
     private const float LabelHeight = 36.0f;
@@ -269,6 +276,8 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             }
         }
 
+        DrawPropertiesSections(map);
+
         ImGui.Separator();
 
         if (_confirmDelete == map.Id)
@@ -314,5 +323,20 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         ImGui.EndPopup();
         return true;
+    }
+
+    // Every registered IMapPropertiesSection, e.g. WoW lighting's default-light picker — this class
+    // draws the heading and lets the section draw its own fields, without knowing what any of them
+    // configure. Sections decide for themselves how much to offer for a map that isn't the open one:
+    // only its entities are actually loaded to edit, so most will disable editing there.
+    private void DrawPropertiesSections(Map map)
+    {
+        bool isCurrent = map.Id == _context.Maps.CurrentMap;
+        foreach (IMapPropertiesSection section in _context.MapProperties.All)
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled(section.Label);
+            section.Draw(_context, map, isCurrent);
+        }
     }
 }
