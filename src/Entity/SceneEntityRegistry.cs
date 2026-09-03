@@ -4,9 +4,9 @@ using System.Linq;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The scene entities currently loaded into the editor. Entities are streamed in and out of here
-/// (just the viewport's demo set for now); the outline lists them and the viewport picks against
-/// them. <see cref="Version"/> bumps on add/remove so views can tell when to refresh.
+/// The scene entities currently loaded into the editor — streaming's general-purpose loaded-entity
+/// store, used throughout editing and persistence. The outline lists them and the viewport picks
+/// against them. <see cref="Version"/> bumps on add/remove so views can tell when to refresh.
 /// </summary>
 public sealed class SceneEntityRegistry : IWorldParticipant
 {
