@@ -13,11 +13,15 @@ public enum MarkerShape
 
 public sealed class MarkerComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="MarkerComponentType"/>
+    /// and <see cref="MarkerComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "marker";
+
     private static readonly Vector3 MarkerSize = new(1.0f, 1.0f, 1.0f);
 
     public MarkerShape Shape { get; set; } = MarkerShape.Plain;
 
-    public override string TypeId => "marker";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Marker";
 

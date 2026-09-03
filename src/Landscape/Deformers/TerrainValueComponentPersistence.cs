@@ -46,7 +46,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
 
     public float Priority => 0.0f;
 
-    public string TypeId => "landscape-terrain-value";
+    public string TypeId => TerrainValueComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

@@ -20,7 +20,7 @@ public sealed class ModelRendererComponentType : ISceneComponentType
         _textureList = new ModelTextureListPopup(_assets, _materials);
     }
 
-    public string TypeId => "model-renderer";
+    public string TypeId => ModelRendererComponent.Kind;
 
     public string DisplayName => "Model Renderer";
 

@@ -11,7 +11,7 @@ public sealed class MarkerComponentType : ISceneComponentType
     {
     }
 
-    public string TypeId => "marker";
+    public string TypeId => MarkerComponent.Kind;
 
     public string DisplayName => "Marker";
 

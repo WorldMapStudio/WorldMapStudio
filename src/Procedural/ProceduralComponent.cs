@@ -20,6 +20,10 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable, ILandscapeDeformer, ITransformPolicy, IMeshPickable
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="ProceduralComponentType"/>
+    /// and <see cref="ProceduralComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "procedural-mesh";
+
     private static readonly VertexNetwork EmptyNetwork = new();
 
     private readonly ProceduralSystem _system;
@@ -85,7 +89,7 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
     public bool SnapToTerrainOnPlace => BoundFunction?.SnapToTerrainOnPlace ?? false;
 
-    public override string TypeId => "procedural-mesh";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Procedural Mesh";
 

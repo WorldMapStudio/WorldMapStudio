@@ -28,7 +28,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
 
     public float Priority => 0.0f;
 
-    public string TypeId => "model-renderer";
+    public string TypeId => ModelRendererComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

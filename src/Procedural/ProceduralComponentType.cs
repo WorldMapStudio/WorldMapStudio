@@ -19,7 +19,7 @@ public sealed class ProceduralComponentType : ISceneComponentType
         _picker = new ProceduralModelPicker(_system, registry.Context.Root);
     }
 
-    public string TypeId => "procedural-mesh";
+    public string TypeId => ProceduralComponent.Kind;
 
     public string DisplayName => "Procedural Mesh";
 

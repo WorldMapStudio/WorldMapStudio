@@ -14,6 +14,10 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, IIncrementalLandscapeDeformer, ISceneNodeComponent, IMeshPickable
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="ImageComponentType"/>
+    /// and <see cref="ImageComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "image";
+
     private const float BoundsHeight = 2.0f;
 
     private static Shader? _objectBackdropShader;
@@ -146,7 +150,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     public string Channel { get; set; } = "";
 
-    public override string TypeId => "image";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Image";
 

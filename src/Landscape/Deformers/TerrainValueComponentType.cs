@@ -17,7 +17,7 @@ public sealed class TerrainValueComponentType : ISceneComponentType
         _landscape = registry.Context.Landscape;
     }
 
-    public string TypeId => "landscape-terrain-value";
+    public string TypeId => TerrainValueComponent.Kind;
 
     public string DisplayName => "Terrain Value";
 

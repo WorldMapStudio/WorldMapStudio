@@ -17,7 +17,7 @@ public sealed class LandscapeMaterialBindComponentType : ISceneComponentType
         _landscape = registry.Context.Landscape;
     }
 
-    public string TypeId => "landscape-material-bind";
+    public string TypeId => LandscapeMaterialBindComponent.Kind;
 
     public string DisplayName => "Landscape Material Bind";
 

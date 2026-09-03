@@ -5,6 +5,10 @@ namespace WorldMapStudio;
 
 public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy, ILandscapeDeformer
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="StampComponentType"/>
+    /// and <see cref="StampComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "landscape-stamp";
+
     public float Radius { get; set; } = 24.0f;
 
     public float Falloff { get; set; } = 0.5f;
@@ -18,7 +22,7 @@ public sealed class StampComponent : SceneComponent, ISceneBoundsProvider, IScen
     /// decides how much this stamp adds.</summary>
     public Color ColorValue { get; set; } = Colors.White;
 
-    public override string TypeId => "landscape-stamp";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Landscape Stamp";
 

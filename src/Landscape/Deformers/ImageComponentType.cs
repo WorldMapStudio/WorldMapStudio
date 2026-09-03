@@ -23,7 +23,7 @@ public sealed class ImageComponentType : ISceneComponentType
         _picker = new ImagePicker(_system);
     }
 
-    public string TypeId => "image";
+    public string TypeId => ImageComponent.Kind;
 
     public string DisplayName => "Image";
 
