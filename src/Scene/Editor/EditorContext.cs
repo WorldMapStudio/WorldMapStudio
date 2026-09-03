@@ -42,7 +42,7 @@ public sealed partial class EditorContext : ISubsystemHost
 
     /// <summary>Registered scene component kinds, driving the inspector's add-menu and per-component
     /// drawing. Plugins add their own kinds here instead of the inspector naming them.</summary>
-    public SceneComponentRegistry ComponentTypes { get; private set; } = null!;
+    public SceneComponentRegistry ComponentTypes { get; }
 
     /// <summary>The catalog entities currently loaded into the editor.</summary>
     public CatalogEntityRegistry Catalog { get; }
@@ -64,7 +64,7 @@ public sealed partial class EditorContext : ISubsystemHost
 
     /// <summary>Registered per-map settings sections, drawn in the map picker's properties area.
     /// Plugins add their own kinds here instead of the picker naming them.</summary>
-    public MapPropertiesRegistry MapProperties { get; private set; } = null!;
+    public MapPropertiesRegistry MapProperties { get; }
 
     /// <summary>Registered model formats (what kind of model a path or a procedural mesh is).</summary>
     public ModelFormatSystem ModelFormats { get; }
@@ -92,7 +92,7 @@ public sealed partial class EditorContext : ISubsystemHost
 
     /// <summary>Blends loaded <see cref="IEnvironmentSource"/> components (lights, sky) against the
     /// viewport focus and <see cref="Clock"/> into the active <see cref="EnvironmentValues"/>.</summary>
-    public EnvironmentSystem Environments { get; private set; } = null!;
+    public EnvironmentSystem Environments { get; }
 
     /// <summary>Compares each storage's expected schema to the live database and drives migrations.</summary>
     public MigrationSystem Migrations { get; }
