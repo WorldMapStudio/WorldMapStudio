@@ -11,6 +11,10 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed partial class ModelRendererComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, ITransformPolicy, IMeshPickable
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="ModelRendererComponentType"/>
+    /// and <see cref="ModelRendererComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "model-renderer";
+
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;
     private string _modelPath = "";
@@ -37,7 +41,7 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
         }
     }
 
-    public override string TypeId => "model-renderer";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Model Renderer";
 

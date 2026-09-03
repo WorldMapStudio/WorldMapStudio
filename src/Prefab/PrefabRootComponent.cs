@@ -8,9 +8,13 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class PrefabRootComponent : SceneComponent
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="PrefabRootComponentPersistence"/>
+    /// references this instead of restating it.</summary>
+    public const string Kind = "prefab-root";
+
     public int PrefabId { get; set; }
 
-    public override string TypeId => "prefab-root";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Prefab Root";
 

@@ -13,6 +13,10 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="TerrainValueComponentType"/>
+    /// and <see cref="TerrainValueComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "landscape-terrain-value";
+
     private const float BoundsHeight = 2.0f;
 
     private float _width = 64.0f;
@@ -40,7 +44,7 @@ public sealed class TerrainValueComponent : SceneComponent, ISceneBoundsProvider
 
     public IReadOnlyList<string> Channels => _channels;
 
-    public override string TypeId => "landscape-terrain-value";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Terrain Value";
 

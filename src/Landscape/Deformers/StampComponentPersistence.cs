@@ -37,7 +37,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
 
     public float Priority => 0.0f;
 
-    public string TypeId => "landscape-stamp";
+    public string TypeId => StampComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

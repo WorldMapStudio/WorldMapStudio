@@ -38,7 +38,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence
 
     public float Priority => 0.0f;
 
-    public string TypeId => "procedural-mesh";
+    public string TypeId => ProceduralComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

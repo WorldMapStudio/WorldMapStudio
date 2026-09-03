@@ -36,7 +36,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
 
     public float Priority => 0.0f;
 
-    public string TypeId => "landscape-material-bind";
+    public string TypeId => LandscapeMaterialBindComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

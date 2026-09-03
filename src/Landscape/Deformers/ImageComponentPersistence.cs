@@ -44,7 +44,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence
 
     public float Priority => 0.0f;
 
-    public string TypeId => "image";
+    public string TypeId => ImageComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {

@@ -17,7 +17,7 @@ public sealed class StampComponentType : ISceneComponentType
         _landscape = registry.Context.Landscape;
     }
 
-    public string TypeId => "landscape-stamp";
+    public string TypeId => StampComponent.Kind;
 
     public string DisplayName => "Landscape Stamp";
 

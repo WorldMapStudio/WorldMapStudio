@@ -8,13 +8,17 @@ public sealed record LandscapeMaterialBinding(int? LayerId, int? MaterialId);
 
 public sealed class LandscapeMaterialBindComponent : SceneComponent, ILandscapeDeformer
 {
+    /// <summary>The single source of truth for this component kind's id — <see cref="LandscapeMaterialBindComponentType"/>
+    /// and <see cref="LandscapeMaterialBindComponentPersistence"/> both reference this instead of restating it.</summary>
+    public const string Kind = "landscape-material-bind";
+
     private readonly List<LandscapeMaterialBinding> _bindings = [];
 
     public int Priority { get; set; }
 
     public IReadOnlyList<LandscapeMaterialBinding> Bindings => _bindings;
 
-    public override string TypeId => "landscape-material-bind";
+    public override string TypeId => Kind;
 
     public override string DisplayName => "Landscape Material Bind";
 
