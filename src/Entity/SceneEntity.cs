@@ -148,25 +148,31 @@ public class SceneEntity : Entity
     public Transform3D Transform
     {
         get => _transform;
-        set
+        set => SetTransform(value, cascadeToChildren: true);
+    }
+
+    // cascadeToChildren must be false when re-applying the entity's own current transform just to
+    // re-run SanitizeTransform (e.g. after a component set change) rather than a genuine move: a
+    // snap in SelfRotation/SelfScale policy would otherwise compute a delta and drag every child by
+    // it, with no undo entry recorded for those child moves.
+    private void SetTransform(Transform3D value, bool cascadeToChildren)
+    {
+        Transform3D before = _transform;
+        _transform = SanitizeTransform(value);
+        if (Node != null)
         {
-            Transform3D before = _transform;
-            _transform = SanitizeTransform(value);
-            if (Node != null)
-            {
-                Node.GlobalTransform = _transform;
-            }
+            Node.GlobalTransform = _transform;
+        }
 
-            if (_children.Count == 0 || before.IsEqualApprox(_transform))
-            {
-                return;
-            }
+        if (!cascadeToChildren || _children.Count == 0 || before.IsEqualApprox(_transform))
+        {
+            return;
+        }
 
-            Transform3D delta = _transform * before.AffineInverse();
-            foreach (SceneEntity child in _children.ToArray())
-            {
-                child.Transform = delta * child.Transform;
-            }
+        Transform3D delta = _transform * before.AffineInverse();
+        foreach (SceneEntity child in _children.ToArray())
+        {
+            child.Transform = delta * child.Transform;
         }
     }
 
@@ -229,7 +235,7 @@ public class SceneEntity : Entity
         component.Owner = this;
         _components.Add(component);
         RebuildRepresentation();
-        Transform = Transform;
+        SetTransform(Transform, cascadeToChildren: false);
     }
 
     public bool RemoveComponent(SceneComponent component)
@@ -241,7 +247,7 @@ public class SceneEntity : Entity
 
         component.Owner = null;
         RebuildRepresentation();
-        Transform = Transform;
+        SetTransform(Transform, cascadeToChildren: false);
         return true;
     }
 
@@ -254,7 +260,7 @@ public class SceneEntity : Entity
     public void RefreshRepresentation()
     {
         RebuildRepresentation();
-        Transform = Transform;
+        SetTransform(Transform, cascadeToChildren: false);
     }
 
     /// <summary>Builds the entity's viewport node. Called on the main thread.</summary>
