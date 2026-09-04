@@ -213,6 +213,26 @@ public sealed partial class AssetSystem : ISubsystemHost
         }
     }
 
+    /// <summary>
+    /// Drops one cached texture, so the next <see cref="LoadTextureAssetAsync(string)"/> for that path
+    /// decodes it again. The narrow counterpart of <see cref="ClearTextureCache"/>, which also throws
+    /// away every other texture <i>and</i> the asset index — far too blunt for a caller that knows
+    /// exactly which entry went stale.
+    ///
+    /// Exists for synthetic, generated textures (see the plugin's own NPC compositor) whose content is
+    /// a function of editor state rather than of a file on disk: a live editor can mint many of them in
+    /// one session, and without this they would accumulate until a world reload. A path backed by a
+    /// real asset rarely needs it — that content does not change underneath the cache.
+    /// </summary>
+    public void EvictTexture(string path)
+    {
+        lock (_textureLock)
+        {
+            _textureCache.Remove(path);
+            _pendingTextureLoads.Remove(path);
+        }
+    }
+
     public void ClearTextureCache()
     {
         lock (_textureLock)
