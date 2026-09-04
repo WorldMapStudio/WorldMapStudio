@@ -15,7 +15,17 @@ public partial class WorldMapStudioApp : Node3D
 	{
 		AddChild(new GodotImGui());
 
-		_currentScene = new MainMenu(this);
+		var events = new EventSystem();
+		var startup = new StartupEvent { Root = this };
+		events.Dispatch(startup);
+
+		if (startup.QuitRequested)
+		{
+			GetTree().Quit();
+			return;
+		}
+
+		_currentScene = startup.Scene ?? new MainMenu(this);
 		_currentScene.Start();
 	}
 
