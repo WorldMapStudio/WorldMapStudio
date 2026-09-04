@@ -18,6 +18,7 @@
     <ProjectReference Include="analyzer\WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Compile Include=".local\Plugins\**\*.cs" />
     <Compile Include="Plugins\**\*.cs" />
+    <Compile Include="..\WorldMapStudioPlugins\**\*.cs" />
     <Compile Remove="analyzer\**" />
   </ItemGroup>
 </Project>
