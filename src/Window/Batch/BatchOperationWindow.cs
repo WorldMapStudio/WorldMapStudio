@@ -17,8 +17,7 @@ public sealed class BatchOperationWindow : Window
 {
     public override string? Category => "World";
 
-    // Alt+X still belongs to the export window; this moves onto it once that is gone.
-    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.B, ShortcutModifiers.Alt);
+    public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.X, ShortcutModifiers.Alt);
 
     private const string ProgressPopupId = "Batch Progress";
 
