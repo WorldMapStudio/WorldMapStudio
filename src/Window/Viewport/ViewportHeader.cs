@@ -4,10 +4,11 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The strip of controls across the top of the <see cref="ViewportWindow"/>, above the active
-/// tool's toolbar. Hosts <see cref="IViewportHeaderItem"/>s as <see cref="ISubsystem"/>s, so
-/// anything — including a plugin — can add a control here with [Subsystem(nameof(ViewportHeader))]
-/// and never touch the viewport itself. Draws nothing when no item is registered.
+/// The registered extras on the <see cref="ViewportWindow"/>'s toolbar row, drawn inline after the
+/// active tool's own controls. Hosts <see cref="IViewportHeaderItem"/>s as <see cref="ISubsystem"/>s,
+/// so anything — including a plugin — can add a control to that row with
+/// [Subsystem(nameof(ViewportHeader))] and never touch the viewport itself. Draws nothing when no
+/// item is registered.
 /// </summary>
 public sealed partial class ViewportHeader : ISubsystemHost
 {
@@ -20,12 +21,14 @@ public sealed partial class ViewportHeader : ISubsystemHost
         InitializeSubsystems();
     }
 
-    public void Draw(in ViewportHeaderContext context)
+    /// <param name="continueRow">True when the active tool already drew controls on this row, so the
+    /// first item is placed after them rather than at the start of the line.</param>
+    public void Draw(in ViewportHeaderContext context, bool continueRow)
     {
-        bool any = false;
+        bool started = continueRow;
         foreach (IViewportHeaderItem item in Subsystems.Cast<IViewportHeaderItem>())
         {
-            if (any)
+            if (started)
             {
                 ImGui.SameLine();
                 ImGui.TextDisabled("|");
@@ -35,12 +38,7 @@ public sealed partial class ViewportHeader : ISubsystemHost
             ImGui.PushID(item.GetType().FullName);
             item.Draw(context);
             ImGui.PopID();
-            any = true;
-        }
-
-        if (any)
-        {
-            ImGui.Separator();
+            started = true;
         }
     }
 }

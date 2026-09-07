@@ -1,10 +1,10 @@
 namespace WorldMapStudio;
 
 /// <summary>
-/// One entry in the strip of controls drawn across the top of the <see cref="ViewportWindow"/>,
-/// hosted as an <see cref="ISubsystem"/> of <see cref="ViewportHeader"/>. Implementations declare
-/// [Subsystem(nameof(ViewportHeader))] to self-register; entries are ordered by
-/// <see cref="ISubsystem.Priority"/> and separated automatically.
+/// One control on the <see cref="ViewportWindow"/>'s toolbar row, drawn inline after the active
+/// tool's own controls. Hosted as an <see cref="ISubsystem"/> of <see cref="ViewportHeader"/>;
+/// implementations declare [Subsystem(nameof(ViewportHeader))] to self-register. Entries are ordered
+/// by <see cref="ISubsystem.Priority"/> and separated automatically.
 /// </summary>
 public interface IViewportHeaderItem : ISubsystem
 {

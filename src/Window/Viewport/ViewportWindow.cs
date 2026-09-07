@@ -232,10 +232,9 @@ public sealed class ViewportWindow : Window, IWorldParticipant
         SyncRepresentations();
         _environmentVolumes.Update();
 
-        _header.Draw(new ViewportHeaderContext(_camera, _flyCamera.IsFlying));
-
         ITool? tool = _tools.Active;
         tool?.DrawToolbar();
+        _header.Draw(new ViewportHeaderContext(_camera, _flyCamera.IsFlying), continueRow: tool is not null);
 
         NVector2 region = ImGui.GetContentRegionAvail();
         int width = Math.Max(1, (int)region.X);
