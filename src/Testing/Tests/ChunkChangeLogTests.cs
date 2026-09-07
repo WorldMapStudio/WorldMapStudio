@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
@@ -5,6 +7,46 @@ namespace WorldMapStudio;
 
 public static class ChunkChangeLogTests
 {
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void Chunk_range_enumerates_every_coordinate_in_the_rectangle()
+    {
+        var range = new ChunkRange(new MapId(1), new ChunkCoord(-1, 2), new ChunkCoord(1, 3));
+
+        var coords = range.Coords().ToList();
+
+        Assert.AreEqual(6, coords.Count);
+        Assert.IsTrue(coords.Contains(new ChunkCoord(-1, 2)));
+        Assert.IsTrue(coords.Contains(new ChunkCoord(1, 3)));
+    }
+
+    /// <summary>
+    /// The rule every consumer's cache depends on: a run stores the newest LastEditedUtc it actually
+    /// observed, never the wall clock. A commit landing while the run is in flight is stamped after
+    /// the rows the run saw, so a clock-based watermark would put it on the already-done side and skip
+    /// it forever; taking the watermark from the data makes the worst case a redundant reprocess.
+    /// </summary>
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void A_chunk_edited_during_a_run_is_picked_up_by_the_next_run()
+    {
+        var map = new MapId(1);
+        DateTime start = new(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        List<ChunkChange> observed =
+        [
+            new(map, new ChunkCoord(0, 0), start),
+            new(map, new ChunkCoord(1, 0), start.AddSeconds(1)),
+        ];
+
+        // Lands after the query returned, while the run is still writing.
+        var duringRun = new ChunkChange(map, new ChunkCoord(2, 0), start.AddSeconds(2));
+        DateTime runFinished = start.AddSeconds(30);
+
+        DateTime watermark = observed.Max(change => change.LastEditedUtc);
+
+        Assert.IsTrue(duringRun.LastEditedUtc > watermark, "the mid-run edit must remain unprocessed");
+        Assert.IsTrue(duringRun.LastEditedUtc < runFinished, "and a wall-clock watermark would have skipped it");
+    }
+
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Undone_edit_does_not_report_a_committed_chunk_change()
     {
