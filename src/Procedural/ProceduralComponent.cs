@@ -18,7 +18,7 @@ namespace WorldMapStudio;
 /// never <see cref="Model"/> or <see cref="Network"/> live, which would race the catalog the way
 /// <see cref="LandscapeBuilder"/>'s class comment warns against for live scene state generally.
 /// </summary>
-public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable, ILandscapeDeformer, ITransformPolicy, IMeshPickable
+public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, ISceneNodeComponent, INetworkEditable, ILandscapeDeformer, IPreparableLandscapeDeformer, ITransformPolicy, IMeshPickable
 {
     /// <summary>The single source of truth for this component kind's id — <see cref="ProceduralComponentType"/>
     /// and <see cref="ProceduralComponentPersistence"/> both reference this instead of restating it.</summary>
@@ -132,6 +132,23 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
     public void Rasterize(in LandscapeRasterContext context) =>
         ProceduralPaintRasterizer.Rasterize(_publishedPaint, Entity.Transform, context);
 
+    /// <summary>Publishes what the bound model paints, which is what <see cref="Rasterize"/> and
+    /// <see cref="InfluenceBounds"/> read. Separate from <see cref="BuildNode"/> because a deformer has
+    /// to contribute whether or not anything is drawing it — an offline build has no viewport at all,
+    /// and a live placement streamed in but not yet represented deforms nothing until it gets one.</summary>
+    public void PublishLandscapeContribution()
+    {
+        ProceduralBuildResult result = BuildOutput();
+        _publishedPaint = result.Paint;
+        _publishedBounds = PaintBounds(result.Paint);
+    }
+
+    // Main-thread-bound: BuildOutput reaches ProceduralSystem.Build, which resolves assets and mesh
+    // materials off live catalog state the editor mutates.
+    public void Request(LandscapeBuildRequest request) => request.RequiresMainThread();
+
+    public void Prepare(LandscapeBuildResources resources) => PublishLandscapeContribution();
+
     /// <summary>Whether the bound model has moved on since this placement's representation was last built.</summary>
     public bool NeedsRefresh => _representedModelId != ModelId || _representedRevision != (Model?.Revision ?? -1);
 
@@ -163,9 +180,11 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
         var root = new Node3D { Name = "ProceduralComponent" };
 
+        PublishLandscapeContribution();
+
+        // A second BuildOutput is free: ProceduralSystem.Build is cached on the model's identity and
+        // revision, so this hits the same result PublishLandscapeContribution just built from.
         ProceduralBuildResult result = BuildOutput();
-        _publishedPaint = result.Paint;
-        _publishedBounds = PaintBounds(result.Paint);
 
         foreach (ProceduralModelOutput output in result.Models)
         {
