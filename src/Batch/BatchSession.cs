@@ -102,6 +102,19 @@ public sealed class BatchSession : IDisposable
 
     internal Task Completion => _completion.Task;
 
+    /// <summary>The work item this session's body is running under — what a context call needs to hop
+    /// threads. Null only before the body starts.</summary>
+    internal WorkContext? WorkContext
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _work;
+            }
+        }
+    }
+
     internal void BindWork(WorkContext work)
     {
         lock (_lock)
