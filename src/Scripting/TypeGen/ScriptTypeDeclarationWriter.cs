@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -103,9 +103,41 @@ public static class ScriptTypeDeclarationWriter
             return primitive;
         }
 
+        // Nullability is not modelled (see above), so an optional value is just its underlying type.
+        if (Nullable.GetUnderlyingType(type) is { } underlying)
+        {
+            return TsType(underlying, visited, worklist);
+        }
+
+        if (type == typeof(object))
+        {
+            return "any";
+        }
+
+        // A Task crosses into JS as a promise, so it must be declared as one — otherwise an async
+        // function reads as returning the CLR type name, which is not a thing scripts can await.
+        if (type == typeof(System.Threading.Tasks.Task))
+        {
+            return "Promise<void>";
+        }
+
+        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(System.Threading.Tasks.Task<>))
+        {
+            return $"Promise<{TsType(type.GetGenericArguments()[0], visited, worklist)}>";
+        }
+
         if (type.IsArray)
         {
             return $"{TsType(type.GetElementType()!, visited, worklist)}[]";
+        }
+
+        // Checked before the IEnumerable case below, which would otherwise see a dictionary's
+        // KeyValuePair element type and emit an array.
+        if (type.IsGenericType && typeof(System.Collections.IDictionary).IsAssignableFrom(type)
+            || type.IsGenericType && type.GetGenericTypeDefinition() == typeof(IDictionary<,>))
+        {
+            Type[] pair = type.GetGenericArguments();
+            return $"Record<{TsType(pair[0], visited, worklist)}, {TsType(pair[1], visited, worklist)}>";
         }
 
         // A mutating [ScriptFunction] returns the command describing its change, but the proxy applies
