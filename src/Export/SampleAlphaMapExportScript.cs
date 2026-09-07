@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -59,9 +59,9 @@ public sealed class SampleAlphaMapExportScript : IChunkExportScript
             ChunkChange change = chunks[i];
             work.Step($"Exporting {i + 1}/{chunks.Count} ({change.Map.Value}:{change.Coord})");
 
-            LandscapeChunkOutput? output = await context.BuildLandscapeChunkAsync(change.Map, change.Coord)
+            LandscapeBuildResult? built = await context.BuildLandscapeChunksAsync(change.Map, [change.Coord])
                 .ConfigureAwait(false);
-            if (output == null)
+            if (built?.Chunks.GetValueOrDefault(change.Coord) is not { } output)
             {
                 continue;
             }

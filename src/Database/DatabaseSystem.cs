@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -107,6 +107,28 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
                 GD.PushError($"[Database] Storage '{storage.Name}' seed apply failed: {e.Message}");
             }
         }
+    }
+
+    /// <summary>
+    /// Every stored scene entity overlapping <paramref name="region"/>, asked of each storage's
+    /// <see cref="ISceneEntityFactory"/>s under that storage's read lock. Reads storage rather than the
+    /// loaded scene, so it answers for maps that are not open and regions nothing has streamed in —
+    /// what offline work (a batch job, a landscape build for another map) needs.
+    /// </summary>
+    public async Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region)
+    {
+        var result = new List<SceneEntity>();
+        foreach (Storage storage in Storages)
+        {
+            using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
+            foreach (ISceneEntityFactory factory in storage.SceneFactories)
+            {
+                IReadOnlyList<SceneEntity> loaded = await factory.ScanAsync(map, region).ConfigureAwait(false);
+                result.AddRange(loaded);
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

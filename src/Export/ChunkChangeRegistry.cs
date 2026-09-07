@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Godot;
@@ -135,7 +135,7 @@ public sealed class ChunkChangeRegistry
 
     private void Add(ChunkChangeSnapshot? snapshot, HashSet<(int Map, int X, int Y)> chunks)
     {
-        if (snapshot == null || _context.Exports.LoadLandscapeSettings(snapshot.Map) is not { } settings)
+        if (snapshot == null || _context.Landscape.LoadSettingsFor(snapshot.Map) is not { } settings)
         {
             return;
         }

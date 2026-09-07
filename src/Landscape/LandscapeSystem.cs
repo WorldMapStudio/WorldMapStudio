@@ -96,6 +96,87 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     }
 
     /// <summary>
+    /// Any map's settings, not only the open one — offline work (see <see cref="BuildFromStorageAsync"/>)
+    /// reaches maps nothing has loaded. The open map answers from <see cref="Settings"/> without a
+    /// query, which is what keeps a build loop off the database. Always a clone, since callers mutate
+    /// what they get.
+    /// </summary>
+    public LandscapeSettings? LoadSettingsFor(MapId map)
+    {
+        if (_context.Maps.CurrentMap == map && Settings is { } loaded)
+        {
+            return loaded.Clone();
+        }
+
+        foreach (ILandscapeSettingsSource source in Sources)
+        {
+            try
+            {
+                if (BlockingWork.Run(() => source.LoadAsync(map)) is { } settings)
+                {
+                    return settings.Clone();
+                }
+            }
+            catch (Exception e)
+            {
+                GD.PushError($"[Landscape] Loading settings for map {map.Value} failed: {e.Message}");
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Builds chunks from stored data: deformers come from scanning storage, so this reaches maps that
+    /// are not open and chunks that never streamed in. The offline counterpart of
+    /// <see cref="TakeSnapshot"/>, which captures the *live* build inputs from the loaded scene and
+    /// must be called on the main thread.
+    ///
+    /// One scene scan and one <see cref="LandscapeBuilder.Build"/> call cover every requested chunk —
+    /// a caller writing a whole tile needs its chunks built as a block, not scanned once each. Returns
+    /// every requested chunk's problems alongside its output, so no second pass is needed to surface
+    /// them.
+    /// </summary>
+    public async Task<LandscapeBuildResult?> BuildFromStorageAsync(MapId map, IReadOnlyList<ChunkCoord> coords)
+    {
+        if (coords.Count == 0)
+        {
+            return null;
+        }
+
+        LandscapeSettings? settings = LoadSettingsFor(map);
+        if (settings == null)
+        {
+            return null;
+        }
+
+        var builder = new LandscapeBuilder(settings, Catalog, Functions);
+        Aabb scan = ScanBounds(builder, coords[0]);
+        for (int i = 1; i < coords.Count; i++)
+        {
+            scan = scan.Merge(ScanBounds(builder, coords[i]));
+        }
+
+        IReadOnlyList<SceneEntity> entities = await _context.Database.ScanSceneAsync(map, scan).ConfigureAwait(false);
+        List<ILandscapeDeformer> deformers = entities
+            .SelectMany(entity => entity.Components)
+            .OfType<ILandscapeDeformer>()
+            .ToList();
+        return builder.Build(coords, deformers);
+    }
+
+    private static Aabb ScanBounds(LandscapeBuilder builder, ChunkCoord coord)
+    {
+        Aabb bounds = builder.Grid.BoundsOf(coord);
+        foreach (ChunkCoord neighbour in builder.Grid.OverlappingWithHalo(bounds, builder.SampleRadius))
+        {
+            bounds = bounds.Merge(builder.Grid.BoundsOf(neighbour));
+        }
+
+        return bounds;
+    }
+
+    /// <summary>
     /// Where the viewport is looking. Rebuilds are ordered by distance from it, so what the user is
     /// looking at lands first; the debug window uses it to pick the chunk under the camera.
     /// </summary>

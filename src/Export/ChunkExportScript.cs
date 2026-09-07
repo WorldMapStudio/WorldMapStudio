@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -41,27 +41,20 @@ public interface IChunkExportScript : ISubsystem
 public sealed class ChunkExportContext
 {
     private readonly ExportSystem _exports;
-    private readonly LandscapeCatalog _catalog;
-    private readonly LandscapeFunctions _functions;
     private readonly string _profileId;
 
-    internal ChunkExportContext(ExportSystem exports, LandscapeCatalog catalog, LandscapeFunctions functions, string profileId)
+    internal ChunkExportContext(ExportSystem exports, string profileId)
     {
         _exports = exports;
-        _catalog = catalog;
-        _functions = functions;
         _profileId = profileId;
     }
 
     public string ProjectFolder => ProjectStore.ProjectFolder(_exports.Context.Project.Name);
 
-    public Task<LandscapeChunkOutput?> BuildLandscapeChunkAsync(MapId map, ChunkCoord coord) =>
-        _exports.BuildLandscapeChunkAsync(map, coord, _catalog, _functions);
-
-    /// <summary>Builds any number of chunks with one scene scan, rather than one per chunk — the
-    /// batch counterpart of <see cref="BuildLandscapeChunkAsync"/> a tile-shaped exporter needs.</summary>
+    /// <summary>Builds any number of chunks with one scene scan, rather than one per chunk — what a
+    /// tile-shaped exporter needs.</summary>
     public Task<LandscapeBuildResult?> BuildLandscapeChunksAsync(MapId map, IReadOnlyList<ChunkCoord> coords) =>
-        _exports.BuildLandscapeChunksAsync(map, coords, _catalog, _functions);
+        _exports.BuildLandscapeChunksAsync(map, coords);
 
     /// <summary>Scene entities overlapping <paramref name="region"/> — placements, procedural models,
     /// anything an exporter needs beyond the landscape itself.</summary>
