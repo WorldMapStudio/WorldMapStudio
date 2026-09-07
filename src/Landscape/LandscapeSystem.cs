@@ -202,37 +202,44 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// <summary>The map whose settings are currently loaded, so a map change can be noticed.</summary>
     private MapId _loadedMap = new(-1);
 
-    private LandscapeCatalog? _catalog;
-    private int _catalogVersion = -1;
-    private int _functionVersion = -1;
-    private MapId _catalogMap = new(-1);
+    private readonly object _catalogLock = new();
+    private readonly Dictionary<MapId, (int Catalog, int Functions, LandscapeCatalog Value)> _catalogs = [];
 
     /// <summary>
-    /// The loaded catalog, as the resolver sees it. Channels, layers and materials are all scoped to
-    /// the open map. Rebuilt only when entities are added or removed, functions change, or the open
-    /// map changes — edits to an entity's fields show through the references, and the window reads
-    /// this several times a frame.
+    /// The loaded catalog, as the resolver sees it for the open map. Channels, layers and materials
+    /// are all scoped to it — the window reads this several times a frame.
     /// </summary>
-    public LandscapeCatalog Catalog
+    public LandscapeCatalog Catalog => CatalogFor(_context.Maps.CurrentMap);
+
+    /// <summary>
+    /// Any map's catalog, not only the open one. Channels, layers and materials are all per map, so
+    /// offline work reaching another map must resolve against that map's own set — the open map's
+    /// would silently resolve nothing.
+    ///
+    /// Main thread only: it walks the live catalog registry, which the editor mutates. Offline callers
+    /// take this during their main-thread hop and carry the result into the build. Rebuilt per map
+    /// only when entities are added or removed or functions change — edits to an entity's fields show
+    /// through the references.
+    /// </summary>
+    public LandscapeCatalog CatalogFor(MapId map)
     {
-        get
+        lock (_catalogLock)
         {
-            MapId map = _context.Maps.CurrentMap;
-            if (_catalog != null && _catalogVersion == _context.Catalog.Version
-                && _functionVersion == Functions.Version && _catalogMap.Equals(map))
+            if (_catalogs.TryGetValue(map, out var cached)
+                && cached.Catalog == _context.Catalog.Version
+                && cached.Functions == Functions.Version)
             {
-                return _catalog;
+                return cached.Value;
             }
 
-            _catalogVersion = _context.Catalog.Version;
-            _functionVersion = Functions.Version;
-            _catalogMap = map;
-            _catalog = new LandscapeCatalog(
+            var built = new LandscapeCatalog(
                 _context.Catalog.OfType<LandscapeChannel>().Where(channel => channel.Map.Equals(map)).ToList(),
                 _context.Catalog.OfType<LandscapeLayer>().Where(layer => layer.Map.Equals(map)).ToList(),
                 _context.Catalog.OfType<LandscapeMaterial>().Where(material => material.Map.Equals(map)).ToList(),
                 Functions);
-            return _catalog;
+
+            _catalogs[map] = (_context.Catalog.Version, Functions.Version, built);
+            return built;
         }
     }
 
@@ -272,10 +279,11 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         FallbackMaterial = null;
         Error = null;
         _loadedMap = new MapId(-1);
-        _catalog = null;
-        _catalogVersion = -1;
-        _functionVersion = -1;
-        _catalogMap = new MapId(-1);
+        lock (_catalogLock)
+        {
+            _catalogs.Clear();
+        }
+
         _reportedCatalog = (-1, -1);
         _reportedScene = -1;
         _fallbackKey = (-1, -1);
