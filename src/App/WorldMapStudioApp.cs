@@ -4,8 +4,9 @@ using Godot;
 
 /// <summary>
 /// Application root node. Owns the ImGui layer and the shared work queue, and drives the active
-/// <see cref="IScene"/>: it starts at the <see cref="MainMenu"/>, then each frame asks the current
-/// scene what to run next (stay, transition, or quit).
+/// <see cref="IScene"/>: it starts at the <see cref="MainMenu"/> — or, when a project config is
+/// passed on the command line, straight in that project (see <see cref="ProjectAutostart"/>) — then
+/// each frame asks the current scene what to run next (stay, transition, or quit).
 /// </summary>
 public partial class WorldMapStudioApp : Node3D
 {
@@ -15,17 +16,7 @@ public partial class WorldMapStudioApp : Node3D
 	{
 		AddChild(new GodotImGui());
 
-		var events = new EventSystem();
-		var startup = new StartupEvent { Root = this };
-		events.Dispatch(startup);
-
-		if (startup.QuitRequested)
-		{
-			GetTree().Quit();
-			return;
-		}
-
-		_currentScene = startup.Scene ?? new MainMenu(this);
+		_currentScene = ProjectAutostart.Resolve(this) ?? new MainMenu(this);
 		_currentScene.Start();
 	}
 
