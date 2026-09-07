@@ -75,6 +75,28 @@ public sealed partial class ModelRendererComponent : SceneComponent, ISceneBound
     /// <summary>Extension point for a format-specific plugin to copy its own state onto a clone (e.g. copy/paste).</summary>
     partial void CopyExtraTo(ModelRendererComponent clone);
 
+    /// <summary>
+    /// Opaque per-format state a partial extension owns, round-tripped by
+    /// <see cref="ModelRendererComponentPersistence"/> without interpretation. Null when no extension
+    /// has any state to store.
+    /// </summary>
+    public string? FormatState
+    {
+        get
+        {
+            string? state = null;
+            SaveFormatState(ref state);
+            return state;
+        }
+        set => LoadFormatState(value);
+    }
+
+    /// <summary>Extension point for a format-specific plugin to serialise its own state for persistence.</summary>
+    partial void SaveFormatState(ref string? state);
+
+    /// <summary>Extension point for a format-specific plugin to restore state from <see cref="SaveFormatState"/>.</summary>
+    partial void LoadFormatState(string? state);
+
     public Node3D BuildNode()
     {
         if (!TryGetModel(out ModelAsset? model))
