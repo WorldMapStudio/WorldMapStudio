@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Godot;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace WorldMapStudio;
 
@@ -70,7 +73,15 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public override Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
         CommitAsync(CreateContext, saves, deletes);
 
-    /// <summary>Stamps every chunk a commit touched with the current time.</summary>
+    // How many rows go into one INSERT … ON DUPLICATE KEY UPDATE. A whole-map commit stamps tens of
+    // thousands of chunks; at three parameters a row this stays far under the wire-protocol limit.
+    private const int ChunkChangeRowsPerStatement = 1000;
+
+    /// <summary>
+    /// Stamps every chunk a commit touched with the current time. One batched upsert per
+    /// <see cref="ChunkChangeRowsPerStatement"/> rows: the earlier read-then-write per chunk was a
+    /// round-trip apiece, minutes of latency for a full-map edit.
+    /// </summary>
     public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks)
     {
         if (chunks.Count == 0)
@@ -82,40 +93,55 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
-        // A stuck statement here has hung the whole editor with no way out; a timeout turns that into
-        // a logged failure the commit can report instead.
-        context.Database.SetCommandTimeout(TimeSpan.FromSeconds(15.0));
-        GD.Print($"[ChunkChanges] Upserting {chunks.Count} chunk(s); lock+context took {clock.ElapsedMilliseconds}ms.");
+        // Table and column names off the model, so a naming convention can never silently desync this
+        // hand-written SQL from what EF maps the record to.
+        IEntityType type = context.Model.FindEntityType(typeof(ChunkChangeRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        string Column(string property) => type.FindProperty(property)!.GetColumnName(table)!;
+        string tableName = type.GetTableName()!;
+        string mapColumn = Column(nameof(ChunkChangeRecord.MapId));
+        string xColumn = Column(nameof(ChunkChangeRecord.ChunkX));
+        string yColumn = Column(nameof(ChunkChangeRecord.ChunkY));
+        string timeColumn = Column(nameof(ChunkChangeRecord.LastEditedUtc));
+
+        DbConnection connection = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+
         DateTime now = DateTime.UtcNow;
+        List<(int Map, int X, int Y)> all = chunks.ToList();
 
-        int scanned = 0;
-        foreach ((int map, int x, int y) in chunks)
+        for (int start = 0; start < all.Count; start += ChunkChangeRowsPerStatement)
         {
-            ChunkChangeRecord? record = await context.ChunkChanges.FindAsync([map, x, y]).ConfigureAwait(false);
-            if (record == null)
+            int count = Math.Min(ChunkChangeRowsPerStatement, all.Count - start);
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandTimeout = 60;
+
+            var sql = new StringBuilder(
+                $"INSERT INTO `{tableName}` (`{mapColumn}`, `{xColumn}`, `{yColumn}`, `{timeColumn}`) VALUES ");
+            for (int i = 0; i < count; i++)
             {
-                context.ChunkChanges.Add(new ChunkChangeRecord
-                {
-                    MapId = map,
-                    ChunkX = x,
-                    ChunkY = y,
-                    LastEditedUtc = now,
-                });
-            }
-            else
-            {
-                record.LastEditedUtc = now;
+                (int map, int x, int y) = all[start + i];
+                sql.Append(i == 0 ? "(" : ",(").Append($"@m{i},@x{i},@y{i},@t)");
+                AddParameter(command, $"@m{i}", map);
+                AddParameter(command, $"@x{i}", x);
+                AddParameter(command, $"@y{i}", y);
             }
 
-            if (++scanned % 200 == 0)
-            {
-                GD.Print($"[ChunkChanges] Looked up {scanned}/{chunks.Count} chunk(s) after {clock.ElapsedMilliseconds}ms.");
-            }
+            AddParameter(command, "@t", now);
+            sql.Append($" ON DUPLICATE KEY UPDATE `{timeColumn}` = VALUES(`{timeColumn}`)");
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
 
-        GD.Print($"[ChunkChanges] Saving after {clock.ElapsedMilliseconds}ms.");
-        await context.SaveChangesAsync().ConfigureAwait(false);
-        GD.Print($"[ChunkChanges] Done in {clock.ElapsedMilliseconds}ms.");
+        GD.Print($"[ChunkChanges] Upserted {all.Count} chunk(s) in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     /// <summary>Chunks edited strictly after <paramref name="since"/>, optionally on one map.</summary>
