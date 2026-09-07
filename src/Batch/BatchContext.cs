@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -60,7 +61,14 @@ public sealed class BatchContext
     public Task<LandscapeBuildResult?> BuildChunksAsync(MapId map, IReadOnlyList<ChunkCoord> coords)
     {
         _session.Touch();
-        return Task.Run(() => Editor.Landscape.BuildFromStorageAsync(map, coords));
+
+        // Task.Run stays: a script-driven session calls this from the main thread, where the settings
+        // read before the first await would otherwise be a dropped frame. The build hops back to main
+        // itself for the state it must read there — safe here because the script host pumps the main
+        // queue while a script's task is in flight rather than blocking on it.
+        WorkContext work = _session.WorkContext
+            ?? throw new InvalidOperationException("The batch session has no work context yet.");
+        return Task.Run(() => Editor.Landscape.BuildFromStorageAsync(map, coords, work));
     }
 
     /// <summary>Stored scene entities overlapping <paramref name="region"/> — placements, procedural

@@ -137,20 +137,27 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// every requested chunk's problems alongside its output, so no second pass is needed to surface
     /// them.
     /// </summary>
-    public async Task<LandscapeBuildResult?> BuildFromStorageAsync(MapId map, IReadOnlyList<ChunkCoord> coords)
+    public async Task<LandscapeBuildResult?> BuildFromStorageAsync(
+        MapId map, IReadOnlyList<ChunkCoord> coords, WorkContext work)
     {
         if (coords.Count == 0)
         {
             return null;
         }
 
+        // Settings and catalog are read off live editor state, so take them on the main thread before
+        // the build leaves it — the guarantee TakeSnapshot gives the live path.
+        await work.SwitchToMain();
         LandscapeSettings? settings = LoadSettingsFor(map);
+        LandscapeCatalog catalog = CatalogFor(map);
+        await work.SwitchToBackground();
+
         if (settings == null)
         {
             return null;
         }
 
-        var builder = new LandscapeBuilder(settings, Catalog, Functions);
+        var builder = new LandscapeBuilder(settings, catalog, Functions);
         Aabb scan = ScanBounds(builder, coords[0]);
         for (int i = 1; i < coords.Count; i++)
         {
@@ -162,6 +169,12 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
             .SelectMany(entity => entity.Components)
             .OfType<ILandscapeDeformer>()
             .ToList();
+
+        // Storage-scanned deformers are inert until hydrated with the state streaming would have put
+        // on them live — resident image pixels, a published procedural build. No-op when nothing
+        // scanned needs it.
+        await LandscapeBuildPreparation.RunAsync(_context, scan, deformers, work);
+
         return builder.Build(coords, deformers);
     }
 
