@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading.Tasks;
 using Godot;
 
 namespace WorldMapStudio;
@@ -49,6 +50,9 @@ public sealed partial class BatchSystem : ISubsystemHost, IWorldParticipant
 
     public BatchRun? FindRun(long id) => _runs.FirstOrDefault(run => run.Id == id);
 
+    /// <summary>The session currently holding the gate, whether a run's or a script's.</summary>
+    public BatchSession? ActiveSession { get; private set; }
+
     /// <summary>
     /// Starts an operation, or returns null with <paramref name="blocker"/> set to why it cannot start
     /// — another exclusive operation running, a reload pending, or the edit session dirty. Only one
@@ -57,25 +61,98 @@ public sealed partial class BatchSystem : ISubsystemHost, IWorldParticipant
     public BatchRun? TryStart(IBatchOperation operation, JsonObject? overrides, out string? blocker)
     {
         JsonObject settings = MergeSettings(SettingsFor(operation.Id), overrides);
-        var status = new BatchStatusHolder();
-        var reload = new BatchReloadLatch();
+        BatchSession? session = Open(
+            operation.DisplayName,
+            operation.Id,
+            settings,
+            (context, work) => operation.RunAsync(context, work),
+            out blocker);
+
+        if (session == null)
+        {
+            return null;
+        }
+
+        var run = new BatchRun(operation.Id, session);
+        _runs.Insert(0, run);
+        while (_runs.Count > RecentRunCapacity)
+        {
+            _runs.RemoveAt(_runs.Count - 1);
+        }
+
+        return run;
+    }
+
+    /// <summary>
+    /// Takes the same gate under the same conditions and holds it until <see cref="BatchSession.End"/>,
+    /// for a caller that drives a batch across many calls rather than being one body. State is scoped
+    /// to <paramref name="name"/>.
+    /// </summary>
+    public BatchSession? TryOpenSession(string name, out string? blocker) =>
+        Open(name, name, new JsonObject(), body: null, out blocker);
+
+    /// <summary>Ends the active session from the outside — the recovery path for a script that
+    /// crashed or a client that disconnected holding the gate. Honours the reload latch, so a session
+    /// that had already written still reloads.</summary>
+    public void ForceEnd()
+    {
+        if (ActiveSession is not { } session)
+        {
+            return;
+        }
+
+        session.Cancel();
+        session.End();
+    }
+
+    private BatchSession? Open(
+        string name,
+        string stateNamespace,
+        JsonObject settings,
+        Func<BatchContext, WorkContext, Task>? body,
+        out string? blocker)
+    {
+        // Asked before anything is constructed: TryRun would refuse too, but only after ActiveSession
+        // had already been overwritten with a session that never starts.
+        blocker = Context.Operations.Blocker;
+        if (blocker != null)
+        {
+            return null;
+        }
+
+        var session = new BatchSession(this, name, settings, State.For(stateNamespace));
+        ActiveSession = session;
 
         WorkHandle? handle = Context.Operations.TryRun(
-            operation.DisplayName,
+            name,
             async work =>
             {
-                var context = new BatchContext(this, settings, State.For(operation.Id), status, reload, work);
+                session.BindWork(work);
                 try
                 {
-                    await operation.RunAsync(context, work).ConfigureAwait(false);
+                    // No body means the caller drives: hold the gate until someone ends the session.
+                    if (body != null)
+                    {
+                        await body(session.Context, work).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        await session.Completion.ConfigureAwait(false);
+                    }
                 }
                 finally
                 {
-                    // Outside the success path on purpose: the latch is set when a write lands, so a
-                    // run that wrote and then faulted still leaves the world needing a re-read.
-                    if (reload.Reason is { } reason)
+                    session.End();
+                    if (ReferenceEquals(ActiveSession, session))
                     {
-                        Context.RequestReload($"{operation.DisplayName}: {reason}");
+                        ActiveSession = null;
+                    }
+
+                    // Outside the success path on purpose: the latch is set when a write lands, so a
+                    // batch that wrote and then faulted still leaves the world needing a re-read.
+                    if (session.ReloadReason is { } reason)
+                    {
+                        Context.RequestReload($"{name}: {reason}");
                     }
                 }
             },
@@ -85,17 +162,12 @@ public sealed partial class BatchSystem : ISubsystemHost, IWorldParticipant
 
         if (handle == null)
         {
+            ActiveSession = null;
             return null;
         }
 
-        var run = new BatchRun(operation.Id, handle, status, reload);
-        _runs.Insert(0, run);
-        while (_runs.Count > RecentRunCapacity)
-        {
-            _runs.RemoveAt(_runs.Count - 1);
-        }
-
-        return run;
+        session.BindHandle(handle);
+        return session;
     }
 
     /// <summary>An operation's stored settings blob, or an empty one when it has never been saved.</summary>
