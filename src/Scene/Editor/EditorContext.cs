@@ -107,6 +107,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts chunk-oriented export scripts and the committed chunk change registry.</summary>
     public ExportSystem Exports { get; }
 
+    /// <summary>Hosts the batch operations and runs one at a time behind <see cref="Operations"/>.</summary>
+    public BatchSystem Batch { get; }
+
     /// <summary>Collects every <see cref="IWorldParticipant"/> and drives loading/unloading the
     /// project's data as one ordered operation, in both directions.</summary>
     public WorldLifecycle Lifecycle { get; }
@@ -173,6 +176,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Migrations = new MigrationSystem(this);
         Scripting = new ScriptingSystem(this);
         Exports = new ExportSystem(this);
+        Batch = new BatchSystem(this);
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.

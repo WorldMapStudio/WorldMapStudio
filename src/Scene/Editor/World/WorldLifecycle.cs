@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using Godot;
@@ -228,6 +228,7 @@ public sealed class WorldLifecycle
         Visit(context.Streaming);
         Visit(context.Environments);
         Visit(context.Exports);
+        Visit(context.Batch);
         Visit(context.ComponentTypes);
         Visit(context.MapProperties);
         Visit(context.Scripting);
