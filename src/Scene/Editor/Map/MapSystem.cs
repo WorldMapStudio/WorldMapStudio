@@ -138,6 +138,7 @@ public sealed class MapSystem : IWorldParticipant
         Sort();
         Version++;
         error = null;
+        GD.Print($"[Map] Created map {id} '{created.Name}'.");
         return created;
     }
 
@@ -251,6 +252,7 @@ public sealed class MapSystem : IWorldParticipant
             return;
         }
 
+        GD.Print($"[Map] Entering map {map.Id.Value} '{map.DisplayName}'.");
         Current = map;
         Version++;
     }
