@@ -58,7 +58,13 @@ public sealed class BatchContext
 
     /// <summary>Builds any number of chunks with one scene scan. See
     /// <see cref="LandscapeSystem.BuildFromStorageAsync"/>.</summary>
-    public Task<LandscapeBuildResult?> BuildChunksAsync(MapId map, IReadOnlyList<ChunkCoord> coords)
+    public async Task<LandscapeBuildResult?> BuildChunksAsync(MapId map, IReadOnlyList<ChunkCoord> coords) =>
+        (await BuildChunksWithSceneAsync(map, coords).ConfigureAwait(false))?.Result;
+
+    /// <summary>Builds chunks and hands back the scene entities the build already scanned — its region
+    /// plus the sample halo — so a caller that also needs the built tile's placements does not query
+    /// the scene a second time. <see cref="BuildChunksAsync"/> is this without the entities.</summary>
+    public Task<LandscapeSystem.LandscapeStorageBuild?> BuildChunksWithSceneAsync(MapId map, IReadOnlyList<ChunkCoord> coords)
     {
         _session.Touch();
 
