@@ -140,6 +140,11 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         return null;
     }
 
+    /// <summary>A storage build's result plus the scene entities it scanned — the built region grown
+    /// by the sample halo — handed back so a caller that also needs those entities (a tile's
+    /// placements, say) does not query the scene a second time.</summary>
+    public sealed record LandscapeStorageBuild(LandscapeBuildResult Result, IReadOnlyList<SceneEntity> SceneEntities);
+
     /// <summary>
     /// Builds chunks from stored data: deformers come from scanning storage, so this reaches maps that
     /// are not open and chunks that never streamed in. The offline counterpart of
@@ -149,9 +154,9 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// One scene scan and one <see cref="LandscapeBuilder.Build"/> call cover every requested chunk —
     /// a caller writing a whole tile needs its chunks built as a block, not scanned once each. Returns
     /// every requested chunk's problems alongside its output, so no second pass is needed to surface
-    /// them.
+    /// them, and the scanned entities so no second scan is either.
     /// </summary>
-    public async Task<LandscapeBuildResult?> BuildFromStorageAsync(
+    public async Task<LandscapeStorageBuild?> BuildFromStorageAsync(
         MapId map, IReadOnlyList<ChunkCoord> coords, WorkContext work)
     {
         if (coords.Count == 0)
@@ -186,7 +191,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         // scanned needs it.
         await LandscapeBuildPreparation.RunAsync(_context, scan, deformers, work);
 
-        return builder.Build(coords, deformers);
+        return new LandscapeStorageBuild(builder.Build(coords, deformers), entities);
     }
 
     /// <summary>
