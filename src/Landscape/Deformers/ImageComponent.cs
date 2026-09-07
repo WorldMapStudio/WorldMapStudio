@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 /// updates every placement. See <see cref="ProceduralComponent"/> for the same split applied to
 /// procedural meshes.
 /// </summary>
-public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, IIncrementalLandscapeDeformer, ISceneNodeComponent, IMeshPickable
+public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITransformPolicy, ILandscapeDeformer, IIncrementalLandscapeDeformer, IPreparableLandscapeDeformer, ISceneNodeComponent, IMeshPickable
 {
     /// <summary>The single source of truth for this component kind's id — <see cref="ImageComponentType"/>
     /// and <see cref="ImageComponentPersistence"/> both reference this instead of restating it.</summary>
@@ -43,6 +43,10 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     // and costing one per chunk in the entire image, every frame.
     private Node3D? _root;
     private readonly Dictionary<ImageChunkCoord, ChunkNode> _chunkNodes = [];
+
+    // The chunk table an offline build loaded for this placement, or null on the live path, where
+    // residency has already put the pixels on the shared image. Set once by Prepare, read by Rasterize.
+    private ImageChunkTable? _preparedChunks;
 
     // What ConsumeDirtyRegions last saw, kept separate from _chunkNodes above: that one only exists
     // while a display layer is bound to something other than None, but the landscape rebuild this
@@ -544,6 +548,17 @@ void fragment() {
 
     public IEnumerable<LandscapeClaimGroup> Claim(in LandscapeClaimContext context) => [];
 
+    public void Request(LandscapeBuildRequest request)
+    {
+        if (Image is { } image && ChunksNeededFor(request.Region) is { } rect)
+        {
+            request.ImageChunks(image, rect);
+        }
+    }
+
+    public void Prepare(LandscapeBuildResources resources) =>
+        _preparedChunks = Image is { } image ? resources.ImageChunks(image) : ImageChunkTable.Empty;
+
     public void Rasterize(in LandscapeRasterContext context)
     {
         if (Image is not { } image)
@@ -563,7 +578,7 @@ void fragment() {
         // running the full loop. This is what keeps a big footprint cheap — without it, one small
         // painted spot on a large canvas still costs a full resolution² bilinear sweep on every
         // landscape chunk the footprint happens to cover, almost all of it sampling nothing.
-        if (!HasResidentChunksIn(context.Grid.BoundsOf(context.Coord)))
+        if (!HasPixelsIn(context.Grid.BoundsOf(context.Coord)))
         {
             return;
         }
@@ -573,8 +588,9 @@ void fragment() {
 
         // Snapshotted once per rasterize rather than sampled straight off the image: this runs on a
         // landscape build worker while the image may be being painted concurrently on the main
-        // thread — see ImageChunkTable for why a snapshot is what makes that safe.
-        ImageSampler sampler = image.CreateSampler();
+        // thread — see ImageChunkTable for why a snapshot is what makes that safe. An offline build
+        // hands its own prepared table in; the live path passes null and gets the resident set.
+        ImageSampler sampler = image.CreateSampler(_preparedChunks);
 
         // Only a color destination fed by an explicit-or-native "give me the color" binding writes a
         // color; anything else — a scalar destination, or a binding that names one component — reduces
@@ -721,12 +737,13 @@ void fragment() {
         return image.ChunkRectForUv(uMin, uMax, vMin, vMax, headroomChunks: 1);
     }
 
-    /// <summary>Whether the bound image has any resident chunk under a world region — the cheap
-    /// "is there anything painted here at all" test <see cref="Rasterize"/> early-outs on. Reuses
-    /// <see cref="ChunksNeededFor"/>, so it inherits that method's one-chunk headroom: over-inclusive
-    /// by design, since a bilinear tap near a resident chunk's edge reads into its neighbour, and
-    /// answering "yes" when the region is in fact empty only costs a sweep that writes nothing.</summary>
-    private bool HasResidentChunksIn(Aabb worldRegion)
+    /// <summary>Whether the bound image has any pixels under a world region — the cheap "is there
+    /// anything painted here at all" test <see cref="Rasterize"/> early-outs on. Consults the prepared
+    /// table on an offline build, the image's resident set otherwise. Reuses <see cref="ChunksNeededFor"/>,
+    /// so it inherits that method's one-chunk headroom: over-inclusive by design, since a bilinear tap
+    /// near a chunk's edge reads into its neighbour, and answering "yes" when the region is in fact
+    /// empty only costs a sweep that writes nothing.</summary>
+    private bool HasPixelsIn(Aabb worldRegion)
     {
         if (Image is not { } image || ChunksNeededFor(worldRegion) is not { } rect)
         {
@@ -735,7 +752,10 @@ void fragment() {
 
         foreach (ImageChunkCoord coord in rect.Coords())
         {
-            if (image.IsResident(coord))
+            bool present = _preparedChunks is { } prepared
+                ? prepared.TryGet(coord, out _)
+                : image.IsResident(coord);
+            if (present)
             {
                 return true;
             }
