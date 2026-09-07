@@ -75,6 +75,20 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         LandscapeFunctions Functions,
         IReadOnlyList<ILandscapeDeformer> Deformers);
 
+    /// <summary>Everything an offline build reads off live editor state, captured on the main thread.
+    /// Reused for as long as neither the settings nor the catalog have moved, which for the length of
+    /// a batch is always — the batch holds the gate. <see cref="Settings"/> is null for a map with no
+    /// landscape, still cached so repeated tiles for it do not each pay a thread hop.</summary>
+    private sealed record OfflineSnapshot(
+        int LandscapeVersion,
+        int CatalogVersion,
+        int FunctionVersion,
+        LandscapeSettings? Settings,
+        LandscapeCatalog Catalog);
+
+    private readonly object _offlineLock = new();
+    private readonly Dictionary<MapId, OfflineSnapshot> _offlineSnapshots = [];
+
     /// <summary>
     /// Captures the inputs of a build. Called on the main thread before the work leaves it: the
     /// catalog memoizes into fields and the scene registry is mutated by streaming, so a builder must
@@ -146,18 +160,15 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         }
 
         // Settings and catalog are read off live editor state, so take them on the main thread before
-        // the build leaves it — the guarantee TakeSnapshot gives the live path.
-        await work.SwitchToMain();
-        LandscapeSettings? settings = LoadSettingsFor(map);
-        LandscapeCatalog catalog = CatalogFor(map);
-        await work.SwitchToBackground();
-
-        if (settings == null)
+        // the build leaves it — the guarantee TakeSnapshot gives the live path. Cached per map for the
+        // length of a batch, so only the first tile of each map pays the hop.
+        OfflineSnapshot snapshot = await TakeOfflineSnapshotAsync(map, work).ConfigureAwait(false);
+        if (snapshot.Settings is not { } settings)
         {
             return null;
         }
 
-        var builder = new LandscapeBuilder(settings, catalog, Functions);
+        var builder = new LandscapeBuilder(settings, snapshot.Catalog, Functions);
         Aabb scan = ScanBounds(builder, coords[0]);
         for (int i = 1; i < coords.Count; i++)
         {
@@ -176,6 +187,36 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         await LandscapeBuildPreparation.RunAsync(_context, scan, deformers, work);
 
         return builder.Build(coords, deformers);
+    }
+
+    /// <summary>
+    /// The settings and catalog for an offline build of <paramref name="map"/>, hopping to the main
+    /// thread to read live editor state only on a cache miss. During a batch nothing edits either, so
+    /// after the first tile of a map this returns without a hop and retires the per-tile
+    /// <see cref="LoadSettingsFor"/> database round trip with it.
+    /// </summary>
+    private async Task<OfflineSnapshot> TakeOfflineSnapshotAsync(MapId map, WorkContext work)
+    {
+        (int Landscape, int Catalog, int Function) key = (Version, _context.Catalog.Version, Functions.Version);
+        lock (_offlineLock)
+        {
+            if (_offlineSnapshots.TryGetValue(map, out OfflineSnapshot? cached)
+                && (cached.LandscapeVersion, cached.CatalogVersion, cached.FunctionVersion) == key)
+            {
+                return cached;
+            }
+        }
+
+        await work.SwitchToMain();
+        var snapshot = new OfflineSnapshot(
+            Version, _context.Catalog.Version, Functions.Version, LoadSettingsFor(map), CatalogFor(map));
+        lock (_offlineLock)
+        {
+            _offlineSnapshots[map] = snapshot;
+        }
+
+        await work.SwitchToBackground();
+        return snapshot;
     }
 
     private static Aabb ScanBounds(LandscapeBuilder builder, ChunkCoord coord)
@@ -295,6 +336,11 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         lock (_catalogLock)
         {
             _catalogs.Clear();
+        }
+
+        lock (_offlineLock)
+        {
+            _offlineSnapshots.Clear();
         }
 
         _reportedCatalog = (-1, -1);
