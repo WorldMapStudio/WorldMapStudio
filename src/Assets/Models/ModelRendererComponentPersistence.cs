@@ -11,6 +11,10 @@ public sealed class SceneModelRendererComponentRecord
 
     public string ModelPath { get; set; } = "";
 
+    /// <summary>Opaque format-specific state owned by a <see cref="ModelRendererComponent"/> partial
+    /// extension; stored and returned verbatim.</summary>
+    public string? FormatState { get; set; }
+
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -54,7 +58,11 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
         {
             if (byId.TryGetValue(row.EntityId, out SceneEntity? entity))
             {
-                entity.LoadComponent(new ModelRendererComponent(_assets, _materials) { ModelPath = row.ModelPath });
+                entity.LoadComponent(new ModelRendererComponent(_assets, _materials)
+                {
+                    ModelPath = row.ModelPath,
+                    FormatState = row.FormatState,
+                });
             }
         }
     }
@@ -77,6 +85,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
             Entity = entity.RecordId is null ? entityRow : null,
             EntityId = entity.RecordId ?? 0,
             ModelPath = model.ModelPath,
+            FormatState = model.FormatState,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }
