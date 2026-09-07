@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using ImGuiNET;
@@ -109,7 +109,6 @@ public sealed class ExportWindow : Window
             _mode = (ExportTargetMode)mode;
         }
 
-        int dirty = 0;
         ChunkRange? range = null;
 
         if (_mode == ExportTargetMode.Dirty)
@@ -120,8 +119,7 @@ public sealed class ExportWindow : Window
                 _scope = (ChunkExportScope)scope;
             }
 
-            dirty = _exports.Changes.DirtyFor(profile.Id, _scope).Count;
-            ImGui.TextDisabled($"{dirty} dirty chunks");
+            ImGui.TextDisabled("Exports every edited chunk in scope.");
         }
         else
         {
@@ -142,7 +140,7 @@ public sealed class ExportWindow : Window
 
         if (_mode == ExportTargetMode.Dirty)
         {
-            ImGui.BeginDisabled(running || dirty == 0 || blocker != null);
+            ImGui.BeginDisabled(running || blocker != null);
             if (ImGui.Button("Export Dirty", new NVector2(130.0f, 0.0f)))
             {
                 _running = _exports.Run(profile, _scope);
@@ -160,21 +158,6 @@ public sealed class ExportWindow : Window
             }
             ImGui.EndDisabled();
         }
-
-        ImGui.SameLine();
-        ImGui.BeginDisabled(running);
-        if (ImGui.Button("Clear Dirty", new NVector2(130.0f, 0.0f)))
-        {
-            if (_mode == ExportTargetMode.Dirty)
-            {
-                _exports.ClearDirty(profile, _scope);
-            }
-            else if (range is { } clearRange)
-            {
-                _exports.ClearDirty(profile, clearRange);
-            }
-        }
-        ImGui.EndDisabled();
 
         if (blocker != null)
         {

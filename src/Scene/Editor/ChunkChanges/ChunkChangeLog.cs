@@ -1,19 +1,32 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using Godot;
+using System.Threading.Tasks;
 
 namespace WorldMapStudio;
 
-public sealed class ChunkChangeRegistry
+/// <summary>A chunk and when an edit last touched it.</summary>
+public readonly record struct ChunkChange(MapId Map, ChunkCoord Coord, DateTime LastEditedUtc);
+
+/// <summary>
+/// When each chunk was last edited, and nothing else. A plain member of <see cref="EditorContext"/>,
+/// written by <see cref="DatabaseSystem.Persist"/> on every commit.
+///
+/// Purely a log: it never learns who read it or what anyone considers up to date. A consumer keeps
+/// one watermark per whatever unit it cares about — a map, an output folder, the whole project — and
+/// asks <see cref="ChangedSinceAsync"/> what happened after it. That is its entire cache.
+/// </summary>
+public sealed class ChunkChangeLog
 {
     private readonly EditorContext _context;
 
-    public ChunkChangeRegistry(EditorContext context)
+    public ChunkChangeLog(EditorContext context)
     {
         _context = context;
     }
 
+    /// <summary>Stamps every chunk a commit touched. Blocking rather than async because it runs
+    /// inside the commit path on the main thread, and the rest of that path is synchronous.</summary>
     public void RecordCommit(EditSession session, Func<IEntity, bool> wasCommitted)
     {
         HashSet<(int Map, int X, int Y)> chunks = AffectedChunks(session, wasCommitted);
@@ -22,68 +35,42 @@ public sealed class ChunkChangeRegistry
             return;
         }
 
-        string hash = Guid.NewGuid().ToString("N");
-        BlockingWork.Run(() => storage.UpsertChunkChangesAsync(chunks, hash));
+        BlockingWork.Run(() => storage.UpsertChunkChangesAsync(chunks));
     }
 
-    public IReadOnlyList<ChunkChange> DirtyFor(string profileId, ChunkExportScope scope)
+    /// <summary>Every chunk edited strictly after <paramref name="since"/>, optionally on one map.
+    /// The one query the whole caching model is built on.</summary>
+    public async Task<IReadOnlyList<ChunkChange>> ChangedSinceAsync(DateTime since, MapId? map = null)
     {
         if (EditorStorage() is not { } storage)
         {
             return [];
         }
 
-        int? map = scope == ChunkExportScope.CurrentMap ? _context.Maps.CurrentMap.Value : null;
-        return BlockingWork.Run(() => storage.LoadDirtyChunksAsync(profileId, map));
+        return await storage.LoadChangedSinceAsync(since, map?.Value).ConfigureAwait(false);
     }
 
-    /// <summary>Every chunk in a range export's target rectangle, regardless of dirty status.</summary>
-    public IReadOnlyList<ChunkChange> ForRange(ChunkRange range)
+    /// <summary>Every chunk in a coordinate rectangle that has ever been edited.</summary>
+    public async Task<IReadOnlyList<ChunkChange>> InRangeAsync(ChunkRange range)
     {
         if (EditorStorage() is not { } storage)
         {
             return [];
         }
 
-        return BlockingWork.Run(() => storage.LoadChunksInRangeAsync(range.Map, range.Min, range.Max));
+        return await storage.LoadChunksInRangeAsync(range.Map, range.Min, range.Max).ConfigureAwait(false);
     }
 
-    public void MarkExported(string profileId, IReadOnlyList<ChunkChange> chunks)
-    {
-        if (chunks.Count == 0 || EditorStorage() is not { } storage)
-        {
-            return;
-        }
-
-        BlockingWork.Run(() => storage.UpsertExportedChunksAsync(profileId, chunks));
-    }
-
-    /// <summary>Force-redirties a profile's exported state for a scope, so the next export re-does
-    /// everything in it even though content hasn't changed.</summary>
-    public void ClearExported(string profileId, ChunkExportScope scope)
+    /// <summary>The newest edit time on record, so a consumer whose query returned nothing can still
+    /// move its watermark forward. Null when nothing has ever been edited.</summary>
+    public async Task<DateTime?> LatestEditUtcAsync(MapId? map = null)
     {
         if (EditorStorage() is not { } storage)
         {
-            return;
+            return null;
         }
 
-        int? map = scope == ChunkExportScope.CurrentMap ? _context.Maps.CurrentMap.Value : null;
-        BlockingWork.Run(() => storage.ClearExportedChunksAsync(profileId, map, null, null));
-    }
-
-    /// <summary>Force-redirties a profile's exported state for an explicit chunk range.</summary>
-    public void ClearExported(string profileId, ChunkRange range)
-    {
-        if (EditorStorage() is not { } storage)
-        {
-            return;
-        }
-
-        BlockingWork.Run(() => storage.ClearExportedChunksAsync(
-            profileId,
-            range.Map.Value,
-            (range.Min.X, range.Min.Y),
-            (range.Max.X, range.Max.Y)));
+        return await storage.LoadLatestEditUtcAsync(map?.Value).ConfigureAwait(false);
     }
 
     private HashSet<(int Map, int X, int Y)> AffectedChunks(EditSession session, Func<IEntity, bool> wasCommitted)
@@ -98,6 +85,13 @@ public sealed class ChunkChangeRegistry
         return chunks;
     }
 
+    /// <summary>
+    /// Folds a session's commands into one before/after pair per entity and drops the pairs that are
+    /// equal — a move and a move back, or any other edit that nets out to nothing, stamps no chunk.
+    ///
+    /// This fingerprint comparison is the only content comparison in the system. Everything downstream
+    /// works from "edited after T", so if this stops discarding no-op edits nothing else will.
+    /// </summary>
     internal static IReadOnlyList<(SceneEntity Entity, ChunkChangeSnapshot? Before, ChunkChangeSnapshot? After)> ReduceImpacts(
         IEnumerable<IEditCommand> commands,
         Func<IEntity, bool> wasCommitted)

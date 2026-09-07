@@ -10,7 +10,7 @@ public sealed partial class ExportSystem : ISubsystemHost
 {
     public EditorContext Context { get; }
 
-    public ChunkChangeRegistry Changes { get; }
+    public ChunkChangeLog Changes => Context.ChunkChanges;
 
     public ExportProfileRegistry Profiles { get; }
 
@@ -19,36 +19,29 @@ public sealed partial class ExportSystem : ISubsystemHost
     public ExportSystem(EditorContext context)
     {
         Context = context;
-        Changes = new ChunkChangeRegistry(context);
         InitializeSubsystems();
         Profiles = new ExportProfileRegistry(context);
     }
 
     public LandscapeSettings? LoadLandscapeSettings(MapId map) => Context.Landscape.LoadSettingsFor(map);
 
+    // Scheduled for deletion: this whole system is replaced by BatchSystem, and its per-profile
+    // export cache is already gone — every run now re-exports everything it is pointed at. Kept only
+    // so the plugin's exporter compiles until it moves onto IBatchOperation.
+
     /// <summary>Schedules an export behind <see cref="WorldOperations"/>' exclusive gate — refuses
     /// (returning null) if the edit session is dirty or another exclusive operation is already running,
-    /// and no session edit can be recorded until the export finishes. An export only ever reads
-    /// *committed* chunk changes, so this isn't about correctness so much as making sure nobody starts
-    /// painting terrain a running export is about to read, or loses track of an export that's still
-    /// in flight; it doesn't touch the loaded world's own content, so it skips the reload
-    /// <see cref="WorldOperations.TryRun"/> would otherwise request afterward.</summary>
+    /// and no session edit can be recorded until the export finishes.</summary>
     public WorkHandle? Run(ExportProfile profile, ChunkExportScope scope) =>
-        Run(profile, Changes.DirtyFor(profile.Id, scope), onSuccess: chunks => Changes.MarkExported(profile.Id, chunks));
+        Run(profile, BlockingWork.Run(() => Changes.ChangedSinceAsync(
+            DateTime.MinValue,
+            scope == ChunkExportScope.CurrentMap ? Context.Maps.CurrentMap : null)));
 
-    /// <summary>Exports every chunk in an explicit range regardless of dirty status. On full success the
-    /// range's chunks are marked exported too, so a dirty-based export won't redo them afterward.</summary>
+    /// <summary>Exports every edited chunk in an explicit range.</summary>
     public WorkHandle? RunRange(ExportProfile profile, ChunkRange range) =>
-        Run(profile, Changes.ForRange(range), onSuccess: chunks => Changes.MarkExported(profile.Id, chunks));
+        Run(profile, BlockingWork.Run(() => Changes.InRangeAsync(range)));
 
-    /// <summary>Force-redirties a profile's exported state for a scope, so the next export re-does it
-    /// even though content hasn't changed.</summary>
-    public void ClearDirty(ExportProfile profile, ChunkExportScope scope) => Changes.ClearExported(profile.Id, scope);
-
-    /// <summary>Force-redirties a profile's exported state for an explicit range.</summary>
-    public void ClearDirty(ExportProfile profile, ChunkRange range) => Changes.ClearExported(profile.Id, range);
-
-    private WorkHandle? Run(ExportProfile profile, IReadOnlyList<ChunkChange> chunks, Action<IReadOnlyList<ChunkChange>> onSuccess)
+    private WorkHandle? Run(ExportProfile profile, IReadOnlyList<ChunkChange> chunks)
     {
         if (Exporters.FirstOrDefault(candidate => candidate.Id == profile.ExporterId) is not { } exporter)
         {
@@ -64,13 +57,7 @@ public sealed partial class ExportSystem : ISubsystemHost
             {
                 work.Step("Exporting");
                 var context = new ChunkExportContext(this, profile.Id);
-                ChunkExportResult result = await exporter.ExportAsync(context, chunks, work).ConfigureAwait(false);
-
-                if (result.ExportedChunks == chunks.Count && chunks.Count > 0)
-                {
-                    work.Step("Updating export state");
-                    onSuccess(chunks);
-                }
+                await exporter.ExportAsync(context, chunks, work).ConfigureAwait(false);
             },
             out string? blocker,
             reloadAfter: false);

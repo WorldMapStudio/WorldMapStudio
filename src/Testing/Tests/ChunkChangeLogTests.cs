@@ -3,7 +3,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public static class ChunkChangeRegistryTests
+public static class ChunkChangeLogTests
 {
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Undone_edit_does_not_report_a_committed_chunk_change()
@@ -16,7 +16,7 @@ public static class ChunkChangeRegistryTests
         history.Record(new TransformEntitiesCommand([entity], [before], [after]));
         history.Undo();
 
-        var ranges = ChunkChangeRegistry.ReduceImpacts(history.UndoStack, _ => true);
+        var ranges = ChunkChangeLog.ReduceImpacts(history.UndoStack, _ => true);
 
         Assert.AreEqual(0, ranges.Count, "only applied commands should contribute at commit time");
     }
@@ -34,7 +34,7 @@ public static class ChunkChangeRegistryTests
         entity.Transform = a;
         history.Record(new TransformEntitiesCommand([entity], [b], [a]));
 
-        var ranges = ChunkChangeRegistry.ReduceImpacts(history.UndoStack, _ => true);
+        var ranges = ChunkChangeLog.ReduceImpacts(history.UndoStack, _ => true);
 
         Assert.AreEqual(0, ranges.Count, "the final committed state matches the starting state");
     }
@@ -48,7 +48,7 @@ public static class ChunkChangeRegistryTests
         entity.Transform = after;
 
         var command = new TransformEntitiesCommand([entity], [before], [after]);
-        var ranges = ChunkChangeRegistry.ReduceImpacts([command], _ => true);
+        var ranges = ChunkChangeLog.ReduceImpacts([command], _ => true);
 
         Assert.AreEqual(1, ranges.Count);
         // A componentless SceneEntity's default bounds are a unit box centered on its origin (see
@@ -66,7 +66,7 @@ public static class ChunkChangeRegistryTests
         entity.Transform = after;
 
         var command = new TransformEntitiesCommand([entity], [before], [after]);
-        var ranges = ChunkChangeRegistry.ReduceImpacts([command], _ => false);
+        var ranges = ChunkChangeLog.ReduceImpacts([command], _ => false);
 
         Assert.AreEqual(0, ranges.Count);
     }

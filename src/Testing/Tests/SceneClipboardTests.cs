@@ -154,7 +154,7 @@ public static class SceneClipboardTests
         var commandB = new CreateEntityCommand(scene, b);
         var batch = new BatchEditCommand("Paste 2 entities", [commandA, commandB]);
 
-        var ranges = ChunkChangeRegistry.ReduceImpacts([batch], _ => true);
+        var ranges = ChunkChangeLog.ReduceImpacts([batch], _ => true);
 
         Assert.AreEqual(2, ranges.Count, "each pasted entity's create should still dirty its chunk");
     }

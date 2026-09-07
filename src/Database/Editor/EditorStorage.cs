@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -68,7 +68,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public override Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
         CommitAsync(CreateContext, saves, deletes);
 
-    public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks, string contentHash)
+    /// <summary>Stamps every chunk a commit touched with the current time.</summary>
+    public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks)
     {
         if (chunks.Count == 0)
         {
@@ -89,34 +90,26 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
                     MapId = map,
                     ChunkX = x,
                     ChunkY = y,
-                    ContentHash = contentHash,
-                    UpdatedAtUtc = now,
+                    LastEditedUtc = now,
                 });
             }
             else
             {
-                record.ContentHash = contentHash;
-                record.UpdatedAtUtc = now;
+                record.LastEditedUtc = now;
             }
         }
 
         await context.SaveChangesAsync().ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<ChunkChange>> LoadDirtyChunksAsync(string profileId, int? map)
+    /// <summary>Chunks edited strictly after <paramref name="since"/>, optionally on one map.</summary>
+    public async Task<IReadOnlyList<ChunkChange>> LoadChangedSinceAsync(DateTime since, int? map)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
-        var query =
-            from change in context.ChunkChanges.AsNoTracking()
-            join exported in context.ExportedChunks.AsNoTracking().Where(record => record.ProfileId == profileId)
-                on new { change.MapId, change.ChunkX, change.ChunkY }
-                equals new { exported.MapId, exported.ChunkX, exported.ChunkY }
-                into exportedJoin
-            from exported in exportedJoin.DefaultIfEmpty()
-            where exported == null || exported.ContentHash != change.ContentHash
-            select change;
+        IQueryable<ChunkChangeRecord> query = context.ChunkChanges.AsNoTracking()
+            .Where(change => change.LastEditedUtc > since);
 
         if (map is { } mapId)
         {
@@ -133,10 +126,24 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return rows.Select(ToChange).ToList();
     }
 
-    /// <summary>Every chunk in a coordinate rectangle, regardless of dirty status — the source for a
-    /// range export. A chunk never touched by an edit has no <see cref="ChunkChangeRecord"/> row, so
-    /// it reports an empty content hash; that's fine, since it only starts looking dirty once a real
-    /// edit inserts a row with an actual hash.</summary>
+    /// <summary>The newest edit time on record, optionally for one map — the value a consumer stores
+    /// as its watermark when nothing changed. Null when nothing has ever been edited.</summary>
+    public async Task<DateTime?> LoadLatestEditUtcAsync(int? map)
+    {
+        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        IQueryable<ChunkChangeRecord> query = context.ChunkChanges.AsNoTracking();
+        if (map is { } mapId)
+        {
+            query = query.Where(change => change.MapId == mapId);
+        }
+
+        return await query.MaxAsync(change => (DateTime?)change.LastEditedUtc).ConfigureAwait(false);
+    }
+
+    /// <summary>Every edited chunk in a coordinate rectangle. A chunk no edit has ever touched has no
+    /// <see cref="ChunkChangeRecord"/> row and so isn't reported.</summary>
     public async Task<IReadOnlyList<ChunkChange>> LoadChunksInRangeAsync(MapId map, ChunkCoord min, ChunkCoord max)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
@@ -146,88 +153,16 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             .Where(change => change.MapId == map.Value
                 && change.ChunkX >= min.X && change.ChunkX <= max.X
                 && change.ChunkY >= min.Y && change.ChunkY <= max.Y)
+            .OrderBy(change => change.ChunkY)
+            .ThenBy(change => change.ChunkX)
             .ToListAsync()
             .ConfigureAwait(false);
 
-        Dictionary<(int X, int Y), string> hashes = rows.ToDictionary(row => (row.ChunkX, row.ChunkY), row => row.ContentHash);
-
-        var result = new List<ChunkChange>();
-        for (int y = min.Y; y <= max.Y; y++)
-        {
-            for (int x = min.X; x <= max.X; x++)
-            {
-                result.Add(new ChunkChange(map, new ChunkCoord(x, y), hashes.GetValueOrDefault((x, y), "")));
-            }
-        }
-
-        return result;
-    }
-
-    public async Task UpsertExportedChunksAsync(string profileId, IReadOnlyList<ChunkChange> chunks)
-    {
-        if (chunks.Count == 0)
-        {
-            return;
-        }
-
-        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using EditorDbContext context = CreateContext();
-        DateTime now = DateTime.UtcNow;
-
-        foreach (ChunkChange chunk in chunks)
-        {
-            object[] key = [profileId, chunk.Map.Value, chunk.Coord.X, chunk.Coord.Y];
-            ExportedChunkRecord? record = await context.ExportedChunks.FindAsync(key).ConfigureAwait(false);
-            if (record == null)
-            {
-                context.ExportedChunks.Add(new ExportedChunkRecord
-                {
-                    ProfileId = profileId,
-                    MapId = chunk.Map.Value,
-                    ChunkX = chunk.Coord.X,
-                    ChunkY = chunk.Coord.Y,
-                    ContentHash = chunk.ContentHash,
-                    ExportedAtUtc = now,
-                });
-            }
-            else
-            {
-                record.ContentHash = chunk.ContentHash;
-                record.ExportedAtUtc = now;
-            }
-        }
-
-        await context.SaveChangesAsync().ConfigureAwait(false);
-    }
-
-    /// <summary>Force-redirties a profile's exported state for a scope/range by deleting its tracked
-    /// exported-chunk rows, so the next export re-does them even though content hasn't changed.</summary>
-    public async Task ClearExportedChunksAsync(string profileId, int? map, (int X, int Y)? min, (int X, int Y)? max)
-    {
-        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using EditorDbContext context = CreateContext();
-
-        IQueryable<ExportedChunkRecord> query = context.ExportedChunks.Where(record => record.ProfileId == profileId);
-
-        if (map is { } mapId)
-        {
-            query = query.Where(record => record.MapId == mapId);
-        }
-
-        if (min is { } lo && max is { } hi)
-        {
-            query = query.Where(record =>
-                record.ChunkX >= lo.X && record.ChunkX <= hi.X &&
-                record.ChunkY >= lo.Y && record.ChunkY <= hi.Y);
-        }
-
-        List<ExportedChunkRecord> rows = await query.ToListAsync().ConfigureAwait(false);
-        context.ExportedChunks.RemoveRange(rows);
-        await context.SaveChangesAsync().ConfigureAwait(false);
+        return rows.Select(ToChange).ToList();
     }
 
     private static ChunkChange ToChange(ChunkChangeRecord record) =>
-        new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.ContentHash);
+        new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.LastEditedUtc);
 
     public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string profileId)
     {

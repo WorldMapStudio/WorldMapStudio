@@ -12,8 +12,6 @@ public enum ChunkExportScope
     AllMaps,
 }
 
-public readonly record struct ChunkChange(MapId Map, ChunkCoord Coord, string ContentHash);
-
 public readonly record struct ChunkExportResult(int ExportedChunks, string Message);
 
 public interface IChunkExportScript : ISubsystem
