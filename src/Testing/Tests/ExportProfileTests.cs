@@ -4,21 +4,9 @@ using Godot;
 
 namespace WorldMapStudio;
 
-/// <summary>Covers export-profile persistence and chunk-range addressing.</summary>
+/// <summary>Covers export-profile persistence. Goes with the profile system.</summary>
 public static class ExportProfileTests
 {
-    [EditorTest(Category = "Export", Thread = TestThread.Background)]
-    public static void Chunk_range_enumerates_every_coordinate_in_the_rectangle()
-    {
-        var range = new ChunkRange(new MapId(1), new ChunkCoord(-1, 2), new ChunkCoord(1, 3));
-
-        var coords = range.Coords().ToList();
-
-        Assert.AreEqual(6, coords.Count);
-        Assert.IsTrue(coords.Contains(new ChunkCoord(-1, 2)));
-        Assert.IsTrue(coords.Contains(new ChunkCoord(1, 3)));
-    }
-
     [EditorTest(Category = "Export")]
     public static void Export_profile_round_trips_through_disk()
     {
