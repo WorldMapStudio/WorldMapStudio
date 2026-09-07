@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -24,6 +24,7 @@ public sealed class BatchContext
     internal BatchContext(
         BatchSystem batch,
         JsonObject settings,
+        BatchOperationState state,
         BatchStatusHolder status,
         BatchReloadLatch reload,
         WorkContext work)
@@ -33,12 +34,17 @@ public sealed class BatchContext
         _reload = reload;
         _work = work;
         Settings = settings;
+        State = state;
     }
 
     /// <summary>The settings this run was started with: the persisted blob with any per-run overrides
     /// merged over the top, frozen when the run started. Not the operation instance's fields, which
     /// the window keeps editing while the run is in flight.</summary>
     public JsonObject Settings { get; }
+
+    /// <summary>This operation's slice of <see cref="BatchState"/> — where a watermark, a format
+    /// stamp, or anything else it needs between runs lives.</summary>
+    public BatchOperationState State { get; }
 
     /// <summary>The whole editor — the escape hatch for anything the facade does not forward.</summary>
     public EditorContext Editor => _batch.Context;

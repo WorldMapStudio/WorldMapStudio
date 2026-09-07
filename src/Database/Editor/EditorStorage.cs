@@ -164,6 +164,68 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     private static ChunkChange ToChange(ChunkChangeRecord record) =>
         new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.LastEditedUtc);
 
+    public async Task<string?> LoadBatchStateAsync(string operationId, string key)
+    {
+        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        BatchStateRecord? record = await context.BatchState.AsNoTracking()
+            .FirstOrDefaultAsync(row => row.OperationId == operationId && row.Key == key)
+            .ConfigureAwait(false);
+
+        return record?.Value;
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> LoadAllBatchStateAsync(string operationId)
+    {
+        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        List<BatchStateRecord> rows = await context.BatchState.AsNoTracking()
+            .Where(row => row.OperationId == operationId)
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        return rows.ToDictionary(row => row.Key, row => row.Value);
+    }
+
+    public async Task UpsertBatchStateAsync(string operationId, string key, string value)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        BatchStateRecord? record = await context.BatchState.FindAsync([operationId, key]).ConfigureAwait(false);
+        if (record == null)
+        {
+            context.BatchState.Add(new BatchStateRecord
+            {
+                OperationId = operationId,
+                Key = key,
+                Value = value,
+                UpdatedAtUtc = DateTime.UtcNow,
+            });
+        }
+        else
+        {
+            record.Value = value;
+            record.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        await context.SaveChangesAsync().ConfigureAwait(false);
+    }
+
+    public async Task RemoveBatchStateAsync(string operationId, string key)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        if (await context.BatchState.FindAsync([operationId, key]).ConfigureAwait(false) is { } record)
+        {
+            context.BatchState.Remove(record);
+            await context.SaveChangesAsync().ConfigureAwait(false);
+        }
+    }
+
     public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string profileId)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
