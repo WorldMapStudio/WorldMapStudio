@@ -787,6 +787,14 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// for why a snapshot rather than a live view.</summary>
     public ImageSampler CreateSampler() => new(new ImageChunkTable(new Dictionary<ImageChunkCoord, ImageChunk>(_chunks)), _width, _height, _chunkSize, _components, _format);
 
+    /// <summary>A sampler over a caller-supplied chunk table rather than the resident set — what an
+    /// offline build hands in, having loaded the chunks it needs itself rather than through residency.
+    /// Null falls back to a snapshot of the resident set.</summary>
+    public ImageSampler CreateSampler(ImageChunkTable? chunks) =>
+        chunks is { } table
+            ? new ImageSampler(table, _width, _height, _chunkSize, _components, _format)
+            : CreateSampler();
+
     private void RecomputeGrid()
     {
         _chunksX = (_width + _chunkSize - 1) / _chunkSize;
