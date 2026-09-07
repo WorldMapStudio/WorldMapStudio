@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using Godot;
 
 namespace WorldMapStudio;
@@ -27,8 +27,8 @@ public readonly record struct ChunkCoord(int X, int Y)
 }
 
 /// <summary>
-/// An explicit rectangle of chunks on one map — e.g. a user-picked range export target, as opposed to
-/// whatever a <see cref="ChunkExportScope"/> resolves to.
+/// An explicit rectangle of chunks on one map — a user-picked target, as opposed to whatever a query
+/// over the chunk change log happens to return.
 /// </summary>
 public readonly record struct ChunkRange(MapId Map, ChunkCoord Min, ChunkCoord Max)
 {

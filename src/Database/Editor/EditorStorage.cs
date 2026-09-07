@@ -225,49 +225,4 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             await context.SaveChangesAsync().ConfigureAwait(false);
         }
     }
-
-    public async Task<IReadOnlyDictionary<long, long>> LoadExportedEntityIdsAsync(string profileId)
-    {
-        using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
-        await using EditorDbContext context = CreateContext();
-
-        List<ExportedEntityIdRecord> rows = await context.ExportedEntityIds.AsNoTracking()
-            .Where(record => record.ProfileId == profileId)
-            .ToListAsync()
-            .ConfigureAwait(false);
-
-        return rows.ToDictionary(record => record.EntityId, record => record.AllocatedId);
-    }
-
-    public async Task UpsertExportedEntityIdsAsync(string profileId, IReadOnlyDictionary<long, long> ids)
-    {
-        if (ids.Count == 0)
-        {
-            return;
-        }
-
-        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using EditorDbContext context = CreateContext();
-
-        foreach ((long entityId, long allocatedId) in ids)
-        {
-            object[] key = [profileId, entityId];
-            ExportedEntityIdRecord? record = await context.ExportedEntityIds.FindAsync(key).ConfigureAwait(false);
-            if (record == null)
-            {
-                context.ExportedEntityIds.Add(new ExportedEntityIdRecord
-                {
-                    ProfileId = profileId,
-                    EntityId = entityId,
-                    AllocatedId = allocatedId,
-                });
-            }
-            else
-            {
-                record.AllocatedId = allocatedId;
-            }
-        }
-
-        await context.SaveChangesAsync().ConfigureAwait(false);
-    }
 }
