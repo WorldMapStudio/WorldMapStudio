@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
@@ -76,10 +78,17 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             return;
         }
 
+        var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
+
+        // A stuck statement here has hung the whole editor with no way out; a timeout turns that into
+        // a logged failure the commit can report instead.
+        context.Database.SetCommandTimeout(TimeSpan.FromSeconds(15.0));
+        GD.Print($"[ChunkChanges] Upserting {chunks.Count} chunk(s); lock+context took {clock.ElapsedMilliseconds}ms.");
         DateTime now = DateTime.UtcNow;
 
+        int scanned = 0;
         foreach ((int map, int x, int y) in chunks)
         {
             ChunkChangeRecord? record = await context.ChunkChanges.FindAsync([map, x, y]).ConfigureAwait(false);
@@ -97,9 +106,16 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             {
                 record.LastEditedUtc = now;
             }
+
+            if (++scanned % 200 == 0)
+            {
+                GD.Print($"[ChunkChanges] Looked up {scanned}/{chunks.Count} chunk(s) after {clock.ElapsedMilliseconds}ms.");
+            }
         }
 
+        GD.Print($"[ChunkChanges] Saving after {clock.ElapsedMilliseconds}ms.");
         await context.SaveChangesAsync().ConfigureAwait(false);
+        GD.Print($"[ChunkChanges] Done in {clock.ElapsedMilliseconds}ms.");
     }
 
     /// <summary>Chunks edited strictly after <paramref name="since"/>, optionally on one map.</summary>
