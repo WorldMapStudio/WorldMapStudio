@@ -1,8 +1,9 @@
-using System;
+﻿using System;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
+/// <summary>When a chunk was last touched by a committed edit. See <see cref="ChunkChangeLog"/>.</summary>
 public sealed class ChunkChangeRecord
 {
     public int MapId { get; set; }
@@ -11,24 +12,7 @@ public sealed class ChunkChangeRecord
 
     public int ChunkY { get; set; }
 
-    public string ContentHash { get; set; } = "";
-
-    public DateTime UpdatedAtUtc { get; set; }
-}
-
-public sealed class ExportedChunkRecord
-{
-    public string ProfileId { get; set; } = "";
-
-    public int MapId { get; set; }
-
-    public int ChunkX { get; set; }
-
-    public int ChunkY { get; set; }
-
-    public string ContentHash { get; set; } = "";
-
-    public DateTime ExportedAtUtc { get; set; }
+    public DateTime LastEditedUtc { get; set; }
 }
 
 /// <summary>
@@ -51,16 +35,13 @@ public sealed partial class EditorDbContext
 {
     public DbSet<ChunkChangeRecord> ChunkChanges => Set<ChunkChangeRecord>();
 
-    public DbSet<ExportedChunkRecord> ExportedChunks => Set<ExportedChunkRecord>();
-
     public DbSet<ExportedEntityIdRecord> ExportedEntityIds => Set<ExportedEntityIdRecord>();
 }
 
 /// <summary>
-/// Declares the three chunk-export tracking tables above. None of them back an <see cref="IEntity"/> or
-/// have any other self-registered owner — they're written directly by <see cref="EditorStorage"/>'s own
-/// Upsert/Load methods — so this is a standalone <see cref="ITableConfiguration"/> rather than a
-/// side effect of some other seam.
+/// Declares the tables above. Neither backs an <see cref="IEntity"/> or has any other self-registered
+/// owner — they're written directly by <see cref="EditorStorage"/>'s own Upsert/Load methods — so this
+/// is a standalone <see cref="ITableConfiguration"/> rather than a side effect of some other seam.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class ChunkChangeTableConfiguration : ITableConfiguration
@@ -77,15 +58,6 @@ public sealed class ChunkChangeTableConfiguration : ITableConfiguration
         {
             entity.ToTable("wms_chunk_changes");
             entity.HasKey(record => new { record.MapId, record.ChunkX, record.ChunkY });
-            entity.Property(record => record.ContentHash).HasMaxLength(64);
-        });
-
-        model.Entity<ExportedChunkRecord>(entity =>
-        {
-            entity.ToTable("wms_exported_chunks");
-            entity.HasKey(record => new { record.ProfileId, record.MapId, record.ChunkX, record.ChunkY });
-            entity.Property(record => record.ProfileId).HasMaxLength(128);
-            entity.Property(record => record.ContentHash).HasMaxLength(64);
         });
 
         model.Entity<ExportedEntityIdRecord>(entity =>

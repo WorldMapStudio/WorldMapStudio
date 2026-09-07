@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Godot;
 
 namespace WorldMapStudio;
@@ -49,6 +49,10 @@ public sealed partial class EditorContext : ISubsystemHost
 
     /// <summary>Everything the editor wants to tell the user about, from any system.</summary>
     public ProblemSystem Problems { get; }
+
+    /// <summary>When each chunk was last touched by a committed edit. Part of the spine because the
+    /// commit path writes to it whether or not anything ever reads it back.</summary>
+    public ChunkChangeLog ChunkChanges { get; }
 
     /// <summary>Lets any window ask the viewport to look somewhere.</summary>
     public ViewportFocus Focus { get; }
@@ -147,6 +151,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Scene = new SceneEntityRegistry();
         Catalog = new CatalogEntityRegistry();
         Problems = new ProblemSystem();
+        ChunkChanges = new ChunkChangeLog(this);
         Focus = new ViewportFocus();
         Tools = new ToolSystem(this);
         Maps = new MapSystem(this);

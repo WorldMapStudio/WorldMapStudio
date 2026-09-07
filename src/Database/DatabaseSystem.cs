@@ -294,11 +294,11 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
         {
             try
             {
-                _context.Exports.Changes.RecordCommit(session, committed.Contains);
+                _context.ChunkChanges.RecordCommit(session, committed.Contains);
             }
             catch (Exception e)
             {
-                GD.PushError($"[Export] Recording chunk changes failed: {e.Message}");
+                GD.PushError($"[Database] Recording chunk changes failed: {e.Message}");
             }
         }
     }
