@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -132,6 +132,42 @@ public class SceneEntity : Entity
     public IReadOnlyList<SceneComponent> Components => _components;
 
     public override string DisplayName => Name;
+
+    /// <summary>
+    /// The entity's extent for deciding which chunks it occupies: <see cref="EffectiveLocalBounds"/>
+    /// with every <see cref="ISceneBoundsProvider.IsMapSpanning"/> component left out. Null when the
+    /// entity claims nowhere in particular — an entity carrying only a global light, say.
+    ///
+    /// Separate from <see cref="LocalBounds"/> because the two answer different questions. Streaming
+    /// asks "should this be loaded here", and a global light must answer yes everywhere; chunk
+    /// tracking asks "is this what makes that chunk exist", and a global light must answer no
+    /// anywhere. Merging both into one box makes a light look like terrain covering the entire map.
+    /// </summary>
+    public Aabb? LocalChunkBounds
+    {
+        get
+        {
+            List<ISceneBoundsProvider> providers = Components.OfType<ISceneBoundsProvider>().ToList();
+            if (providers.Count == 0)
+            {
+                // No provider at all is the same "somewhere, unit sized" fallback EffectiveLocalBounds
+                // uses — an entity with nothing to size it still sits at a place.
+                return EffectiveLocalBounds;
+            }
+
+            Aabb? bounds = null;
+            foreach (ISceneBoundsProvider provider in providers.Where(provider => !provider.IsMapSpanning))
+            {
+                bounds = bounds is { } merged ? merged.Merge(provider.LocalBounds) : provider.LocalBounds;
+            }
+
+            return bounds;
+        }
+    }
+
+    /// <summary><see cref="LocalChunkBounds"/> placed by <see cref="Transform"/> — the world extent
+    /// chunk ownership is tested against.</summary>
+    public Aabb? WorldChunkBounds => LocalChunkBounds is { } bounds ? Transform * bounds : null;
 
     /// <summary>The centered, per-axis maximum bounds contributed by this entity's components.</summary>
     public Aabb EffectiveLocalBounds
