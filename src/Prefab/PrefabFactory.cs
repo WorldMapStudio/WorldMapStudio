@@ -7,12 +7,12 @@ public sealed class PrefabRecord : IKeyedRecord
     public string Name { get; set; } = "Prefab";
 }
 
-/// <summary>Maps <see cref="Prefab"/> to and from the Editor storage's <c>prefabs</c> table.</summary>
+/// <summary>Maps <see cref="Prefab"/> to and from the Editor storage's <c>wms_prefabs</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class PrefabFactory(EditorStorage storage)
     : EditorCatalogFactory<Prefab, PrefabRecord>(storage)
 {
-    protected override string TableName => "prefabs";
+    protected override string TableName => "wms_prefabs";
 
     protected override Prefab ToEntity(PrefabRecord record) => new()
     {

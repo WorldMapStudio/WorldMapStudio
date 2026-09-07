@@ -43,7 +43,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
     {
         model.Entity<SceneStampComponentRecord>(entity =>
         {
-            entity.ToTable("scene_stamp_components");
+            entity.ToTable("wms_scene_stamp_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()

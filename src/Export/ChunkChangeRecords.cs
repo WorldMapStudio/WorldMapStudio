@@ -75,14 +75,14 @@ public sealed class ChunkChangeTableConfiguration : ITableConfiguration
     {
         model.Entity<ChunkChangeRecord>(entity =>
         {
-            entity.ToTable("chunk_changes");
+            entity.ToTable("wms_chunk_changes");
             entity.HasKey(record => new { record.MapId, record.ChunkX, record.ChunkY });
             entity.Property(record => record.ContentHash).HasMaxLength(64);
         });
 
         model.Entity<ExportedChunkRecord>(entity =>
         {
-            entity.ToTable("exported_chunks");
+            entity.ToTable("wms_exported_chunks");
             entity.HasKey(record => new { record.ProfileId, record.MapId, record.ChunkX, record.ChunkY });
             entity.Property(record => record.ProfileId).HasMaxLength(128);
             entity.Property(record => record.ContentHash).HasMaxLength(64);
@@ -90,7 +90,7 @@ public sealed class ChunkChangeTableConfiguration : ITableConfiguration
 
         model.Entity<ExportedEntityIdRecord>(entity =>
         {
-            entity.ToTable("exported_entity_ids");
+            entity.ToTable("wms_exported_entity_ids");
             entity.HasKey(record => new { record.ProfileId, record.EntityId });
             entity.Property(record => record.ProfileId).HasMaxLength(128);
         });

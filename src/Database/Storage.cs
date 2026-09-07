@@ -116,7 +116,7 @@ public abstract class Storage : ISubsystem
 
     /// <summary>Table name the seed-history tracking table gets in any storage database — excluded
     /// from <see cref="MigrationSystem"/>'s drop-table proposals, since no EF model ever declares it.</summary>
-    public const string SeedHistoryTableName = "_wms_seed_history";
+    public const string SeedHistoryTableName = "wms_seed_history";
 
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }

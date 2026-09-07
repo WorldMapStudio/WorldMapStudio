@@ -44,7 +44,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence
     {
         model.Entity<SceneProceduralComponentRecord>(entity =>
         {
-            entity.ToTable("scene_procedural_mesh_components");
+            entity.ToTable("wms_scene_procedural_mesh_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()
