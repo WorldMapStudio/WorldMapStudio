@@ -1,11 +1,11 @@
 namespace WorldMapStudio;
 
-/// <summary>Maps <see cref="LandscapeChannel"/> to and from the Editor storage's <c>landscape_channels</c> table.</summary>
+/// <summary>Maps <see cref="LandscapeChannel"/> to and from the Editor storage's <c>wms_landscape_channels</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeChannelFactory(EditorStorage storage)
     : EditorCatalogFactory<LandscapeChannel, LandscapeChannelRecord>(storage)
 {
-    protected override string TableName => "landscape_channels";
+    protected override string TableName => "wms_landscape_channels";
 
     protected override LandscapeChannel ToEntity(LandscapeChannelRecord record) => new()
     {
@@ -27,12 +27,12 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
     }
 }
 
-/// <summary>Maps <see cref="LandscapeLayer"/> to and from the Editor storage's <c>landscape_layers</c> table.</summary>
+/// <summary>Maps <see cref="LandscapeLayer"/> to and from the Editor storage's <c>wms_landscape_layers</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeLayerFactory(EditorStorage storage)
     : EditorCatalogFactory<LandscapeLayer, LandscapeLayerRecord>(storage)
 {
-    protected override string TableName => "landscape_layers";
+    protected override string TableName => "wms_landscape_layers";
 
     protected override LandscapeLayer ToEntity(LandscapeLayerRecord record) => new()
     {
@@ -54,12 +54,12 @@ public sealed class LandscapeLayerFactory(EditorStorage storage)
     }
 }
 
-/// <summary>Maps <see cref="LandscapeMaterial"/> to and from the Editor storage's <c>landscape_materials</c> table.</summary>
+/// <summary>Maps <see cref="LandscapeMaterial"/> to and from the Editor storage's <c>wms_landscape_materials</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeMaterialFactory(EditorStorage storage)
     : EditorCatalogFactory<LandscapeMaterial, LandscapeMaterialRecord>(storage)
 {
-    protected override string TableName => "landscape_materials";
+    protected override string TableName => "wms_landscape_materials";
 
     protected override LandscapeMaterial ToEntity(LandscapeMaterialRecord record) => new()
     {

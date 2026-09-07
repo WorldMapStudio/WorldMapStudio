@@ -33,7 +33,7 @@ public sealed class EditorMapSource : IMapSource, ITableConfiguration
     {
         model.Entity<MapRecord>(entity =>
         {
-            entity.ToTable("maps");
+            entity.ToTable("wms_maps");
             entity.HasKey(record => record.Id);
 
             // The map id is the user's own (it matches the game's map ids), not a generated key.

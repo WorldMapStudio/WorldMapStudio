@@ -9,7 +9,7 @@ public sealed partial class EditorDbContext
 }
 
 /// <summary>
-/// Keeps each map's landscape settings in the Editor storage's <c>landscape_settings</c> table, one
+/// Keeps each map's landscape settings in the Editor storage's <c>wms_landscape_settings</c> table, one
 /// row per map. Written outside the edit session: settings are not an entity and changing them is a
 /// map-wide rebuild, not an undoable edit.
 /// </summary>
@@ -31,7 +31,7 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, IT
     {
         model.Entity<LandscapeSettingsRecord>(entity =>
         {
-            entity.ToTable("landscape_settings");
+            entity.ToTable("wms_landscape_settings");
 
             // One landscape per map, so the map id is the key rather than a generated one.
             entity.HasKey(record => record.MapId);

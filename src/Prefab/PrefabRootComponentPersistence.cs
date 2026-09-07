@@ -29,7 +29,7 @@ public sealed class PrefabRootComponentPersistence : ISceneComponentPersistence
     {
         model.Entity<ScenePrefabRootComponentRecord>(entity =>
         {
-            entity.ToTable("scene_prefab_root_components");
+            entity.ToTable("wms_scene_prefab_root_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()

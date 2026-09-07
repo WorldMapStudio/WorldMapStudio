@@ -50,7 +50,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence
     {
         model.Entity<SceneImageComponentRecord>(entity =>
         {
-            entity.ToTable("scene_image_components");
+            entity.ToTable("wms_scene_image_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()

@@ -29,7 +29,7 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
     {
         model.Entity<SceneMarkerComponentRecord>(entity =>
         {
-            entity.ToTable("scene_marker_components");
+            entity.ToTable("wms_scene_marker_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()

@@ -77,7 +77,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
     {
         model.Entity<SceneEntityRecord>(entity =>
         {
-            entity.ToTable("scene_entities");
+            entity.ToTable("wms_scene_entities");
             entity.HasKey(record => record.Id);
             entity.HasOne(record => record.Parent)
                 .WithMany()

@@ -34,7 +34,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
     {
         model.Entity<SceneModelRendererComponentRecord>(entity =>
         {
-            entity.ToTable("scene_model_renderer_components");
+            entity.ToTable("wms_scene_model_renderer_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()

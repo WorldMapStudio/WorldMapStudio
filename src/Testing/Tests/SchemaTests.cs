@@ -28,10 +28,10 @@ public static class SchemaTests
 
         Schema schema = ModelSchema.Extract(context);
 
-        Assert.IsTrue(schema.Tables.ContainsKey("scene_entities"), "model should define the generic scene entity table");
-        Assert.IsTrue(schema.Tables.ContainsKey("scene_marker_components"), "model should define component tables");
-        Assert.IsTrue(schema.Tables.ContainsKey("scene_stamp_components"), "model should define landscape stamp component table");
-        SchemaTable entities = schema.Tables["scene_entities"];
+        Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_entities"), "model should define the generic scene entity table");
+        Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_marker_components"), "model should define component tables");
+        Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_stamp_components"), "model should define landscape stamp component table");
+        SchemaTable entities = schema.Tables["wms_scene_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.Column("ParentId")?.Nullable == true, "ParentId should be nullable for root entities");
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));

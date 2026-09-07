@@ -52,7 +52,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
     {
         model.Entity<SceneTerrainValueComponentRecord>(entity =>
         {
-            entity.ToTable("scene_terrain_value_components");
+            entity.ToTable("wms_scene_terrain_value_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()
@@ -62,7 +62,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
 
         model.Entity<SceneTerrainValueChannelRecord>(entity =>
         {
-            entity.ToTable("scene_terrain_value_channels");
+            entity.ToTable("wms_scene_terrain_value_channels");
             entity.HasKey(record => new { record.EntityId, record.SortOrder });
             entity.HasOne(record => record.Component)
                 .WithMany()

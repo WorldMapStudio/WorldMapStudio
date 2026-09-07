@@ -50,7 +50,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
     {
         model.Entity<PaintImageRecord>(entity =>
         {
-            entity.ToTable("images");
+            entity.ToTable("wms_images");
             entity.HasKey(record => record.Id);
 
             // The editor assigns catalog ids so entities can reference each other before a commit.
@@ -59,7 +59,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
 
         model.Entity<ImageChunkRecord>(entity =>
         {
-            entity.ToTable("image_chunks");
+            entity.ToTable("wms_image_chunks");
             entity.HasKey(record => new { record.ImageId, record.ChunkX, record.ChunkY });
         });
     }

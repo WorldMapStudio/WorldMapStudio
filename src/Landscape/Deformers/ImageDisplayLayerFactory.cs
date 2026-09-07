@@ -3,12 +3,12 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>Maps <see cref="ImageDisplayLayer"/> to and from the Editor storage's
-/// <c>image_display_layers</c> table.</summary>
+/// <c>wms_image_display_layers</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class ImageDisplayLayerFactory(EditorStorage storage)
     : EditorCatalogFactory<ImageDisplayLayer, ImageDisplayLayerRecord>(storage)
 {
-    protected override string TableName => "image_display_layers";
+    protected override string TableName => "wms_image_display_layers";
 
     protected override ImageDisplayLayer ToEntity(ImageDisplayLayerRecord record) => new()
     {

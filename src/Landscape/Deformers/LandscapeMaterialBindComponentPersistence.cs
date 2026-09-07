@@ -42,7 +42,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
     {
         model.Entity<SceneLandscapeMaterialBindComponentRecord>(entity =>
         {
-            entity.ToTable("scene_landscape_material_bind_components");
+            entity.ToTable("wms_scene_landscape_material_bind_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()
@@ -52,7 +52,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
 
         model.Entity<SceneLandscapeMaterialBindEntryRecord>(entity =>
         {
-            entity.ToTable("scene_landscape_material_bind_entries");
+            entity.ToTable("wms_scene_landscape_material_bind_entries");
             entity.HasKey(record => new { record.EntityId, record.SortOrder });
             entity.HasOne(record => record.Component)
                 .WithMany()
