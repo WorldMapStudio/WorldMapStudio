@@ -266,6 +266,60 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     private static ChunkChange ToChange(ChunkChangeRecord record) =>
         new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.LastEditedUtc);
 
+    /// <summary>
+    /// Stored pixels for the wanted chunks, decoded. One query per image bounded by that image's own
+    /// wanted rect rather than a scan of its whole chunk table — an image can hold far more stored
+    /// chunks than are ever wanted at once. A coord that has no stored row simply does not come back,
+    /// which the sampler already reads as all-zero.
+    /// </summary>
+    public async Task<IReadOnlyList<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)>> LoadImageChunksAsync(
+        IReadOnlyDictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>> wanted)
+    {
+        var result = new List<(PaintImage, ImageChunkCoord, byte[])>();
+        if (wanted.Count == 0)
+        {
+            return result;
+        }
+
+        using IDisposable read = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        foreach ((PaintImage image, IReadOnlyCollection<ImageChunkCoord> coords) in wanted)
+        {
+            if (coords.Count == 0)
+            {
+                continue;
+            }
+
+            int imageId = image.RecordId ?? 0;
+            int minX = coords.Min(c => c.X);
+            int maxX = coords.Max(c => c.X);
+            int minY = coords.Min(c => c.Y);
+            int maxY = coords.Max(c => c.Y);
+            var set = coords as HashSet<ImageChunkCoord> ?? new HashSet<ImageChunkCoord>(coords);
+
+            List<ImageChunkRecord> rows = await context.ImageChunks.AsNoTracking()
+                .Where(row => row.ImageId == imageId
+                    && row.ChunkX >= minX && row.ChunkX <= maxX
+                    && row.ChunkY >= minY && row.ChunkY <= maxY)
+                .ToListAsync().ConfigureAwait(false);
+
+            foreach (ImageChunkRecord row in rows)
+            {
+                var coord = new ImageChunkCoord(row.ChunkX, row.ChunkY);
+                if (!set.Contains(coord))
+                {
+                    continue;
+                }
+
+                byte[] pixels = ImageChunkCodec.Decode(row.Format, row.Pixels, image.ChunkSize, image.Stride);
+                result.Add((image, coord, pixels));
+            }
+        }
+
+        return result;
+    }
+
     public async Task<string?> LoadBatchStateAsync(string operationId, string key)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);

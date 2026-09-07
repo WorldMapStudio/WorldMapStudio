@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
-using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
@@ -262,55 +261,29 @@ public sealed class ImageResidencySystem
         _pendingLoad = LoadAsync(toLoad);
     }
 
-    // One query per image, bounded by that image's own wanted coordinates' bounding box rather than a
-    // scan of its whole chunk table — an image can hold far more stored chunks than are ever wanted at
-    // once. Explicitly off the main thread: an uncontended reader lock can complete synchronously and
-    // leave the whole query on the calling thread otherwise (see LandscapeChunkLoader for the same note).
+    // The query itself lives on EditorStorage so the offline build preparation can run the same one.
+    // The Task.Yield stays here: an uncontended reader lock can complete synchronously and leave the
+    // whole query on the calling thread otherwise (see LandscapeChunkLoader for the same note).
     private async Task<List<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)>> LoadAsync(
         List<(PaintImage Image, ImageChunkCoord Coord)> toLoad)
     {
         await Task.Yield();
 
-        var result = new List<(PaintImage, ImageChunkCoord, byte[])>();
         EditorStorage? storage = _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
         if (storage == null)
         {
-            return result;
+            return [];
         }
 
-        using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-        await using EditorDbContext context = storage.CreateContext();
-
+        var wanted = new Dictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>>();
         foreach (IGrouping<PaintImage, (PaintImage Image, ImageChunkCoord Coord)> group in toLoad.GroupBy(entry => entry.Image))
         {
-            PaintImage image = group.Key;
-            int imageId = image.RecordId ?? 0;
-            var wanted = new HashSet<ImageChunkCoord>(group.Select(entry => entry.Coord));
-            int minX = wanted.Min(c => c.X);
-            int maxX = wanted.Max(c => c.X);
-            int minY = wanted.Min(c => c.Y);
-            int maxY = wanted.Max(c => c.Y);
-
-            List<ImageChunkRecord> rows = await context.ImageChunks.AsNoTracking()
-                .Where(row => row.ImageId == imageId
-                    && row.ChunkX >= minX && row.ChunkX <= maxX
-                    && row.ChunkY >= minY && row.ChunkY <= maxY)
-                .ToListAsync().ConfigureAwait(false);
-
-            foreach (ImageChunkRecord row in rows)
-            {
-                var coord = new ImageChunkCoord(row.ChunkX, row.ChunkY);
-                if (!wanted.Contains(coord))
-                {
-                    continue;
-                }
-
-                byte[] pixels = ImageChunkCodec.Decode(row.Format, row.Pixels, image.ChunkSize, image.Stride);
-                result.Add((image, coord, pixels));
-            }
+            wanted[group.Key] = new HashSet<ImageChunkCoord>(group.Select(entry => entry.Coord));
         }
 
-        return result;
+        IReadOnlyList<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)> rows =
+            await storage.LoadImageChunksAsync(wanted).ConfigureAwait(false);
+        return [.. rows];
     }
 
     private void ApplyCompletedLoad()
