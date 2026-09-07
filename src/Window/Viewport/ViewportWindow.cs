@@ -58,6 +58,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant
     private readonly MapSystem _maps;
     private readonly TerrainProbe _terrainProbe;
     private readonly ViewportPointer _pointer;
+    private readonly ViewportHeader _header;
     private readonly HashSet<SceneEntity> _represented = [];
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
@@ -82,6 +83,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant
         _axes = context.Axes;
         _terrainProbe = new TerrainProbe(_scene);
         _pointer = context.Pointer;
+        _header = new ViewportHeader(context);
 
         _viewport = new SubViewport
         {
@@ -229,6 +231,8 @@ public sealed class ViewportWindow : Window, IWorldParticipant
         _environmentRenderer.Update(_flyCamera.Position);
         SyncRepresentations();
         _environmentVolumes.Update();
+
+        _header.Draw(new ViewportHeaderContext(_camera, _flyCamera.IsFlying));
 
         ITool? tool = _tools.Active;
         tool?.DrawToolbar();
