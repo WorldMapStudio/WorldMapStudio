@@ -1,4 +1,4 @@
-using Godot;
+﻿using Godot;
 
 namespace WorldMapStudio;
 
@@ -23,6 +23,15 @@ public abstract class SceneComponent
 public interface ISceneBoundsProvider
 {
     Aabb LocalBounds { get; }
+
+    /// <summary>
+    /// Whether <see cref="LocalBounds"/> means "the whole map" rather than a place on it — a global
+    /// light being the case this exists for. Such a component needs real, enormous bounds so streaming
+    /// keeps it loaded wherever the viewport goes, but those bounds say nothing about <em>where</em>
+    /// anything is, so they must never be what puts a chunk on the map. See
+    /// <see cref="SceneEntity.LocalChunkBounds"/>, which is what chunk ownership is decided from.
+    /// </summary>
+    bool IsMapSpanning => false;
 }
 
 public interface ISceneNodeComponent

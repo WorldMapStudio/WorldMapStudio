@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 
 namespace WorldMapStudio;
 
@@ -9,12 +10,17 @@ namespace WorldMapStudio;
 public readonly record struct ChunkChange(MapId Map, ChunkCoord Coord, DateTime LastEditedUtc);
 
 /// <summary>
-/// When each chunk was last edited, and nothing else. A plain member of <see cref="EditorContext"/>,
-/// written by <see cref="DatabaseSystem.Persist"/> on every commit.
+/// Which chunks a map actually has, and when each was last edited. A plain member of
+/// <see cref="EditorContext"/>, reconciled by <see cref="DatabaseSystem.Persist"/> on every commit.
 ///
-/// Purely a log: it never learns who read it or what anyone considers up to date. A consumer keeps
-/// one watermark per whatever unit it cares about — a map, an output folder, the whole project — and
-/// asks <see cref="ChangedSinceAsync"/> what happened after it. That is its entire cache.
+/// <b>A row's existence is the claim that something is there.</b> Empty a chunk and its row goes,
+/// which is what lets a consumer notice terrain that has been removed rather than only terrain that
+/// has changed — see <see cref="RecordCommit"/>.
+///
+/// It never learns who read it or what anyone considers up to date. A consumer keeps one watermark
+/// per whatever unit it cares about — a map, an output folder, the whole project — asks
+/// <see cref="ChangedSinceAsync"/> what happened after it, and asks <see cref="ExistingAsync"/> what
+/// is still there at all. That is its entire cache.
 /// </summary>
 public sealed class ChunkChangeLog
 {
@@ -25,17 +31,42 @@ public sealed class ChunkChangeLog
         _context = context;
     }
 
-    /// <summary>Stamps every chunk a commit touched. Blocking rather than async because it runs
-    /// inside the commit path on the main thread, and the rest of that path is synchronous.</summary>
+    /// <summary>
+    /// Brings the log back in line with what the commit left behind. Every chunk the commit could have
+    /// changed is re-decided from scratch: one that something still occupies is stamped with now, and
+    /// one that nothing occupies any more loses its row.
+    ///
+    /// Deciding both from the same reconciled set is what makes a shrink or a delete legible
+    /// downstream. Stamping alone would say "this changed" about a chunk that no longer exists, and
+    /// leave a consumer no way to tell that apart from a chunk that changed and is still there.
+    ///
+    /// Occupancy comes from <see cref="SceneEntity.WorldChunkBounds"/>, so a map-spanning component
+    /// bumps every chunk that already exists inside its reach without ever bringing one into being.
+    ///
+    /// Blocking rather than async because it runs inside the commit path on the main thread, and the
+    /// rest of that path is synchronous.
+    /// </summary>
     public void RecordCommit(EditSession session, Func<IEntity, bool> wasCommitted)
     {
-        HashSet<(int Map, int X, int Y)> chunks = AffectedChunks(session, wasCommitted);
-        if (chunks.Count == 0 || EditorStorage() is not { } storage)
+        if (EditorStorage() is not { } storage)
         {
             return;
         }
 
-        BlockingWork.Run(() => storage.UpsertChunkChangesAsync(chunks));
+        foreach ((MapId map, (HashSet<ChunkCoord> touched, Aabb region)) in TouchedByMap(session, wasCommitted))
+        {
+            HashSet<ChunkCoord> occupied = OccupiedChunks(map, region);
+
+            List<(int Map, int X, int Y)> present = [];
+            List<(int Map, int X, int Y)> vacated = [];
+            foreach (ChunkCoord coord in touched)
+            {
+                (occupied.Contains(coord) ? present : vacated).Add((map.Value, coord.X, coord.Y));
+            }
+
+            BlockingWork.Run(() => storage.UpsertChunkChangesAsync(present));
+            BlockingWork.Run(() => storage.RemoveChunkChangesAsync(vacated));
+        }
     }
 
     /// <summary>Every chunk edited strictly after <paramref name="since"/>, optionally on one map.
@@ -50,7 +81,12 @@ public sealed class ChunkChangeLog
         return await storage.LoadChangedSinceAsync(since, map?.Value).ConfigureAwait(false);
     }
 
-    /// <summary>Every chunk in a coordinate rectangle that has ever been edited.</summary>
+    /// <summary>Every chunk a map still has, with when each was last edited. What a consumer
+    /// reconciles its own output against to notice what has been removed.</summary>
+    public Task<IReadOnlyList<ChunkChange>> ExistingAsync(MapId? map = null) =>
+        ChangedSinceAsync(DateTime.MinValue, map);
+
+    /// <summary>Every chunk in a coordinate rectangle that the map still has.</summary>
     public async Task<IReadOnlyList<ChunkChange>> InRangeAsync(ChunkRange range)
     {
         if (EditorStorage() is not { } storage)
@@ -73,16 +109,56 @@ public sealed class ChunkChangeLog
         return await storage.LoadLatestEditUtcAsync(map?.Value).ConfigureAwait(false);
     }
 
-    private HashSet<(int Map, int X, int Y)> AffectedChunks(EditSession session, Func<IEntity, bool> wasCommitted)
+    /// <summary>
+    /// Per map, the chunks this commit could have changed and the world region they span. Built from
+    /// the snapshots' full bounds, not their chunk footprint: a map-spanning edit has to reach every
+    /// chunk it might have changed, even though it owns none of them.
+    /// </summary>
+    private Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> TouchedByMap(
+        EditSession session,
+        Func<IEntity, bool> wasCommitted)
     {
-        var chunks = new HashSet<(int Map, int X, int Y)>();
+        var byMap = new Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)>();
         foreach ((_, ChunkChangeSnapshot? before, ChunkChangeSnapshot? after) in ReduceImpacts(session.History.UndoStack, wasCommitted))
         {
-            Add(before, chunks);
-            Add(after, chunks);
+            Touch(before, byMap);
+            Touch(after, byMap);
         }
 
-        return chunks;
+        return byMap;
+    }
+
+    /// <summary>
+    /// Which chunks in <paramref name="region"/> something still sits on, read back from storage after
+    /// the commit has landed. Entities are scanned by their full bounds — that is what the database
+    /// indexes — and then filtered by <see cref="SceneEntity.WorldChunkBounds"/>, so a global light is
+    /// returned by the scan and still claims nothing.
+    /// </summary>
+    private HashSet<ChunkCoord> OccupiedChunks(MapId map, Aabb region)
+    {
+        var occupied = new HashSet<ChunkCoord>();
+        if (_context.Landscape.LoadSettingsFor(map) is not { } settings)
+        {
+            return occupied;
+        }
+
+        var grid = new LandscapeGrid(settings);
+        IReadOnlyList<SceneEntity> entities = BlockingWork.Run(() => _context.Database.ScanSceneAsync(map, region));
+
+        foreach (SceneEntity entity in entities)
+        {
+            if (entity.WorldChunkBounds is not { } bounds)
+            {
+                continue;
+            }
+
+            foreach (ChunkCoord coord in grid.Overlapping(bounds))
+            {
+                occupied.Add(coord);
+            }
+        }
+
+        return occupied;
     }
 
     /// <summary>
@@ -127,18 +203,25 @@ public sealed class ChunkChangeLog
             .ToList();
     }
 
-    private void Add(ChunkChangeSnapshot? snapshot, HashSet<(int Map, int X, int Y)> chunks)
+    private void Touch(ChunkChangeSnapshot? snapshot, Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> byMap)
     {
         if (snapshot == null || _context.Landscape.LoadSettingsFor(snapshot.Map) is not { } settings)
         {
             return;
         }
 
+        if (!byMap.TryGetValue(snapshot.Map, out (HashSet<ChunkCoord> Chunks, Aabb Region) entry))
+        {
+            entry = ([], snapshot.Bounds);
+        }
+
         var grid = new LandscapeGrid(settings);
         foreach (ChunkCoord coord in grid.Overlapping(snapshot.Bounds))
         {
-            chunks.Add((snapshot.Map.Value, coord.X, coord.Y));
+            entry.Chunks.Add(coord);
         }
+
+        byMap[snapshot.Map] = (entry.Chunks, entry.Region.Merge(snapshot.Bounds));
     }
 
     private EditorStorage? EditorStorage() => _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();

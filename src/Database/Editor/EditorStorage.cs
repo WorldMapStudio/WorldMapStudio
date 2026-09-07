@@ -93,16 +93,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
-        // Table and column names off the model, so a naming convention can never silently desync this
-        // hand-written SQL from what EF maps the record to.
-        IEntityType type = context.Model.FindEntityType(typeof(ChunkChangeRecord))!;
-        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
-        string Column(string property) => type.FindProperty(property)!.GetColumnName(table)!;
-        string tableName = type.GetTableName()!;
-        string mapColumn = Column(nameof(ChunkChangeRecord.MapId));
-        string xColumn = Column(nameof(ChunkChangeRecord.ChunkX));
-        string yColumn = Column(nameof(ChunkChangeRecord.ChunkY));
-        string timeColumn = Column(nameof(ChunkChangeRecord.LastEditedUtc));
+        (string tableName, string mapColumn, string xColumn, string yColumn, string timeColumn) =
+            ChunkChangeColumns(context);
 
         DbConnection connection = context.Database.GetDbConnection();
         await context.Database.OpenConnectionAsync().ConfigureAwait(false);
@@ -134,6 +126,74 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         }
 
         GD.Print($"[ChunkChanges] Upserted {all.Count} chunk(s) in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    /// <summary>
+    /// Drops the rows for chunks nothing occupies any more — their absence is what tells a consumer the
+    /// map no longer has them, so this is not a cleanup but half of what a commit means. See
+    /// <see cref="ChunkChangeLog.RecordCommit"/>.
+    ///
+    /// Batched like the upsert, and for the same reason. Most of these delete nothing: a commit
+    /// reconciles every chunk it could have changed, and a map-spanning edit reaches far more chunks
+    /// than the map actually has rows for.
+    /// </summary>
+    public async Task RemoveChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks)
+    {
+        if (chunks.Count == 0)
+        {
+            return;
+        }
+
+        var clock = Stopwatch.StartNew();
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        (string tableName, string mapColumn, string xColumn, string yColumn, _) = ChunkChangeColumns(context);
+
+        DbConnection connection = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+
+        List<(int Map, int X, int Y)> all = chunks.ToList();
+
+        for (int start = 0; start < all.Count; start += ChunkChangeRowsPerStatement)
+        {
+            int count = Math.Min(ChunkChangeRowsPerStatement, all.Count - start);
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandTimeout = 60;
+
+            var sql = new StringBuilder(
+                $"DELETE FROM `{tableName}` WHERE (`{mapColumn}`, `{xColumn}`, `{yColumn}`) IN (");
+            for (int i = 0; i < count; i++)
+            {
+                (int map, int x, int y) = all[start + i];
+                sql.Append(i == 0 ? "(" : ",(").Append($"@m{i},@x{i},@y{i})");
+                AddParameter(command, $"@m{i}", map);
+                AddParameter(command, $"@x{i}", x);
+                AddParameter(command, $"@y{i}", y);
+            }
+
+            sql.Append(')');
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        GD.Print($"[ChunkChanges] Removed up to {all.Count} chunk(s) in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    /// <summary>Table and column names off the model, so a naming convention can never silently desync
+    /// the hand-written chunk-change SQL from what EF maps the record to.</summary>
+    private static (string Table, string Map, string X, string Y, string Time) ChunkChangeColumns(EditorDbContext context)
+    {
+        IEntityType type = context.Model.FindEntityType(typeof(ChunkChangeRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        string Column(string property) => type.FindProperty(property)!.GetColumnName(table)!;
+
+        return (
+            type.GetTableName()!,
+            Column(nameof(ChunkChangeRecord.MapId)),
+            Column(nameof(ChunkChangeRecord.ChunkX)),
+            Column(nameof(ChunkChangeRecord.ChunkY)),
+            Column(nameof(ChunkChangeRecord.LastEditedUtc)));
     }
 
     private static void AddParameter(DbCommand command, string name, object value)

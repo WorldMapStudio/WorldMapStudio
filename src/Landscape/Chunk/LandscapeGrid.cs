@@ -102,15 +102,20 @@ public readonly struct LandscapeGrid
         ChunkCoord min = CoordAt(region.Position);
         ChunkCoord max = CoordAt(region.End);
 
-        for (int y = min.Y; y <= max.Y; y++)
+        // Clamped to the limit rather than filtered by it. A region that dwarfs the map — a global
+        // light declares bounds of a million units — otherwise walks tens of billions of coordinates
+        // to yield the few thousand that are actually in limits, which reads as a hang, not a slow
+        // loop.
+        int minX = Mathf.Max(min.X, _originX - _limit);
+        int maxX = Mathf.Min(max.X, _originX + _limit);
+        int minY = Mathf.Max(min.Y, _originY - _limit);
+        int maxY = Mathf.Min(max.Y, _originY + _limit);
+
+        for (int y = minY; y <= maxY; y++)
         {
-            for (int x = min.X; x <= max.X; x++)
+            for (int x = minX; x <= maxX; x++)
             {
-                var coord = new ChunkCoord(x, y);
-                if (IsInLimits(coord))
-                {
-                    yield return coord;
-                }
+                yield return new ChunkCoord(x, y);
             }
         }
     }
