@@ -60,18 +60,30 @@ public sealed class BatchOperationState
         return await storage.LoadBatchStateAsync(OperationId, key).ConfigureAwait(false);
     }
 
-    public async Task SetAsync(string key, string value)
+    // Key validation runs synchronously, before the state machine, so a reserved key throws straight
+    // out of the call rather than surfacing wrapped when the task is awaited.
+    public Task SetAsync(string key, string value)
     {
         Check(key);
+        return SetCoreAsync(key, value);
+    }
+
+    private async Task SetCoreAsync(string key, string value)
+    {
         if (Storage() is { } storage)
         {
             await storage.UpsertBatchStateAsync(OperationId, key, value).ConfigureAwait(false);
         }
     }
 
-    public async Task RemoveAsync(string key)
+    public Task RemoveAsync(string key)
     {
         Check(key);
+        return RemoveCoreAsync(key);
+    }
+
+    private async Task RemoveCoreAsync(string key)
+    {
         if (Storage() is { } storage)
         {
             await storage.RemoveBatchStateAsync(OperationId, key).ConfigureAwait(false);
