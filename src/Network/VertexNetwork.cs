@@ -484,9 +484,16 @@ public sealed class VertexNetwork
             return new NetworkSubgraph([], []);
         }
 
+        // Each walk steps into one of the seed edge's two faces; seeding each call with the other
+        // face as its "came from" keeps the two from both entering the same face and stalling on the
+        // first shared edge — that is what lets the ring extend on both sides of the seed, not one.
+        var seedFaces = FacesUsingEdge(seed.A, seed.B);
+        int forwardFrom = seedFaces.Count > 1 ? seedFaces[1] : -1;
+        int backwardFrom = seedFaces.Count > 0 ? seedFaces[0] : -1;
+
         var ring = new List<int> { seedEdgeId };
-        ExtendRing(ring, seed.A, seed.B, prepend: false);
-        ExtendRing(ring, seed.A, seed.B, prepend: true);
+        ExtendRing(ring, seed.A, seed.B, forwardFrom, prepend: false);
+        ExtendRing(ring, seed.A, seed.B, backwardFrom, prepend: true);
 
         var crossedFaces = new List<int>();
         for (int i = 0; i < ring.Count - 1; i++)
@@ -565,11 +572,10 @@ public sealed class VertexNetwork
     /// already visited), following each quad's "opposite" boundary edge, appending or prepending
     /// every ring edge found. Stops at an open boundary, a non-quad neighbour, or the ring closing
     /// back on itself.</summary>
-    private void ExtendRing(List<int> ring, int seedA, int seedB, bool prepend)
+    private void ExtendRing(List<int> ring, int seedA, int seedB, int fromFaceId, bool prepend)
     {
         int a = seedA;
         int b = seedB;
-        int fromFaceId = -1;
         while (true)
         {
             int nextFaceId = -1;
