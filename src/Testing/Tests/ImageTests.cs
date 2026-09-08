@@ -404,8 +404,10 @@ public static class ImageTests
 
         Assert.AreEqual(1, command.ChunkImpacts.Count);
         ChunkChangeImpact impact = command.ChunkImpacts[0];
-        Assert.IsNull(impact.Before);
         Assert.IsNotNull(impact.After);
+        // The chunk had no content before the stroke, so the before/after fingerprints must differ —
+        // that inequality is what makes the edit stamp a chunk change (see ChunkChangeLog.ReduceImpacts).
+        Assert.AreNotEqual(impact.Before, impact.After, "a new chunk's paint must register as a change");
         Assert.AreApproximatelyEqual(16.0, impact.After!.Bounds.Size.X, 1e-4,
             "bounds should be narrowed to the one touched 16px chunk, not the whole 64-wide footprint");
 
