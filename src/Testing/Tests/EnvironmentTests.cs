@@ -163,21 +163,23 @@ public static class EnvironmentTests
     }
 
     [EditorTest(Category = "Environment")]
-    public static void Blender_applies_the_strongest_overlapping_source_last()
+    public static void Blender_folds_the_strongest_overlapping_source_in_first()
     {
         var global = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Black }, isGlobal: true);
-        var focus = new Vector3(5.0f, 0.0f, 0.0f);
 
-        // At the query point, weak's falloff gives 0.95 and strong's gives a deterministic 1.0
-        // (equal-weight ties would leave List.Sort's tiebreak, and therefore blend order, unspecified),
-        // so strong must be folded in last and its colour must win outright.
-        var weak = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Blue }, position: Vector3.Zero, inner: 0.0f, outer: 100.0f);
+        // At the origin: strong's falloff steps to 1.0 (query point is inside its inner radius),
+        // weak's gives 1 - 9/10 = 0.1. Composed strongest-first, strong all but overwrites the base
+        // and weak only nudges it — so the result is ~0.9 red / ~0.1 blue, not the ~0.1/0.9 the
+        // opposite order would leave.
         var strong = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Red }, position: Vector3.Zero, inner: 10.0f, outer: 10.0f);
+        var weak = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Blue }, position: new Vector3(9.0f, 0.0f, 0.0f), inner: 0.0f, outer: 10.0f);
 
-        EnvironmentBlender.Result result = EnvironmentBlender.Blend([global, weak, strong], focus, default);
+        EnvironmentBlender.Result result = EnvironmentBlender.Blend([global, weak, strong], Vector3.Zero, default);
 
-        Assert.AreEqual(Colors.Red, result.Current.AmbientColor);
+        Assert.AreApproximatelyEqual(0.9, result.Current.AmbientColor.R, tolerance: 1e-4);
+        Assert.AreApproximatelyEqual(0.1, result.Current.AmbientColor.B, tolerance: 1e-4);
         Assert.AreEqual(3, result.Active.Count);
+        Assert.IsTrue(result.Active[1].Weight >= result.Active[2].Weight, "positional sources are ordered strongest-first");
     }
 
     [EditorTest(Category = "Environment")]
