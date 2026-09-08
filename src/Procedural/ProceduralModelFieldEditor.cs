@@ -178,7 +178,7 @@ public sealed class ProceduralModelFieldEditor
         return candidates.Where(format => format.CanAuthor).ToList();
     }
 
-    private static void RecordFormatChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, string formatId)
+    private void RecordFormatChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, string formatId)
     {
         string before = model.Formats;
         ProceduralFormats updated = ProceduralFormats.Parse(before);
@@ -259,7 +259,7 @@ public sealed class ProceduralModelFieldEditor
         });
     }
 
-    private static void RecordMaterialsChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, MeshMaterialSlot slot, Action<ProceduralBindings> mutate)
+    private void RecordMaterialsChange(EditSessionManager sessions, ProceduralModel model, ProceduralOutputSlot output, MeshMaterialSlot slot, Action<ProceduralBindings> mutate)
     {
         string before = model.Materials;
         ProceduralBindings updated = ProceduralBindings.Parse(before);
@@ -269,15 +269,16 @@ public sealed class ProceduralModelFieldEditor
     }
 
     // A combo/parameter change has no activate/deactivate pair to bracket, so it is recorded on the
-    // spot, exactly like MeshMaterialsWindow.RecordNow.
-    private static void RecordChange<T>(EditSessionManager sessions, ProceduralModel model, string field, T before, T after, Action<T> set)
+    // spot, exactly like MeshMaterialsWindow.RecordNow. The model is shared, so the command fans the
+    // chunk impact out to every placement rather than reporting none (a plain SetFieldCommand would).
+    private void RecordChange<T>(EditSessionManager sessions, ProceduralModel model, string field, T before, T after, Action<T> set)
     {
         if (EqualityComparer<T>.Default.Equals(before, after))
         {
             return;
         }
 
-        var command = new SetFieldCommand<T>(model, field, set, before, after);
+        var command = new SetProceduralModelFieldCommand<T>(_system, model, field, set, before, after);
         command.Apply();
         sessions.Record(command);
     }
