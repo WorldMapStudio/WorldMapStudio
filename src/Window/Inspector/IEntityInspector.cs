@@ -12,5 +12,9 @@ public interface IEntityInspector : ISubsystem
 {
     Type TargetType { get; }
 
+    /// <summary>Whether the inspector window shows its "filter fields" box for this inspector. Off for
+    /// an inspector with nothing to filter, such as a read-only all-derived view.</summary>
+    bool ShowFieldFilter => true;
+
     void Draw(InspectorContext context, IReadOnlyList<IEntity> targets);
 }

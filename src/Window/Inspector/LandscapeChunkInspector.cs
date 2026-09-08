@@ -12,6 +12,9 @@ namespace WorldMapStudio;
 [Subsystem(nameof(InspectorWindow))]
 public sealed class LandscapeChunkInspector : EntityInspector<LandscapeChunk>
 {
+    // Everything here is computed from the entities that shape the chunk — nothing to filter.
+    public bool ShowFieldFilter => false;
+
     private readonly EditorContext _context;
 
     public LandscapeChunkInspector(InspectorWindow window)

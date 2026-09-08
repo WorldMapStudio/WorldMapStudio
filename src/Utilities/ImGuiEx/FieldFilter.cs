@@ -10,6 +10,10 @@ namespace WorldMapStudio;
 /// Knows nothing about widgets, entities or edit tracking — the caller supplies the draw callback and
 /// keeps the filter string across frames (see <see cref="ImGuiEx.FieldFilterInput"/>), building one of
 /// these per frame from it.
+///
+/// Inside a <see cref="Group"/> body, everything must go through <see cref="Field(string, Action)"/>,
+/// <see cref="Separator"/>, <see cref="Chrome"/> or a nested <see cref="Group"/> — a bare ImGui call
+/// there would be drawn again by the group's measure pass.
 /// </summary>
 public sealed class FieldFilter
 {
@@ -73,32 +77,54 @@ public sealed class FieldFilter
     }
 
     /// <summary>
-    /// A collapsible section. Unfiltered it's a plain collapsing header. Filtered it is force-open and
-    /// drawn only when <paramref name="title"/> or one of its rows matches — matching the title reveals
-    /// every row. Not reentrant: groups don't nest.
+    /// Section chrome — a heading label, a Remove button, a status line — that should draw whenever
+    /// its section does, regardless of the filter. Skipped during a <see cref="Group"/> measure pass
+    /// so it isn't drawn twice; use this rather than a bare ImGui call inside a group body.
     /// </summary>
-    public void Group(string title, Action body)
+    public void Chrome(Action draw)
     {
+        if (!_measuring)
+        {
+            draw();
+        }
+    }
+
+    /// <summary>
+    /// A collapsible section. Unfiltered it's a plain collapsing header (open by default when
+    /// <paramref name="defaultOpen"/>). Filtered it is force-open and drawn only when
+    /// <paramref name="title"/> or one of its rows matches — matching the title reveals every row.
+    /// Reentrant: a nested group's title stacks onto the prefix, and its matches count towards the
+    /// parent being shown.
+    /// </summary>
+    public void Group(string title, Action body, bool defaultOpen = false)
+    {
+        string prefixedTitle = Prefixed(title);
+
         if (_measuring)
         {
-            RunMeasured(title, body);
+            // Nested inside a measuring parent — contribute upward. A title match reveals the whole
+            // subtree, so it counts as one hit without descending.
+            _measureHits += Matches(prefixedTitle) ? 1 : RunMeasured(prefixedTitle, body);
             return;
         }
 
         if (!Filtering)
         {
+            if (defaultOpen)
+            {
+                ImGui.SetNextItemOpen(true, ImGuiCond.FirstUseEver);
+            }
+
             if (ImGui.CollapsingHeader(title))
             {
-                _groupPrefix = title;
-                body();
-                _groupPrefix = null;
+                Enter(prefixedTitle, showAll: false, body);
             }
 
             return;
         }
 
-        bool titleMatches = Matches(title);
-        if (!titleMatches && RunMeasured(title, body) == 0)
+        bool titleMatches = Matches(prefixedTitle);
+        if (!titleMatches && !_groupShowAll && RunMeasured(prefixedTitle, body) == 0)
         {
             return;
         }
@@ -106,12 +132,21 @@ public sealed class FieldFilter
         ImGui.SetNextItemOpen(true, ImGuiCond.Always);
         if (ImGui.CollapsingHeader(title))
         {
-            _groupPrefix = title;
-            _groupShowAll = titleMatches;
-            body();
-            _groupShowAll = false;
-            _groupPrefix = null;
+            Enter(prefixedTitle, titleMatches || _groupShowAll, body);
         }
+    }
+
+    // Runs body with the group's prefix/show-all state pushed, then restores it.
+    private void Enter(string prefix, bool showAll, Action body)
+    {
+        string? prevPrefix = _groupPrefix;
+        bool prevShowAll = _groupShowAll;
+
+        _groupPrefix = prefix;
+        _groupShowAll = showAll;
+        body();
+        _groupShowAll = prevShowAll;
+        _groupPrefix = prevPrefix;
     }
 
     // Runs body in measure mode under the given label prefix; returns how many rows matched.

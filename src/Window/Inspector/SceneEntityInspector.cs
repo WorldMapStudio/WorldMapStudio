@@ -30,30 +30,35 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)
     {
+        FieldFilter fields = context.Fields;
+
         ImGui.Text(targets.Count == 1 ? targets[0].DisplayName : $"{targets.Count} entities selected");
-        ImGui.Separator();
+        fields.Separator();
 
         if (targets.Count == 1)
         {
-            DrawName(context, targets[0]);
-            DrawGrouping(context, targets[0]);
+            fields.Field("Name", () => DrawName(context, targets[0]));
+            fields.Field("Parent", () => DrawGrouping(context, targets[0]));
         }
 
-        DrawPosition(context, targets);
-        DrawRotation(context, targets);
-        DrawScale(context, targets);
+        fields.Field("Position", () => DrawPosition(context, targets));
+        fields.Field("Rotation", () => DrawRotation(context, targets));
+        fields.Field("Scale", () => DrawScale(context, targets));
 
         if (targets.Count == 1)
         {
-            ImGui.Separator();
-            DrawSize(targets[0]);
-            ImGui.Separator();
+            fields.Separator();
+            fields.Field("Effective size", () => DrawSize(targets[0]));
+            fields.Separator();
             DrawComponents(context, targets[0]);
-            ImGui.Separator();
-            if (ImGui.Button("Save as Prefab"))
+            fields.Separator();
+            fields.Field("Save as Prefab", () =>
             {
-                _savePrefabPopup.Open(targets[0]);
-            }
+                if (ImGui.Button("Save as Prefab"))
+                {
+                    _savePrefabPopup.Open(targets[0]);
+                }
+            });
         }
 
         _savePrefabPopup.Draw();
@@ -193,8 +198,10 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
 
     private void DrawComponents(InspectorContext context, SceneEntity entity)
     {
-        ImGui.Text("Components");
-        DrawAddComponent(context, entity);
+        FieldFilter fields = context.Fields;
+
+        fields.Field("Components", () => ImGui.Text("Components"));
+        fields.Field("Add component", () => DrawAddComponent(context, entity));
 
         foreach (SceneComponent component in entity.Components.ToList())
         {
@@ -207,23 +214,30 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
                 continue;
             }
 
-            if (!ImGui.CollapsingHeader($"{type.DisplayName}##{component.TypeId}", ImGuiTreeNodeFlags.DefaultOpen))
-            {
-                continue;
-            }
-
+            SceneComponent captured = component;
+            bool removed = false;
             ImGui.PushID(component.TypeId);
-            if (ImGui.SmallButton("Remove"))
+            fields.Group(type.DisplayName, () =>
             {
-                var command = new RemoveComponentCommand(entity, component);
-                command.Apply();
-                context.Sessions.Record(command);
-                ImGui.PopID();
-                continue;
-            }
+                fields.Chrome(() =>
+                {
+                    if (ImGui.SmallButton("Remove"))
+                    {
+                        var command = new RemoveComponentCommand(entity, captured);
+                        command.Apply();
+                        context.Sessions.Record(command);
+                        removed = true;
+                    }
+                });
 
-            ImGui.Separator();
-            type.DrawInspector(context, component);
+                if (removed)
+                {
+                    return;
+                }
+
+                fields.Separator();
+                type.DrawInspector(context, captured);
+            }, defaultOpen: true);
             ImGui.PopID();
         }
     }
