@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using Godot;
 using ImGuiNET;
 using GVector2 = Godot.Vector2;
@@ -16,7 +17,7 @@ namespace WorldMapStudio;
 /// interaction to the active <see cref="ITool"/> from the shared <see cref="ToolSystem"/>.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
-public sealed class ViewportWindow : Window, IWorldParticipant
+public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersistentWindow
 {
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.V, ShortcutModifiers.Alt);
 
@@ -220,6 +221,55 @@ public sealed class ViewportWindow : Window, IWorldParticipant
             _flyCamera.MoveTo(DefaultCameraPosition);
             _flyCamera.LookAt(GVector3.Zero);
         }
+    }
+
+    // The live camera pose plus every per-map position the session has accumulated, so restarting
+    // drops you back exactly where you left off on each map rather than at the default overview.
+    JsonObject? ILayoutPersistentWindow.CaptureLayoutState()
+    {
+        _cameraByMap[_viewMap] = _flyCamera.Position;
+
+        JsonObject perMap = new();
+        foreach ((MapId map, GVector3 position) in _cameraByMap.OrderBy(pair => pair.Key.Value))
+        {
+            perMap[map.Value.ToString()] = new JsonObject
+            {
+                ["x"] = position.X,
+                ["y"] = position.Y,
+                ["z"] = position.Z,
+            };
+        }
+
+        return new JsonObject
+        {
+            ["pose"] = _flyCamera.Pose.ToJson(),
+            ["perMap"] = perMap,
+        };
+    }
+
+    void ILayoutPersistentWindow.RestoreLayoutState(JsonObject state)
+    {
+        if (state["perMap"] is JsonObject perMap)
+        {
+            _cameraByMap.Clear();
+            foreach ((string key, JsonNode? value) in perMap)
+            {
+                if (value is JsonObject position && int.TryParse(key, out int mapValue))
+                {
+                    _cameraByMap[new MapId(mapValue)] = new GVector3(
+                        Coord(position, "x"), Coord(position, "y"), Coord(position, "z"));
+                }
+            }
+        }
+
+        if (CameraPose.FromJson(state["pose"]) is { } pose)
+        {
+            _flyCamera.SetPose(pose);
+            _flyCamera.ApplyTo(_camera);
+        }
+
+        static float Coord(JsonObject obj, string key) =>
+            obj.TryGetPropertyValue(key, out JsonNode? value) && value is not null ? value.GetValue<float>() : 0.0f;
     }
 
     protected override void DrawContent()
