@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Godot;
 using ImGuiNET;
@@ -124,15 +125,30 @@ public sealed class ImGuiLayoutProfiles
 
             if (file.Windows is not null)
             {
-                Dictionary<string, bool> openByTitle = file.Windows
+                Dictionary<string, WindowOpenState> byTitle = file.Windows
                     .GroupBy(static window => window.Title, StringComparer.Ordinal)
-                    .ToDictionary(static group => group.Key, static group => group.Last().IsOpen, StringComparer.Ordinal);
+                    .ToDictionary(static group => group.Key, static group => group.Last(), StringComparer.Ordinal);
 
                 foreach (Window window in _windows.Windows)
                 {
-                    if (openByTitle.TryGetValue(window.Title, out bool isOpen))
+                    if (!byTitle.TryGetValue(window.Title, out WindowOpenState? saved))
                     {
-                        window.IsOpen = isOpen;
+                        continue;
+                    }
+
+                    window.IsOpen = saved.IsOpen;
+                    if (saved.State is { } state && window is ILayoutPersistentWindow persistent)
+                    {
+                        // A malformed per-window blob must not take the whole editor down with it —
+                        // that window just starts from its defaults.
+                        try
+                        {
+                            persistent.RestoreLayoutState(state);
+                        }
+                        catch (Exception ex) when (ex is InvalidOperationException or FormatException or JsonException)
+                        {
+                            GD.PushWarning($"Ignoring bad layout state for window '{window.Title}': {ex.Message}");
+                        }
                     }
                 }
             }
@@ -154,7 +170,12 @@ public sealed class ImGuiLayoutProfiles
             Version = 1,
             ImGuiIni = SaveIniToString(),
             Windows = _windows.Windows
-                .Select(static window => new WindowOpenState { Title = window.Title, IsOpen = window.IsOpen })
+                .Select(static window => new WindowOpenState
+                {
+                    Title = window.Title,
+                    IsOpen = window.IsOpen,
+                    State = (window as ILayoutPersistentWindow)?.CaptureLayoutState(),
+                })
                 .OrderBy(static window => window.Title, StringComparer.Ordinal)
                 .ToList(),
         };
@@ -222,5 +243,6 @@ public sealed class ImGuiLayoutProfiles
     {
         public string Title { get; set; } = string.Empty;
         public bool IsOpen { get; set; }
+        public JsonObject? State { get; set; }
     }
 }
