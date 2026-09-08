@@ -39,8 +39,9 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
 }
 
 /// <summary>Compares the expected (EF model) schema to the live database schema. Detects missing/extra
-/// tables and columns, primary-key changes, and index changes by column set. Column type/nullability
-/// changes and renames are intentionally ignored.</summary>
+/// tables and columns, primary-key changes, and indexes the model wants that the database lacks.
+/// Column type/nullability changes and renames are intentionally ignored, and an index that exists
+/// only in the live database is left alone rather than proposed for dropping.</summary>
 public static class SchemaDiff
 {
     public static List<SchemaChange> Compute(Schema expected, Schema live, IReadOnlySet<string>? ignoreExtraTables = null)
@@ -80,11 +81,6 @@ public static class SchemaDiff
             foreach (SchemaIndex index in expectedIndexes.Where(i => !liveIndexes.ContainsKey(i.Key)).Select(i => i.Value))
             {
                 changes.Add(new SchemaChange(SchemaChangeKind.CreateIndex, table.Name) { Index = index });
-            }
-
-            foreach (SchemaIndex index in liveIndexes.Where(i => !expectedIndexes.ContainsKey(i.Key)).Select(i => i.Value))
-            {
-                changes.Add(new SchemaChange(SchemaChangeKind.DropIndex, table.Name) { Index = index });
             }
         }
 
