@@ -16,14 +16,15 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.I, ShortcutModifiers.Alt);
 
     private readonly SelectionSystem _selection;
-    private readonly InspectorContext _context;
+    private readonly EditSessionManager _sessions;
+    private string _fieldFilter = string.Empty;
 
     public InspectorWindow(WindowManager manager)
         : base("Inspector", defaultSize: new Vector2(300, 400))
     {
         Context = manager.Context;
         _selection = manager.Context.Selection;
-        _context = new InspectorContext(manager.Context.EditSessions);
+        _sessions = manager.Context.EditSessions;
         InitializeSubsystems();
     }
 
@@ -55,7 +56,16 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
             return;
         }
 
-        inspector.Draw(_context, selected);
+        string filter = string.Empty;
+        if (inspector.ShowFieldFilter)
+        {
+            ImGuiEx.FieldFilterInput("##fieldfilter", ref _fieldFilter);
+            ImGui.Spacing();
+            filter = _fieldFilter;
+        }
+
+        var context = new InspectorContext(_sessions, new FieldFilter(filter));
+        inspector.Draw(context, selected);
     }
 
     // The most-derived registered inspector whose target type every selected entity is an instance
