@@ -32,49 +32,63 @@ public sealed class ImageComponentType : ISceneComponentType
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {
         var image = (ImageComponent)component;
+        FieldFilter fields = context.Fields;
 
-        DrawImageReference(context, image);
-        DrawDisplayLayerCombo(context, image);
+        fields.Field("Image", () => DrawImageReference(context, image));
+        fields.Field("Display Layer", () => DrawDisplayLayerCombo(context, image));
 
         if (image.Image == null)
         {
             if (image.ImageId is { } danglingId)
             {
-                ImGui.TextColored(new NVector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded image provides #{danglingId}.");
+                fields.Chrome(() =>
+                    ImGui.TextColored(new NVector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded image provides #{danglingId}."));
             }
 
             return;
         }
 
-        ImGui.Separator();
+        fields.Separator();
 
         // "Footprint" for how large the projection is on the ground, distinct from both the entity's
         // own transform (position/rotation, drawn elsewhere and untouched by this component) and the
         // image's pixel resolution (shown below) — three different "size"-shaped settings that used to
         // share overlapping names.
-        float sizeX = image.WorldSizeX;
-        if (ImGui.DragFloat("Footprint Width", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
-        _tracker.Track(context.Sessions, image, "width", image.WorldSizeX, value => image.WorldSizeX = value);
+        fields.Field("Footprint Width", () =>
+        {
+            float sizeX = image.WorldSizeX;
+            if (ImGui.DragFloat("Footprint Width", ref sizeX, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeX = sizeX; }
+            _tracker.Track(context.Sessions, image, "width", image.WorldSizeX, value => image.WorldSizeX = value);
+        });
 
-        float sizeZ = image.WorldSizeZ;
-        if (ImGui.DragFloat("Footprint Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
-        _tracker.Track(context.Sessions, image, "depth", image.WorldSizeZ, value => image.WorldSizeZ = value);
+        fields.Field("Footprint Depth", () =>
+        {
+            float sizeZ = image.WorldSizeZ;
+            if (ImGui.DragFloat("Footprint Depth", ref sizeZ, 0.5f, 0.5f, 4096.0f)) { image.WorldSizeZ = sizeZ; }
+            _tracker.Track(context.Sessions, image, "depth", image.WorldSizeZ, value => image.WorldSizeZ = value);
+        });
 
-        DrawChannelBinding(context, image);
+        fields.Field("Channel", () => DrawChannelBinding(context, image));
 
-        float strength = image.Strength;
-        if (ImGui.DragFloat("Strength", ref strength, 0.5f, 0.0f, float.MaxValue)) { image.Strength = strength; }
-        _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
+        fields.Field("Strength", () =>
+        {
+            float strength = image.Strength;
+            if (ImGui.DragFloat("Strength", ref strength, 0.5f, 0.0f, float.MaxValue)) { image.Strength = strength; }
+            _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
+        });
 
-        ImGui.Separator();
-        ImGui.TextDisabled(ChunkGridSummary(image.Image));
-        ImGui.TextDisabled(ResidencySummary(image.Image));
-        DrawClearButton(context, image);
+        fields.Separator();
+        fields.Chrome(() =>
+        {
+            ImGui.TextDisabled(ChunkGridSummary(image.Image));
+            ImGui.TextDisabled(ResidencySummary(image.Image));
+        });
+        fields.Field("Clear", () => DrawClearButton(context, image));
 
         int uses = _system.UsageCount(image.Image.RecordId ?? -1);
         if (uses > 1)
         {
-            ImGui.TextDisabled($"used by {uses} entities in this map");
+            fields.Chrome(() => ImGui.TextDisabled($"used by {uses} entities in this map"));
         }
     }
 

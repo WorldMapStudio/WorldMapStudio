@@ -30,35 +30,39 @@ public sealed class ModelRendererComponentType : ISceneComponentType
     {
         var renderer = (ModelRendererComponent)component;
 
-        ImGui.AlignTextToFramePadding();
-        ImGui.Text("Model:");
-        ImGui.SameLine();
-        if (ImGui.Button("Browse##model"))
+        context.Fields.Field("Model", () =>
         {
-            _picker.Browse(renderer.ModelPath, selected =>
-                ComponentFieldRecorder.Record(context, renderer, "model", renderer.ModelPath, selected, value => renderer.ModelPath = value));
-        }
-
-        if (renderer.ModelPath.Length > 0)
-        {
+            ImGui.AlignTextToFramePadding();
+            ImGui.Text("Model:");
             ImGui.SameLine();
-            if (ImGui.SmallButton("Clear##model"))
+            if (ImGui.Button("Browse##model"))
             {
-                ComponentFieldRecorder.Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
+                _picker.Browse(renderer.ModelPath, selected =>
+                    ComponentFieldRecorder.Record(context, renderer, "model", renderer.ModelPath, selected, value => renderer.ModelPath = value));
             }
 
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Textures##model") && renderer.TryGetModel(out ModelAsset? model))
+            if (renderer.ModelPath.Length > 0)
             {
-                _textureList.Open(model!);
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Clear##model"))
+                {
+                    ComponentFieldRecorder.Record(context, renderer, "model", renderer.ModelPath, "", value => renderer.ModelPath = value);
+                }
+
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Textures##model") && renderer.TryGetModel(out ModelAsset? model))
+                {
+                    _textureList.Open(model!);
+                }
             }
-        }
 
-        // Trails the buttons rather than leading them: the path can be arbitrarily long, and putting
-        // it first pushed Browse/Clear off the edge of the inspector unless the panel was made wide.
-        ImGui.SameLine();
-        ImGui.TextDisabled(renderer.ModelPath.Length == 0 ? "(none)" : renderer.ModelPath);
+            // Trails the buttons rather than leading them: the path can be arbitrarily long, and putting
+            // it first pushed Browse/Clear off the edge of the inspector unless the panel was made wide.
+            ImGui.SameLine();
+            ImGui.TextDisabled(renderer.ModelPath.Length == 0 ? "(none)" : renderer.ModelPath);
+        });
 
+        // The plugin hook routes its own fields through context.Fields.
         renderer.DrawInspectorExtra(context);
     }
 

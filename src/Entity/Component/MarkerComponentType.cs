@@ -20,10 +20,14 @@ public sealed class MarkerComponentType : ISceneComponentType
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {
         var marker = (MarkerComponent)component;
-        int shape = (int)marker.Shape;
-        if (ImGui.Combo("Shape", ref shape, "Plain\0Cube\0Sphere\0"))
+
+        context.Fields.Field("Shape", () =>
         {
-            ComponentFieldRecorder.Record(context, marker, "shape", marker.Shape, (MarkerShape)shape, value => marker.Shape = value);
-        }
+            int shape = (int)marker.Shape;
+            if (ImGui.Combo("Shape", ref shape, "Plain\0Cube\0Sphere\0"))
+            {
+                ComponentFieldRecorder.Record(context, marker, "shape", marker.Shape, (MarkerShape)shape, value => marker.Shape = value);
+            }
+        });
     }
 }
