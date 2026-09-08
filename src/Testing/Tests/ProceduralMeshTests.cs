@@ -484,23 +484,25 @@ public static class ProceduralMeshTests
         AssertEveryTriangleFacesItsDeclaredNormal(positions, normals, indices);
     }
 
-    /// <summary>The centroid of the ribbon vertices clustered around a weld point — its end ring (both
-    /// the side-quad corners and the end-cap copy), which for an unmoved endpoint averages to the weld
-    /// point exactly. The radius clears the ring's own corners but not the next subdivision point.</summary>
+    /// <summary>The centre of the ribbon's end ring at a weld point: the four distinct vertex
+    /// positions nearest it (its cross-section corners, each = centre ± half-width ± half-thickness),
+    /// which average back to the centre exactly when waviness has not disturbed the endpoint. Nearer
+    /// than the post's own top corners or the ribbon's next subdivision point.</summary>
     private static Vector3 EndRingCentre(Vector3[] positions, Vector3 weld)
     {
+        Vector3[] ring = positions
+            .Distinct()
+            .OrderBy(p => p.DistanceSquaredTo(weld))
+            .Take(4)
+            .ToArray();
+
         Vector3 sum = Vector3.Zero;
-        int count = 0;
-        foreach (Vector3 p in positions)
+        foreach (Vector3 p in ring)
         {
-            if (p.DistanceTo(weld) < 0.25f)
-            {
-                sum += p;
-                count++;
-            }
+            sum += p;
         }
 
-        return count == 0 ? new Vector3(float.NaN, float.NaN, float.NaN) : sum / count;
+        return ring.Length == 0 ? new Vector3(float.NaN, float.NaN, float.NaN) : sum / ring.Length;
     }
 
     /// <summary>Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests
