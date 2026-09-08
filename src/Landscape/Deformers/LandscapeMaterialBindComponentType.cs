@@ -26,44 +26,60 @@ public sealed class LandscapeMaterialBindComponentType : ISceneComponentType
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {
         var bind = (LandscapeMaterialBindComponent)component;
+        FieldFilter fields = context.Fields;
 
-        int priority = bind.Priority;
-        if (ImGui.DragInt("Priority", ref priority)) { bind.Priority = priority; }
-        _tracker.Track(context.Sessions, bind, "priority", bind.Priority, value => bind.Priority = value);
+        fields.Field("Priority", () =>
+        {
+            int priority = bind.Priority;
+            if (ImGui.DragInt("Priority", ref priority)) { bind.Priority = priority; }
+            _tracker.Track(context.Sessions, bind, "priority", bind.Priority, value => bind.Priority = value);
+        });
 
         LandscapeCatalog catalog = _landscape.Catalog;
 
+        int? removeAt = null;
         for (int i = 0; i < bind.Bindings.Count; i++)
         {
+            int index = i;
             LandscapeMaterialBinding binding = bind.Bindings[i];
-            ImGui.PushID(i);
-            ImGui.Separator();
-
-            DrawLayerBinding(context, bind, catalog, i, binding);
-            DrawMaterialBinding(context, bind, catalog, i, binding);
-
-            if (ImGui.SmallButton("Remove binding"))
+            fields.Field($"Binding {i + 1}", () =>
             {
-                List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
-                List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
-                after.RemoveAt(i);
-                ComponentFieldRecorder.Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
-                ImGui.PopID();
-                return;
-            }
+                ImGui.PushID(index);
+                ImGui.Separator();
 
-            ImGui.PopID();
+                DrawLayerBinding(context, bind, catalog, index, binding);
+                DrawMaterialBinding(context, bind, catalog, index, binding);
+
+                if (ImGui.SmallButton("Remove binding"))
+                {
+                    removeAt = index;
+                }
+
+                ImGui.PopID();
+            });
         }
 
-        if (ImGui.Button("Add binding"))
+        if (removeAt is int target)
         {
             List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
             List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
-            after.Add(new LandscapeMaterialBinding(
-                catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId ?? catalog.Layers.FirstOrDefault()?.RecordId,
-                catalog.Materials.FirstOrDefault()?.RecordId));
+            after.RemoveAt(target);
             ComponentFieldRecorder.Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
+            return;
         }
+
+        fields.Field("Add binding", () =>
+        {
+            if (ImGui.Button("Add binding"))
+            {
+                List<LandscapeMaterialBinding> before = bind.Bindings.ToList();
+                List<LandscapeMaterialBinding> after = bind.Bindings.ToList();
+                after.Add(new LandscapeMaterialBinding(
+                    catalog.Layers.FirstOrDefault(layer => !layer.IsBase)?.RecordId ?? catalog.Layers.FirstOrDefault()?.RecordId,
+                    catalog.Materials.FirstOrDefault()?.RecordId));
+                ComponentFieldRecorder.Record(context, bind, "bindings", before, after, value => bind.ReplaceBindings(value));
+            }
+        });
     }
 
     private static void DrawLayerBinding(

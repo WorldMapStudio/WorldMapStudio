@@ -28,22 +28,24 @@ public sealed class ProceduralComponentType : ISceneComponentType
     public void DrawInspector(InspectorContext context, SceneComponent component)
     {
         var procedural = (ProceduralComponent)component;
+        FieldFilter fields = context.Fields;
 
-        DrawModelReference(context, procedural);
+        fields.Field("Model", () => DrawModelReference(context, procedural));
 
         ProceduralModel? model = procedural.Model;
         if (model == null)
         {
             if (procedural.ModelId is { } danglingId)
             {
-                ImGui.TextColored(new NVector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded model provides #{danglingId}.");
+                fields.Chrome(() =>
+                    ImGui.TextColored(new NVector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded model provides #{danglingId}."));
             }
 
             return;
         }
 
-        ImGui.Separator();
-        _fields.Draw(context.Sessions, model);
+        fields.Separator();
+        fields.Field("Parameters", () => _fields.Draw(context.Sessions, model));
     }
 
     public void DrawModals()
