@@ -41,6 +41,21 @@ public sealed class FlyCamera
         Position = position;
     }
 
+    /// <summary>The full camera state, for persisting across sessions.</summary>
+    public CameraPose Pose => new(Position, _yaw, _pitch, _flySpeed);
+
+    /// <summary>Restores a snapshot from <see cref="Pose"/>, re-clamping to the current limits.</summary>
+    public void SetPose(CameraPose pose)
+    {
+        Position = pose.Position;
+        _yaw = pose.Yaw;
+        _pitch = Mathf.Clamp(pose.Pitch, MinPitch, MaxPitch);
+        if (pose.FlySpeed > 0.0f)
+        {
+            _flySpeed = Mathf.Clamp(pose.FlySpeed, MinFlySpeed, MaxFlySpeed);
+        }
+    }
+
     public void LookAt(GVector3 target)
     {
         GVector3 direction = (target - Position).Normalized();
