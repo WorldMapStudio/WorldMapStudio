@@ -719,8 +719,10 @@ public static class ImageTests
         Assert.IsFalse(image.EvictChunk(new ImageChunkCoord(0, 0)), "already gone, so nothing to report");
         Assert.IsFalse(image.EvictChunk(new ImageChunkCoord(5, 5)), "never resident, so nothing to report");
 
-        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
-        var dirtyCoord = new ImageChunkCoord(0, 0);
+        // Paint into a chunk that was never stored, so the stroke actually creates it dirty — a
+        // painted-over stored-but-evicted coordinate would be refused instead.
+        image.Paint(40.0f / 64.0f, 40.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        var dirtyCoord = new ImageChunkCoord(2, 2);
         Assert.IsTrue(image.IsDirty(dirtyCoord));
         Assert.IsFalse(image.EvictChunk(dirtyCoord), "a dirty chunk is refused, so nothing to report");
     }
