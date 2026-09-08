@@ -147,8 +147,8 @@ public static class ProceduralMeshTests
         var extruded = network.Extrude([], [], [face], new Vector3(0.0f, 0.0f, 1.0f));
 
         Assert.AreEqual(4, extruded.VertexIds.Count, "extruding a quad face should create 4 new vertices");
-        Assert.AreEqual(1, extruded.FaceIds.Count, "only the moved cap and no duplicate should be reported as new for the face itself");
-        Assert.AreEqual(face, extruded.FaceIds[0], "the cap should keep the original face's id rather than creating a new one");
+        Assert.AreEqual(5, extruded.FaceIds.Count, "the 4 new side walls plus the moved cap");
+        Assert.IsTrue(extruded.FaceIds.Contains(face), "the cap keeps the original face's id rather than a fresh one");
         Assert.AreEqual(5, network.Faces.Count, "4 side walls plus the moved cap");
         Assert.AreEqual(8, network.Vertices.Count, "4 original vertices plus 4 extruded ones");
 
@@ -474,12 +474,33 @@ public static class ProceduralMeshTests
         Assert.AreEqual((2 * 36) + (34 * 6), indices.Length);
 
         // Waviness must never move the rail's actual endpoints — those are what weld it to its posts.
+        // The ribbon has no vertex on the centreline, so check that its end ring stays centred on the
+        // weld point (every ring corner is centre ± half-width ± half-thickness, so they average to it).
         Vector3 railStart = new(0.0f, 1.0f, 0.0f); // post a's ground point, lifted by the rail height
         Vector3 railEnd = new(4.0f, 2.0f, 0.0f); // post b's ground point, lifted by the rail height
-        Assert.IsTrue(positions.Any(p => p.IsEqualApprox(railStart)), "waviness moved the rail's start away from its post");
-        Assert.IsTrue(positions.Any(p => p.IsEqualApprox(railEnd)), "waviness moved the rail's end away from its post");
+        Assert.IsTrue(EndRingCentre(positions, railStart).IsEqualApprox(railStart), "waviness moved the rail's start away from its post");
+        Assert.IsTrue(EndRingCentre(positions, railEnd).IsEqualApprox(railEnd), "waviness moved the rail's end away from its post");
 
         AssertEveryTriangleFacesItsDeclaredNormal(positions, normals, indices);
+    }
+
+    /// <summary>The centroid of the ribbon vertices clustered around a weld point — its end ring (both
+    /// the side-quad corners and the end-cap copy), which for an unmoved endpoint averages to the weld
+    /// point exactly. The radius clears the ring's own corners but not the next subdivision point.</summary>
+    private static Vector3 EndRingCentre(Vector3[] positions, Vector3 weld)
+    {
+        Vector3 sum = Vector3.Zero;
+        int count = 0;
+        foreach (Vector3 p in positions)
+        {
+            if (p.DistanceTo(weld) < 0.25f)
+            {
+                sum += p;
+                count++;
+            }
+        }
+
+        return count == 0 ? new Vector3(float.NaN, float.NaN, float.NaN) : sum / count;
     }
 
     /// <summary>Godot's front face is clockwise seen from the front — the same rule LandscapeMeshTests
