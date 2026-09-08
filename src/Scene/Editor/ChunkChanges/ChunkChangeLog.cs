@@ -68,10 +68,78 @@ public sealed class ChunkChangeLog
             BlockingWork.Run(() => storage.RemoveChunkChangesAsync(vacated));
         }
 
+        // Placements of an edited shared resource that the scene never loaded: the command could only
+        // snapshot the ones near the camera, so the rest are stamped here from their stored footprint.
+        StampUnloadedResourcePlacements(storage, session.History.UndoStack, wasCommitted);
+
         // A catalog edit shapes chunks through a reference, not a bounds, so no snapshot above sees it.
         foreach (MapId map in CatalogChangedMaps(session.History.UndoStack, wasCommitted))
         {
             BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
+        }
+    }
+
+    /// <summary>
+    /// Stamps every stored, not-currently-loaded placement of a just-committed shared resource
+    /// (<see cref="ISharedResourceChunkCommand"/>). Loaded placements are left to the snapshot pass
+    /// above, which measures them against the live edited resource; these are stamped from their
+    /// last-saved <see cref="SceneEntity.WorldBounds"/>, so a resource edit that grew the geometry can
+    /// still miss chunks an unloaded placement newly reaches — acceptable at tile granularity, and the
+    /// alternative is loading every placement of the resource on every edit.
+    /// </summary>
+    private void StampUnloadedResourcePlacements(
+        EditorStorage storage,
+        IEnumerable<IEditCommand> commands,
+        Func<IEntity, bool> wasCommitted)
+    {
+        HashSet<int> loaded = _context.Scene.Entities
+            .Select(entity => entity.RecordId)
+            .OfType<int>()
+            .ToHashSet();
+
+        var resolved = new HashSet<(Type, int)>();
+        var gridByMap = new Dictionary<MapId, LandscapeGrid?>();
+        var present = new List<(int Map, int X, int Y)>();
+
+        foreach (IEditCommand command in commands)
+        {
+            if (command is not ISharedResourceChunkCommand shared
+                || shared.SharedResource is not (Type type, int id)
+                || !command.Targets.Any(wasCommitted)
+                || !resolved.Add((type, id)))
+            {
+                continue;
+            }
+
+            foreach ((int entityId, MapId map, Aabb bounds) in
+                BlockingWork.Run(() => storage.ReferencingPlacementBoundsAsync(type, id)))
+            {
+                if (loaded.Contains(entityId))
+                {
+                    continue;
+                }
+
+                if (!gridByMap.TryGetValue(map, out LandscapeGrid? cached))
+                {
+                    cached = _context.Landscape.LoadSettingsFor(map) is { } settings ? new LandscapeGrid(settings) : null;
+                    gridByMap[map] = cached;
+                }
+
+                if (cached is not { } grid)
+                {
+                    continue;
+                }
+
+                foreach (ChunkCoord coord in grid.Overlapping(bounds))
+                {
+                    present.Add((map.Value, coord.X, coord.Y));
+                }
+            }
+        }
+
+        if (present.Count > 0)
+        {
+            BlockingWork.Run(() => storage.UpsertChunkChangesAsync(present));
         }
     }
 
@@ -213,6 +281,10 @@ public sealed class ChunkChangeLog
     ///
     /// This fingerprint comparison is the only content comparison in the system. Everything downstream
     /// works from "edited after T", so if this stops discarding no-op edits nothing else will.
+    ///
+    /// The commit gate is on the command's target, not each impact's entity: a command that edits a
+    /// shared resource (a procedural model, a paint image) reports impacts for the placements it fans
+    /// out to, and those are never pinned — only the resource is.
     /// </summary>
     internal static IReadOnlyList<(SceneEntity Entity, ChunkChangeSnapshot? Before, ChunkChangeSnapshot? After)> ReduceImpacts(
         IEnumerable<IEditCommand> commands,
@@ -221,18 +293,13 @@ public sealed class ChunkChangeLog
         var byEntity = new Dictionary<SceneEntity, (ChunkChangeSnapshot? Before, ChunkChangeSnapshot? After)>();
         foreach (IEditCommand command in commands)
         {
-            if (command is not IChunkChangeCommand chunkCommand)
+            if (command is not IChunkChangeCommand chunkCommand || !command.Targets.Any(wasCommitted))
             {
                 continue;
             }
 
             foreach (ChunkChangeImpact impact in chunkCommand.ChunkImpacts)
             {
-                if (!wasCommitted(impact.Entity))
-                {
-                    continue;
-                }
-
                 if (!byEntity.TryGetValue(impact.Entity, out (ChunkChangeSnapshot? Before, ChunkChangeSnapshot? After) range))
                 {
                     range.Before = impact.Before;

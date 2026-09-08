@@ -156,3 +156,16 @@ public interface IChunkChangeCommand : IEditCommand
 {
     IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
 }
+
+/// <summary>
+/// An <see cref="IChunkChangeCommand"/> whose edit lands on a resource many scene entities reference
+/// — a procedural model, a paint image. <see cref="ChunkImpacts"/> only covers the placements the
+/// scene had loaded to snapshot; <see cref="ChunkChangeLog.RecordCommit"/> uses this to reach every
+/// other placement of the resource from storage and stamp its chunks too.
+/// </summary>
+public interface ISharedResourceChunkCommand : IChunkChangeCommand
+{
+    /// <summary>The edited resource's runtime type and persisted row id, or null when this edit's
+    /// target is not a stored shared resource (a per-entity road network).</summary>
+    (Type Type, int Id)? SharedResource { get; }
+}
