@@ -49,6 +49,13 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     public int UsageCount(int modelId) =>
         Context.Scene.Entities.Count(entity => entity.Component<ProceduralComponent>()?.ModelId == modelId);
 
+    /// <summary>Every loaded placement of a model — what a shared-model edit has to invalidate, since
+    /// the authored data lives on the model and not on any one placement.</summary>
+    public IEnumerable<SceneEntity> PlacementsOf(ProceduralModel model) =>
+        model.RecordId is int id
+            ? Context.Scene.Entities.Where(entity => entity.Component<ProceduralComponent>()?.ModelId == id)
+            : [];
+
     // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
     // registered catalog type before anything that resolves against one.
     float IWorldParticipant.LoadPriority => 3f;
