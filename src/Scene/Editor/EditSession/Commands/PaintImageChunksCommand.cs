@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -15,7 +16,7 @@ namespace WorldMapStudio;
 /// <see cref="ChunkChangeSnapshot"/> bounds are narrowed to the world AABB of the touched chunks
 /// (<see cref="ImageComponent.WorldBoundsForChunks"/>) rather than that placement's whole footprint, so
 /// a small stroke on a huge image does not mark unrelated terrain dirty for export.</summary>
-public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand
+public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand, ISharedResourceChunkCommand
 {
     private readonly PaintImage _image;
     private readonly IReadOnlyList<(ImageChunkCoord Coord, byte[]? Before, byte[]? After)> _edits;
@@ -47,6 +48,9 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand
     public IReadOnlyList<IEntity> Targets { get; }
 
     public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
+
+    public (Type Type, int Id)? SharedResource =>
+        _image.RecordId is int id ? (typeof(PaintImage), id) : null;
 
     public string Description { get; }
 

@@ -146,4 +146,46 @@ public static class ChunkChangeLogTests
 
         Assert.AreEqual(0, ChunkChangeLog.CatalogChangedMaps([command], _ => true).Count);
     }
+
+    /// <summary>
+    /// A shared-resource edit fans its chunk impact out to placements that are never pinned — only the
+    /// resource is — so the reducer must gate on the command's target, not each impact's entity, or
+    /// the whole fan-out is dropped at commit (which is exactly the "no chunks update" bug).
+    /// </summary>
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void A_shared_resource_edit_keeps_its_fan_out_when_the_resource_committed()
+    {
+        var model = new ProceduralModel { RecordId = 5 };
+        var placement = new SceneEntity { Transform = new Transform3D(Basis.Identity, new Vector3(200.0f, 0.0f, 200.0f)) };
+        ChunkChangeSnapshot before = ChunkChangeSnapshot.Capture(placement);
+        placement.Transform = new Transform3D(Basis.Identity, new Vector3(600.0f, 0.0f, 200.0f));
+        ChunkChangeSnapshot after = ChunkChangeSnapshot.Capture(placement);
+        var command = new SharedResourceStub(model, new ChunkChangeImpact(placement, before, after));
+
+        var kept = ChunkChangeLog.ReduceImpacts([command], entity => ReferenceEquals(entity, model));
+        var dropped = ChunkChangeLog.ReduceImpacts([command], _ => false);
+
+        Assert.AreEqual(1, kept.Count, "the model was committed, so the placement's impact stands");
+        Assert.AreEqual(0, dropped.Count, "nothing committed, nothing stamped");
+    }
+
+    private sealed class SharedResourceStub(ProceduralModel model, ChunkChangeImpact impact)
+        : IEditCommand, IChunkChangeCommand, ISharedResourceChunkCommand
+    {
+        public IReadOnlyList<IEntity> Targets { get; } = [model];
+
+        public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; } = [impact];
+
+        public (Type Type, int Id)? SharedResource => (typeof(ProceduralModel), model.RecordId!.Value);
+
+        public string Description => "stub";
+
+        public void Apply()
+        {
+        }
+
+        public void Revert()
+        {
+        }
+    }
 }

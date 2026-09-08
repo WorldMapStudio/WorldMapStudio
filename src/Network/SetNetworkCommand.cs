@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -10,7 +11,7 @@ namespace WorldMapStudio;
 /// tool happened to be pointed at: a procedural mesh's network lives on its bound model, which other
 /// placements may share, so every placement's chunk fingerprint can move even though only one of them
 /// was clicked.</summary>
-public sealed class SetNetworkCommand : IEditCommand, IChunkChangeCommand
+public sealed class SetNetworkCommand : IEditCommand, IChunkChangeCommand, ISharedResourceChunkCommand
 {
     private readonly INetworkEditable _component;
     private readonly VertexNetwork _before;
@@ -40,6 +41,13 @@ public sealed class SetNetworkCommand : IEditCommand, IChunkChangeCommand
     public IReadOnlyList<IEntity> Targets { get; }
 
     public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
+
+    // Only set when the network lives on a shared catalog resource (a procedural mesh's model), not a
+    // per-entity one (a road), so RecordCommit restamps the model's streamed-out placements too.
+    public (Type Type, int Id)? SharedResource =>
+        _component.EditTarget is IKeyedCatalogEntity { RecordId: int id } resource
+            ? (resource.GetType(), id)
+            : null;
 
     public string Description { get; }
 

@@ -14,7 +14,7 @@ namespace WorldMapStudio;
 /// A plain <see cref="SetFieldCommand{T}"/> here would report no impact at all — the model is not a
 /// <see cref="SceneEntity"/> — and an export would never see the placements move.
 /// </summary>
-public sealed class SetProceduralModelFieldCommand<T> : IEditCommand, IChunkChangeCommand
+public sealed class SetProceduralModelFieldCommand<T> : IEditCommand, IChunkChangeCommand, ISharedResourceChunkCommand
 {
     private readonly ProceduralModel _model;
     private readonly string _field;
@@ -48,6 +48,9 @@ public sealed class SetProceduralModelFieldCommand<T> : IEditCommand, IChunkChan
     public IReadOnlyList<IEntity> Targets { get; }
 
     public IReadOnlyList<ChunkChangeImpact> ChunkImpacts { get; }
+
+    public (Type Type, int Id)? SharedResource =>
+        _model.RecordId is int id ? (typeof(ProceduralModel), id) : null;
 
     public string Description => $"Set {_field} on {_model.DisplayName}";
 

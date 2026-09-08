@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Godot;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
@@ -17,7 +19,7 @@ public sealed class SceneProceduralComponentRecord
 }
 
 [Subsystem(nameof(EditorStorage))]
-public sealed class ProceduralComponentPersistence : ISceneComponentPersistence
+public sealed class ProceduralComponentPersistence : ISceneComponentPersistence, IResourceReferencingPersistence
 {
     private readonly EditorStorage _storage;
 
@@ -96,4 +98,23 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence
 
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneProceduralComponentRecord>(context, entityId);
+
+    public Type ReferencedResourceType => typeof(ProceduralModel);
+
+    public async Task<IReadOnlyList<(int EntityId, MapId Map, Aabb Bounds)>> ReferencingBoundsAsync(
+        EditorDbContext context,
+        int resourceRecordId)
+    {
+        List<SceneEntityRecord> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
+            .Where(record => record.ModelId == resourceRecordId)
+            .Join(
+                context.SceneEntities.AsNoTracking(),
+                record => record.EntityId,
+                entity => entity.Id,
+                (record, entity) => entity)
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        return rows.ConvertAll(EditorComponentPersistenceHelpers.ToMapBounds);
+    }
 }

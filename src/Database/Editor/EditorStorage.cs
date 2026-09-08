@@ -207,6 +207,30 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         GD.Print($"[ChunkChanges] Touched {touched} chunk(s) on map {mapId} in {clock.ElapsedMilliseconds}ms.");
     }
 
+    /// <summary>
+    /// Map and last-committed world bounds of every stored scene entity whose component references the
+    /// shared resource <paramref name="resourceRecordId"/> of type <paramref name="resourceType"/>,
+    /// via whichever <see cref="IResourceReferencingPersistence"/> owns that type. Empty when none
+    /// does. See <see cref="ChunkChangeLog.RecordCommit"/>: an edit to a resource has to restamp
+    /// placements that were never loaded to be snapshotted.
+    /// </summary>
+    public async Task<IReadOnlyList<(int EntityId, MapId Map, Aabb Bounds)>> ReferencingPlacementBoundsAsync(
+        Type resourceType,
+        int resourceRecordId)
+    {
+        IResourceReferencingPersistence? persistence = ComponentPersistence
+            .OfType<IResourceReferencingPersistence>()
+            .FirstOrDefault(candidate => candidate.ReferencedResourceType == resourceType);
+        if (persistence == null)
+        {
+            return [];
+        }
+
+        using IDisposable read = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+        return await persistence.ReferencingBoundsAsync(context, resourceRecordId).ConfigureAwait(false);
+    }
+
     /// <summary>Table and column names off the model, so a naming convention can never silently desync
     /// the hand-written chunk-change SQL from what EF maps the record to.</summary>
     private static (string Table, string Map, string X, string Y, string Time) ChunkChangeColumns(EditorDbContext context)
