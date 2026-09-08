@@ -112,4 +112,38 @@ public static class ChunkChangeLogTests
 
         Assert.AreEqual(0, ranges.Count);
     }
+
+    /// <summary>
+    /// A catalog edit reshapes chunks through a reference, not a bounds, so no snapshot reports it and
+    /// the whole map has to be restamped instead. The map comes off the edited entity.
+    /// </summary>
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void A_committed_landscape_catalog_edit_marks_its_map()
+    {
+        var material = new LandscapeMaterial { Map = new MapId(3) };
+        var command = new SetFieldCommand<string>(material, "alpha parameters", _ => { }, "", "falloff=2");
+
+        IReadOnlyList<MapId> maps = ChunkChangeLog.CatalogChangedMaps([command], _ => true);
+
+        Assert.AreEqual(1, maps.Count);
+        Assert.AreEqual(new MapId(3), maps[0]);
+    }
+
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void An_uncommitted_catalog_edit_marks_no_map()
+    {
+        var layer = new LandscapeLayer { Map = new MapId(3) };
+        var command = new SetFieldCommand<int>(layer, "draw order", _ => { }, 0, 1);
+
+        Assert.AreEqual(0, ChunkChangeLog.CatalogChangedMaps([command], _ => false).Count);
+    }
+
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static void A_non_catalog_edit_marks_no_map()
+    {
+        var entity = new SceneEntity();
+        var command = new TransformEntitiesCommand([entity], [Transform3D.Identity], [Transform3D.Identity]);
+
+        Assert.AreEqual(0, ChunkChangeLog.CatalogChangedMaps([command], _ => true).Count);
+    }
 }

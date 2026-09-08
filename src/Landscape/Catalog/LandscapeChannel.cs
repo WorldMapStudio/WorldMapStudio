@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// Channels are <em>transient</em>: what is persisted here is the declaration (how big, how precise),
 /// never the pixels. The pixels are allocated from a pool per build and thrown away after.
 /// </summary>
-public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity
+public sealed class LandscapeChannel : CatalogEntity, IKeyedCatalogEntity, ILandscapeCatalogEntity
 {
     /// <summary>The map this channel belongs to.</summary>
     public MapId Map { get; set; } = new(0);

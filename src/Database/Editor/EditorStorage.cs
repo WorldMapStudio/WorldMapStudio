@@ -180,6 +180,33 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         GD.Print($"[ChunkChanges] Removed up to {all.Count} chunk(s) in {clock.ElapsedMilliseconds}ms.");
     }
 
+    /// <summary>
+    /// Stamps every chunk row the map already has with the current time. A global edit — landscape
+    /// settings, a catalog channel/layer/material — can move any chunk's built output without touching
+    /// an entity, so nothing feeds it through <see cref="ChunkChangeLog.RecordCommit"/>. One UPDATE,
+    /// and it creates no rows: a chunk with no row has nothing there to re-export.
+    /// </summary>
+    public async Task TouchAllChunkChangesAsync(int mapId)
+    {
+        var clock = Stopwatch.StartNew();
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        (string tableName, string mapColumn, _, _, string timeColumn) = ChunkChangeColumns(context);
+
+        DbConnection connection = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandTimeout = 60;
+        command.CommandText = $"UPDATE `{tableName}` SET `{timeColumn}` = @t WHERE `{mapColumn}` = @m";
+        AddParameter(command, "@t", DateTime.UtcNow);
+        AddParameter(command, "@m", mapId);
+        int touched = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+
+        GD.Print($"[ChunkChanges] Touched {touched} chunk(s) on map {mapId} in {clock.ElapsedMilliseconds}ms.");
+    }
+
     /// <summary>Table and column names off the model, so a naming convention can never silently desync
     /// the hand-written chunk-change SQL from what EF maps the record to.</summary>
     private static (string Table, string Map, string X, string Y, string Time) ChunkChangeColumns(EditorDbContext context)
