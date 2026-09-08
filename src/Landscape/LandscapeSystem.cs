@@ -443,6 +443,10 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         Settings = settings;
         _loadedMap = map;
         Version++;
+
+        // Settings save straight to storage, outside the edit session, so no command carries this to
+        // the chunk change log — restamp the map here or an export never learns the terrain moved.
+        _context.ChunkChanges.MarkMapChanged(map);
         return null;
     }
 

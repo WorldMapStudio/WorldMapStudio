@@ -15,7 +15,7 @@ namespace WorldMapStudio;
 /// parameters rather than hardcoding them, because which layers exist is the user's decision, not
 /// source code.
 /// </summary>
-public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity
+public sealed class LandscapeLayer : CatalogEntity, IKeyedCatalogEntity, ILandscapeCatalogEntity
 {
     /// <summary>The map this layer belongs to.</summary>
     public MapId Map { get; set; } = new(0);

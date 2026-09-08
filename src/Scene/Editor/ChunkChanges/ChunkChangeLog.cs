@@ -67,6 +67,27 @@ public sealed class ChunkChangeLog
             BlockingWork.Run(() => storage.UpsertChunkChangesAsync(present));
             BlockingWork.Run(() => storage.RemoveChunkChangesAsync(vacated));
         }
+
+        // A catalog edit shapes chunks through a reference, not a bounds, so no snapshot above sees it.
+        foreach (MapId map in CatalogChangedMaps(session.History.UndoStack, wasCommitted))
+        {
+            BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
+        }
+    }
+
+    /// <summary>
+    /// Stamps every chunk the map still has as edited now. For a global change that reaches no entity
+    /// and so never arrives at <see cref="RecordCommit"/> — a landscape settings save above all.
+    /// Creates no rows: a chunk nothing occupies has nothing to re-export.
+    /// </summary>
+    public void MarkMapChanged(MapId map)
+    {
+        if (EditorStorage() is not { } storage)
+        {
+            return;
+        }
+
+        BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
     }
 
     /// <summary>Every chunk edited strictly after <paramref name="since"/>, optionally on one map.
@@ -107,6 +128,31 @@ public sealed class ChunkChangeLog
         }
 
         return await storage.LoadLatestEditUtcAsync(map?.Value).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Maps with a committed edit to an <see cref="ILandscapeCatalogEntity"/> this session. A catalog
+    /// edit — a material's height amount, a layer's draw order — can move any chunk that binds it, and
+    /// nothing cheap narrows that down (the same reason <see cref="LandscapeRebuilder"/> rebuilds the
+    /// whole map on one), so the map's whole chunk set is restamped.
+    /// </summary>
+    internal static IReadOnlyList<MapId> CatalogChangedMaps(
+        IEnumerable<IEditCommand> commands,
+        Func<IEntity, bool> wasCommitted)
+    {
+        var maps = new HashSet<MapId>();
+        foreach (IEditCommand command in commands)
+        {
+            foreach (IEntity target in command.Targets)
+            {
+                if (target is ILandscapeCatalogEntity catalog && wasCommitted(target))
+                {
+                    maps.Add(catalog.Map);
+                }
+            }
+        }
+
+        return maps.ToList();
     }
 
     /// <summary>

@@ -24,7 +24,7 @@ namespace WorldMapStudio;
 /// Functions are referenced by id rather than by type, because they are discovered at startup and may
 /// later live in a hot-swappable assembly.
 /// </summary>
-public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity
+public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity, ILandscapeCatalogEntity
 {
     /// <summary>The map this material belongs to.</summary>
     public MapId Map { get; set; } = new(0);
