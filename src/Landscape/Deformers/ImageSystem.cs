@@ -14,11 +14,19 @@ public sealed class ImageSystem : IWorldParticipant
 {
     private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
 
-    private int _indexedCatalogVersion = -1;
-    private readonly List<PaintImage> _images = [];
-    private readonly List<ImageDisplayLayer> _layers = [];
-    private readonly Dictionary<int, PaintImage> _imagesById = [];
-    private readonly Dictionary<int, ImageDisplayLayer> _layersById = [];
+    // Published as one immutable snapshot rather than tables kept up to date in place: a landscape
+    // build worker resolves an ImageComponent's bound image through FindImage while it rasterizes, so
+    // whatever backs that lookup is read from many threads at once. Nothing already published is ever
+    // mutated — a stale one is replaced by a freshly built one in a single reference write — so a
+    // reader either sees the whole of the old snapshot or the whole of the new one.
+    private sealed record CatalogIndex(
+        int Version,
+        IReadOnlyList<PaintImage> Images,
+        IReadOnlyList<ImageDisplayLayer> Layers,
+        Dictionary<int, PaintImage> ImagesById,
+        Dictionary<int, ImageDisplayLayer> LayersById);
+
+    private CatalogIndex _index = new(-1, [], [], [], []);
 
     public ImageSystem(EditorContext context)
     {
@@ -37,60 +45,58 @@ public sealed class ImageSystem : IWorldParticipant
     /// <see cref="ImageComponent.Image"/> resolves through <see cref="FindImage"/>, and a placement
     /// reads it several times a frame, so a fresh scan of the whole catalog per read is a scan of
     /// every loaded row of every catalog type to find one image.</summary>
-    public IReadOnlyList<PaintImage> Images
-    {
-        get
-        {
-            EnsureIndex();
-            return _images;
-        }
-    }
+    public IReadOnlyList<PaintImage> Images => Index().Images;
 
     /// <summary>The loaded display-layer catalog. Materialized the same way <see cref="Images"/> is.</summary>
-    public IReadOnlyList<ImageDisplayLayer> DisplayLayers
+    public IReadOnlyList<ImageDisplayLayer> DisplayLayers => Index().Layers;
+
+    public PaintImage? FindImage(int? id)
     {
-        get
-        {
-            EnsureIndex();
-            return _layers;
-        }
+        CatalogIndex index = Index();
+        return id is int value ? Lookup(index.ImagesById, index.Images, value) : null;
     }
 
-    public PaintImage? FindImage(int? id) => id is int value ? Lookup(_imagesById, Images, value) : null;
-
-    public ImageDisplayLayer? FindDisplayLayer(int? id) =>
-        id is int value ? Lookup(_layersById, DisplayLayers, value) : null;
-
-    private void EnsureIndex()
+    public ImageDisplayLayer? FindDisplayLayer(int? id)
     {
-        if (_indexedCatalogVersion == Context.Catalog.Version)
+        CatalogIndex index = Index();
+        return id is int value ? Lookup(index.LayersById, index.Layers, value) : null;
+    }
+
+    private CatalogIndex Index()
+    {
+        CatalogIndex current = _index;
+        int version = Context.Catalog.Version;
+        if (current.Version == version)
         {
-            return;
+            return current;
         }
 
-        _indexedCatalogVersion = Context.Catalog.Version;
-        _images.Clear();
-        _layers.Clear();
-        _imagesById.Clear();
-        _layersById.Clear();
+        var images = new List<PaintImage>();
+        var layers = new List<ImageDisplayLayer>();
+        var imagesById = new Dictionary<int, PaintImage>();
+        var layersById = new Dictionary<int, ImageDisplayLayer>();
 
         foreach (CatalogEntity entity in Context.Catalog.Entities)
         {
             switch (entity)
             {
                 case PaintImage image:
-                    _images.Add(image);
-                    Index(_imagesById, image, image.RecordId);
+                    images.Add(image);
+                    Register(imagesById, image, image.RecordId);
                     break;
                 case ImageDisplayLayer layer:
-                    _layers.Add(layer);
-                    Index(_layersById, layer, layer.RecordId);
+                    layers.Add(layer);
+                    Register(layersById, layer, layer.RecordId);
                     break;
             }
         }
+
+        var built = new CatalogIndex(version, images, layers, imagesById, layersById);
+        _index = built;
+        return built;
     }
 
-    private static void Index<TEntity>(Dictionary<int, TEntity> index, TEntity entity, int? recordId)
+    private static void Register<TEntity>(Dictionary<int, TEntity> index, TEntity entity, int? recordId)
     {
         if (recordId is int id)
         {
@@ -100,8 +106,8 @@ public sealed class ImageSystem : IWorldParticipant
 
     // Verified on the way out rather than trusted: a record id is assigned when an entity is first
     // saved, which the registry's membership version never sees, so an index entry can name an entity
-    // whose id has since moved. Falling back to the materialized list keeps the answer identical to a
-    // scan while still costing one only when the index is actually stale.
+    // whose id has since moved. A miss falls back to the same scan the lookup used to be, and does not
+    // write what it finds — the snapshot it read is shared with every other thread reading it.
     private static TEntity? Lookup<TEntity>(Dictionary<int, TEntity> index, IReadOnlyList<TEntity> loaded, int id)
         where TEntity : class, IKeyedCatalogEntity
     {
@@ -110,12 +116,10 @@ public sealed class ImageSystem : IWorldParticipant
             return cached;
         }
 
-        index.Remove(id);
         foreach (TEntity candidate in loaded)
         {
             if (candidate.RecordId == id)
             {
-                index[id] = candidate;
                 return candidate;
             }
         }
@@ -143,7 +147,7 @@ public sealed class ImageSystem : IWorldParticipant
     void IWorldParticipant.UnloadWorld()
     {
         _lastUpdateTick = (-1, -1, -1);
-        _indexedCatalogVersion = -1;
+        _index = new CatalogIndex(-1, [], [], [], []);
         Residency.UnloadWorld();
     }
 
