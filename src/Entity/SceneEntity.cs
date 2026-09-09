@@ -68,10 +68,20 @@ public class SceneEntity : Entity
             {
                 _parent._children.Add(this);
             }
+
+            HierarchyVersion++;
         }
     }
 
     public IReadOnlyList<SceneEntity> Children => _children;
+
+    /// <summary>
+    /// Bumped whenever any entity's parent changes. A view that derives a tree from the hierarchy can
+    /// hold that derivation across frames and rebuild only when this moves, rather than rewalking
+    /// every loaded entity to find out nothing changed — which is the difference between a cost that
+    /// scales with what is on screen and one that scales with what is loaded.
+    /// </summary>
+    public static int HierarchyVersion { get; private set; }
 
     /// <summary>Whether <paramref name="parent"/> is this entity itself or one of its own descendants.</summary>
     public bool WouldCycle(SceneEntity parent)
