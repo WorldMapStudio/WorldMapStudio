@@ -140,6 +140,13 @@ public sealed class StreamingSystem : IWorldParticipant
     public void Invalidate() => _scanStarted = false;
 
     /// <summary>
+    /// Forces a fresh terrain scan. What terrain chunks are grouped into for rendering is a display
+    /// choice, so changing it has to discard what is loaded rather than wait for the view to move past
+    /// it.
+    /// </summary>
+    public void ReloadTerrain() => Invalidate();
+
+    /// <summary>
     /// Re-judges every loaded entity right now against the last scan, then forces a re-scan.
     /// Called when the edit session ends.
     ///

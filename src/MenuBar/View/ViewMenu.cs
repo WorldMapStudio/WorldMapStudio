@@ -90,6 +90,15 @@ public sealed class ViewMenu : IMainMenu
                 // travels far enough to trigger a rescan on its own.
                 _context.Streaming.Invalidate();
             }
+
+            int terrainBatchChunks = _view.TerrainBatchChunks;
+            ImGui.SetNextItemWidth(120.0f);
+            if (ImGui.DragInt("Terrain Batch", ref terrainBatchChunks, 0.1f, 1, LandscapeTerrainBatch.MaxTerrainBatchChunks) &&
+                terrainBatchChunks != _view.TerrainBatchChunks)
+            {
+                _view.TerrainBatchChunks = terrainBatchChunks;
+                _context.Streaming.ReloadTerrain();
+            }
         });
     }
 }
