@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 /// The searchable "pick an image" popup, modelled on <see cref="ProceduralModelSelectionOperation"/>.
 /// The preview is a flat grayscale texture built straight from the raw pixel buffer (matching
 /// <see cref="Godot.Image.Format.R8"/>, the same one-byte-per-pixel layout
-/// <see cref="LandscapeChunkMesh"/> uses for alpha textures) rather than a rendered 3D scene, so there
+/// <see cref="LandscapeBatchMesh"/> uses for alpha textures) rather than a rendered 3D scene, so there
 /// is no preview-owner node to construct with.
 /// </summary>
 public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionContext>

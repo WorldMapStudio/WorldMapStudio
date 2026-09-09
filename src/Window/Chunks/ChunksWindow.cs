@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using ImGuiNET;
@@ -5,10 +6,10 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Lists the loaded <see cref="LandscapeChunk"/>s, split out of the <see cref="OutlineWindow"/>
-/// because chunks are derived (computed from the landscape, not authored, and never reparented) and
-/// there can be a lot of them — a flat, coordinate-sorted list suits them better than the outline's
-/// hierarchy. Clicking an entry selects it (Ctrl/Shift to add or remove), mirroring the outline.
+/// Lists the loaded terrain chunks — walked out of the <see cref="LandscapeTerrainBatch"/>es that
+/// draw them — split out of the <see cref="OutlineWindow"/> because chunks are derived and there can
+/// be a lot of them. Clicking an entry selects the batch it belongs to (Ctrl/Shift to add or remove),
+/// since a chunk is no longer a selectable entity of its own.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class ChunksWindow : Window
@@ -28,26 +29,38 @@ public sealed class ChunksWindow : Window
 
     protected override void DrawContent()
     {
-        var chunks = _scene.InView.OfType<LandscapeChunk>()
-            .OrderBy(chunk => chunk.Coord.X)
-            .ThenBy(chunk => chunk.Coord.Y)
+        List<(ChunkCoord Coord, LandscapeTerrainBatch Batch)> rows = _scene.InView.OfType<LandscapeTerrainBatch>()
+            .SelectMany(batch => batch.Chunks.Keys.Select(coord => (coord, batch)))
+            .OrderBy(row => row.coord.X)
+            .ThenBy(row => row.coord.Y)
             .ToList();
 
-        if (chunks.Count == 0)
+        if (rows.Count == 0)
         {
             ImGui.TextDisabled("No chunks loaded.");
             return;
         }
 
-        foreach (LandscapeChunk chunk in chunks)
+        unsafe
         {
-            DrawChunk(chunk);
+            var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+            clipper.Begin(rows.Count);
+            while (clipper.Step())
+            {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                {
+                    DrawRow(rows[i].Coord, rows[i].Batch);
+                }
+            }
+
+            clipper.End();
+            clipper.Destroy();
         }
     }
 
-    private void DrawChunk(LandscapeChunk chunk)
+    private void DrawRow(ChunkCoord coord, LandscapeTerrainBatch batch)
     {
-        if (!ImGui.Selectable($"{chunk.DisplayName}##{chunk.Id.Value}", _selection.IsSelected(chunk)))
+        if (!ImGui.Selectable($"Chunk {coord}##{coord.X}_{coord.Y}", _selection.IsSelected(batch)))
         {
             return;
         }
@@ -55,11 +68,11 @@ public sealed class ChunksWindow : Window
         ImGuiIOPtr io = ImGui.GetIO();
         if (io.KeyCtrl || io.KeyShift)
         {
-            _selection.Toggle(chunk);
+            _selection.Toggle(batch);
         }
         else
         {
-            _selection.Set(chunk);
+            _selection.Set(batch);
         }
     }
 }

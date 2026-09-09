@@ -176,7 +176,7 @@ public sealed partial class EditorContext : ISubsystemHost
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.
-        Streaming.AddLoader(Landscape.ChunkLoader);
+        Streaming.AddLoader(Landscape.BatchLoader);
 
         // Bound here rather than injected, because the session manager is constructed before the
         // database and streaming system it depends on. From now on committing a session persists it,

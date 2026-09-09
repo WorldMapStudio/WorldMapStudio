@@ -5,7 +5,7 @@ namespace WorldMapStudio;
 /// shader, the liquid shader, and model materials) so fog/sun-glow/interior-ambient/matcap math has one
 /// source of truth instead of drifting copies. Every shader in this codebase is kept as an inline C#
 /// string rather than a <c>.gdshader</c> resource "so it needs no Godot import step" (see
-/// <c>LandscapeChunkMesh.SplatShaderCode</c>, <c>EnvironmentRenderer.SkyShaderCode</c>,
+/// <c>LandscapeBatchMesh.SplatShaderCode</c>, <c>EnvironmentRenderer.SkyShaderCode</c>,
 /// <c>WowLiquidMaterialType.LiquidShaderCode</c>) — this class keeps that convention: consumers
 /// string-concatenate the fragments they need into their own shader source rather than <c>#include</c>-ing
 /// a resource file.

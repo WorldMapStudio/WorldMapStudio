@@ -85,7 +85,7 @@ public sealed class NetworkEditTool : ITool
         _context = context;
         _name = name;
         _selector = selector;
-        _terrain = new TerrainProbe(context.Scene, context.Editor.Landscape);
+        _terrain = new TerrainProbe(context.Editor.Landscape);
         _gizmo.Axes = context.Axes;
         _gizmo.LocalSpace = false;
     }

@@ -1,29 +1,29 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
 
 /// <summary>
-/// Ray-casts and height-samples against the loaded <see cref="LandscapeChunk"/> meshes. Shared by
-/// anything that needs to sit on the terrain surface — the paint brush, and network-editing tools
-/// placing or drawing vertices that follow the ground.
+/// Ray-casts and height-samples against the loaded terrain, working off the built
+/// <see cref="LandscapeChunkOutput"/> the <see cref="LandscapeChunkIndex"/> holds per chunk rather
+/// than the Godot meshes. Shared by anything that needs to sit on the terrain surface — the paint
+/// brush, and network-editing tools placing or drawing vertices that follow the ground. Picking stays
+/// per chunk: batching how chunks are drawn must not coarsen it.
 /// </summary>
 public sealed class TerrainProbe
 {
-    private readonly SceneEntityRegistry _scene;
     private readonly LandscapeSystem _landscape;
 
     // Reused across calls (TryHit runs every frame the viewport is hovered) so ordering candidates
     // by box distance costs one List.Clear() rather than an allocation per pointer move.
-    private readonly List<(LandscapeChunk Chunk, float TMin, float TMax, float BoxT)> _candidates = [];
+    private readonly System.Collections.Generic.List<Candidate> _candidates = [];
 
-    public TerrainProbe(SceneEntityRegistry scene, LandscapeSystem landscape)
+    public TerrainProbe(LandscapeSystem landscape)
     {
-        _scene = scene;
         _landscape = landscape;
     }
+
+    private readonly record struct Candidate(
+        ChunkCoord Coord, LandscapeChunkOutput Output, Vector3 Origin, float ChunkSize, float TMin, float TMax, float BoxT);
 
     // A near-horizontal ray can cross a lot of chunks; this caps the grid walk well past any real
     // view distance (a chunk is tens of units, so this is millions of units of reach).
@@ -34,10 +34,7 @@ public sealed class TerrainProbe
     ///
     /// The candidate set is just the chunks the ray's ground track actually crosses, walked in
     /// near-to-far order along the grid; they are then ordered nearest-box-first, and once a real hit
-    /// is found, any chunk whose box cannot possibly be closer is skipped outright. A chunk's box is a
-    /// nominal ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab far taller than its actual
-    /// terrain, so without this a ray from a camera sitting inside that slab would otherwise pay for a
-    /// full triangle sweep of every chunk it merely passes over, not just the one it actually lands on.
+    /// is found, any chunk whose box cannot possibly be closer is skipped outright.
     /// </summary>
     public bool TryHit(Vector3 rayOrigin, Vector3 rayDir, out Vector3 world)
     {
@@ -50,14 +47,14 @@ public sealed class TerrainProbe
 
         float bestT = float.PositiveInfinity;
         bool hit = false;
-        foreach ((LandscapeChunk chunk, float tMin, float tMax, float boxT) in _candidates)
+        foreach (Candidate candidate in _candidates)
         {
-            if (boxT >= bestT)
+            if (candidate.BoxT >= bestT)
             {
                 break;
             }
 
-            if (TryHitChunk(chunk, rayOrigin, rayDir, tMin, tMax, out float t, out Vector3 chunkWorld) && t < bestT)
+            if (TryHitChunk(candidate, rayOrigin, rayDir, out float t, out Vector3 chunkWorld) && t < bestT)
             {
                 bestT = t;
                 world = chunkWorld;
@@ -69,17 +66,12 @@ public sealed class TerrainProbe
     }
 
     // Fills _candidates with the loaded chunks the ray's X/Z track crosses, via an Amanatides-Woo
-    // grid walk from the ray origin's cell. Falls back to scanning the loaded set when the map has no
-    // grid to walk (nothing is loaded then anyway).
+    // grid walk from the ray origin's cell. Nothing is loaded when there is no grid, so there are no
+    // candidates either.
     private void CollectCandidates(Vector3 rayOrigin, Vector3 rayDir)
     {
         if (_landscape.Grid is not { } grid)
         {
-            foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
-            {
-                AddCandidate(chunk, rayOrigin, rayDir);
-            }
-
             return;
         }
 
@@ -103,9 +95,10 @@ public sealed class TerrainProbe
 
         for (int steps = 0; steps < MaxRaySteps; steps++)
         {
-            if (index.At(new ChunkCoord(cx, cy)) is { } chunk)
+            var coord = new ChunkCoord(cx, cy);
+            if (index.OutputAt(coord) is { } output)
             {
-                AddCandidate(chunk, rayOrigin, rayDir);
+                AddCandidate(coord, output, grid.OriginOf(coord), size, grid.BoundsOf(coord), rayOrigin, rayDir);
             }
 
             if (stepX == 0 && stepZ == 0)
@@ -126,12 +119,12 @@ public sealed class TerrainProbe
         }
     }
 
-    private void AddCandidate(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir)
+    private void AddCandidate(ChunkCoord coord, LandscapeChunkOutput output, Vector3 origin, float chunkSize, Aabb bounds, Vector3 rayOrigin, Vector3 rayDir)
     {
-        if (TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out float tMin, out float tMax))
+        if (TryRayBox(rayOrigin, rayDir, bounds, out float tMin, out float tMax))
         {
             float boxT = tMin >= 0.0f ? tMin : tMax;
-            _candidates.Add((chunk, tMin, tMax, boxT));
+            _candidates.Add(new Candidate(coord, output, origin, chunkSize, tMin, tMax, boxT));
         }
     }
 
@@ -144,19 +137,14 @@ public sealed class TerrainProbe
             return false;
         }
 
-        // The grid maps the point straight to the one chunk that can cover it, so this is a dictionary
-        // lookup rather than a scan of every loaded chunk — the Paint tool alone probes this ~50 times
-        // a frame while the pointer is over the viewport.
-        LandscapeChunk? chunk = _landscape.ChunkIndex.At(grid.CoordAt(new Vector3(worldX, 0.0f, worldZ)));
-        if (chunk == null)
+        ChunkCoord coord = grid.CoordAt(new Vector3(worldX, 0.0f, worldZ));
+        if (_landscape.ChunkIndex.OutputAt(coord) is not { } output)
         {
             return false;
         }
 
-        // Chunks are placed with an identity basis (see the LandscapeChunk constructor), so
-        // world->local is a plain subtraction of the origin.
-        Vector3 origin = chunk.Transform.Origin;
-        height = SampleChunkHeight(chunk.Output, chunk.LocalBounds.Size.X, worldX - origin.X, worldZ - origin.Z);
+        Vector3 origin = grid.OriginOf(coord);
+        height = SampleChunkHeight(output, grid.ChunkSize, worldX - origin.X, worldZ - origin.Z);
         return true;
     }
 
@@ -172,8 +160,8 @@ public sealed class TerrainProbe
         return world;
     }
 
-    /// <summary>Falls back to the world Y=0 plane for a ray that missed every loaded chunk (e.g. no
-    /// terrain loaded there yet), so placement still works over bare ground.</summary>
+    /// <summary>Falls back to the world Y=0 plane for a ray that missed every loaded chunk, so
+    /// placement still works over bare ground.</summary>
     public static bool TryGroundPlane(Vector3 origin, Vector3 dir, out Vector3 world)
     {
         if (Mathf.Abs(dir.Y) < 1e-6f)
@@ -193,37 +181,24 @@ public sealed class TerrainProbe
         return true;
     }
 
-    // tMin/tMax are the caller's already-computed world-space box entry/exit — passed in rather than
-    // recomputed so the (cheap but non-free) box test at the bottom of every WorldBounds access
-    // happens once per candidate, not once per candidate per call site.
-    private static bool TryHitChunk(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir, float tMin, float tMax, out float bestT, out Vector3 bestWorld)
+    // Chunks sit on the grid with an identity basis, so world->local is a plain subtraction of the
+    // chunk's world origin and the caller's world-space box entry/exit carry over unchanged.
+    private static bool TryHitChunk(Candidate candidate, Vector3 rayOrigin, Vector3 rayDir, out float bestT, out Vector3 bestWorld)
     {
         bestT = float.PositiveInfinity;
         bestWorld = default;
 
-        // Chunks are placed with an identity basis (see the constructor), so the world-space box
-        // entry/exit computed by the caller carries over unchanged into this local space: the ray
-        // parametrization is identical, just offset by the chunk's origin.
-        Transform3D inverse = chunk.Transform.AffineInverse();
-        Vector3 origin = inverse * rayOrigin;
-        Vector3 dir = inverse.Basis * rayDir;
+        Vector3 origin = rayOrigin - candidate.Origin;
+        Vector3 dir = rayDir;
 
-        LandscapeChunkOutput output = chunk.Output;
+        LandscapeChunkOutput output = candidate.Output;
         int resolution = output.HeightResolution;
         int quads = resolution - 1;
-        float size = chunk.LocalBounds.Size.X;
-        float step = size / quads;
+        float step = candidate.ChunkSize / quads;
 
-        // The box is a nominal ±NominalHeightExtent slab, far taller than the real terrain it wraps,
-        // so its entry/exit are usually where the ray crosses the *sides* of that slab rather than
-        // the actual surface. What matters here is only the horizontal (X/Z) span the ray sweeps
-        // through the chunk between those two points — every quad the ray could possibly cross lies
-        // within the axis-aligned bounding box of that span, so quads outside it can never be hit and
-        // are skipped rather than tested. A ray starting inside the slab (the common case: the camera
-        // usually sits within a chunk's nominal height range) enters at its current position (t=0).
-        float enterT = Mathf.Max(tMin, 0.0f);
+        float enterT = Mathf.Max(candidate.TMin, 0.0f);
         Vector3 enter = origin + (dir * enterT);
-        Vector3 exit = origin + (dir * tMax);
+        Vector3 exit = origin + (dir * candidate.TMax);
 
         int xStart = Mathf.Clamp(Mathf.FloorToInt(Mathf.Min(enter.X, exit.X) / step), 0, quads - 1);
         int xEnd = Mathf.Clamp(Mathf.FloorToInt(Mathf.Max(enter.X, exit.X) / step), 0, quads - 1);
@@ -242,13 +217,13 @@ public sealed class TerrainProbe
                 if (TryRayTriangle(origin, dir, topLeft, topRight, bottomLeft, out float t) && t < bestT)
                 {
                     bestT = t;
-                    bestWorld = chunk.Transform * (origin + (dir * t));
+                    bestWorld = candidate.Origin + origin + (dir * t);
                 }
 
                 if (TryRayTriangle(origin, dir, topRight, bottomRight, bottomLeft, out t) && t < bestT)
                 {
                     bestT = t;
-                    bestWorld = chunk.Transform * (origin + (dir * t));
+                    bestWorld = candidate.Origin + origin + (dir * t);
                 }
             }
         }
@@ -259,9 +234,6 @@ public sealed class TerrainProbe
     private static Vector3 Vertex(LandscapeChunkOutput output, int x, int z, float step) =>
         new(x * step, output.HeightAt(x, z), z * step);
 
-    // Indexes Vector3 components directly rather than copying them into temporary float[]s (as
-    // MeshPicking.TryRayBox already does): this runs once per loaded chunk every time the pointer
-    // moves, and four array allocations per chunk per call was pure GC pressure bought for nothing.
     private static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds, out float tMin, out float tMax)
     {
         tMin = float.NegativeInfinity;

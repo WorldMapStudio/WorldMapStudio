@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// Snapshotting the coord-to-buffer mapping (a shallow copy, sized by chunk count rather than pixel
 /// count) is what lets <see cref="PaintImage.CreateSampler"/> hand a landscape build a view that
 /// cannot have chunks appear or disappear underneath it mid-build, matching the snapshot-on-the-main-
-/// thread pattern <see cref="LandscapeChunkLoader.Prepare"/> already uses for everything else a build
+/// thread pattern <see cref="LandscapeBatchLoader.Prepare"/> already uses for everything else a build
 /// reads. The buffers themselves can still be edited in place during a stroke — the same tearing
 /// tolerance rasterization already had, just no longer compounded by the chunk set itself moving.
 /// </summary>

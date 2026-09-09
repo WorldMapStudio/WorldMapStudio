@@ -47,7 +47,7 @@ public sealed class PaintTool : ITool
         _scene = context.Scene;
         _sessions = context.Sessions;
         _landscape = context.Editor.Landscape;
-        _terrain = new TerrainProbe(context.Scene, _landscape);
+        _terrain = new TerrainProbe(_landscape);
     }
 
     public string Name => "Paint";

@@ -64,6 +64,13 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
 
     // The scene version _represented was last brought in step with; -1 until it has been.
     private int _representedVersion = -1;
+
+    // Building a Godot node per newly-in-view entity is capped at a time budget per frame, with the
+    // rest carried here: a large scan brings hundreds in at once, and doing them all on one frame is
+    // exactly the stall that slows streaming (which advances one step per frame).
+    private const double RepresentationBudgetMs = 4.0;
+    private static readonly System.Diagnostics.Stopwatch RepresentationClock = new();
+    private readonly List<SceneEntity> _representationBacklog = [];
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
     private MapId _viewMap;
@@ -85,7 +92,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _maps = context.Maps;
         _viewMap = _maps.CurrentMap;
         _axes = context.Axes;
-        _terrainProbe = new TerrainProbe(_scene, _landscape);
+        _terrainProbe = new TerrainProbe(_landscape);
         _pointer = context.Pointer;
         _header = new ViewportHeader(context);
 
@@ -167,33 +174,57 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         // pass can only reach the same conclusions it reached last frame. Skipping it matters because
         // the removal sweep is over everything represented, which at a real view distance is the
         // whole loaded world once per frame.
-        if (_representedVersion == _scene.Version)
+        // A backlog still draining is a frame with work to do even when the version has not moved.
+        if (_representedVersion == _scene.Version && _representationBacklog.Count == 0)
         {
             return;
         }
 
-        _representedVersion = _scene.Version;
-
-        foreach (SceneEntity entity in _scene.InView)
+        if (_representedVersion != _scene.Version)
         {
-            if (_represented.Add(entity))
+            _representedVersion = _scene.Version;
+
+            _representationBacklog.Clear();
+            foreach (SceneEntity entity in _scene.InView)
+            {
+                if (!_represented.Contains(entity))
+                {
+                    _representationBacklog.Add(entity);
+                }
+            }
+
+            // Drops entities that left the registry *and* ones that became peripheral: those are
+            // loaded only to shape the terrain, and drawing them would put scenery beyond where you
+            // can go. Runs on the version change, not per frame.
+            _represented.RemoveWhere(entity =>
+            {
+                if (_scene.Contains(entity) && !_scene.IsPeripheral(entity))
+                {
+                    return false;
+                }
+
+                entity.DestroyRepresentation();
+                return true;
+            });
+        }
+
+        RepresentationClock.Restart();
+        int made = 0;
+        while (made < _representationBacklog.Count)
+        {
+            SceneEntity entity = _representationBacklog[made++];
+            if (_scene.Contains(entity) && !_scene.IsPeripheral(entity) && _represented.Add(entity))
             {
                 entity.CreateRepresentation(_viewport);
             }
+
+            if (RepresentationClock.Elapsed.TotalMilliseconds >= RepresentationBudgetMs)
+            {
+                break;
+            }
         }
 
-        // Drops entities that left the registry *and* ones that became peripheral: those are loaded
-        // only to shape the terrain, and drawing them would put scenery beyond where you can go.
-        _represented.RemoveWhere(entity =>
-        {
-            if (_scene.Contains(entity) && !_scene.IsPeripheral(entity))
-            {
-                return false;
-            }
-
-            entity.DestroyRepresentation();
-            return true;
-        });
+        _representationBacklog.RemoveRange(0, made);
     }
 
     // Destroys the Godot node of every entity this window has represented and forgets the sky/gizmo
@@ -208,6 +239,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         }
 
         _represented.Clear();
+        _representationBacklog.Clear();
         _representedVersion = -1;
         _environmentRenderer.Unload();
         _environmentVolumes.Unload();
@@ -410,7 +442,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     // when their material is made.
     private void UpdateChunkEdges()
     {
-        LandscapeChunkMesh.ShowChunkEdges = _view.ShowChunkEdges;
+        LandscapeBatchMesh.ShowChunkEdges = _view.ShowChunkEdges;
         if (_chunkEdgesShown == _view.ShowChunkEdges)
         {
             return;
@@ -419,7 +451,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _chunkEdgesShown = _view.ShowChunkEdges;
         foreach (SceneEntity entity in _scene.Entities)
         {
-            (entity as LandscapeChunk)?.SetChunkEdgesVisible(_chunkEdgesShown);
+            (entity as LandscapeTerrainBatch)?.SetChunkEdgesVisible(_chunkEdgesShown);
         }
     }
 

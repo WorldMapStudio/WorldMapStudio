@@ -38,8 +38,8 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// <summary>The alpha and height functions materials can bind, discovered by reflection.</summary>
     public LandscapeFunctions Functions { get; } = new();
 
-    /// <summary>Streams this map's chunks. Registered into <see cref="StreamingSystem"/> by the context.</summary>
-    public LandscapeChunkLoader ChunkLoader => _chunkLoader ??= new LandscapeChunkLoader(this);
+    /// <summary>Streams this map's terrain batches. Registered into <see cref="StreamingSystem"/> by the context.</summary>
+    public LandscapeBatchLoader BatchLoader => _batchLoader ??= new LandscapeBatchLoader(this);
 
     /// <summary>Rebuilds loaded chunks when the entities or catalog that shape them change.</summary>
     public LandscapeRebuilder Rebuilder => _rebuilder ??= new LandscapeRebuilder(_context);
@@ -47,7 +47,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// <summary>Coord→chunk lookup over the loaded chunks, for callers that would otherwise scan them all.</summary>
     public LandscapeChunkIndex ChunkIndex => _chunkIndex ??= new LandscapeChunkIndex(_context.Scene);
 
-    private LandscapeChunkLoader? _chunkLoader;
+    private LandscapeBatchLoader? _batchLoader;
     private LandscapeRebuilder? _rebuilder;
     private LandscapeChunkIndex? _chunkIndex;
 
@@ -398,7 +398,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         if (_reportedScene != _context.Scene.Version)
         {
             _reportedScene = _context.Scene.Version;
-            Reporter.KeepOnly(_context.Scene.Entities.OfType<LandscapeChunk>().Select(chunk => chunk.Coord).ToList());
+            Reporter.KeepOnly(_context.Scene.Entities.OfType<LandscapeTerrainBatch>().SelectMany(batch => batch.Chunks.Keys).ToList());
         }
 
         Rebuilder.Update(Focus);

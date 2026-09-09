@@ -462,7 +462,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
             // this editor is everything — models, markers, the viewport's own reference grid. Restrict
             // it to the layer terrain surfaces render on, so painting only ever visibly colors the
             // ground it is meant to paint.
-            CullMask = LandscapeChunk.RenderLayer,
+            CullMask = LandscapeTerrainBatch.RenderLayer,
         };
 
         return new ChunkNode(decal, texture);

@@ -20,7 +20,7 @@ public static class LandscapeMeshTests
     public static void Every_triangle_faces_up()
     {
         const int resolution = 5;
-        int[] indices = LandscapeChunkMesh.BuildIndices(resolution);
+        int[] indices = LandscapeBatchMesh.BuildIndices(resolution);
 
         Assert.AreEqual((resolution - 1) * (resolution - 1) * 6, indices.Length);
 
@@ -44,7 +44,7 @@ public static class LandscapeMeshTests
     {
         // A gap here would show as holes in the terrain rather than as an error.
         const int resolution = 4;
-        int[] indices = LandscapeChunkMesh.BuildIndices(resolution);
+        int[] indices = LandscapeBatchMesh.BuildIndices(resolution);
 
         var seen = new bool[resolution * resolution];
         foreach (int index in indices)
@@ -68,8 +68,8 @@ public static class LandscapeMeshTests
         var holes = new bool[holeResolution * holeResolution];
         holes[(1 * holeResolution) + 0] = true; // bottom-left cell only
 
-        int[] dense = LandscapeChunkMesh.BuildIndices(resolution);
-        int[] withHole = LandscapeChunkMesh.BuildIndices(resolution, holes, holeResolution);
+        int[] dense = LandscapeBatchMesh.BuildIndices(resolution);
+        int[] withHole = LandscapeBatchMesh.BuildIndices(resolution, holes, holeResolution);
 
         // A 4x4 quad grid split into a 2x2 hole grid gives each cell 2x2 = 4 quads; cutting one cell
         // drops exactly those 4 quads' worth of indices.
