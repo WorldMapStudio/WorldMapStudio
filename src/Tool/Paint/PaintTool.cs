@@ -28,15 +28,18 @@ public sealed class PaintTool : ITool
     private ImageComponent? _strokeTarget;
     private PaintImage? _strokeImage;
 
-    // Where the last dab of the current stroke was stamped, in target-local space, and whether the
-    // stroke's first dab has been placed yet. Dabs are spaced by pointer travel rather than laid down
-    // once per frame, so stroke density no longer rides on the frame rate.
+    // Where and when the last dab of the current stroke was stamped, in target-local space, and
+    // whether the stroke's first dab has been placed yet. A moving pointer spaces dabs by travel so
+    // stroke density no longer rides on the frame rate; a still pointer keeps dabbing at a fixed
+    // wall-clock rate so holding the brush down still builds paint up like an airbrush.
     private GVector3 _lastStampLocal;
+    private ulong _lastStampMs;
     private bool _strokeStamped;
 
     private const float StampSpacingFraction = 0.25f;
     private const float MinStampSpacing = 0.05f;
     private const int MaxStampsPerFrame = 512;
+    private const ulong StationaryStampIntervalMs = 16;
 
     public PaintTool(ToolContext context)
     {
@@ -151,38 +154,51 @@ public sealed class PaintTool : ITool
     // frame. The first dab of a stroke lands wherever the stroke started.
     private bool StampAlong(ImageComponent target, GVector3 local)
     {
-        bool changed = false;
+        ulong now = Time.GetTicksMsec();
 
         if (!_strokeStamped)
         {
             _strokeStamped = true;
             _lastStampLocal = local;
+            _lastStampMs = now;
             return target.Paint(local, _radius, _color, _opacity, _erase);
         }
 
         float spacing = Math.Max(_radius * StampSpacingFraction, MinStampSpacing);
         GVector3 travel = new(local.X - _lastStampLocal.X, 0.0f, local.Z - _lastStampLocal.Z);
         float distance = travel.Length();
-        if (distance < spacing)
+
+        if (distance >= spacing)
+        {
+            GVector3 step = (travel / distance) * spacing;
+            int stamps = Math.Min((int)(distance / spacing), MaxStampsPerFrame);
+            bool changed = false;
+            for (int i = 0; i < stamps; i++)
+            {
+                _lastStampLocal += step;
+                changed |= target.Paint(_lastStampLocal, _radius, _color, _opacity, _erase);
+            }
+
+            // If the pointer outran the per-frame cap, drop the backlog rather than let it accumulate.
+            if (stamps == MaxStampsPerFrame)
+            {
+                _lastStampLocal = local;
+            }
+
+            _lastStampMs = now;
+            return changed;
+        }
+
+        // The pointer has not travelled a whole dab's worth this frame; keep laying paint at a steady
+        // wall-clock rate so a held-still brush still builds up.
+        if (now - _lastStampMs < StationaryStampIntervalMs)
         {
             return false;
         }
 
-        GVector3 step = (travel / distance) * spacing;
-        int stamps = Math.Min((int)(distance / spacing), MaxStampsPerFrame);
-        for (int i = 0; i < stamps; i++)
-        {
-            _lastStampLocal += step;
-            changed |= target.Paint(_lastStampLocal, _radius, _color, _opacity, _erase);
-        }
-
-        // If the pointer outran the per-frame cap, drop the backlog rather than let it accumulate.
-        if (stamps == MaxStampsPerFrame)
-        {
-            _lastStampLocal = local;
-        }
-
-        return changed;
+        _lastStampMs = now;
+        _lastStampLocal = local;
+        return target.Paint(local, _radius, _color, _opacity, _erase);
     }
 
     public void Deactivate()
