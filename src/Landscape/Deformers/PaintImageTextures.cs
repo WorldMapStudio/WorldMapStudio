@@ -142,9 +142,10 @@ public static class PaintImageTextures
     }
 
     /// <summary>One row of scalar float pixels widened to opaque grayscale — four equal bytes per
-    /// pixel, packed as one uint. Values outside [0,1] saturate, the same squash <see cref="ReadByte"/>
-    /// applies. Eight-wide where AVX2 is available: this row is essentially the whole cost of
-    /// previewing a painted Float32 chunk, and a chunk is a full tile of them.</summary>
+    /// pixel, packed as one uint — through the signed display ramp (see <see cref="SignedGray"/>), so a
+    /// value below zero reads as a distinct dark tone rather than flat black. Eight-wide where AVX2 is
+    /// available: this row is essentially the whole cost of previewing a painted Float32 chunk, and a
+    /// chunk is a full tile of them.</summary>
     private static void ExpandGrayRow(ReadOnlySpan<float> source, Span<uint> destination)
     {
         ref float src = ref MemoryMarshal.GetReference(source);
@@ -154,31 +155,23 @@ public static class PaintImageTextures
 
         if (Avx2.IsSupported)
         {
-            Vector256<float> scale = Vector256.Create(255.0f);
-            Vector256<float> floor = Vector256<float>.Zero;
-            Vector256<float> ceiling = Vector256.Create(255.0f);
             Vector256<int> broadcast = Vector256.Create(0x01010101);
-
             for (; i <= n - Vector256<float>.Count; i += Vector256<float>.Count)
             {
-                // vmaxps yields its second operand when either is NaN, so a NaN pixel saturates to 0
-                // here rather than reaching the convert as an out-of-range lane. The convert itself
-                // rounds half to even, matching the scalar tail.
-                Vector256<float> scaled = Avx.Multiply(Vector256.LoadUnsafe(ref src, (nuint)i), scale);
-                Vector256<int> level = Avx.ConvertToVector256Int32(Avx.Min(Avx.Max(scaled, floor), ceiling));
+                Vector256<int> level = SignedLevel(ref src, i);
                 Avx2.MultiplyLow(level, broadcast).AsUInt32().StoreUnsafe(ref dst, (nuint)i);
             }
         }
 
         for (; i < n; i++)
         {
-            Unsafe.Add(ref dst, i) = ToByte(Unsafe.Add(ref src, i)) * 0x01010101u;
+            Unsafe.Add(ref dst, i) = SignedGray(Unsafe.Add(ref src, i)) * 0x01010101u;
         }
     }
 
     /// <summary>One row of scalar float pixels as single display bytes, the
-    /// <see cref="Image.Format.L8"/> counterpart to <see cref="ExpandGrayRow"/>. Thirty-two wide where
-    /// AVX2 is available, since four converted vectors narrow into one store.</summary>
+    /// <see cref="Image.Format.L8"/> counterpart to <see cref="ExpandGrayRow"/> — same signed ramp.
+    /// Thirty-two wide where AVX2 is available, since four converted vectors narrow into one store.</summary>
     private static void NarrowGrayRow(ReadOnlySpan<float> source, Span<byte> destination)
     {
         ref float src = ref MemoryMarshal.GetReference(source);
@@ -191,27 +184,43 @@ public static class PaintImageTextures
             const int Block = 4 * 8;
             for (; i <= n - Block; i += Block)
             {
-                Vector256<uint> a = Level(ref src, i);
-                Vector256<uint> b = Level(ref src, i + 8);
-                Vector256<uint> c = Level(ref src, i + 16);
-                Vector256<uint> d = Level(ref src, i + 24);
+                Vector256<uint> a = SignedLevel(ref src, i).AsUInt32();
+                Vector256<uint> b = SignedLevel(ref src, i + 8).AsUInt32();
+                Vector256<uint> c = SignedLevel(ref src, i + 16).AsUInt32();
+                Vector256<uint> d = SignedLevel(ref src, i + 24).AsUInt32();
                 Vector256.Narrow(Vector256.Narrow(a, b), Vector256.Narrow(c, d)).StoreUnsafe(ref dst, (nuint)i);
             }
         }
 
         for (; i < n; i++)
         {
-            Unsafe.Add(ref dst, i) = ToByte(Unsafe.Add(ref src, i));
+            Unsafe.Add(ref dst, i) = SignedGray(Unsafe.Add(ref src, i));
         }
     }
 
-    /// <summary>Eight scalar pixels scaled, saturated into [0,255] and rounded half to even, ready to
-    /// narrow. See <see cref="ExpandGrayRow"/> for why the saturation order handles NaN.</summary>
-    private static Vector256<uint> Level(ref float source, int offset)
+    /// <summary>Eight scalar pixels through the signed ramp — <c>127.5 + 127.5·v/(1+|v|)</c> —
+    /// saturated into [0,255] and converted, ready to broadcast or narrow. The
+    /// <c>Max(., 0)</c> before the convert also folds a NaN lane to 0 (vmaxps yields its second
+    /// operand on NaN), matching <see cref="SignedGray"/>'s scalar tail.</summary>
+    private static Vector256<int> SignedLevel(ref float source, int offset)
     {
-        Vector256<float> scaled = Avx.Multiply(Vector256.LoadUnsafe(ref source, (nuint)offset), Vector256.Create(255.0f));
-        Vector256<float> bounded = Avx.Min(Avx.Max(scaled, Vector256<float>.Zero), Vector256.Create(255.0f));
-        return Avx.ConvertToVector256Int32(bounded).AsUInt32();
+        Vector256<float> v = Vector256.LoadUnsafe(ref source, (nuint)offset);
+        Vector256<float> abs = Avx.AndNot(Vector256.Create(-0.0f), v);
+        Vector256<float> ramp = Avx.Divide(v, Avx.Add(abs, Vector256.Create(1.0f)));
+        Vector256<float> disp = Avx.Add(Avx.Multiply(ramp, Vector256.Create(127.5f)), Vector256.Create(127.5f));
+        Vector256<float> bounded = Avx.Min(Avx.Max(disp, Vector256<float>.Zero), Vector256.Create(255.0f));
+        return Avx.ConvertToVector256Int32(bounded);
+    }
+
+    /// <summary>A scalar Float32 pixel to a display byte through a smooth symmetric ramp centred on
+    /// mid-grey: <c>0 → 128</c>, <c>+∞ → 255</c>, <c>-∞ → 0</c>. A <see cref="PaintImagePixelFormat.Float32"/>
+    /// image is not a [0,1] mask — it can hold a signed world-space quantity — so a plain clamp would
+    /// collapse every negative value to the same flat black. NaN maps to 0.</summary>
+    private static byte SignedGray(float value)
+    {
+        float ramp = value / (1.0f + MathF.Abs(value));
+        float disp = 127.5f + (127.5f * ramp);
+        return disp >= 255.0f ? (byte)255 : disp > 0.0f ? (byte)MathF.Round(disp) : (byte)0;
     }
 
     private static byte[] Fit(byte[]? buffer, int length) =>
