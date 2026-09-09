@@ -77,6 +77,8 @@ public sealed class ImageComponentType : ISceneComponentType
             _tracker.Track(context.Sessions, image, "strength", image.Strength, value => image.Strength = value);
         });
 
+        fields.Field("Write Mode", () => DrawWriteModeCombo(context, image));
+
         fields.Separator();
         fields.Chrome(() =>
         {
@@ -169,6 +171,35 @@ public sealed class ImageComponentType : ISceneComponentType
 
             ImGui.EndCombo();
         }
+    }
+
+    private static readonly ImageWriteMode[] WriteModeChoices = [ImageWriteMode.Max, ImageWriteMode.Replace];
+
+    private static string WriteModeLabel(ImageWriteMode mode) => mode switch
+    {
+        ImageWriteMode.Max => "Max (combine)",
+        ImageWriteMode.Replace => "Replace (overwrite)",
+        _ => mode.ToString(),
+    };
+
+    /// <summary>How a scalar write lands on its channel — see <see cref="ImageWriteMode"/>. Has no
+    /// effect on a color destination, which always combines by max.</summary>
+    private static void DrawWriteModeCombo(InspectorContext context, ImageComponent image)
+    {
+        if (!ImGui.BeginCombo("Write Mode", WriteModeLabel(image.WriteMode)))
+        {
+            return;
+        }
+
+        foreach (ImageWriteMode mode in WriteModeChoices)
+        {
+            if (ImGui.Selectable(WriteModeLabel(mode), mode == image.WriteMode))
+            {
+                ComponentFieldRecorder.Record(context, image, "write mode", image.WriteMode, mode, value => image.WriteMode = value);
+            }
+        }
+
+        ImGui.EndCombo();
     }
 
     private void DrawImageReference(InspectorContext context, ImageComponent image)
