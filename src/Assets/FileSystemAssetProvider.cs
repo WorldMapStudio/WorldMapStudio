@@ -51,29 +51,6 @@ public sealed class FileSystemAssetProvider : IAssetProvider
         return await File.ReadAllTextAsync(fullPath).ConfigureAwait(false);
     }
 
-    public async Task<bool> WriteBytesAsync(AssetSourceSettings source, string path, byte[] bytes)
-    {
-        if (!TryResolveForWrite(source, path, out string fullPath))
-        {
-            return false;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
-        await File.WriteAllBytesAsync(fullPath, bytes).ConfigureAwait(false);
-        return true;
-    }
-
-    public Task<bool> DeleteAsync(AssetSourceSettings source, string path)
-    {
-        if (!TryResolveForWrite(source, path, out string fullPath) || !File.Exists(fullPath))
-        {
-            return Task.FromResult(false);
-        }
-
-        File.Delete(fullPath);
-        return Task.FromResult(true);
-    }
-
     private static bool TryResolve(AssetSourceSettings source, string path, out string fullPath)
     {
         fullPath = "";
@@ -101,43 +78,6 @@ public sealed class FileSystemAssetProvider : IAssetProvider
             relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
             relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
         if (escapesRoot || Path.IsPathRooted(relative) || !File.Exists(candidate))
-        {
-            return false;
-        }
-
-        fullPath = candidate;
-        return true;
-    }
-
-    // Same containment guard as TryResolve, minus the "must already exist" check — a write creates
-    // the file, and its parent directory, where none was before.
-    private static bool TryResolveForWrite(AssetSourceSettings source, string path, out string fullPath)
-    {
-        fullPath = "";
-        if (source.RootPath.Length == 0 || path.Length == 0)
-        {
-            return false;
-        }
-
-        string root = Path.GetFullPath(source.RootPath);
-        string candidate = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(root, path));
-
-        string relative;
-        try
-        {
-            relative = Path.GetRelativePath(root, candidate);
-        }
-        catch (ArgumentException)
-        {
-            return false;
-        }
-
-        bool escapesRoot = relative == ".." ||
-            relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
-            relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
-        if (escapesRoot || Path.IsPathRooted(relative))
         {
             return false;
         }
