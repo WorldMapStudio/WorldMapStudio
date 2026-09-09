@@ -1413,6 +1413,124 @@ public static class ImageTests
         Assert.AreEqual("4", match.Groups["y"].Value);
     }
 
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Exr_disk_codec_round_trips_negative_float32_values()
+    {
+        const int chunkSize = 4;
+        const int stride = 4;
+        float[] expected =
+        [
+            -123.5f, -0.001f, 0.0f, 42.25f,
+            -999.0f, 7.0f, -0.5f, 1000.5f,
+            -1.0f, 2.0f, -3.0f, 4.0f,
+            -5.0f, 6.0f, -7.0f, 8.0f,
+        ];
+        var tile = new byte[chunkSize * chunkSize * stride];
+        for (int i = 0; i < expected.Length; i++)
+        {
+            BitConverter.TryWriteBytes(tile.AsSpan(i * 4, 4), expected[i]);
+        }
+
+        byte[] exr = ImageDiskCodec.Encode(tile, chunkSize, stride, components: 1, PaintImagePixelFormat.Float32, chunkSize, chunkSize);
+        byte[] decoded = ImageDiskCodec.Decode(exr, ".exr", chunkSize, stride, components: 1, PaintImagePixelFormat.Float32);
+
+        for (int i = 0; i < expected.Length; i++)
+        {
+            Assert.AreApproximatelyEqual(expected[i], BitConverter.ToSingle(decoded, i * 4), 0.05, $"texel {i} survives the EXR round trip");
+        }
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_preview_renders_a_negative_pixel_as_a_distinct_dark_tone()
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 64, components: 1, format: PaintImagePixelFormat.Float32);
+
+        // A positive lump, and — elsewhere in the same chunk — pixels erased below zero.
+        image.Paint(0.30f, 0.5f, 0.12f, 0.12f, 1.0f, erase: false);
+        image.Paint(0.70f, 0.5f, 0.10f, 0.10f, 0.2f, erase: false);
+        image.Paint(0.70f, 0.5f, 0.12f, 0.12f, 1.0f, erase: true);
+
+        ImageChunkCoord coord = image.ChunkCoords.First();
+        byte[] gray = PaintImageTextures.WriteChunkOpaque(image, coord, null, out int width, out int height, out Image.Format format);
+
+        Assert.AreEqual(Image.Format.L8, format);
+        int midRow = (height / 2) * width;
+        byte positive = gray[midRow + (int)(0.30f * width)];
+        byte negative = gray[midRow + (int)(0.70f * width)];
+        byte zero = gray[0]; // a corner pixel, never touched, still exactly 0.0
+
+        Assert.Greater(positive, zero, "a value above zero previews brighter than the mid-grey zero maps to");
+        Assert.IsTrue(negative > 0 && negative < zero,
+            $"a value below zero must preview as a distinct darker tone rather than flat black (negative={negative}, zero={zero})");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Replace_write_mode_carries_a_negative_sample_into_a_channel_where_max_does_not()
+    {
+        var functions = new LandscapeFunctions();
+        functions.Discover(typeof(ChannelMaskAlpha).Assembly);
+
+        var heightValues = new LandscapeParameterValues();
+        heightValues.Set(ChannelHeightOffset.Mask, MaskChannel);
+        heightValues.Set(ChannelHeightOffset.Amount, 1.0f);
+
+        var material = new LandscapeMaterial
+        {
+            Name = "terrain",
+            RecordId = 1,
+            TexturePath = "res://terrain.png",
+            HeightFunction = "builtin.height.channel_offset",
+            HeightParameters = heightValues.Serialize(),
+        };
+
+        var channel = new LandscapeChannel { Name = MaskChannel, RecordId = 1, Resolution = 32 };
+        var baseLayer = new LandscapeLayer { Name = "base", RecordId = 1, DrawOrder = 0, IsBase = true };
+        var paintLayer = new LandscapeLayer { Name = "paint", RecordId = 2, DrawOrder = 1 };
+        var settings = new LandscapeSettings
+        {
+            ChunkWorldSize = 64.0f,
+            ChunkHeightResolution = 9,
+            ChunkAlphaResolution = 32,
+            TextureLimit = 4,
+            FallbackMaterialId = 1,
+        };
+        var catalog = new LandscapeCatalog([channel], [baseLayer, paintLayer], [material], functions);
+
+        EditorContext context = NewContext("__wms_image_replace_mode_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 64, components: 1, format: PaintImagePixelFormat.Float32);
+
+        // A patch made resident with a light positive dab, then erased well below zero — in the
+        // quadrant that landscape chunk (0, 0) overlaps.
+        image.Paint(0.80f, 0.80f, 0.12f, 0.12f, 0.2f, erase: false);
+        image.Paint(0.80f, 0.80f, 0.14f, 0.14f, 1.0f, erase: true);
+
+        LandscapeChunkOutput BuildWith(ImageWriteMode mode)
+        {
+            var entity = new SceneEntity();
+            var target = new ImageComponent(context.Images)
+            {
+                ImageId = image.RecordId,
+                Channel = MaskChannel,
+                WorldSizeX = 64.0f,
+                WorldSizeZ = 64.0f,
+                WriteMode = mode,
+            };
+            var bind = new LandscapeMaterialBindComponent();
+            bind.ReplaceBindings([new LandscapeMaterialBinding(paintLayer.RecordId, material.RecordId)]);
+            entity.AddComponent(target);
+            entity.AddComponent(bind);
+            return new LandscapeBuilder(settings, catalog, functions)
+                .BuildOne(new ChunkCoord(0, 0), entity.Components.OfType<ILandscapeDeformer>().ToList());
+        }
+
+        Assert.IsTrue(BuildWith(ImageWriteMode.Replace).Heights.Any(h => h < -0.5f),
+            "Replace writes the negative sample straight into the channel, so height drops below the base");
+        Assert.IsTrue(BuildWith(ImageWriteMode.Max).Heights.All(h => h >= -0.001f),
+            "Max combines against a zeroed channel, so a negative sample is discarded and nothing drops below the base");
+    }
+
     private static EditorContext NewContext(string name) =>
         new(new Node3D(), new Project { Name = name });
 
