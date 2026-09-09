@@ -189,8 +189,8 @@ public static class LandscapeBatchMesh
         Texture2DArray albedoArray = AlbedoArrayCache.GetOrAdd(
             MaterialSetKey(slotMaterials), _ => BuildAlbedoArray(slotMaterials, assets));
 
-        Texture2DArray alphaArray = BuildAlphaAtlas(chunks, batchCoord, batchChunks, alphaResolution);
-        ImageTexture slotMap = BuildSlotMap(chunks, batchCoord, batchChunks, layerOf);
+        Texture2DArray alphaArray = BuildAlphaAtlas(AlphaAtlasLayers(chunks, batchCoord, batchChunks, alphaResolution), alphaResolution, batchChunks);
+        ImageTexture slotMap = BuildSlotMap(SlotMapBytes(chunks, batchCoord, batchChunks, layerOf), batchChunks);
 
         material.SetShaderParameter(Names.SlotAlbedo, albedoArray);
         material.SetShaderParameter(Names.SlotAlpha, alphaArray);
@@ -302,10 +302,21 @@ public static class LandscapeBatchMesh
         return array;
     }
 
-    // One Texture2DArray for the batch. Layers are indexed by a chunk's own slot ordering (slot 0 is
-    // the opaque base and carries no alpha, so layer k-1 holds chunk-local slot k); chunks are kept
-    // apart by tile, so two chunks whose slot 1 differs never collide even in the same layer.
-    private static Texture2DArray BuildAlphaAtlas(
+    /// <summary>The array layer each material of the batch's ordered slot set uses, keyed by material
+    /// identity. Layer 0 is the "no material" placeholder, so real materials start at 1. Pure — no
+    /// Godot — so a test can pin the packing that depends on it.</summary>
+    internal static Dictionary<object, int> BatchLayerIndices(
+        IReadOnlyList<(ChunkCoord Coord, LandscapeChunkOutput Output)> chunks,
+        LandscapeBatchCoord batchCoord,
+        int batchChunks) =>
+        LayerIndices(BatchSlotMaterials(chunks, batchCoord, batchChunks));
+
+    /// <summary>
+    /// One R8 buffer per alpha atlas layer. Layers are indexed by a chunk's own slot ordering (slot 0
+    /// is the opaque base and carries no alpha, so layer k-1 holds chunk-local slot k); chunks are
+    /// kept apart by tile, so two chunks whose slot 1 differs never collide even in one layer. Pure.
+    /// </summary>
+    internal static byte[][] AlphaAtlasLayers(
         IReadOnlyList<(ChunkCoord Coord, LandscapeChunkOutput Output)> chunks,
         LandscapeBatchCoord batchCoord,
         int batchChunks,
@@ -352,10 +363,16 @@ public static class LandscapeBatchMesh
             }
         }
 
+        return layerBytes;
+    }
+
+    private static Texture2DArray BuildAlphaAtlas(byte[][] layerBytes, int alphaResolution, int batchChunks)
+    {
+        int tileStride = batchChunks * alphaResolution;
         var images = new List<Image>();
-        for (int i = 0; i < layers; i++)
+        foreach (byte[] bytes in layerBytes)
         {
-            images.Add(Image.CreateFromData(tileStride, tileStride, false, Image.Format.R8, layerBytes[i]));
+            images.Add(Image.CreateFromData(tileStride, tileStride, false, Image.Format.R8, bytes));
         }
 
         var array = new Texture2DArray();
@@ -371,10 +388,12 @@ public static class LandscapeBatchMesh
         return array;
     }
 
-    // Rgba8, width MaxSlots, height batchChunks². Pixel (s, c) describes chunk c's slot s: r = the
-    // batch array layer that slot's material uses (/255), a = 1 while the slot exists and 0 past the
-    // end of that chunk's slot list. Built as a raw buffer — per-pixel SetPixel is a marshalled call.
-    private static ImageTexture BuildSlotMap(
+    /// <summary>
+    /// The raw Rgba8 buffer of the slot-map texture: width MaxSlots, height batchChunks². Pixel
+    /// (s, c) describes chunk c's slot s — r = the array layer that slot's material uses, a = 255
+    /// while the slot exists and 0 past the end of that chunk's slot list. Pure.
+    /// </summary>
+    internal static byte[] SlotMapBytes(
         IReadOnlyList<(ChunkCoord Coord, LandscapeChunkOutput Output)> chunks,
         LandscapeBatchCoord batchCoord,
         int batchChunks,
@@ -400,7 +419,12 @@ public static class LandscapeBatchMesh
             }
         }
 
-        var image = Image.CreateFromData(MaxSlots, cells, false, Image.Format.Rgba8, pixels);
+        return pixels;
+    }
+
+    private static ImageTexture BuildSlotMap(byte[] pixels, int batchChunks)
+    {
+        var image = Image.CreateFromData(MaxSlots, batchChunks * batchChunks, false, Image.Format.Rgba8, pixels);
         ImageTexture texture = ImageTexture.CreateFromImage(image);
         image.Dispose();
         return texture;
