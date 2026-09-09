@@ -35,6 +35,14 @@ public sealed class LandscapeRebuilder
     private int _lastWaveChunks;
     private double _lastWaveMs;
 
+    // A paint stroke bumps an image's content every dab; rather than re-scanning every deformer each
+    // of those frames, the paint path just sets this and the deformer collect runs on a timer while
+    // the stroke is live. The stroke's recorded command still forces a full-fidelity collect on
+    // mouse-up through the ordinary history-revision path.
+    private bool _paintPending;
+    private ulong _lastPaintCollectMs;
+    private const double PaintCollectIntervalMs = 200.0;
+
     // Registry membership and catalog content are compared as a pair rather than folded into one
     // hash: a collision here, or a real hash landing on the "nothing yet" sentinel, is terrain that
     // silently never rebuilds — the hardest possible bug to find, bought for nothing.
@@ -70,11 +78,28 @@ public sealed class LandscapeRebuilder
 
         NoticeChanges(landscape);
 
+        // Mid-stroke: fold the accumulated dabs into dirty regions at a fixed cadence instead of once
+        // per frame. The full collect on mouse-up (via the recorded command) is what makes it exact.
+        if (_paintPending)
+        {
+            ulong now = Time.GetTicksMsec();
+            if (now - _lastPaintCollectMs >= PaintCollectIntervalMs)
+            {
+                _lastPaintCollectMs = now;
+                _paintPending = false;
+                CollectDeformerChanges(landscape);
+            }
+        }
+
         if (_dirty.Count > 0 && !IsBuilding)
         {
             Schedule(landscape, focus);
         }
     }
+
+    /// <summary>Signals that a paint stroke changed an image this frame. Cheaper than bumping the
+    /// scene version: the deformer collect it drives runs on a timer, not every frame.</summary>
+    public void NoticePaint() => _paintPending = true;
 
     /// <summary>Forgets everything, e.g. when the map changes and the loaded chunks are replaced.</summary>
     public void Reset()
@@ -125,9 +150,16 @@ public sealed class LandscapeRebuilder
 
         _historyRevision = _context.EditSessions.Active.History.Revision;
         _sceneVersion = _context.Scene.Version;
+        _paintPending = false;
 
-        // Rebuilding a chunk replaces its content in place and never touches the registry, so
-        // reacting to the scene version cannot feed itself.
+        CollectDeformerChanges(landscape);
+    }
+
+    // Turns every moved or content-changed deformer into the world regions that went stale. Rebuilding
+    // a chunk replaces its content in place and never touches the registry, so reacting to the scene
+    // version here cannot feed itself.
+    private void CollectDeformerChanges(LandscapeSystem landscape)
+    {
         List<ILandscapeDeformer> deformers = _context.Scene.Entities
             .SelectMany(entity => entity.Components)
             .OfType<ILandscapeDeformer>()
