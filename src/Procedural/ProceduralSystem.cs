@@ -18,7 +18,7 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     private readonly Dictionary<string, LinkedListNode<(string Key, ProceduralBuildResult Result)>> _buildCache = new(StringComparer.Ordinal);
     private readonly LinkedList<(string Key, ProceduralBuildResult Result)> _buildCacheOrder = new();
 
-    private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
+    private (int CatalogVersion, int SceneVersion, int RevisionTick) _lastUpdateTick = (-1, -1, -1);
 
     public ProceduralSystem(EditorContext context)
     {
@@ -81,8 +81,8 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     /// entity, a window, an undo, or a script — and rebuilds that placement. Called once per frame,
     /// like <see cref="LandscapeSystem.Update"/>.
     ///
-    /// Guarded by a cheap running tick (catalog membership, scene membership, and the sum of every
-    /// model's <see cref="ProceduralModel.Revision"/>) so the per-entity walk below only runs on a
+    /// Guarded by a cheap running tick (catalog membership, scene membership, and
+    /// <see cref="ProceduralModel.RevisionTick"/>) so the per-entity walk below only runs on a
     /// frame where something actually moved, rather than every frame regardless. Scene membership is
     /// part of the tick because a newly streamed-in placement needs its paint published the first time
     /// it is seen — a model whose revision never changes would otherwise leave <see cref="ProceduralComponent.Paint"/>
@@ -90,7 +90,7 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     /// </summary>
     public void Update()
     {
-        var tick = (Context.Catalog.Version, Context.Scene.Version, SumRevisions());
+        var tick = (Context.Catalog.Version, Context.Scene.Version, ProceduralModel.RevisionTick);
         if (tick == _lastUpdateTick)
         {
             return;
@@ -180,17 +180,6 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     }
 
     private static string MissingChannelScope(SceneEntity entity) => $"procedural-mesh-channels:{entity.Id.Value}";
-
-    private int SumRevisions()
-    {
-        int sum = 0;
-        foreach (ProceduralModel model in Models)
-        {
-            sum += model.Revision;
-        }
-
-        return sum;
-    }
 
     /// <summary>Builds a model, from cache when nothing about it (or the presets/function it depends
     /// on) has changed since the last build.</summary>
