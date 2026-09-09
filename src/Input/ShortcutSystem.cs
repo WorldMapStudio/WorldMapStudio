@@ -88,7 +88,7 @@ public sealed class ShortcutSystem
 
         foreach (ShortcutAction action in Actions)
         {
-            if (action.IsEnabled && action.Shortcut.IsPressed())
+            if (action.IsEnabled && action.Shortcut.IsPressed(io))
             {
                 action.Execute();
                 return;
