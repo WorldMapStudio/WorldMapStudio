@@ -61,7 +61,6 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     private Dictionary<ImageChunkCoord, ImageChunk> _chunks = [];
 
     private PaintImageStorageKind _storageKind = PaintImageStorageKind.Database;
-    private string _diskSourceId = "";
     private string _diskPath = "";
     private string _diskTilePattern = DefaultDiskTilePattern;
 
@@ -128,13 +127,9 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// <summary>Whether this image reads and writes its pixels as disk files rather than storage rows.</summary>
     public bool IsDiskBacked => _storageKind == PaintImageStorageKind.Disk;
 
-    /// <summary>The asset source (<see cref="AssetSourceSettings.Id"/>) a disk-backed image's files
-    /// resolve against. Empty for a database-backed image.</summary>
-    public string DiskSourceId => _diskSourceId;
-
-    /// <summary>A disk-backed image's path within its asset source — the image file itself when the
-    /// grid is a single chunk, otherwise the directory holding the tile files. Empty for a
-    /// database-backed image.</summary>
+    /// <summary>A disk-backed image's absolute filesystem path — the image file itself when the grid is
+    /// a single chunk, otherwise the directory holding the tile files. Empty for a database-backed
+    /// image.</summary>
     [ScriptProperty]
     public string DiskPath => _diskPath;
 
@@ -328,34 +323,24 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         BumpContent();
     }
 
-    /// <summary>Switches this image to <see cref="PaintImageStorageKind.Disk"/>, backed by files under
-    /// asset source <paramref name="sourceId"/>. Call right after <see cref="ConfigureNew"/> at
-    /// creation, and from the loader when rehydrating a stored disk-backed image. <paramref name="path"/>
+    /// <summary>Switches this image to <see cref="PaintImageStorageKind.Disk"/>, backed by files at
+    /// <paramref name="path"/> (an absolute filesystem path). Call right after <see cref="ConfigureNew"/>
+    /// at creation, and from the loader when rehydrating a stored disk-backed image. <paramref name="path"/>
     /// is the image file for a single-chunk grid, the directory holding the tile files otherwise;
     /// <paramref name="tilePattern"/> names each tile (see <see cref="DiskTilePattern"/>).</summary>
-    public void ConfigureDiskSource(string sourceId, string path, string tilePattern)
+    public void ConfigureDiskSource(string path, string tilePattern)
     {
         _storageKind = PaintImageStorageKind.Disk;
-        _diskSourceId = sourceId ?? "";
-        _diskPath = AssetPath.Normalize(path ?? "");
+        _diskPath = path ?? "";
         _diskTilePattern = string.IsNullOrWhiteSpace(tilePattern) ? DefaultDiskTilePattern : tilePattern;
     }
 
-    /// <summary>The path within <see cref="DiskSourceId"/> for one chunk's file — <see cref="DiskPath"/>
-    /// itself for a single-chunk image, otherwise the directory joined with
-    /// <see cref="DiskTilePattern"/> with <c>{x}</c>/<c>{y}</c> substituted.</summary>
-    public string DiskChunkPath(ImageChunkCoord coord)
-    {
-        if (!IsTiledDisk)
-        {
-            return _diskPath;
-        }
-
-        string file = _diskTilePattern
-            .Replace("{x}", coord.X.ToString(System.Globalization.CultureInfo.InvariantCulture))
-            .Replace("{y}", coord.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        return _diskPath.Length == 0 ? file : $"{_diskPath}/{file}";
-    }
+    /// <summary>The filesystem path for one chunk's file — <see cref="DiskPath"/> itself for a
+    /// single-chunk image, otherwise the directory joined with <see cref="DiskTilePattern"/> with
+    /// <c>{x}</c>/<c>{y}</c> substituted.</summary>
+    public string DiskChunkPath(ImageChunkCoord coord) => IsTiledDisk
+        ? System.IO.Path.Combine(_diskPath, ImageDiskStore.TileFileName(_diskTilePattern, coord))
+        : _diskPath;
 
     /// <summary>What <see cref="PaintImageFactory"/> last wrote to (or loaded from) storage — the set
     /// <see cref="Stage"/>-equivalent logic diffs the live chunk set against to know which rows need an

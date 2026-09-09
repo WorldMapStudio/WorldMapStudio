@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
@@ -19,11 +20,8 @@ public sealed class ImagePicker
     private readonly ImageSystem _system;
     private readonly ModalOperator<ImageSelectionOperation, ImageSelectionContext> _modal =
         new("SelectImage", () => new ImageSelectionOperation(), new Vector2(760, 0));
-    private readonly ModalOperator<DiskImageSourceSelectionOperation, DiskImageSourceSelectionContext> _diskModal =
-        new("SelectDiskImageSource", () => new DiskImageSourceSelectionOperation(), new Vector2(760, 0));
 
     private ImageSelectionContext? _context;
-    private DiskImageSourceSelectionContext? _diskContext;
 
     private bool _createOpenRequested;
     private bool _createActive;
@@ -39,6 +37,16 @@ public sealed class ImagePicker
     private PaintImagePixelFormat _createFormat = PaintImagePixelFormat.Byte;
     private PaintImageStorageKind _createStorageKind = PaintImageStorageKind.Database;
     private DiskImageSourceResult? _createDiskSource;
+    private Task<DiskImageSourceResult?>? _createDiskProbe;
+    private string _createDiskPattern = PaintImage.DefaultDiskTilePattern;
+
+    // The folder the last "tile folder" pick chose, so editing the pattern can re-probe it; null once
+    // a single file was picked instead. Kept separately from _createDiskSource, which is the probe
+    // result rather than the raw pick.
+    private string? _createDiskFolder;
+
+    // Remembered across opens so the native dialog starts where the user last was.
+    private string _diskStartDirectory = "";
 
     public ImagePicker(ImageSystem system)
     {
@@ -67,6 +75,9 @@ public sealed class ImagePicker
         _createFormat = PaintImagePixelFormat.Byte;
         _createStorageKind = PaintImageStorageKind.Database;
         _createDiskSource = null;
+        _createDiskProbe = null;
+        _createDiskFolder = null;
+        _createDiskPattern = PaintImage.DefaultDiskTilePattern;
         _createOpenRequested = true;
     }
 
@@ -148,17 +159,6 @@ public sealed class ImagePicker
             {
                 open = false;
             }
-
-            // Drawn from inside the create popup's content so its OpenPopup/BeginPopupModal nest one
-            // level deeper rather than replacing the create popup on the stack.
-            if (_diskContext != null)
-            {
-                ModalOperationState diskState = _diskModal.Draw(_diskContext, true, ImGuiWindowFlags.None);
-                if (diskState is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
-                {
-                    _diskContext = null;
-                }
-            }
         });
 
         if (!open)
@@ -196,23 +196,71 @@ public sealed class ImagePicker
         }
     }
 
-    /// <summary>Disk storage takes its geometry from the file(s) picked, not the form fields — the
-    /// browse modal probes them and drops the result into <see cref="_createDiskSource"/>.</summary>
+    /// <summary>Disk storage takes its geometry from the file(s) the OS picker chose, not the form
+    /// fields. <see cref="DiskImageProbe"/> reads the pick on a background task and the result lands in
+    /// <see cref="_createDiskSource"/>.</summary>
     private void DrawDiskSourceRow()
     {
-        if (ImGui.Button("Browse disk source..."))
+        ImGui.SetNextItemWidth(220.0f);
+        if (ImGui.InputTextWithHint("Tile pattern", PaintImage.DefaultDiskTilePattern, ref _createDiskPattern, 64)
+            && _createDiskFolder is { } folder)
         {
-            _diskContext = new DiskImageSourceSelectionContext(_system.Context.Assets, result => _createDiskSource = result);
-            _diskModal.Show();
+            _createDiskSource = null;
+            _createDiskProbe = DiskImageProbe.ProbeFolderAsync(folder, _createDiskPattern);
+        }
+
+        if (ImGui.Button("Choose image file..."))
+        {
+            NativeFileDialog.PickFile("Choose image file", ["*.png,*.exr ; Images (PNG, EXR)"], _diskStartDirectory, path =>
+            {
+                if (path == null)
+                {
+                    return;
+                }
+
+                _diskStartDirectory = System.IO.Path.GetDirectoryName(path) ?? "";
+                _createDiskFolder = null;
+                _createDiskSource = null;
+                _createDiskProbe = DiskImageProbe.ProbeFileAsync(path);
+            });
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Choose tile folder..."))
+        {
+            NativeFileDialog.PickDirectory("Choose tile folder", _diskStartDirectory, path =>
+            {
+                if (path == null)
+                {
+                    return;
+                }
+
+                _diskStartDirectory = path;
+                _createDiskFolder = path;
+                _createDiskSource = null;
+                _createDiskProbe = DiskImageProbe.ProbeFolderAsync(path, _createDiskPattern);
+            });
+        }
+
+        if (_createDiskProbe is { IsCompleted: true } done)
+        {
+            _createDiskSource = done.IsCompletedSuccessfully ? done.Result : null;
+            _createDiskProbe = null;
+        }
+
+        if (_createDiskProbe != null)
+        {
+            ImGui.TextDisabled("Reading picked source...");
+            return;
         }
 
         if (_createDiskSource is not { } source)
         {
-            ImGui.TextDisabled("No file or tile folder selected.");
+            ImGui.TextDisabled("No source chosen yet, or the last pick could not be read.");
             return;
         }
 
-        ImGui.TextDisabled(source.IsTiled ? $"Tiles: {source.Path}/  ({source.TilePattern})" : $"File: {source.Path}");
+        ImGui.TextDisabled(source.IsTiled ? $"Tiles: {source.Path}  ({source.TilePattern})" : $"File: {source.Path}");
         ImGui.TextDisabled(
             $"{source.Width} x {source.Height} px · chunk {source.ChunkSize} · {ComponentsLabel(source.Components)}" +
             (source.Format == PaintImagePixelFormat.Float32 ? " · f32" : ""));
@@ -285,7 +333,12 @@ public sealed class ImagePicker
 
         if (_createStorageKind == PaintImageStorageKind.Disk)
         {
-            return _createDiskSource == null ? "Pick a disk file or tile folder." : null;
+            if (_createDiskProbe != null)
+            {
+                return "Reading the picked source...";
+            }
+
+            return _createDiskSource == null ? "Choose a valid image file or tile folder." : null;
         }
 
         if (_createChunkSize <= 0)
@@ -317,7 +370,7 @@ public sealed class ImagePicker
         if (_createStorageKind == PaintImageStorageKind.Disk && _createDiskSource is { } disk)
         {
             image.ConfigureNew(disk.Width, disk.Height, disk.ChunkSize, disk.Components, disk.Format);
-            image.ConfigureDiskSource(disk.SourceId, disk.Path, disk.IsTiled ? disk.TilePattern : "");
+            image.ConfigureDiskSource(disk.Path, disk.IsTiled ? disk.TilePattern : "");
         }
         else
         {

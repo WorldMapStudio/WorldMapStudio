@@ -25,11 +25,8 @@ public sealed class PaintImageRecord : IKeyedRecord
     /// for every image predating disk storage.</summary>
     public int StorageKind { get; set; }
 
-    /// <summary>Asset source id a disk-backed image's files resolve against; null for a database image.</summary>
-    public string? DiskSourceId { get; set; }
-
-    /// <summary>A disk-backed image's file (single chunk) or tile directory (multi-chunk), within its
-    /// source; null for a database image.</summary>
+    /// <summary>A disk-backed image's absolute path — the image file (single chunk) or the tile
+    /// directory (multi-chunk); null for a database image.</summary>
     public string? DiskPath { get; set; }
 
     /// <summary>Tile file name pattern for a multi-chunk disk-backed image; null otherwise.</summary>

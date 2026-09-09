@@ -334,7 +334,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             return result;
         }
 
-        var diskStore = new ImageDiskStore(Assets);
+        var diskStore = new ImageDiskStore();
         foreach ((PaintImage image, IReadOnlyCollection<ImageChunkCoord> coords) in wanted)
         {
             if (coords.Count == 0 || !image.IsDiskBacked)

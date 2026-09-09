@@ -77,7 +77,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
                 .ToListAsync().ConfigureAwait(false))
             .ToLookup(row => row.ImageId, row => new ImageChunkCoord(row.ChunkX, row.ChunkY));
 
-        var diskStore = new ImageDiskStore(_storage.Assets);
+        var diskStore = new ImageDiskStore();
         var entities = new List<PaintImage>();
         var eagerImageIds = new List<int>();
         foreach (PaintImageRecord header in headers)
@@ -86,7 +86,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             entity.ConfigureNew(header.Width, header.Height, header.ChunkSize, header.Components, (PaintImagePixelFormat)header.PixelFormat);
             if ((PaintImageStorageKind)header.StorageKind == PaintImageStorageKind.Disk)
             {
-                entity.ConfigureDiskSource(header.DiskSourceId ?? "", header.DiskPath ?? "", header.DiskTilePattern ?? "");
+                entity.ConfigureDiskSource(header.DiskPath ?? "", header.DiskTilePattern ?? "");
             }
 
             // A disk-backed image's manifest is the set of tile files that exist on disk, not a row
@@ -148,7 +148,6 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             Components = image.Components,
             PixelFormat = (int)image.Format,
             StorageKind = (int)image.StorageKind,
-            DiskSourceId = image.IsDiskBacked ? image.DiskSourceId : null,
             DiskPath = image.IsDiskBacked ? image.DiskPath : null,
             DiskTilePattern = image.IsDiskBacked ? image.DiskTilePattern : null,
         };
@@ -241,7 +240,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             }
         }
 
-        var diskStore = new ImageDiskStore(_storage.Assets);
+        var diskStore = new ImageDiskStore();
         return () =>
         {
             image.IsSaved = true;

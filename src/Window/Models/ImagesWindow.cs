@@ -50,7 +50,7 @@ public sealed class ImagesWindow : Window
                 ImGui.TextDisabled($"Id #{image.RecordId} · {image.Width}x{image.Height} · {ComponentsLabel(image.Components)}{formatSuffix}");
                 if (image.IsDiskBacked)
                 {
-                    ImGui.TextDisabled($"Disk: {image.DiskSourceId}:{image.DiskPath}{(image.IsTiledDisk ? $"/  ({image.DiskTilePattern})" : "")}");
+                    ImGui.TextDisabled($"Disk: {image.DiskPath}{(image.IsTiledDisk ? $"  ({image.DiskTilePattern})" : "")}");
                 }
 
                 DrawName(image, image.Name, value => image.Name = value);
