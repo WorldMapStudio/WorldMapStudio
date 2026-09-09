@@ -41,6 +41,7 @@ public sealed class ChannelMaskAlpha : ILandscapeAlphaFunction
         float softness = context.Float(Softness);
         bool invert = context.Bool(Invert);
         int resolution = context.Resolution;
+        LandscapeChannelBinding binding = context.ChannelBinding(Mask);
 
         // A zero-width fade would divide by zero; treat it as the hard edge the user asked for.
         float low = threshold - (softness * 0.5f);
@@ -50,7 +51,7 @@ public sealed class ChannelMaskAlpha : ILandscapeAlphaFunction
         {
             for (int x = 0; x < resolution; x++)
             {
-                float mask = context.SampleChannel(Mask, context.WorldAt(x, y, vertices: false));
+                float mask = context.SampleChannel(binding, context.WorldAt(x, y, vertices: false));
                 float coverage = softness <= 0.0f
                     ? (mask >= threshold ? 1.0f : 0.0f)
                     : Mathf.Clamp((mask - low) / (high - low), 0.0f, 1.0f);

@@ -37,12 +37,13 @@ public sealed class ChannelMaskHole : ILandscapeHoleFunction
         float threshold = context.Float(Threshold);
         bool invert = context.Bool(Invert);
         int resolution = context.Resolution;
+        LandscapeChannelBinding binding = context.ChannelBinding(Mask);
 
         for (int y = 0; y < resolution; y++)
         {
             for (int x = 0; x < resolution; x++)
             {
-                float mask = context.SampleChannel(Mask, context.WorldAt(x, y, vertices: false));
+                float mask = context.SampleChannel(binding, context.WorldAt(x, y, vertices: false));
                 bool isHole = invert ? mask < threshold : mask >= threshold;
 
                 // Write-only-true contract: never clear a cell another surviving claim already set.

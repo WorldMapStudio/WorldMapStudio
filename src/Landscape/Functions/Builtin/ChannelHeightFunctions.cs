@@ -31,13 +31,14 @@ public sealed class ChannelHeightOffset : ILandscapeHeightFunction
     {
         float amount = context.Float(Amount);
         int resolution = context.Resolution;
+        LandscapeChannelBinding mask = context.ChannelBinding(Mask);
 
         for (int y = 0; y < resolution; y++)
         {
             for (int x = 0; x < resolution; x++)
             {
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                heights[(y * resolution) + x] += context.SampleChannel(Mask, world) * amount;
+                heights[(y * resolution) + x] += context.SampleChannel(mask, world) * amount;
             }
         }
     }
@@ -76,6 +77,7 @@ public sealed class ChannelHeightFlatten : ILandscapeHeightFunction
         float target = context.Float(Target);
         float strength = Mathf.Clamp(context.Float(Strength), 0.0f, 1.0f);
         int resolution = context.Resolution;
+        LandscapeChannelBinding binding = context.ChannelBinding(Mask);
 
         for (int y = 0; y < resolution; y++)
         {
@@ -83,7 +85,7 @@ public sealed class ChannelHeightFlatten : ILandscapeHeightFunction
             {
                 int index = (y * resolution) + x;
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                float mask = context.SampleChannel(Mask, world);
+                float mask = context.SampleChannel(binding, world);
 
                 // Reads what earlier layers built and pulls it toward the target. Running this after
                 // a raise gives a flat bed cut into the hill; running it before would let the hill
