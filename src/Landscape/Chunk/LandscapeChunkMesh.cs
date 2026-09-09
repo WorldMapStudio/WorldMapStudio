@@ -58,7 +58,9 @@ public static class LandscapeChunkMesh
 
         int[] indices = BuildIndices(resolution, output.Holes, output.HoleResolution);
 
-        var arrays = new Godot.Collections.Array();
+        // Disposed as soon as AddSurfaceFromArrays has copied it: one of these per dirtied chunk per
+        // wave was landing on the finalizer thread.
+        using var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
         arrays[(int)Mesh.ArrayType.Normal] = normals;

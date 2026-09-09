@@ -67,26 +67,56 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
     /// refreshes the representation if one exists.</summary>
     public void Rebuild(LandscapeChunkOutput output, ArrayMesh mesh, ShaderMaterial material)
     {
+        ArrayMesh previousMesh = Mesh;
+        ShaderMaterial previousMaterial = Material;
+
         Output = output;
         Mesh = mesh;
         Material = material;
-        if (Node is not { } node)
+
+        if (Node is { } node)
         {
-            return;
+            if (node.GetChildOrNull<MeshInstance3D>(0) is { } surface)
+            {
+                // Swapping the existing surface's mesh and material is a couple of RID writes; tearing
+                // the node down and rebuilding it churned a MeshInstance3D on every dirtied chunk of
+                // every rebuild wave, which is what the finalizer thread was spending its time on.
+                surface.Mesh = mesh;
+                surface.MaterialOverride = material;
+            }
+            else
+            {
+                ClearPickNodes();
+                MeshInstance3D built = BuildSurface();
+                node.AddChild(built);
+                RegisterPickNode(built);
+            }
         }
 
-        // Detached before the replacement goes in: QueueFree only takes effect at the end of the
-        // frame, so leaving the old surface attached would z-fight with the new one for a frame.
-        foreach (Node child in node.GetChildren())
+        // Nothing references the old pair any more; free their RIDs now instead of leaving a whole
+        // wave's worth of them to finalization.
+        if (!ReferenceEquals(previousMesh, mesh))
         {
-            node.RemoveChild(child);
-            child.QueueFree();
+            previousMesh.Dispose();
         }
 
-        ClearPickNodes();
-        MeshInstance3D surface = BuildSurface();
-        node.AddChild(surface);
-        RegisterPickNode(surface);
+        if (!ReferenceEquals(previousMaterial, material))
+        {
+            DisposeChunkMaterial(previousMaterial);
+        }
+    }
+
+    // Frees a replaced chunk material along with its per-chunk alpha array. The albedo and height
+    // arrays are shared through LandscapeChunkMesh's caches and must outlive any one chunk, so they
+    // are deliberately left alone.
+    private static void DisposeChunkMaterial(ShaderMaterial material)
+    {
+        if (material.GetShaderParameter("slot_alpha").As<Texture2DArray>() is { } alpha)
+        {
+            alpha.Dispose();
+        }
+
+        material.Dispose();
     }
 
     /// <summary>Toggles the chunk border overlay on this chunk's existing material.</summary>
