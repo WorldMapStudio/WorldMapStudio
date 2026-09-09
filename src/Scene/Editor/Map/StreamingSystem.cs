@@ -34,8 +34,6 @@ public sealed class StreamingSystem : IWorldParticipant
     // Used when no landscape is loaded to give the chunk count a size regardless.
     private const float DefaultChunkWorldSize = 64.0f;
 
-    private const float RescanDistance = 32.0f; // focus travel before a re-scan
-
     // Height is not distance. Terrain is addressed on the ground plane and a map is authored from
     // above, so climbing must not unload the world underneath you — which a cubic box would do.
     private const float VerticalRange = 4096.0f;
@@ -58,6 +56,16 @@ public sealed class StreamingSystem : IWorldParticipant
     {
         _context = context;
     }
+
+    // The open map's chunk world size, or a default when no landscape is loaded.
+    private float ChunkWorldSize() =>
+        _context.Landscape.Settings?.ChunkWorldSize is > 0.0f and float size ? size : DefaultChunkWorldSize;
+
+    // Focus travel before a re-scan. A rescan costs work in proportion to how much is loaded, so the
+    // distance that triggers one scales with the view: at a large view distance, a chunk of travel is
+    // a much smaller fraction of what is already loaded than it is at a small one.
+    private float RescanDistance =>
+        Mathf.Max(ChunkWorldSize(), _context.View.ViewDistanceChunks * ChunkWorldSize() * 0.25f);
 
     /// <summary>What streaming does with one loaded entity when it re-judges the registry.</summary>
     public enum EntityFate
@@ -189,10 +197,7 @@ public sealed class StreamingSystem : IWorldParticipant
         // Recorded here, on the main thread, and read back when the scan lands: the view a scan was
         // taken over is what every later fate is judged against, so it must not be written from the
         // scan's own thread. Only one scan is ever in flight, so it cannot change underneath one.
-        float chunkWorldSize = _context.Landscape.Settings?.ChunkWorldSize is > 0.0f and float size
-            ? size
-            : DefaultChunkWorldSize;
-        float range = _context.View.ViewDistanceChunks * chunkWorldSize;
+        float range = _context.View.ViewDistanceChunks * ChunkWorldSize();
         var extent = new Vector3(range, VerticalRange, range);
         _scanView = new Aabb(focus - extent, extent * 2.0f);
         _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()));
