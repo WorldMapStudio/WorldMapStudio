@@ -12,6 +12,16 @@ namespace WorldMapStudio;
 public class SceneEntity : Entity
 {
     private Transform3D _transform = Transform3D.Identity;
+
+    // WorldBounds is Transform * LocalBounds, an eight-corner transform over a component scan, and the
+    // terrain raycast reads it for every loaded chunk twice a frame. It only moves when the transform
+    // or the component set does; every content change that alters LocalBounds routes through
+    // RefreshRepresentation, which re-applies the transform. So a counter bumped in SetTransform and
+    // on a component being loaded covers every case, and the box is computed once per change.
+    private Aabb _worldBounds;
+    private int _worldBoundsVersion = -1;
+    private int _boundsVersion;
+
     private readonly List<SceneComponent> _components = [];
     private readonly List<SceneEntity> _children = [];
     private readonly List<Node3D> _meshPickNodes = [];
@@ -125,7 +135,19 @@ public class SceneEntity : Entity
     /// entity is in range when its bounds overlap a region, not when its origin happens to fall inside
     /// one. Factories persist it so that test can run in the database.
     /// </summary>
-    public Aabb WorldBounds => Transform * LocalBounds;
+    public Aabb WorldBounds
+    {
+        get
+        {
+            if (_worldBoundsVersion != _boundsVersion)
+            {
+                _worldBounds = _transform * LocalBounds;
+                _worldBoundsVersion = _boundsVersion;
+            }
+
+            return _worldBounds;
+        }
+    }
 
     public bool IsRepresented => Node != null;
 
@@ -213,6 +235,7 @@ public class SceneEntity : Entity
     // it, with no undo entry recorded for those child moves.
     private void SetTransform(Transform3D value, bool cascadeToChildren)
     {
+        _boundsVersion++;
         Transform3D before = _transform;
         _transform = SanitizeTransform(value);
         if (Node != null)
@@ -311,6 +334,7 @@ public class SceneEntity : Entity
     {
         component.Owner = this;
         _components.Add(component);
+        _boundsVersion++;
     }
 
     public void RefreshRepresentation()
