@@ -117,7 +117,7 @@ public sealed class OutlineWindow : Window
         }
 
         _rows.Add((entity, depth));
-        if (!HasVisibleChildren(entity) || !IsOpen(entity))
+        if (!HasVisibleChildren(entity) || !IsExpanded(entity))
         {
             return;
         }
@@ -169,10 +169,23 @@ public sealed class OutlineWindow : Window
         }
     }
 
-    private bool HasVisibleChildren(SceneEntity entity) => entity.Children.Any(_visible.Contains);
+    // A plain loop rather than Any(_visible.Contains): this runs for every listed entity on every
+    // frame, and the method group would allocate a delegate and an enumerator on each one.
+    private bool HasVisibleChildren(SceneEntity entity)
+    {
+        foreach (SceneEntity child in entity.Children)
+        {
+            if (_visible.Contains(child))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     // A node with children defaults to open, matching the DefaultOpen flag DrawEntity gives it.
-    private bool IsOpen(SceneEntity entity) =>
+    private bool IsExpanded(SceneEntity entity) =>
         ImGui.GetStateStorage().GetInt(ImGui.GetID(Label(entity)), 1) != 0;
 
     private static string Label(SceneEntity entity) => $"{entity.DisplayName}##{entity.Id.Value}";
