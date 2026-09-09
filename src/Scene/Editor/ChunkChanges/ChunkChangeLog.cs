@@ -158,6 +158,39 @@ public sealed class ChunkChangeLog
         BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
     }
 
+    /// <summary>
+    /// Records that a bulk producer has put terrain on <paramref name="chunks"/> of
+    /// <paramref name="map"/>, stamping each with now. The counterpart to <see cref="RecordCommit"/>
+    /// for output produced outside the edit-session path, which raises none of the snapshots
+    /// <see cref="RecordCommit"/> reconciles from. A row's existence is still the claim that something
+    /// is there — see the class remarks — so a consumer's reconcile pass keeps this terrain rather
+    /// than seeing it as absent and dropping it.
+    ///
+    /// Only adds or restamps rows. Removing a bulk producer's output is <see cref="MarkChunksVacatedAsync"/>.
+    /// </summary>
+    public Task MarkChunksBuiltAsync(MapId map, IReadOnlyCollection<ChunkCoord> chunks)
+    {
+        if (EditorStorage() is not { } storage || chunks.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return storage.UpsertChunkChangesAsync(chunks.Select(coord => (map.Value, coord.X, coord.Y)).ToList());
+    }
+
+    /// <summary>Records that a bulk producer's terrain on <paramref name="chunks"/> is gone — drops
+    /// each row, the same way emptying a chunk does through <see cref="RecordCommit"/>. For undoing a
+    /// bulk run and for the chunks a re-run no longer produces.</summary>
+    public Task MarkChunksVacatedAsync(MapId map, IReadOnlyCollection<ChunkCoord> chunks)
+    {
+        if (EditorStorage() is not { } storage || chunks.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        return storage.RemoveChunkChangesAsync(chunks.Select(coord => (map.Value, coord.X, coord.Y)).ToList());
+    }
+
     /// <summary>Every chunk edited strictly after <paramref name="since"/>, optionally on one map.
     /// The one query the whole caching model is built on.</summary>
     public async Task<IReadOnlyList<ChunkChange>> ChangedSinceAsync(DateTime since, MapId? map = null)
