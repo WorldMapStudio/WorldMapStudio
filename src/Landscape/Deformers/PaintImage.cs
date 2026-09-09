@@ -439,6 +439,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     // bookkeeping — this is purely in-memory, scoped to one stroke, and reset on every BeginStroke.
     private Dictionary<ImageChunkCoord, byte[]?>? _strokeBefore;
 
+    // Coordinates a stamp actually altered during the current stroke. EndStroke skips the whole-chunk
+    // copy and byte compare for any chunk the brush merely reached into without changing.
+    private HashSet<ImageChunkCoord>? _strokeChanged;
+
     // Reused dx² scratch for PaintChunkFloat, one slot per chunk column. Painting is single-threaded
     // (the paint tool, main thread), so one buffer on the image is enough and costs no per-stamp
     // allocation.
@@ -448,7 +452,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// paint stroke begins (e.g. on mouse-down) — not once per <see cref="Paint"/> call, since a single
     /// stroke calls <see cref="Paint"/> many times as the pointer moves and undo needs the state from
     /// before the <em>whole</em> stroke, not before each dab.</summary>
-    public void BeginStroke() => _strokeBefore = [];
+    public void BeginStroke()
+    {
+        _strokeBefore = [];
+        _strokeChanged = [];
+    }
 
     /// <summary>Stops recording and returns every chunk that actually changed since
     /// <see cref="BeginStroke"/>: its coordinate, its content immediately before the stroke (null if it
@@ -463,10 +471,19 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         }
 
         _strokeBefore = null;
+        HashSet<ImageChunkCoord>? changed = _strokeChanged;
+        _strokeChanged = null;
 
         var result = new List<(ImageChunkCoord, byte[]?, byte[]?)>();
         foreach ((ImageChunkCoord coord, byte[]? beforePixels) in before)
         {
+            // A chunk the brush reached into but never actually altered needs no copy or compare —
+            // the byte comparison would only confirm it is unchanged.
+            if (changed is not null && !changed.Contains(coord))
+            {
+                continue;
+            }
+
             byte[]? afterPixels = CopyChunkBytes(coord);
             if (!BytesEqual(beforePixels, afterPixels))
             {
@@ -1283,6 +1300,8 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     // "an absent chunk is all-zero" true immediately rather than eventually at the next commit.
     private void CommitPaintedChunk(ImageChunkCoord coord, byte[] pixels, bool resident, ImageChunk? existing, bool mayZero)
     {
+        _strokeChanged?.Add(coord);
+
         if (resident)
         {
             // A stamp that only ever raised values cannot have brought a resident (already non-zero)
