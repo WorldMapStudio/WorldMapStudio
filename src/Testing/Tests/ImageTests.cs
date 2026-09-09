@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Godot;
 
 namespace WorldMapStudio;
@@ -925,6 +926,48 @@ public static class ImageTests
         Node3D? root = target.BuildNode();
         Assert.IsNotNull(root);
         Assert.AreEqual(2, root!.GetChildCount(), "one decal per painted chunk, not one for the whole canvas");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Float32_chunk_pixels_widen_to_saturated_grayscale()
+    {
+        // 20px of canvas in a 32px tile, so one row covers two whole eight-wide widening steps, a
+        // four-pixel tail, and a stride the covered width does not match — the three things the
+        // widening can get wrong independently of the value maths.
+        var image = new PaintImage();
+        image.ConfigureNew(20, 20, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
+
+        float[] samples = [-1.0f, 0.0f, 0.002f, 0.25f, 0.5f, 0.8f, 1.0f, 4.0f, float.NaN];
+        byte[] expected = [0, 0, 1, 64, 128, 204, 255, 255, 0];
+
+        var pixels = new byte[32 * 32 * 4];
+        Span<float> values = MemoryMarshal.Cast<byte, float>(pixels);
+        for (int y = 0; y < 20; y++)
+        {
+            for (int x = 0; x < 20; x++)
+            {
+                values[(y * 32) + x] = samples[(x + y) % samples.Length];
+            }
+        }
+
+        image.LoadChunks([(new ImageChunkCoord(0, 0), pixels)]);
+
+        byte[] rgba = PaintImageTextures.WriteChunkRgba(image, new ImageChunkCoord(0, 0), null, out int width, out int height);
+        Assert.AreEqual(20, width);
+        Assert.AreEqual(20, height);
+
+        for (int y = 0; y < height; y++)
+        {
+            for (int x = 0; x < width; x++)
+            {
+                byte want = expected[(x + y) % samples.Length];
+                int o = ((y * width) + x) * 4;
+                Assert.AreEqual(want, rgba[o], $"red at {x},{y}");
+                Assert.AreEqual(want, rgba[o + 1], $"green at {x},{y}");
+                Assert.AreEqual(want, rgba[o + 2], $"blue at {x},{y}");
+                Assert.AreEqual(want, rgba[o + 3], $"alpha at {x},{y}");
+            }
+        }
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
