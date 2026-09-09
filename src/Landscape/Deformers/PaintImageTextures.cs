@@ -1,4 +1,8 @@
 using System;
+using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using Godot;
 
 namespace WorldMapStudio;
@@ -29,29 +33,110 @@ public static class PaintImageTextures
     /// applies to a sample.</summary>
     public static Image ChunkImage(PaintImage image, ImageChunkCoord coord)
     {
-        (int width, int height, int stride, byte[] source) = ChunkSource(image, coord);
+        byte[] rgba = WriteChunkRgba(image, coord, null, out int width, out int height);
+        return Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
+    }
+
+    /// <summary>
+    /// <see cref="ChunkImage"/> into a caller-owned buffer: fills <paramref name="destination"/> with
+    /// the widened pixels, reusing it when it is already the right length and allocating otherwise,
+    /// and returns whichever buffer now holds them.
+    ///
+    /// This form exists because a stroke re-uploads every chunk the brush reached on every frame it
+    /// drags. A brush wide enough to span several chunks otherwise allocates a full-tile array and a
+    /// fresh Godot <see cref="Image"/> per chunk per frame, which costs more than the stamp that
+    /// dirtied them — see <see cref="ImageComponent.SyncChunkNodes"/> for the reuse this enables.
+    /// </summary>
+    public static byte[] WriteChunkRgba(PaintImage image, ImageChunkCoord coord, byte[]? destination, out int width, out int height)
+    {
+        (width, height, int stride, byte[] source) = ChunkSource(image, coord);
+        byte[] rgba = Fit(destination, width * height * 4);
         int components = image.Components;
-        PaintImagePixelFormat format = image.Format;
-        byte[] rgba = new byte[width * height * 4];
+
+        // One uint per pixel rather than four bytes: every widening below settles all four channels of
+        // a pixel at once, and the scalar cases settle them to four equal ones.
+        Span<uint> packed = MemoryMarshal.Cast<byte, uint>(rgba.AsSpan(0, width * height * 4));
+
+        // Float32 is scalar-only (see PaintImage.ConfigureNew), so it is always the grayscale case.
+        if (image.Format == PaintImagePixelFormat.Float32)
+        {
+            ReadOnlySpan<float> values = MemoryMarshal.Cast<byte, float>(source);
+            for (int y = 0; y < height; y++)
+            {
+                ExpandGrayRow(values.Slice(y * stride, width), packed.Slice(y * width, width));
+            }
+
+            return rgba;
+        }
 
         for (int y = 0; y < height; y++)
         {
-            int sourceRow = y * stride * components;
-            int targetRow = y * width * 4;
-            for (int x = 0; x < width; x++)
+            ReadOnlySpan<byte> sourceRow = source.AsSpan(y * stride * components, width * components);
+            Span<uint> targetRow = packed.Slice(y * width, width);
+            switch (components)
             {
-                int s = sourceRow + (x * components);
-                int o = targetRow + (x * 4);
-                byte r = ReadByte(source, s, format);
-                rgba[o] = r;
-                rgba[o + 1] = components == 1 ? r : ReadByte(source, s + 1, format);
-                rgba[o + 2] = components == 1 ? r : ReadByte(source, s + 2, format);
-                rgba[o + 3] = components == 4 ? ReadByte(source, s + 3, format) : components == 1 ? r : (byte)255;
+                case 1:
+                    for (int x = 0; x < width; x++)
+                    {
+                        targetRow[x] = sourceRow[x] * 0x01010101u;
+                    }
+
+                    break;
+                case 4:
+                    sourceRow.CopyTo(MemoryMarshal.AsBytes(targetRow));
+                    break;
+                default:
+                    for (int x = 0; x < width; x++)
+                    {
+                        int s = x * components;
+                        targetRow[x] = sourceRow[s] | ((uint)sourceRow[s + 1] << 8) |
+                            ((uint)sourceRow[s + 2] << 16) | 0xFF000000u;
+                    }
+
+                    break;
             }
         }
 
-        return Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
+        return rgba;
     }
+
+    /// <summary>One row of scalar float pixels widened to opaque grayscale — four equal bytes per
+    /// pixel, packed as one uint. Values outside [0,1] saturate, the same squash <see cref="ReadByte"/>
+    /// applies. Eight-wide where AVX2 is available: this row is essentially the whole cost of
+    /// previewing a painted Float32 chunk, and a chunk is a full tile of them.</summary>
+    private static void ExpandGrayRow(ReadOnlySpan<float> source, Span<uint> destination)
+    {
+        ref float src = ref MemoryMarshal.GetReference(source);
+        ref uint dst = ref MemoryMarshal.GetReference(destination);
+        int n = destination.Length;
+        int i = 0;
+
+        if (Avx2.IsSupported)
+        {
+            Vector256<float> scale = Vector256.Create(255.0f);
+            Vector256<float> floor = Vector256<float>.Zero;
+            Vector256<float> ceiling = Vector256.Create(255.0f);
+            Vector256<int> broadcast = Vector256.Create(0x01010101);
+
+            for (; i <= n - Vector256<float>.Count; i += Vector256<float>.Count)
+            {
+                // vmaxps yields its second operand when either is NaN, so a NaN pixel saturates to 0
+                // here rather than reaching the convert as an out-of-range lane. The convert itself
+                // rounds half to even, matching the scalar tail.
+                Vector256<float> scaled = Avx.Multiply(Vector256.LoadUnsafe(ref src, (nuint)i), scale);
+                Vector256<int> level = Avx.ConvertToVector256Int32(Avx.Min(Avx.Max(scaled, floor), ceiling));
+                Avx2.MultiplyLow(level, broadcast).AsUInt32().StoreUnsafe(ref dst, (nuint)i);
+            }
+        }
+
+        for (; i < n; i++)
+        {
+            Unsafe.Add(ref dst, i) = ToByte(Unsafe.Add(ref src, i)) * 0x01010101u;
+        }
+    }
+
+    private static byte[] Fit(byte[]? buffer, int length) =>
+        buffer is { } existing && existing.Length == length ? existing : new byte[length];
 
     public static ImageTexture ChunkTexture(PaintImage image, ImageChunkCoord coord) =>
         ImageTexture.CreateFromImage(ChunkImage(image, coord));
@@ -63,39 +148,42 @@ public static class PaintImageTextures
     /// opaque to opaque (e.g. black to white), or anything between.</summary>
     public static Image ChunkTintedImage(PaintImage image, ImageChunkCoord coord, Color baseColor, Color fullColor)
     {
-        (int width, int height, int stride, byte[] source) = ChunkSource(image, coord);
-        byte[] rgba = new byte[width * height * 4];
+        byte[] rgba = WriteChunkTintedRgba(image, coord, baseColor, fullColor, null, out int width, out int height);
+        return Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
+    }
+
+    /// <summary><see cref="ChunkTintedImage"/> into a caller-owned buffer, for the same reason
+    /// <see cref="WriteChunkRgba"/> has one.</summary>
+    public static byte[] WriteChunkTintedRgba(PaintImage image, ImageChunkCoord coord, Color baseColor, Color fullColor, byte[]? destination, out int width, out int height)
+    {
+        (width, height, int stride, byte[] source) = ChunkSource(image, coord);
+        byte[] rgba = Fit(destination, width * height * 4);
 
         // One lerp per possible byte value instead of one per pixel, amortizing the cost across every
         // pixel sharing a value.
-        Span<(byte R, byte G, byte B, byte A)> ramp = stackalloc (byte, byte, byte, byte)[256];
+        Span<uint> ramp = stackalloc uint[256];
         for (int i = 0; i < ramp.Length; i++)
         {
             float t = i / 255.0f;
-            ramp[i] = (
-                ToByte(Mathf.Lerp(baseColor.R, fullColor.R, t)),
-                ToByte(Mathf.Lerp(baseColor.G, fullColor.G, t)),
-                ToByte(Mathf.Lerp(baseColor.B, fullColor.B, t)),
-                ToByte(Mathf.Lerp(baseColor.A, fullColor.A, t)));
+            ramp[i] = ToByte(Mathf.Lerp(baseColor.R, fullColor.R, t)) |
+                ((uint)ToByte(Mathf.Lerp(baseColor.G, fullColor.G, t)) << 8) |
+                ((uint)ToByte(Mathf.Lerp(baseColor.B, fullColor.B, t)) << 16) |
+                ((uint)ToByte(Mathf.Lerp(baseColor.A, fullColor.A, t)) << 24);
         }
 
+        Span<uint> packed = MemoryMarshal.Cast<byte, uint>(rgba.AsSpan(0, width * height * 4));
         PaintImagePixelFormat format = image.Format;
         for (int y = 0; y < height; y++)
         {
             int sourceRow = y * stride;
-            int targetRow = y * width * 4;
+            Span<uint> targetRow = packed.Slice(y * width, width);
             for (int x = 0; x < width; x++)
             {
-                (byte r, byte g, byte b, byte a) = ramp[ReadByte(source, sourceRow + x, format)];
-                int o = targetRow + (x * 4);
-                rgba[o] = r;
-                rgba[o + 1] = g;
-                rgba[o + 2] = b;
-                rgba[o + 3] = a;
+                targetRow[x] = ramp[ReadByte(source, sourceRow + x, format)];
             }
         }
 
-        return Image.CreateFromData(width, height, false, Image.Format.Rgba8, rgba);
+        return rgba;
     }
 
     public static ImageTexture ChunkTinted(PaintImage image, ImageChunkCoord coord, Color baseColor, Color fullColor) =>
@@ -175,5 +263,12 @@ public static class PaintImageTextures
             ? ToByte(PaintImagePixelIO.Read(source, elementIndex, format))
             : source[elementIndex];
 
-    private static byte ToByte(float channel) => (byte)Mathf.Clamp(Mathf.RoundToInt(channel * 255.0f), 0, 255);
+    // Written out rather than Mathf.Clamp(Mathf.RoundToInt(...)): both of those are uninlined
+    // cross-assembly calls and this runs for every texel of every chunk a stroke touches, every frame.
+    // MathF.Round keeps the round-half-to-even the Godot pair had; NaN saturates to 0.
+    private static byte ToByte(float channel)
+    {
+        float scaled = channel * 255.0f;
+        return scaled >= 255.0f ? (byte)255 : scaled > 0.0f ? (byte)MathF.Round(scaled) : (byte)0;
+    }
 }
