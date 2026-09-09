@@ -112,12 +112,26 @@ public sealed class LandscapeBuilder
             }
         });
 
-        // Stage 4–5: only now does anything read, and every channel it can reach is final.
-        var chunks = new Dictionary<ChunkCoord, LandscapeChunkOutput>();
-        foreach (ChunkCoord coord in interior)
+        // Stage 4–5: only now does anything read, and every channel it can reach is final. Per chunk
+        // and independent — Evaluate only reads the pool — so run them at once, like stage 3. Problems
+        // Evaluate raises go into a per-chunk list merged afterwards: the shared list is not safe to
+        // append to from several threads, and stages 1–2 have already put their entries in it.
+        var chunks = new System.Collections.Concurrent.ConcurrentDictionary<ChunkCoord, LandscapeChunkOutput>();
+        var evaluated = new System.Collections.Concurrent.ConcurrentBag<(ChunkCoord, LandscapeProblem)>();
+        System.Threading.Tasks.Parallel.ForEach(interior, coord =>
         {
-            chunks[coord] = Evaluate(coord, resolutions[coord], problems);
-        }
+            var chunkProblems = new List<(ChunkCoord, LandscapeProblem)>();
+            chunks[coord] = Evaluate(coord, resolutions[coord], chunkProblems);
+            foreach ((ChunkCoord, LandscapeProblem) problem in chunkProblems)
+            {
+                evaluated.Add(problem);
+            }
+        });
+
+        problems.AddRange(evaluated);
+
+        // Stable order so a rebuild reports the same neighbourhood the same way.
+        problems.Sort((a, b) => a.Item1.Y != b.Item1.Y ? a.Item1.Y.CompareTo(b.Item1.Y) : a.Item1.X.CompareTo(b.Item1.X));
 
         return new LandscapeBuildResult { Chunks = chunks, Problems = problems };
     }
