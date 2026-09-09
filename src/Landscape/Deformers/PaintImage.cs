@@ -374,15 +374,17 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
     internal long ResidentByteSize => _chunks.Count * ChunkByteSize;
 
-    /// <summary>Merges freshly loaded chunk bytes into residency as clean (matches storage). A
-    /// coordinate that is already resident is left alone — it raced against a paint or an eviction
-    /// since the load was requested, and whatever is live now is more current than what this load saw.
-    /// Likewise skipped if the coordinate has since been explicitly emptied out and not yet committed
-    /// (<see cref="RemovedSincePersist"/>): the load was requesting what storage held before that
-    /// erase, and applying it now would silently resurrect content the user just removed.</summary>
-    internal void PublishLoadedChunks(IEnumerable<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
+    /// <summary>Merges freshly loaded chunk bytes into residency as clean (matches storage), returning
+    /// the coordinates it actually applied — what a caller needs to mark the terrain sampling them
+    /// stale. A coordinate that is already resident is left alone (and left out of the result) — it
+    /// raced against a paint or an eviction since the load was requested, and whatever is live now is
+    /// more current than what this load saw. Likewise skipped if the coordinate has since been
+    /// explicitly emptied out and not yet committed (<see cref="RemovedSincePersist"/>): the load was
+    /// requesting what storage held before that erase, and applying it now would silently resurrect
+    /// content the user just removed.</summary>
+    internal IReadOnlyList<ImageChunkCoord> PublishLoadedChunks(IEnumerable<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
     {
-        bool any = false;
+        List<ImageChunkCoord>? applied = null;
         foreach ((ImageChunkCoord coord, byte[] pixels) in chunks)
         {
             if (_chunks.ContainsKey(coord) || _removedSincePersist.Contains(coord))
@@ -391,13 +393,16 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             }
 
             _chunks[coord] = new ImageChunk(pixels);
-            any = true;
+            (applied ??= []).Add(coord);
         }
 
-        if (any)
+        if (applied is null)
         {
-            BumpView();
+            return [];
         }
+
+        BumpView();
+        return applied;
     }
 
     /// <summary>Drops a clean resident chunk from memory — the pixels stay safe in storage, only the

@@ -319,6 +319,30 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Publishing_loaded_chunks_reports_only_the_coords_it_actually_applied()
+    {
+        // ImageResidencySystem marks the terrain under exactly these coords stale, so a coord that was
+        // not applied (already resident, or erased since the load was requested) must not be reported —
+        // rebuilding terrain that never sampled it is wasted work.
+        var image = new PaintImage();
+        image.ConfigureNew(64, 64, chunkSize: 16);
+        image.LoadManifest([new ImageChunkCoord(0, 0), new ImageChunkCoord(1, 0), new ImageChunkCoord(2, 0)]);
+
+        image.PublishLoadedChunks([(new ImageChunkCoord(0, 0), new byte[16 * 16])]); // now resident
+
+        IReadOnlyList<ImageChunkCoord> applied = image.PublishLoadedChunks(
+        [
+            (new ImageChunkCoord(0, 0), new byte[16 * 16]), // already resident — skipped
+            (new ImageChunkCoord(1, 0), new byte[16 * 16]), // newly applied
+        ]);
+
+        Assert.AreEqual(1, applied.Count);
+        Assert.AreEqual(new ImageChunkCoord(1, 0), applied[0]);
+
+        Assert.AreEqual(0, image.PublishLoadedChunks([]).Count, "nothing applied, so nothing to report");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Evicting_a_dirty_chunk_is_refused()
     {
         var image = new PaintImage();

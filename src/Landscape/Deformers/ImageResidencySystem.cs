@@ -151,7 +151,7 @@ public sealed class ImageResidencySystem
             }
         }
 
-        bool evictedAny = false;
+        var evicted = new Dictionary<PaintImage, HashSet<ImageChunkCoord>>();
 
         // Unconditional: nothing keeps a chunk resident just because there happens to be budget to
         // spare. EvictChunk itself refuses a dirty one, so unsaved work is never at risk here.
@@ -160,9 +160,9 @@ public sealed class ImageResidencySystem
             HashSet<ImageChunkCoord> wanted = targets.TryGetValue(image, out HashSet<ImageChunkCoord>? set) ? set : [];
             foreach (ImageChunkCoord coord in image.ChunkCoords.ToList())
             {
-                if (!wanted.Contains(coord))
+                if (!wanted.Contains(coord) && image.EvictChunk(coord))
                 {
-                    evictedAny |= image.EvictChunk(coord);
+                    Track(evicted, image, coord);
                 }
             }
         }
@@ -200,21 +200,61 @@ public sealed class ImageResidencySystem
                     break;
                 }
 
-                evictedAny |= image.EvictChunk(coord);
+                if (image.EvictChunk(coord))
+                {
+                    Track(evicted, image, coord);
+                }
+
                 total -= bytes;
             }
         }
 
-        if (evictedAny)
+        if (evicted.Count > 0)
         {
             // A landscape chunk built while an evicted coordinate was resident has that contribution
-            // baked into its mesh/texture — without this, it keeps showing paint from an image chunk
-            // that is no longer even in memory, since nothing else notices residency shrinking (only
-            // growing it, via ApplyCompletedLoad, already invalidates).
+            // baked into its mesh/texture. Invalidate covers chunks streaming's next scan rebuilds
+            // from scratch; MarkTerrainDirty covers the ones already loaded, which that scan skips —
+            // without it they keep showing paint from an image chunk no longer even in memory.
             _context.Streaming.Invalidate();
+            MarkTerrainDirty(evicted);
         }
 
         PruneRecency();
+    }
+
+    private static void Track(Dictionary<PaintImage, HashSet<ImageChunkCoord>> map, PaintImage image, ImageChunkCoord coord)
+    {
+        if (!map.TryGetValue(image, out HashSet<ImageChunkCoord>? set))
+        {
+            set = [];
+            map[image] = set;
+        }
+
+        set.Add(coord);
+    }
+
+    /// <summary>Marks the terrain under every loaded placement of these images stale over the given
+    /// chunk coordinates. A coordinate becoming resident or leaving residency changes what a landscape
+    /// chunk sampling it was built from, but moves no deformer's <c>ContentVersion</c> (only
+    /// <see cref="PaintImage.ViewRevision"/>), so <see cref="LandscapeRebuilder"/> has to be told
+    /// directly — <see cref="StreamingSystem.Invalidate"/> on its own only rebuilds chunks newly
+    /// entering range, never ones already loaded.</summary>
+    private void MarkTerrainDirty(Dictionary<PaintImage, HashSet<ImageChunkCoord>> changedByImage)
+    {
+        LandscapeRebuilder rebuilder = _context.Landscape.Rebuilder;
+        foreach (SceneEntity entity in _context.Scene.Entities)
+        {
+            if (entity.Component<ImageComponent>() is not { } component || component.Image is not { } image)
+            {
+                continue;
+            }
+
+            if (changedByImage.TryGetValue(image, out HashSet<ImageChunkCoord>? coords) &&
+                component.WorldBoundsForChunks(coords) is { } bounds)
+            {
+                rebuilder.MarkDirty(bounds);
+            }
+        }
     }
 
     private void PruneRecency()
@@ -302,18 +342,23 @@ public sealed class ImageResidencySystem
             return;
         }
 
-        bool any = false;
+        var loaded = new Dictionary<PaintImage, HashSet<ImageChunkCoord>>();
         foreach (IGrouping<PaintImage, (PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)> group in load.Result.GroupBy(entry => entry.Image))
         {
-            group.Key.PublishLoadedChunks(group.Select(entry => (entry.Coord, entry.Pixels)));
-            any = true;
+            IReadOnlyList<ImageChunkCoord> applied = group.Key.PublishLoadedChunks(group.Select(entry => (entry.Coord, entry.Pixels)));
+            if (applied.Count > 0)
+            {
+                loaded[group.Key] = [.. applied];
+            }
         }
 
-        if (any)
+        if (loaded.Count > 0)
         {
             // Terrain that was sampling zeros over these chunks while they were evicted needs a
-            // rebuild now that real pixels are resident again — the same mechanism any other edit uses.
+            // rebuild now that real pixels are resident again. Invalidate rebuilds chunks entering
+            // range from scratch; MarkTerrainDirty covers the already-loaded ones that scan skips.
             _context.Streaming.Invalidate();
+            MarkTerrainDirty(loaded);
         }
     }
 }
