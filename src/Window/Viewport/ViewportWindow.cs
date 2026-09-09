@@ -61,6 +61,9 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     private readonly ViewportPointer _pointer;
     private readonly ViewportHeader _header;
     private readonly HashSet<SceneEntity> _represented = [];
+
+    // The scene version _represented was last brought in step with; -1 until it has been.
+    private int _representedVersion = -1;
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
     private MapId _viewMap;
@@ -159,6 +162,18 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     // representation of any entity that has left the registry (e.g. an undone creation).
     private void SyncRepresentations()
     {
+        // Every answer below — what is in view, what is still registered, what turned peripheral —
+        // comes from registry state that bumps its version when it changes, so between bumps this
+        // pass can only reach the same conclusions it reached last frame. Skipping it matters because
+        // the removal sweep is over everything represented, which at a real view distance is the
+        // whole loaded world once per frame.
+        if (_representedVersion == _scene.Version)
+        {
+            return;
+        }
+
+        _representedVersion = _scene.Version;
+
         foreach (SceneEntity entity in _scene.InView)
         {
             if (_represented.Add(entity))
@@ -193,6 +208,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         }
 
         _represented.Clear();
+        _representedVersion = -1;
         _environmentRenderer.Unload();
         _environmentVolumes.Unload();
     }
