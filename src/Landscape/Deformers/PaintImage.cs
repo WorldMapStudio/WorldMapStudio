@@ -526,18 +526,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         return a.AsSpan().SequenceEqual(b);
     }
 
-    private static bool IsAllZero(byte[] pixels)
-    {
-        foreach (byte pixel in pixels)
-        {
-            if (pixel != 0)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    private static bool IsAllZero(byte[] pixels) => !pixels.AsSpan().ContainsAnyExcept((byte)0);
 
     public byte[] CopyPixels()
     {
@@ -977,7 +966,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
-            CommitPaintedChunk(coord, pixels, resident, existing);
+            CommitPaintedChunk(coord, pixels, resident, existing, mayZero: erase);
         }
 
         return changed;
@@ -1052,7 +1041,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
-            CommitPaintedChunk(coord, pixels, resident, existing);
+            CommitPaintedChunk(coord, pixels, resident, existing, mayZero: erase);
         }
 
         return changed;
@@ -1281,7 +1270,9 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 
         if (changed)
         {
-            CommitPaintedChunk(coord, pixels, resident, existing);
+            // A 3-component (no-alpha) image lerps RGB straight toward the brush colour, so even a
+            // non-erase stamp toward black can zero a pixel; every other case only zeroes on erase.
+            CommitPaintedChunk(coord, pixels, resident, existing, mayZero: erase || _components == 3);
         }
 
         return changed;
@@ -1290,11 +1281,13 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     // Shared by PaintChunk and PaintChunkColor: folds a changed chunk's pixels back into residency,
     // pruning it back to absent if the edit brought it all the way to all-zero — the moment that keeps
     // "an absent chunk is all-zero" true immediately rather than eventually at the next commit.
-    private void CommitPaintedChunk(ImageChunkCoord coord, byte[] pixels, bool resident, ImageChunk? existing)
+    private void CommitPaintedChunk(ImageChunkCoord coord, byte[] pixels, bool resident, ImageChunk? existing, bool mayZero)
     {
         if (resident)
         {
-            if (IsAllZero(pixels))
+            // A stamp that only ever raised values cannot have brought a resident (already non-zero)
+            // chunk to all-zero, so the 256 KB scan only runs when the stamp could have lowered one.
+            if (mayZero && IsAllZero(pixels))
             {
                 _chunks.Remove(coord);
                 _removedSincePersist.Add(coord);
