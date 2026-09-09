@@ -931,30 +931,32 @@ public static class ImageTests
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Float32_chunk_pixels_widen_to_saturated_grayscale()
     {
-        // 20px of canvas in a 32px tile, so one row covers two whole eight-wide widening steps, a
-        // four-pixel tail, and a stride the covered width does not match — the three things the
-        // widening can get wrong independently of the value maths.
+        // 52px of canvas in a 64px tile. That row is six whole eight-wide steps plus a four-pixel tail
+        // for the RGBA widening, one thirty-two-wide step plus a twenty-pixel tail for the luminance
+        // one, and a stride neither of them matches — every block, tail and stride case at once.
         var image = new PaintImage();
-        image.ConfigureNew(20, 20, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
+        image.ConfigureNew(52, 52, chunkSize: 64, components: 1, format: PaintImagePixelFormat.Float32);
 
         float[] samples = [-1.0f, 0.0f, 0.002f, 0.25f, 0.5f, 0.8f, 1.0f, 4.0f, float.NaN];
         byte[] expected = [0, 0, 1, 64, 128, 204, 255, 255, 0];
 
-        var pixels = new byte[32 * 32 * 4];
+        var pixels = new byte[64 * 64 * 4];
         Span<float> values = MemoryMarshal.Cast<byte, float>(pixels);
-        for (int y = 0; y < 20; y++)
+        for (int y = 0; y < 52; y++)
         {
-            for (int x = 0; x < 20; x++)
+            for (int x = 0; x < 52; x++)
             {
-                values[(y * 32) + x] = samples[(x + y) % samples.Length];
+                values[(y * 64) + x] = samples[(x + y) % samples.Length];
             }
         }
 
         image.LoadChunks([(new ImageChunkCoord(0, 0), pixels)]);
 
         byte[] rgba = PaintImageTextures.WriteChunkRgba(image, new ImageChunkCoord(0, 0), null, out int width, out int height);
-        Assert.AreEqual(20, width);
-        Assert.AreEqual(20, height);
+        byte[] luminance = PaintImageTextures.WriteChunkOpaque(image, new ImageChunkCoord(0, 0), null, out _, out _, out Image.Format format);
+        Assert.AreEqual(52, width);
+        Assert.AreEqual(52, height);
+        Assert.AreEqual(Image.Format.L8, format, "a scalar image drawn opaquely should stay one byte per pixel");
 
         for (int y = 0; y < height; y++)
         {
@@ -966,6 +968,7 @@ public static class ImageTests
                 Assert.AreEqual(want, rgba[o + 1], $"green at {x},{y}");
                 Assert.AreEqual(want, rgba[o + 2], $"blue at {x},{y}");
                 Assert.AreEqual(want, rgba[o + 3], $"alpha at {x},{y}");
+                Assert.AreEqual(want, luminance[(y * width) + x], $"luminance at {x},{y}");
             }
         }
     }

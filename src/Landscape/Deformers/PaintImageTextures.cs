@@ -47,6 +47,47 @@ public static class PaintImageTextures
     /// fresh Godot <see cref="Image"/> per chunk per frame, which costs more than the stamp that
     /// dirtied them — see <see cref="ImageComponent.SyncChunkNodes"/> for the reuse this enables.
     /// </summary>
+    /// <summary>
+    /// <see cref="WriteChunkRgba"/> for a consumer that draws the chunk opaquely, which lets a scalar
+    /// image stay one byte per pixel as <see cref="Image.Format.L8"/> instead of being widened to four
+    /// equal ones. A luminance texture samples as the same opaque gray, so this is only a narrower
+    /// encoding of the same picture, and <paramref name="format"/> says which one it produced.
+    ///
+    /// Worth its own entry point because a stroke rewrites and re-uploads every chunk under the brush
+    /// every frame: three quarters of those bytes are written, marshalled to Godot and pushed to the
+    /// GPU only to be thrown away by a material that never reads them.
+    /// </summary>
+    public static byte[] WriteChunkOpaque(PaintImage image, ImageChunkCoord coord, byte[]? destination, out int width, out int height, out Image.Format format)
+    {
+        if (image.Components != 1)
+        {
+            format = Image.Format.Rgba8;
+            return WriteChunkRgba(image, coord, destination, out width, out height);
+        }
+
+        format = Image.Format.L8;
+        (width, height, int stride, byte[] source) = ChunkSource(image, coord);
+        byte[] pixels = Fit(destination, width * height);
+
+        if (image.Format == PaintImagePixelFormat.Float32)
+        {
+            ReadOnlySpan<float> values = MemoryMarshal.Cast<byte, float>(source);
+            for (int y = 0; y < height; y++)
+            {
+                NarrowGrayRow(values.Slice(y * stride, width), pixels.AsSpan(y * width, width));
+            }
+
+            return pixels;
+        }
+
+        for (int y = 0; y < height; y++)
+        {
+            source.AsSpan(y * stride, width).CopyTo(pixels.AsSpan(y * width, width));
+        }
+
+        return pixels;
+    }
+
     public static byte[] WriteChunkRgba(PaintImage image, ImageChunkCoord coord, byte[]? destination, out int width, out int height)
     {
         (width, height, int stride, byte[] source) = ChunkSource(image, coord);
@@ -135,11 +176,57 @@ public static class PaintImageTextures
         }
     }
 
+    /// <summary>One row of scalar float pixels as single display bytes, the
+    /// <see cref="Image.Format.L8"/> counterpart to <see cref="ExpandGrayRow"/>. Thirty-two wide where
+    /// AVX2 is available, since four converted vectors narrow into one store.</summary>
+    private static void NarrowGrayRow(ReadOnlySpan<float> source, Span<byte> destination)
+    {
+        ref float src = ref MemoryMarshal.GetReference(source);
+        ref byte dst = ref MemoryMarshal.GetReference(destination);
+        int n = destination.Length;
+        int i = 0;
+
+        if (Avx2.IsSupported)
+        {
+            const int Block = 4 * 8;
+            for (; i <= n - Block; i += Block)
+            {
+                Vector256<uint> a = Level(ref src, i);
+                Vector256<uint> b = Level(ref src, i + 8);
+                Vector256<uint> c = Level(ref src, i + 16);
+                Vector256<uint> d = Level(ref src, i + 24);
+                Vector256.Narrow(Vector256.Narrow(a, b), Vector256.Narrow(c, d)).StoreUnsafe(ref dst, (nuint)i);
+            }
+        }
+
+        for (; i < n; i++)
+        {
+            Unsafe.Add(ref dst, i) = ToByte(Unsafe.Add(ref src, i));
+        }
+    }
+
+    /// <summary>Eight scalar pixels scaled, saturated into [0,255] and rounded half to even, ready to
+    /// narrow. See <see cref="ExpandGrayRow"/> for why the saturation order handles NaN.</summary>
+    private static Vector256<uint> Level(ref float source, int offset)
+    {
+        Vector256<float> scaled = Avx.Multiply(Vector256.LoadUnsafe(ref source, (nuint)offset), Vector256.Create(255.0f));
+        Vector256<float> bounded = Avx.Min(Avx.Max(scaled, Vector256<float>.Zero), Vector256.Create(255.0f));
+        return Avx.ConvertToVector256Int32(bounded).AsUInt32();
+    }
+
     private static byte[] Fit(byte[]? buffer, int length) =>
         buffer is { } existing && existing.Length == length ? existing : new byte[length];
 
     public static ImageTexture ChunkTexture(PaintImage image, ImageChunkCoord coord) =>
         ImageTexture.CreateFromImage(ChunkImage(image, coord));
+
+    /// <summary><see cref="ChunkTexture"/> in the narrowest encoding an opaque consumer can use. See
+    /// <see cref="WriteChunkOpaque"/>.</summary>
+    public static ImageTexture ChunkOpaqueTexture(PaintImage image, ImageChunkCoord coord)
+    {
+        byte[] pixels = WriteChunkOpaque(image, coord, null, out int width, out int height, out Image.Format format);
+        return ImageTexture.CreateFromImage(Image.CreateFromData(width, height, false, format, pixels));
+    }
 
     /// <summary>An image ramping from <paramref name="baseColor"/> (including its own alpha) at a
     /// source pixel value of 0 to <paramref name="fullColor"/> at 255, for one chunk — what
