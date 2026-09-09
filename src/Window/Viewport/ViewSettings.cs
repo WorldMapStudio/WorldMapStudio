@@ -31,4 +31,12 @@ public sealed class ViewSettings
     /// terrain regardless of a map's chunk size.
     /// </summary>
     public int ViewDistanceChunks { get; set; } = 3;
+
+    /// <summary>
+    /// How many chunks along each edge share one mesh, material and alpha texture. Purely how terrain is
+    /// grouped for rendering: a batch is not an authoring unit, nothing is stored per batch, and the
+    /// chunks inside one are built exactly as they were. 1 gives every chunk its own mesh and material,
+    /// which is what the editor did before batching existed.
+    /// </summary>
+    public int TerrainBatchChunks { get; set; } = 4;
 }

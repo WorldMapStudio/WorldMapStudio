@@ -48,4 +48,16 @@ public sealed class ViewportScriptApi : IScriptModule
         Image? image = _context.Maps.CaptureView?.Invoke();
         return image is null ? null : Convert.ToBase64String(image.SavePngToBuffer());
     }
+
+    /// <summary>How many chunks along each edge share one terrain mesh and material.</summary>
+    [ScriptFunction]
+    public int GetTerrainBatch() => _context.View.TerrainBatchChunks;
+
+    /// <summary>Regroups terrain rendering and reloads it. 1 gives every chunk its own mesh.</summary>
+    [ScriptFunction]
+    public void SetTerrainBatch(int chunks)
+    {
+        _context.View.TerrainBatchChunks = Math.Clamp(chunks, 1, LandscapeTerrainBatch.MaxTerrainBatchChunks);
+        _context.Streaming.ReloadTerrain();
+    }
 }
