@@ -2,7 +2,6 @@ using System;
 using System.Linq;
 using Godot;
 using ImGuiNET;
-using GVector2 = Godot.Vector2;
 using GVector3 = Godot.Vector3;
 using NVector2 = System.Numerics.Vector2;
 using NVector3 = System.Numerics.Vector3;
@@ -171,23 +170,23 @@ public sealed class PaintTool : ITool
 
     private bool TryHit(ImageComponent target, bool onObject, in ViewportContext context, out GVector3 local)
     {
-        NVector2 mouse = ImGui.GetMousePos();
-        GVector2 viewport = new(mouse.X - context.ImageMin.X, mouse.Y - context.ImageMin.Y);
-        if (viewport.X < 0.0f || viewport.Y < 0.0f || viewport.X > context.ImageSize.X || viewport.Y > context.ImageSize.Y)
+        local = default;
+        if (!context.Hovered)
         {
-            local = default;
             return false;
         }
 
-        GVector3 rayOrigin = context.Camera.ProjectRayOrigin(viewport);
-        GVector3 rayDir = context.Camera.ProjectRayNormal(viewport);
+        GVector3 rayOrigin = context.PointerRayOrigin;
+        GVector3 rayDir = context.PointerRayDir;
 
         if (onObject)
         {
             return TryHitObject(target, rayOrigin, rayDir, out local);
         }
 
-        if (TryHitTerrain(target, rayOrigin, rayDir, out local))
+        // The viewport already cast this ray against the terrain for its pointer; reuse the hit
+        // rather than casting it a second time in the same frame.
+        if (context.TerrainHit && TryProjectOntoTarget(target, context.TerrainPoint, out local))
         {
             return true;
         }
@@ -218,14 +217,9 @@ public sealed class PaintTool : ITool
         return true;
     }
 
-    private bool TryHitTerrain(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
+    private static bool TryProjectOntoTarget(ImageComponent target, GVector3 world, out GVector3 local)
     {
         local = default;
-        if (!_terrain.TryHit(rayOrigin, rayDir, out GVector3 world))
-        {
-            return false;
-        }
-
         GVector3 candidate = target.Owner!.Transform.AffineInverse() * world;
         if (!TargetContains(target, candidate))
         {
