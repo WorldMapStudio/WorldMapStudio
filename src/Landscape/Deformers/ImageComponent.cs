@@ -184,6 +184,12 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     [ScriptProperty]
     public string Channel { get; set; } = "";
 
+    /// <summary>How a sampled value is combined with the channel texel it lands on — see
+    /// <see cref="ImageWriteMode"/>. Scalar writes only; a color destination always combines by
+    /// per-component max.</summary>
+    [ScriptProperty]
+    public ImageWriteMode WriteMode { get; set; } = ImageWriteMode.Max;
+
     public override string TypeId => Kind;
 
     public override string DisplayName => "Image";
@@ -202,7 +208,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     public Aabb InfluenceBounds => Entity.Transform * LocalBounds;
 
-    public override int ContentVersion => HashCode.Combine(ImageId, Image?.ContentRevision ?? 0, WorldSizeX, WorldSizeZ, Strength, Channel);
+    public override int ContentVersion => HashCode.Combine(ImageId, Image?.ContentRevision ?? 0, WorldSizeX, WorldSizeZ, Strength, Channel, WriteMode);
 
     /// <summary>Every loaded placement referencing the same image — what a paint or resize undo
     /// command snapshots chunk fingerprints against, since the edit lands on the shared image, not
@@ -222,6 +228,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         WorldSizeZ = WorldSizeZ,
         Strength = Strength,
         Channel = Channel,
+        WriteMode = WriteMode,
     };
 
     /// <summary>Whether the bound image or display layer has moved on since this placement's viewport
@@ -626,12 +633,13 @@ void fragment() {
             return;
         }
 
-        // Nothing painted under this chunk: every sample below would read zero from an absent image
-        // chunk, and a zero contributes nothing (both write paths skip a non-positive value, and the
-        // write is a Max against an already-zeroed buffer), so skipping is exactly equivalent to
-        // running the full loop. This is what keeps a big footprint cheap — without it, one small
-        // painted spot on a large canvas still costs a full resolution² bilinear sweep on every
-        // landscape chunk the footprint happens to cover, almost all of it sampling nothing.
+        // Nothing resident under this chunk: every sample below would read zero from an absent image
+        // chunk. In Max mode a zero contributes nothing (the skip below, then a Max against an
+        // already-zeroed buffer), so the sweep is a no-op; in Replace mode it would actively stamp
+        // zero over whatever else built this chunk, which is worse. Either way, skipping is the right
+        // move, and it is what keeps a big footprint cheap — without it, one small painted spot on a
+        // large canvas still costs a full resolution² bilinear sweep on every landscape chunk the
+        // footprint happens to cover, almost all of it sampling nothing.
         if (!HasPixelsIn(context.Grid.BoundsOf(context.Coord)))
         {
             return;
@@ -698,16 +706,24 @@ void fragment() {
                 else
                 {
                     float value = LandscapeChannelBinding.Extract(scaled, binding.Swizzle);
-                    if (value <= 0.0f)
-                    {
-                        continue;
-                    }
 
-                    // Unclamped: a scalar channel is not necessarily a [0,1] mask — one feeding
-                    // ChannelHeightOffset with Amount left at 1 is a direct world-height buffer, and a
-                    // ceiling here would silently flatten a strength-scaled heightmap image to Amount's
-                    // own value regardless of how high Strength was pushed.
-                    writer.Set(x, y, Mathf.Max(writer.Get(x, y), value));
+                    // Unclamped either way: a scalar channel is not necessarily a [0,1] mask — one
+                    // feeding ChannelHeightOffset with Amount left at 1 is a direct world-height
+                    // buffer, and a ceiling here would silently flatten a strength-scaled heightmap
+                    // image to Amount's own value regardless of how high Strength was pushed.
+                    if (WriteMode == ImageWriteMode.Replace)
+                    {
+                        // Every sample overwrites — sign and zero included. This is the only mode a
+                        // negative value can reach the channel through: a Max against a zeroed buffer
+                        // discards it, and the non-positive skip below would punch holes at a
+                        // legitimate zero. The chunk-level HasPixelsIn check upstream still keeps this
+                        // from touching chunks the image has nothing resident under.
+                        writer.Set(x, y, value);
+                    }
+                    else if (value > 0.0f)
+                    {
+                        writer.Set(x, y, Mathf.Max(writer.Get(x, y), value));
+                    }
                 }
             }
         }

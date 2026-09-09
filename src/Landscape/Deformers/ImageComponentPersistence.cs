@@ -27,6 +27,11 @@ public sealed class SceneImageComponentRecord
 
     public string Channel { get; set; } = "";
 
+    /// <summary>How the placement's scalar writes combine with the channel — see
+    /// <see cref="ImageWriteMode"/>. Stored as its integer value; <see cref="ImageWriteMode.Max"/> (0)
+    /// is the default an older row loads as.</summary>
+    public ImageWriteMode WriteMode { get; set; } = ImageWriteMode.Max;
+
     public SceneEntityRecord? Entity { get; set; }
 }
 
@@ -83,6 +88,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
                 WorldSizeZ = (float)row.WorldSizeZ,
                 Strength = (float)row.Strength,
                 Channel = row.Channel,
+                WriteMode = row.WriteMode,
             };
             entity.LoadComponent(image);
         }
@@ -111,6 +117,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
             WorldSizeZ = image.WorldSizeZ,
             Strength = image.Strength,
             Channel = image.Channel,
+            WriteMode = image.WriteMode,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }
