@@ -72,6 +72,11 @@ public sealed class LandscapeDebugWindow : Window
                 $"rebuilding — {rebuilder.PendingChunks} chunks queued");
         }
 
+        if (rebuilder.LastWaveChunks > 0)
+        {
+            ImGui.TextDisabled($"last wave — {rebuilder.LastWaveChunks} chunks in {rebuilder.LastWaveMs:0.#} ms");
+        }
+
         ImGui.Separator();
         DrawPreviews(output);
         ImGui.Separator();

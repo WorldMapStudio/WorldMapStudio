@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using Godot;
 
@@ -29,6 +30,11 @@ public sealed class LandscapeRebuilder
     private WorkHandle? _running;
     private int _settingsVersion = -1;
 
+    // Last completed rebuild wave, for the debug window: a regression in wave size or duration is
+    // visible here without pulling a trace.
+    private int _lastWaveChunks;
+    private double _lastWaveMs;
+
     // Registry membership and catalog content are compared as a pair rather than folded into one
     // hash: a collision here, or a real hash landing on the "nothing yet" sentinel, is terrain that
     // silently never rebuilds — the hardest possible bug to find, bought for nothing.
@@ -43,6 +49,12 @@ public sealed class LandscapeRebuilder
 
     /// <summary>Chunks waiting to be rebuilt, for the debug window.</summary>
     public int PendingChunks => _dirty.Count;
+
+    /// <summary>Chunk count of the last completed rebuild wave, for the debug window.</summary>
+    public int LastWaveChunks => _lastWaveChunks;
+
+    /// <summary>Wall-clock milliseconds the last completed rebuild wave took, for the debug window.</summary>
+    public double LastWaveMs => _lastWaveMs;
 
     public bool IsBuilding => _running is { State: WorkState.Queued or WorkState.Executing };
 
@@ -176,8 +188,10 @@ public sealed class LandscapeRebuilder
             return;
         }
 
+        int waveChunks = coords.Count;
         _running = WorkQueue.Schedule($"Rebuild {coords.Count} chunks", async ctx =>
         {
+            var stopwatch = Stopwatch.StartNew();
             ctx.Step("Building");
             var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
             LandscapeBuildResult result = builder.Build(coords, snapshot.Deformers);
@@ -199,6 +213,9 @@ public sealed class LandscapeRebuilder
             await ApplyAsync(ctx, result, visuals);
 
             landscape.Reporter.Report(result, grid, snapshot.Deformers);
+
+            _lastWaveChunks = waveChunks;
+            _lastWaveMs = stopwatch.Elapsed.TotalMilliseconds;
         });
     }
 
