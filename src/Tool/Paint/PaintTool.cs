@@ -33,7 +33,7 @@ public sealed class PaintTool : ITool
         _selection = context.Selection;
         _scene = context.Scene;
         _sessions = context.Sessions;
-        _terrain = new TerrainProbe(context.Scene);
+        _terrain = new TerrainProbe(context.Scene, context.Editor.Landscape);
     }
 
     public string Name => "Paint";

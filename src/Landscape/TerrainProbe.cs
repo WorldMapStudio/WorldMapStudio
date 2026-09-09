@@ -13,14 +13,16 @@ namespace WorldMapStudio;
 public sealed class TerrainProbe
 {
     private readonly SceneEntityRegistry _scene;
+    private readonly LandscapeSystem _landscape;
 
     // Reused across calls (TryHit runs every frame the viewport is hovered) so ordering candidates
     // by box distance costs one List.Clear() rather than an allocation per pointer move.
     private readonly List<(LandscapeChunk Chunk, float TMin, float TMax, float BoxT)> _candidates = [];
 
-    public TerrainProbe(SceneEntityRegistry scene)
+    public TerrainProbe(SceneEntityRegistry scene, LandscapeSystem landscape)
     {
         _scene = scene;
+        _landscape = landscape;
     }
 
     /// <summary>
@@ -72,28 +74,26 @@ public sealed class TerrainProbe
     /// <summary>Bilinearly samples the built height of whichever loaded chunk covers this world point.</summary>
     public bool TryHeight(float worldX, float worldZ, out float height)
     {
-        foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
+        height = 0.0f;
+        if (_landscape.Grid is not { } grid)
         {
-            // Chunks are placed with an identity basis (see the LandscapeChunk constructor), so
-            // world->local is a plain subtraction of the origin. AffineInverse() here was a full
-            // matrix inverse per chunk per call, and this runs once per brush-outline point — the
-            // Paint tool alone probes it ~50 times a frame while the pointer is over the viewport.
-            Vector3 origin = chunk.Transform.Origin;
-            float localX = worldX - origin.X;
-            float localZ = worldZ - origin.Z;
-            Aabb bounds = chunk.LocalBounds;
-            if (localX < bounds.Position.X || localZ < bounds.Position.Z ||
-                localX > bounds.End.X || localZ > bounds.End.Z)
-            {
-                continue;
-            }
-
-            height = SampleChunkHeight(chunk.Output, bounds.Size.X, localX, localZ);
-            return true;
+            return false;
         }
 
-        height = 0.0f;
-        return false;
+        // The grid maps the point straight to the one chunk that can cover it, so this is a dictionary
+        // lookup rather than a scan of every loaded chunk — the Paint tool alone probes this ~50 times
+        // a frame while the pointer is over the viewport.
+        LandscapeChunk? chunk = _landscape.ChunkIndex.At(grid.CoordAt(new Vector3(worldX, 0.0f, worldZ)));
+        if (chunk == null)
+        {
+            return false;
+        }
+
+        // Chunks are placed with an identity basis (see the LandscapeChunk constructor), so
+        // world->local is a plain subtraction of the origin.
+        Vector3 origin = chunk.Transform.Origin;
+        height = SampleChunkHeight(chunk.Output, chunk.LocalBounds.Size.X, worldX - origin.X, worldZ - origin.Z);
+        return true;
     }
 
     /// <summary>Convenience for callers that just want to drop a point onto the ground, or leave it
