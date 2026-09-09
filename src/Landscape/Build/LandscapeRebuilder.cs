@@ -105,6 +105,20 @@ public sealed class LandscapeRebuilder
     /// scene version: the deformer collect it drives runs on a timer, not every frame.</summary>
     public void NoticePaint() => _paintPending = true;
 
+    /// <summary>Marks the loaded chunks overlapping a world region stale, for a source that is not an
+    /// entity edit and so moves no deformer's <see cref="ILandscapeDeformer.ContentVersion"/> — an
+    /// image chunk streaming into or out of residency changes what the terrain under a placement was
+    /// built from without touching the placement itself. Picked up on the next <see cref="Update"/>
+    /// like any other dirty region.</summary>
+    public void MarkDirty(Aabb worldRegion)
+    {
+        LandscapeSystem landscape = _context.Landscape;
+        if (landscape.IsEnabled)
+        {
+            MarkRegion(landscape, worldRegion);
+        }
+    }
+
     /// <summary>Forgets everything, e.g. when the map changes and the loaded chunks are replaced.</summary>
     public void Reset()
     {
