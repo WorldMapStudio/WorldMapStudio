@@ -305,7 +305,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         // (right mouse) only starts when the tool isn't capturing.
         _flyCamera.Update(hovered && !(tool?.CapturesMouse ?? false));
         _flyCamera.ApplyTo(_camera);
-        UpdatePointer(hovered, imageMin);
+        FramePick pick = UpdatePointer(hovered, imageMin);
 
         _grid.Visible = _view.ShowGrid;
         _upAxisLine.Visible = _view.ShowGrid;
@@ -327,19 +327,25 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         }
 
         UpdateAxisLineColors();
-        tool?.UpdateViewport(new ViewportContext(_camera, imageMin, imageSize, hovered, _flyCamera.IsFlying));
+        tool?.UpdateViewport(new ViewportContext(
+            _camera, imageMin, imageSize, hovered, _flyCamera.IsFlying,
+            pick.RayOrigin, pick.RayDir, pick.TerrainHit, pick.TerrainPoint));
     }
+
+    // The mouse pick ray for a frame and what it found: shared out to the active tool so a single
+    // terrain raycast covers both this window's pointer and the tool that would otherwise re-cast it.
+    private readonly record struct FramePick(GVector3 RayOrigin, GVector3 RayDir, bool TerrainHit, GVector3 TerrainPoint);
 
     // Casts a ray from the mouse into the world (terrain, falling back to the Y=0 ground plane) so
     // anything that places something under the cursor — paste, so far — knows where that is without
     // needing its own camera/viewport-rect plumbing.
-    private void UpdatePointer(bool hovered, NVector2 imageMin)
+    private FramePick UpdatePointer(bool hovered, NVector2 imageMin)
     {
         _pointer.Hovered = hovered;
         if (!hovered)
         {
             _pointer.Valid = false;
-            return;
+            return default;
         }
 
         NVector2 mouse = ImGui.GetMousePos();
@@ -347,15 +353,23 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         GVector3 origin = _camera.ProjectRayOrigin(local);
         GVector3 dir = _camera.ProjectRayNormal(local);
 
-        if (_terrainProbe.TryHit(origin, dir, out GVector3 world) || TerrainProbe.TryGroundPlane(origin, dir, out world))
+        bool terrainHit = _terrainProbe.TryHit(origin, dir, out GVector3 terrainPoint);
+        if (terrainHit)
         {
             _pointer.Valid = true;
-            _pointer.WorldPoint = world;
+            _pointer.WorldPoint = terrainPoint;
+        }
+        else if (TerrainProbe.TryGroundPlane(origin, dir, out GVector3 plane))
+        {
+            _pointer.Valid = true;
+            _pointer.WorldPoint = plane;
         }
         else
         {
             _pointer.Valid = false;
         }
+
+        return new FramePick(origin, dir, terrainHit, terrainPoint);
     }
 
     // Applies the view toggle to chunks already built. New ones pick it up from the static default
