@@ -10,6 +10,7 @@ namespace WorldMapStudio;
 public sealed class ViewMenu : IMainMenu
 {
     private readonly ViewSettings _view;
+    private readonly EditorContext _context;
     private readonly ShortcutAction _grid;
     private readonly ShortcutAction _chunkEdges;
     private readonly ShortcutAction _environmentLighting;
@@ -20,6 +21,7 @@ public sealed class ViewMenu : IMainMenu
     public ViewMenu(MenuBarManager manager)
     {
         _view = manager.Context.View;
+        _context = manager.Context;
         _grid = manager.Context.Shortcuts.Register(
             "view.grid",
             "View",
@@ -78,9 +80,15 @@ public sealed class ViewMenu : IMainMenu
 
             int viewDistanceChunks = _view.ViewDistanceChunks;
             ImGui.SetNextItemWidth(120.0f);
-            if (ImGui.DragInt("Chunk Distance", ref viewDistanceChunks, 0.1f, 1, 64))
+            if (ImGui.DragInt("Chunk Distance", ref viewDistanceChunks, 0.1f, 1, 64) &&
+                viewDistanceChunks != _view.ViewDistanceChunks)
             {
                 _view.ViewDistanceChunks = viewDistanceChunks;
+
+                // Streaming reads this only when a scan starts, and a scan is otherwise gated on the
+                // focus having moved — without this the new distance does nothing until the camera
+                // travels far enough to trigger a rescan on its own.
+                _context.Streaming.Invalidate();
             }
         });
     }
