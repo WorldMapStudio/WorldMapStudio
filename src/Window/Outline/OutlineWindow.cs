@@ -23,6 +23,12 @@ public sealed class OutlineWindow : Window
     private readonly EditSessionManager _sessions;
     private SceneEntity[] _dragged = [];
 
+    private readonly List<SceneEntity> _listed = [];
+    private readonly HashSet<SceneEntity> _visible = [];
+    private readonly List<(SceneEntity Entity, int Depth)> _rows = [];
+    private readonly HashSet<SceneEntity> _flattened = [];
+    private int _listedVersion = -1;
+
     public OutlineWindow(WindowManager manager)
         : base("Outline", defaultSize: new Vector2(240, 400))
     {
@@ -33,37 +39,114 @@ public sealed class OutlineWindow : Window
 
     protected override void DrawContent()
     {
-        List<SceneEntity> entities = _scene.InView.Where(entity => entity is not IDerivedEntity).ToList();
+        IReadOnlyList<SceneEntity> entities = Listed();
         if (entities.Count == 0)
         {
             ImGui.TextDisabled("No entities loaded.");
             return;
         }
 
-        var visible = entities.ToHashSet();
-        var drawn = new HashSet<SceneEntity>();
-        foreach (SceneEntity entity in entities.Where(entity => entity.Parent == null || !visible.Contains(entity.Parent)))
+        Flatten(entities);
+
+        // Rows are flattened first and drawn through a clipper rather than recursed into directly:
+        // ImGui pays a tree node's per-item cost whether or not the row is on screen, and an imported
+        // map lists thousands of them, which was the single largest thing the editor did per frame.
+        unsafe
         {
-            DrawEntity(entity, visible, drawn);
+            var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+            clipper.Begin(_rows.Count);
+            while (clipper.Step())
+            {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                {
+                    DrawEntity(_rows[i].Entity, _rows[i].Depth);
+                }
+            }
+
+            clipper.End();
+            clipper.Destroy();
         }
 
         DrawRootDropTarget();
     }
 
-    private void DrawEntity(SceneEntity entity, IReadOnlySet<SceneEntity> visible, HashSet<SceneEntity> drawn)
+    // What the outline lists, rebuilt only when the registry says its membership moved — neither what
+    // is in view nor what counts as derived can change without that.
+    private IReadOnlyList<SceneEntity> Listed()
     {
-        if (!visible.Contains(entity) || !drawn.Add(entity))
+        if (_listedVersion == _scene.Version)
+        {
+            return _listed;
+        }
+
+        _listedVersion = _scene.Version;
+        _listed.Clear();
+        _visible.Clear();
+        foreach (SceneEntity entity in _scene.InView)
+        {
+            if (entity is not IDerivedEntity)
+            {
+                _listed.Add(entity);
+                _visible.Add(entity);
+            }
+        }
+
+        return _listed;
+    }
+
+    // The rows the tree would draw, in order, descending only into nodes that are actually open.
+    // Rebuilt every frame because parenting changes without the registry's version moving.
+    private void Flatten(IReadOnlyList<SceneEntity> entities)
+    {
+        _rows.Clear();
+        _flattened.Clear();
+        foreach (SceneEntity entity in entities)
+        {
+            if (entity.Parent == null || !_visible.Contains(entity.Parent))
+            {
+                FlattenEntity(entity, 0);
+            }
+        }
+    }
+
+    private void FlattenEntity(SceneEntity entity, int depth)
+    {
+        if (!_visible.Contains(entity) || !_flattened.Add(entity))
         {
             return;
         }
 
-        bool hasVisibleChildren = entity.Children.Any(visible.Contains);
+        _rows.Add((entity, depth));
+        if (!HasVisibleChildren(entity) || !IsOpen(entity))
+        {
+            return;
+        }
+
+        foreach (SceneEntity child in entity.Children)
+        {
+            FlattenEntity(child, depth + 1);
+        }
+    }
+
+    private void DrawEntity(SceneEntity entity, int depth)
+    {
+        // Depth is drawn as an explicit indent, and the node pushes neither an id nor an indent of its
+        // own (NoTreePushOnOpen): a clipped row has no ancestor row on screen to have pushed them, and
+        // an id that does not depend on the ancestry is also what lets Flatten read a node's open state
+        // before deciding whether to descend.
+        float indent = depth * ImGui.GetStyle().IndentSpacing;
+        if (indent > 0.0f)
+        {
+            ImGui.Indent(indent);
+        }
+
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow
             | ImGuiTreeNodeFlags.SpanAvailWidth
-            | (hasVisibleChildren ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.Leaf)
+            | ImGuiTreeNodeFlags.NoTreePushOnOpen
+            | (HasVisibleChildren(entity) ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.Leaf)
             | (_selection.IsSelected(entity) ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None);
 
-        bool open = ImGui.TreeNodeEx($"{entity.DisplayName}##{entity.Id.Value}", flags);
+        ImGui.TreeNodeEx(Label(entity), flags);
         DrawDragSource(entity);
         DrawParentDropTarget(entity);
 
@@ -80,18 +163,19 @@ public sealed class OutlineWindow : Window
             }
         }
 
-        if (!open)
+        if (indent > 0.0f)
         {
-            return;
+            ImGui.Unindent(indent);
         }
-
-        foreach (SceneEntity child in entity.Children)
-        {
-            DrawEntity(child, visible, drawn);
-        }
-
-        ImGui.TreePop();
     }
+
+    private bool HasVisibleChildren(SceneEntity entity) => entity.Children.Any(_visible.Contains);
+
+    // A node with children defaults to open, matching the DefaultOpen flag DrawEntity gives it.
+    private bool IsOpen(SceneEntity entity) =>
+        ImGui.GetStateStorage().GetInt(ImGui.GetID(Label(entity)), 1) != 0;
+
+    private static string Label(SceneEntity entity) => $"{entity.DisplayName}##{entity.Id.Value}";
 
     private void DrawDragSource(SceneEntity entity)
     {
