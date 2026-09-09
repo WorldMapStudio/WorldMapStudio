@@ -97,15 +97,20 @@ public sealed class LandscapeBuilder
             }
         }
 
-        // Stage 3: pure scatter over the neighbourhood. No ordering constraints between chunks.
-        foreach (ChunkCoord coord in neighbourhood)
+        // Stage 3: pure scatter over the neighbourhood. No ordering constraints between chunks, which
+        // is the invariant at the top of this class — so run them at once. This is the bulk of a
+        // rebuild, and doing it on one thread left a wave taking a sixth of a second while every other
+        // core sat idle, which is what a paint stroke's terrain update was actually waiting on. A
+        // chunk still writes only its own channel buffers; see LandscapeChannelPool for the only state
+        // that crosses threads here.
+        System.Threading.Tasks.Parallel.ForEach(neighbourhood, coord =>
         {
             var context = new LandscapeRasterContext(coord, _pool, resolutions[coord]);
             foreach (ILandscapeDeformer deformer in touching[coord])
             {
                 deformer.Rasterize(context);
             }
-        }
+        });
 
         // Stage 4–5: only now does anything read, and every channel it can reach is final.
         var chunks = new Dictionary<ChunkCoord, LandscapeChunkOutput>();

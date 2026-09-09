@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Godot;
 
@@ -22,9 +23,13 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChannelPool
 {
-    private readonly Dictionary<(string Channel, ChunkCoord Coord), float[]> _buffers = [];
+    // Concurrent because stage 3 of a build rasterizes the block's chunks in parallel (see
+    // LandscapeBuilder's invariant). Each chunk still owns its own buffers outright — a key is a
+    // (channel, coord) pair and one coord is rasterized by one thread — so the only thing crossing
+    // threads here is the table the buffers hang off and the free list they are rented from.
+    private readonly ConcurrentDictionary<(string Channel, ChunkCoord Coord), float[]> _buffers = new();
     private readonly Dictionary<string, LandscapeChannel> _channels = [];
-    private readonly Stack<float[]> _spare = [];
+    private readonly ConcurrentStack<float[]> _spare = new();
     private readonly LandscapeSettings _settings;
 
     public LandscapeChannelPool(LandscapeSettings settings, IEnumerable<LandscapeChannel> channels)
@@ -75,8 +80,15 @@ public sealed class LandscapeChannelPool
 
         int length = channel.Resolution * channel.Resolution * channel.Components;
         float[] buffer = Rent(length);
-        _buffers[key] = buffer;
-        return buffer;
+        if (_buffers.TryAdd(key, buffer))
+        {
+            return buffer;
+        }
+
+        // Lost a race for a key no other thread should have been writing. Hand the buffer back rather
+        // than drop it, and use the winner, so the two never disagree about which array a chunk owns.
+        _spare.Push(buffer);
+        return _buffers[key];
     }
 
     /// <summary>Whether a chunk's buffer exists yet, without creating one.</summary>
@@ -225,9 +237,8 @@ public sealed class LandscapeChannelPool
 
     private float[] Rent(int length)
     {
-        while (_spare.Count > 0)
+        while (_spare.TryPop(out float[]? candidate))
         {
-            float[] candidate = _spare.Pop();
             if (candidate.Length == length)
             {
                 System.Array.Clear(candidate);
