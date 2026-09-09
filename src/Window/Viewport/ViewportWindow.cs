@@ -352,6 +352,13 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     // terrain raycast covers both this window's pointer and the tool that would otherwise re-cast it.
     private readonly record struct FramePick(GVector3 RayOrigin, GVector3 RayDir, bool TerrainHit, GVector3 TerrainPoint);
 
+    // The terrain raycast walks every loaded chunk, so it is skipped on a frame where nothing that
+    // could change its result moved: the cursor, the camera, or what is loaded.
+    private NVector2 _pointerMouse = new(float.NaN, float.NaN);
+    private Transform3D _pointerCamera = new(Basis.Identity, new GVector3(float.NaN, 0.0f, 0.0f));
+    private int _pointerSceneVersion = -1;
+    private FramePick _pointerPick;
+
     // Casts a ray from the mouse into the world (terrain, falling back to the Y=0 ground plane) so
     // anything that places something under the cursor — paste, so far — knows where that is without
     // needing its own camera/viewport-rect plumbing.
@@ -365,6 +372,16 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         }
 
         NVector2 mouse = ImGui.GetMousePos();
+        Transform3D camera = _camera.GlobalTransform;
+        if (mouse == _pointerMouse && camera == _pointerCamera && _scene.Version == _pointerSceneVersion)
+        {
+            return _pointerPick;
+        }
+
+        _pointerMouse = mouse;
+        _pointerCamera = camera;
+        _pointerSceneVersion = _scene.Version;
+
         GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
         GVector3 origin = _camera.ProjectRayOrigin(local);
         GVector3 dir = _camera.ProjectRayNormal(local);
@@ -385,7 +402,8 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
             _pointer.Valid = false;
         }
 
-        return new FramePick(origin, dir, terrainHit, terrainPoint);
+        _pointerPick = new FramePick(origin, dir, terrainHit, terrainPoint);
+        return _pointerPick;
     }
 
     // Applies the view toggle to chunks already built. New ones pick it up from the static default
