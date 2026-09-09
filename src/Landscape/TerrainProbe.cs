@@ -25,29 +25,26 @@ public sealed class TerrainProbe
         _landscape = landscape;
     }
 
+    // A near-horizontal ray can cross a lot of chunks; this caps the grid walk well past any real
+    // view distance (a chunk is tens of units, so this is millions of units of reach).
+    private const int MaxRaySteps = 4096;
+
     /// <summary>
     /// Nearest ray-vs-terrain hit across every loaded chunk, if any.
     ///
-    /// Broad-phase first, over every chunk, then only as many narrow-phase (triangle) tests as
-    /// necessary: chunks are ordered nearest-box-first, and once a real hit is found, any chunk whose
-    /// box cannot possibly be closer is skipped outright. A chunk's box is a nominal
-    /// ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab far taller than its actual terrain, so
-    /// without this a ray from a camera sitting inside that slab would otherwise pay for a full
-    /// triangle sweep of every chunk it merely passes over, not just the one it actually lands on.
+    /// The candidate set is just the chunks the ray's ground track actually crosses, walked in
+    /// near-to-far order along the grid; they are then ordered nearest-box-first, and once a real hit
+    /// is found, any chunk whose box cannot possibly be closer is skipped outright. A chunk's box is a
+    /// nominal ±<see cref="LandscapeGrid.NominalHeightExtent"/> slab far taller than its actual
+    /// terrain, so without this a ray from a camera sitting inside that slab would otherwise pay for a
+    /// full triangle sweep of every chunk it merely passes over, not just the one it actually lands on.
     /// </summary>
     public bool TryHit(Vector3 rayOrigin, Vector3 rayDir, out Vector3 world)
     {
         world = default;
         _candidates.Clear();
 
-        foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
-        {
-            if (TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out float tMin, out float tMax))
-            {
-                float boxT = tMin >= 0.0f ? tMin : tMax;
-                _candidates.Add((chunk, tMin, tMax, boxT));
-            }
-        }
+        CollectCandidates(rayOrigin, rayDir);
 
         _candidates.Sort(static (a, b) => a.BoxT.CompareTo(b.BoxT));
 
@@ -69,6 +66,73 @@ public sealed class TerrainProbe
         }
 
         return hit;
+    }
+
+    // Fills _candidates with the loaded chunks the ray's X/Z track crosses, via an Amanatides-Woo
+    // grid walk from the ray origin's cell. Falls back to scanning the loaded set when the map has no
+    // grid to walk (nothing is loaded then anyway).
+    private void CollectCandidates(Vector3 rayOrigin, Vector3 rayDir)
+    {
+        if (_landscape.Grid is not { } grid)
+        {
+            foreach (LandscapeChunk chunk in _scene.Entities.OfType<LandscapeChunk>())
+            {
+                AddCandidate(chunk, rayOrigin, rayDir);
+            }
+
+            return;
+        }
+
+        LandscapeChunkIndex index = _landscape.ChunkIndex;
+        float size = grid.ChunkSize;
+        ChunkCoord start = grid.CoordAt(rayOrigin);
+        Vector3 cellOrigin = grid.OriginOf(start);
+
+        int cx = start.X;
+        int cy = start.Y;
+        int stepX = rayDir.X > 0.0f ? 1 : rayDir.X < 0.0f ? -1 : 0;
+        int stepZ = rayDir.Z > 0.0f ? 1 : rayDir.Z < 0.0f ? -1 : 0;
+
+        float fx = (rayOrigin.X - cellOrigin.X) / size;
+        float fz = (rayOrigin.Z - cellOrigin.Z) / size;
+
+        float tMaxX = stepX == 0 ? float.PositiveInfinity : ((stepX > 0 ? 1.0f - fx : fx) * size) / Mathf.Abs(rayDir.X);
+        float tMaxZ = stepZ == 0 ? float.PositiveInfinity : ((stepZ > 0 ? 1.0f - fz : fz) * size) / Mathf.Abs(rayDir.Z);
+        float tDeltaX = stepX == 0 ? float.PositiveInfinity : size / Mathf.Abs(rayDir.X);
+        float tDeltaZ = stepZ == 0 ? float.PositiveInfinity : size / Mathf.Abs(rayDir.Z);
+
+        for (int steps = 0; steps < MaxRaySteps; steps++)
+        {
+            if (index.At(new ChunkCoord(cx, cy)) is { } chunk)
+            {
+                AddCandidate(chunk, rayOrigin, rayDir);
+            }
+
+            if (stepX == 0 && stepZ == 0)
+            {
+                break;
+            }
+
+            if (tMaxX < tMaxZ)
+            {
+                cx += stepX;
+                tMaxX += tDeltaX;
+            }
+            else
+            {
+                cy += stepZ;
+                tMaxZ += tDeltaZ;
+            }
+        }
+    }
+
+    private void AddCandidate(LandscapeChunk chunk, Vector3 rayOrigin, Vector3 rayDir)
+    {
+        if (TryRayBox(rayOrigin, rayDir, chunk.WorldBounds, out float tMin, out float tMax))
+        {
+            float boxT = tMin >= 0.0f ? tMin : tMax;
+            _candidates.Add((chunk, tMin, tMax, boxT));
+        }
     }
 
     /// <summary>Bilinearly samples the built height of whichever loaded chunk covers this world point.</summary>
