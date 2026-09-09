@@ -20,6 +20,20 @@ public sealed class PaintImageRecord : IKeyedRecord
 
     /// <summary>One of <see cref="PaintImagePixelFormat"/>.</summary>
     public int PixelFormat { get; set; }
+
+    /// <summary>One of <see cref="PaintImageStorageKind"/> — 0 (<see cref="PaintImageStorageKind.Database"/>)
+    /// for every image predating disk storage.</summary>
+    public int StorageKind { get; set; }
+
+    /// <summary>Asset source id a disk-backed image's files resolve against; null for a database image.</summary>
+    public string? DiskSourceId { get; set; }
+
+    /// <summary>A disk-backed image's file (single chunk) or tile directory (multi-chunk), within its
+    /// source; null for a database image.</summary>
+    public string? DiskPath { get; set; }
+
+    /// <summary>Tile file name pattern for a multi-chunk disk-backed image; null otherwise.</summary>
+    public string? DiskTilePattern { get; set; }
 }
 
 /// <summary>EF Core row for one non-empty chunk of a <see cref="PaintImage"/>. A chunk coordinate with
