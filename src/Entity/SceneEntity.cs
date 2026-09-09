@@ -267,6 +267,17 @@ public class SceneEntity : Entity
         Node.GlobalTransform = _transform;
     }
 
+    /// <summary>
+    /// The entity has left the registry for good. Anything it owns outright that the garbage collector
+    /// would otherwise leave to a finalizer — a Godot resource, most of all — is released here instead.
+    /// That distinction matters: <see cref="DestroyRepresentation"/> also runs when an entity merely
+    /// turns peripheral and will be drawn again later, so it is the wrong place to free what a rebuilt
+    /// representation would need back.
+    /// </summary>
+    public virtual void Unload()
+    {
+    }
+
     public void DestroyRepresentation()
     {
         if (Node == null)
