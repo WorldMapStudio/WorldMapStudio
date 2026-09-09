@@ -474,6 +474,49 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Recording_a_stroke_leaves_the_image_untouched_and_survives_a_later_stroke()
+    {
+        EditorContext context = NewContext("__wms_paint_chunks_command_purity_test__");
+        PaintImage image = NewImage(context, id: 1);
+        image.ConfigureNew(64, 64, chunkSize: 16);
+
+        var entity = new SceneEntity();
+        var component = new ImageComponent(context.Images)
+        {
+            ImageId = image.RecordId,
+            WorldSizeX = 64.0f,
+            WorldSizeZ = 64.0f,
+        };
+        entity.AddComponent(component);
+        context.Scene.Add(entity);
+
+        image.BeginStroke();
+        image.Paint(4.0f / 64.0f, 4.0f / 64.0f, 2.0f / 64.0f, 2.0f / 64.0f, 1.0f, erase: false);
+        var edits = image.EndStroke();
+        ImageChunkCoord coord = edits[0].Coord;
+
+        byte[] painted = (byte[])image.CopyChunkBytes(coord)!.Clone();
+        int revision = image.ChunkRevision(coord);
+
+        // A landscape build worker samples these chunks while it rebuilds, so recording the stroke has
+        // to be a pure read of the image. Rolling it back to its "before" content to fingerprint that
+        // side put the pre-stroke terrain on screen for a frame on mouse-up.
+        var command = new PaintImageChunksCommand(image, edits, component.AffectedEntities, "Paint Test");
+        Assert.IsTrue(painted.AsSpan().SequenceEqual(image.CopyChunkBytes(coord)), "recording must not change any pixel");
+        Assert.AreEqual(revision, image.ChunkRevision(coord), "recording must not bump a chunk's revision");
+
+        // A second stroke paints into the same chunk's buffer in place, so the first command's
+        // recorded "after" has to be its own copy or redoing it would replay this stroke instead.
+        image.BeginStroke();
+        image.Paint(6.0f / 64.0f, 6.0f / 64.0f, 4.0f / 64.0f, 4.0f / 64.0f, 1.0f, erase: false);
+        image.EndStroke();
+        Assert.IsFalse(painted.AsSpan().SequenceEqual(image.CopyChunkBytes(coord)), "the second stroke should have changed the chunk");
+
+        command.Apply();
+        Assert.IsTrue(painted.AsSpan().SequenceEqual(image.CopyChunkBytes(coord)), "redoing the first stroke must restore what it painted");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Marking_chunks_clean_after_commit_allows_eviction()
     {
         var image = new PaintImage();
