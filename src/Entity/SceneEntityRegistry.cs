@@ -144,6 +144,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
         foreach (SceneEntity entity in _entities)
         {
             entity.DestroyRepresentation();
+            entity.Unload();
         }
 
         Clear();
@@ -160,6 +161,7 @@ public sealed class SceneEntityRegistry : IWorldParticipant
         _byId.Remove(entity.Id);
         _peripheral.Remove(entity);
         _resident.Remove(entity);
+        entity.Unload();
         Version++;
         return true;
     }

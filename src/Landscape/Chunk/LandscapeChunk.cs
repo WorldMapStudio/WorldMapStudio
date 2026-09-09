@@ -106,6 +106,18 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
         }
     }
 
+    /// <summary>
+    /// Frees the mesh and material this chunk owns. Streaming unloads chunks continuously as the view
+    /// moves, and one chunk's worth of Godot resources left to finalization is several objects on a
+    /// queue a single thread drains — at a real view distance that queue is what the load ends up
+    /// waiting behind.
+    /// </summary>
+    public override void Unload()
+    {
+        Mesh.Dispose();
+        DisposeChunkMaterial(Material);
+    }
+
     // Frees a replaced chunk material along with its per-chunk alpha array. The albedo and height
     // arrays are shared through LandscapeChunkMesh's caches and must outlive any one chunk, so they
     // are deliberately left alone.
