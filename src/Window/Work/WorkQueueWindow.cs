@@ -19,6 +19,8 @@ public sealed class WorkQueueWindow : Window
 
     private bool _showFinished = true;
 
+    private readonly List<WorkSnapshot> _rows = [];
+
     public WorkQueueWindow(WindowManager manager) : base("Work Queue", defaultSize: new NVector2(760.0f, 520.0f))
     {
     }
@@ -139,53 +141,77 @@ public sealed class WorkQueueWindow : Window
         ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 64.0f);
         ImGui.TableHeadersRow();
 
+        _rows.Clear();
         foreach (WorkSnapshot item in items)
         {
-            if (!_showFinished && item.IsFinished)
+            if (_showFinished || !item.IsFinished)
             {
-                continue;
-            }
-
-            ImGui.TableNextRow();
-
-            ImGui.TableNextColumn();
-            ImGui.Text(item.Id.ToString());
-
-            ImGui.TableNextColumn();
-            ImGui.Text(item.Name);
-
-            ImGui.TableNextColumn();
-            if (item.State == WorkState.Faulted && !string.IsNullOrEmpty(item.Error))
-            {
-                ImGui.TextColored(FaultedColor, item.Error);
-            }
-            else
-            {
-                ImGui.Text(string.IsNullOrEmpty(item.Step) ? "-" : item.Step);
-            }
-
-            ImGui.TableNextColumn();
-            ImGui.TextColored(StateColor(item.State), item.State.ToString());
-
-            ImGui.TableNextColumn();
-            ImGui.Text(item.Thread.ToString());
-
-            ImGui.TableNextColumn();
-            ImGui.Text(FormatElapsed(item.ElapsedSeconds));
-
-            ImGui.TableNextColumn();
-            if (item.IsActive)
-            {
-                ImGui.PushID((int)item.Id);
-                if (ImGui.SmallButton("Cancel"))
-                {
-                    WorkQueue.Cancel(item.Id);
-                }
-                ImGui.PopID();
+                _rows.Add(item);
             }
         }
 
+        // Finished work accumulates until it is cleared by hand, so this table is routinely thousands
+        // of rows deep during a load — every one of which ImGui would otherwise lay out and format,
+        // on screen or not.
+        unsafe
+        {
+            var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+            clipper.Begin(_rows.Count);
+            while (clipper.Step())
+            {
+                for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                {
+                    DrawRow(_rows[i]);
+                }
+            }
+
+            clipper.End();
+            clipper.Destroy();
+        }
+
         ImGui.EndTable();
+    }
+
+    private static void DrawRow(WorkSnapshot item)
+    {
+        ImGui.TableNextRow();
+
+        ImGui.TableNextColumn();
+        ImGui.Text(item.Id.ToString());
+
+        ImGui.TableNextColumn();
+        ImGui.Text(item.Name);
+
+        ImGui.TableNextColumn();
+        if (item.State == WorkState.Faulted && !string.IsNullOrEmpty(item.Error))
+        {
+            ImGui.TextColored(FaultedColor, item.Error);
+        }
+        else
+        {
+            ImGui.Text(string.IsNullOrEmpty(item.Step) ? "-" : item.Step);
+        }
+
+        ImGui.TableNextColumn();
+        ImGui.TextColored(StateColor(item.State), item.State.ToString());
+
+        ImGui.TableNextColumn();
+        ImGui.Text(item.Thread.ToString());
+
+        ImGui.TableNextColumn();
+        ImGui.Text(FormatElapsed(item.ElapsedSeconds));
+
+        ImGui.TableNextColumn();
+        if (item.IsActive)
+        {
+            ImGui.PushID((int)item.Id);
+            if (ImGui.SmallButton("Cancel"))
+            {
+                WorkQueue.Cancel(item.Id);
+            }
+
+            ImGui.PopID();
+        }
     }
 
     private static NVector4 StateColor(WorkState state) => state switch
