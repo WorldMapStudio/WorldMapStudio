@@ -23,12 +23,13 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LandscapeChannelPool
 {
-    // Concurrent because stage 3 of a build rasterizes the block's chunks in parallel (see
-    // LandscapeBuilder's invariant). Each chunk still owns its own buffers outright — a key is a
-    // (channel, coord) pair and one coord is rasterized by one thread — so the only thing crossing
-    // threads here is the table the buffers hang off and the free list they are rented from.
-    private readonly ConcurrentDictionary<(string Channel, ChunkCoord Coord), float[]> _buffers = new();
-    private readonly Dictionary<string, LandscapeChannel> _channels = [];
+    // One table per channel, fixed at construction, rather than a single table keyed on
+    // (channel name, coord): a channel is sampled per texel and hashing its name on every one of those
+    // lookups dominated a build. The per-channel tables stay concurrent because stage 3 of a build
+    // rasterizes the block's chunks in parallel (see LandscapeBuilder's invariant). Each chunk still
+    // owns its own buffers outright — one coord is rasterized by one thread — so the only thing
+    // crossing threads here is the table the buffers hang off and the free list they are rented from.
+    private readonly Dictionary<string, ChannelStore> _stores = [];
     private readonly ConcurrentStack<float[]> _spare = new();
     private readonly LandscapeSettings _settings;
 
@@ -39,7 +40,7 @@ public sealed class LandscapeChannelPool
 
         foreach (LandscapeChannel channel in channels)
         {
-            _channels[channel.Name] = channel;
+            _stores[channel.Name] = new ChannelStore(channel);
         }
     }
 
@@ -48,16 +49,18 @@ public sealed class LandscapeChannelPool
     /// <summary>Returns every buffer to the free list, keeping the allocations for the next block.</summary>
     public void Reset()
     {
-        foreach (float[] buffer in _buffers.Values)
+        foreach (ChannelStore store in _stores.Values)
         {
-            _spare.Push(buffer);
-        }
+            foreach (float[] buffer in store.Buffers.Values)
+            {
+                _spare.Push(buffer);
+            }
 
-        _buffers.Clear();
+            store.Buffers.Clear();
+        }
     }
 
-    public LandscapeChannel? Channel(string name) =>
-        name.Length > 0 && _channels.TryGetValue(name, out LandscapeChannel? channel) ? channel : null;
+    public LandscapeChannel? Channel(string name) => Store(name)?.Channel;
 
     /// <summary>
     /// The writable buffer for one channel in one chunk, created zeroed on first use — length
@@ -67,20 +70,20 @@ public sealed class LandscapeChannelPool
     /// </summary>
     internal float[]? Buffer(string channelName, ChunkCoord coord)
     {
-        if (Channel(channelName) is not { } channel)
+        if (Store(channelName) is not { } store)
         {
             return null;
         }
 
-        var key = (channelName, coord);
-        if (_buffers.TryGetValue(key, out float[]? existing))
+        if (store.Buffers.TryGetValue(coord, out float[]? existing))
         {
             return existing;
         }
 
+        LandscapeChannel channel = store.Channel;
         int length = channel.Resolution * channel.Resolution * channel.Components;
         float[] buffer = Rent(length);
-        if (_buffers.TryAdd(key, buffer))
+        if (store.Buffers.TryAdd(coord, buffer))
         {
             return buffer;
         }
@@ -88,11 +91,12 @@ public sealed class LandscapeChannelPool
         // Lost a race for a key no other thread should have been writing. Hand the buffer back rather
         // than drop it, and use the winner, so the two never disagree about which array a chunk owns.
         _spare.Push(buffer);
-        return _buffers[key];
+        return store.Buffers[coord];
     }
 
     /// <summary>Whether a chunk's buffer exists yet, without creating one.</summary>
-    public bool Has(string channelName, ChunkCoord coord) => _buffers.ContainsKey((channelName, coord));
+    public bool Has(string channelName, ChunkCoord coord) =>
+        Store(channelName) is { } store && store.Buffers.ContainsKey(coord);
 
     /// <summary>
     /// Bilinearly samples a channel's first component at a world position — the whole value for a
@@ -100,15 +104,8 @@ public sealed class LandscapeChannelPool
     /// channel is red" rule <see cref="SampleScalar"/> applies to a native binding). Crosses chunk
     /// borders freely; positions outside the block's halo read as zero.
     /// </summary>
-    public float Sample(string channelName, Vector3 world)
-    {
-        if (Channel(channelName) is not { } channel)
-        {
-            return 0.0f;
-        }
-
-        return SampleComponent(channel, world, 0);
-    }
+    public float Sample(string channelName, Vector3 world) =>
+        Store(channelName) is { } store ? Resolve(store, world).Read(0) : 0.0f;
 
     /// <summary>
     /// Bilinearly samples a channel as a scalar, honoring <paramref name="binding"/>'s swizzle. A
@@ -119,17 +116,24 @@ public sealed class LandscapeChannelPool
     /// </summary>
     public float SampleScalar(in LandscapeChannelBinding binding, Vector3 world)
     {
-        if (Channel(binding.Channel) is not { } channel)
+        if (Store(binding.Channel) is not { } store)
         {
             return 0.0f;
         }
 
+        Bilinear taps = Resolve(store, world);
         if (binding.Swizzle == LandscapeSwizzle.Native)
         {
-            return SampleComponent(channel, world, 0);
+            return taps.Read(0);
         }
 
-        return LandscapeChannelBinding.Extract(SampleNative(channel, world), binding.Swizzle);
+        // A swizzle naming one component reads that component, rather than widening the channel to a
+        // Color and throwing three quarters of it away — which is what an "adt_alpha:g" style binding,
+        // the shape every splat slot uses, was paying per texel.
+        int component = ComponentOf(store.Channel, binding.Swizzle);
+        return component >= 0
+            ? taps.Read(component)
+            : LandscapeChannelBinding.Extract(Widen(store.Channel, taps), binding.Swizzle);
     }
 
     /// <summary>
@@ -141,12 +145,12 @@ public sealed class LandscapeChannelPool
     /// </summary>
     public Color SampleColor(in LandscapeChannelBinding binding, Vector3 world)
     {
-        if (Channel(binding.Channel) is not { } channel)
+        if (Store(binding.Channel) is not { } store)
         {
             return default;
         }
 
-        Color native = SampleNative(channel, world);
+        Color native = Widen(store.Channel, Resolve(store, world));
         return binding.Swizzle switch
         {
             LandscapeSwizzle.Native or LandscapeSwizzle.Rgba => native,
@@ -170,29 +174,55 @@ public sealed class LandscapeChannelPool
         return new Vector3(origin.X + ((x + 0.5f) * step), 0.0f, origin.Z + ((y + 0.5f) * step));
     }
 
+    private ChannelStore? Store(string name) =>
+        name.Length > 0 && _stores.TryGetValue(name, out ChannelStore? store) ? store : null;
+
     // Widens a channel's own components to a Color per the fixed rule described on SampleColor,
     // regardless of what a caller's binding eventually reduces that to.
-    private Color SampleNative(LandscapeChannel channel, Vector3 world)
+    private static Color Widen(LandscapeChannel channel, in Bilinear taps)
     {
-        float r = SampleComponent(channel, world, 0);
+        float r = taps.Read(0);
         if (channel.Components == 1)
         {
             return new Color(r, r, r, r);
         }
 
-        float g = SampleComponent(channel, world, 1);
-        float b = SampleComponent(channel, world, 2);
-        if (channel.Components == 3)
-        {
-            return new Color(r, g, b, 1.0f);
-        }
-
-        float a = SampleComponent(channel, world, 3);
-        return new Color(r, g, b, a);
+        float g = taps.Read(1);
+        float b = taps.Read(2);
+        return channel.Components == 3
+            ? new Color(r, g, b, 1.0f)
+            : new Color(r, g, b, taps.Read(3));
     }
 
-    private float SampleComponent(LandscapeChannel channel, Vector3 world, int component)
+    // Which single component a swizzle reduces to for a channel of this width, or -1 when the answer
+    // is not one stored component — luminance, or the alpha of a 3-component channel, which Widen
+    // fills in as a constant. Mirrors Widen exactly so the two can never disagree.
+    private static int ComponentOf(LandscapeChannel channel, LandscapeSwizzle swizzle)
     {
+        if (channel.Components == 1)
+        {
+            return swizzle is LandscapeSwizzle.R or LandscapeSwizzle.G or LandscapeSwizzle.B or LandscapeSwizzle.A
+                ? 0
+                : -1;
+        }
+
+        return swizzle switch
+        {
+            LandscapeSwizzle.R => 0,
+            LandscapeSwizzle.G => 1,
+            LandscapeSwizzle.B => 2,
+            LandscapeSwizzle.A => channel.Components == 4 ? 3 : -1,
+            _ => -1,
+        };
+    }
+
+    // The four bilinear corners of a world position, resolved once. Which chunk owns a corner is a
+    // function of the global texel index alone, so every caller resolves the same point to the same
+    // chunk and the same value — and reading several components of one sample then costs four array
+    // reads each instead of four chunk lookups each.
+    private Bilinear Resolve(ChannelStore store, Vector3 world)
+    {
+        LandscapeChannel channel = store.Channel;
         int resolution = channel.Resolution;
         int components = channel.Components;
 
@@ -203,36 +233,31 @@ public sealed class LandscapeChannelPool
 
         int x0 = Mathf.FloorToInt(gx);
         int y0 = Mathf.FloorToInt(gy);
-        float fx = gx - x0;
-        float fy = gy - y0;
 
-        float topLeft = Texel(channel.Name, resolution, components, x0, y0, component);
-        float topRight = Texel(channel.Name, resolution, components, x0 + 1, y0, component);
-        float bottomLeft = Texel(channel.Name, resolution, components, x0, y0 + 1, component);
-        float bottomRight = Texel(channel.Name, resolution, components, x0 + 1, y0 + 1, component);
-
-        return Mathf.Lerp(
-            Mathf.Lerp(topLeft, topRight, fx),
-            Mathf.Lerp(bottomLeft, bottomRight, fx),
-            fy);
+        var cursor = new StoreCursor(store);
+        return new Bilinear(
+            Texel(ref cursor, resolution, components, x0, y0),
+            Texel(ref cursor, resolution, components, x0 + 1, y0),
+            Texel(ref cursor, resolution, components, x0, y0 + 1),
+            Texel(ref cursor, resolution, components, x0 + 1, y0 + 1),
+            gx - x0,
+            gy - y0);
     }
 
-    // One texel by global index: the chunk that owns it is a function of the index alone, so every
-    // caller resolves the same point to the same chunk and the same value.
-    private float Texel(string channelName, int resolution, int components, int globalX, int globalY, int component)
+    private Tap Texel(ref StoreCursor cursor, int resolution, int components, int globalX, int globalY)
     {
         var coord = new ChunkCoord(
             _settings.OriginChunkX + FloorDiv(globalX, resolution),
             _settings.OriginChunkY + FloorDiv(globalY, resolution));
 
-        if (!_buffers.TryGetValue((channelName, coord), out float[]? buffer))
+        if (cursor.Buffer(coord) is not { } buffer)
         {
-            return 0.0f;
+            return default;
         }
 
         int localX = Mod(globalX, resolution);
         int localY = Mod(globalY, resolution);
-        return buffer[(((localY * resolution) + localX) * components) + component];
+        return new Tap(buffer, (((localY * resolution) + localX) * components));
     }
 
     private float[] Rent(int length)
@@ -256,5 +281,49 @@ public sealed class LandscapeChannelPool
     {
         int remainder = value % divisor;
         return remainder < 0 ? remainder + divisor : remainder;
+    }
+
+    private sealed class ChannelStore(LandscapeChannel channel)
+    {
+        public LandscapeChannel Channel { get; } = channel;
+
+        public ConcurrentDictionary<ChunkCoord, float[]> Buffers { get; } = new();
+    }
+
+    // Remembers the last chunk a corner resolved to. The four corners of one bilinear sample land in
+    // the same chunk except right on a chunk edge, so only the first of them pays the table lookup.
+    private struct StoreCursor(ChannelStore store)
+    {
+        private ChunkCoord _coord;
+        private float[]? _buffer;
+        private bool _valid;
+
+        public float[]? Buffer(ChunkCoord coord)
+        {
+            if (_valid && _coord == coord)
+            {
+                return _buffer;
+            }
+
+            store.Buffers.TryGetValue(coord, out _buffer);
+            _coord = coord;
+            _valid = true;
+            return _buffer;
+        }
+    }
+
+    // One bilinear corner: the buffer that owns it and the element index its first component sits at,
+    // or no buffer at all for a position outside the block, which reads as zero.
+    private readonly struct Tap(float[]? buffer, int index)
+    {
+        public float Read(int component) => buffer is { } texels ? texels[index + component] : 0.0f;
+    }
+
+    private readonly struct Bilinear(Tap topLeft, Tap topRight, Tap bottomLeft, Tap bottomRight, float fx, float fy)
+    {
+        public float Read(int component) => Mathf.Lerp(
+            Mathf.Lerp(topLeft.Read(component), topRight.Read(component), fx),
+            Mathf.Lerp(bottomLeft.Read(component), bottomRight.Read(component), fx),
+            fy);
     }
 }
