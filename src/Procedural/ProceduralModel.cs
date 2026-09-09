@@ -28,7 +28,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             }
 
             _name = value;
-            Revision++;
+            Bump();
         }
     }
 
@@ -43,7 +43,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             }
 
             _functionId = value;
-            Revision++;
+            Bump();
         }
     }
 
@@ -58,7 +58,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             }
 
             _parameters = value;
-            Revision++;
+            Bump();
         }
     }
 
@@ -79,7 +79,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             }
 
             _formats = value;
-            Revision++;
+            Bump();
         }
     }
 
@@ -95,7 +95,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             }
 
             _materials = value;
-            Revision++;
+            Bump();
         }
     }
 
@@ -105,7 +105,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
     public void ReplaceNetwork(VertexNetwork network)
     {
         _network = network.Clone();
-        Revision++;
+        Bump();
     }
 
     /// <summary>
@@ -115,6 +115,16 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
     /// <see cref="NetworkFingerprint"/> cache against instead of recomputing on every read.
     /// </summary>
     public int Revision { get; private set; }
+
+    private void Bump()
+    {
+        Revision++;
+        RevisionTick++;
+    }
+
+    /// <summary>Moves whenever any model's <see cref="Revision"/> does, so a per-frame check that
+    /// nothing changed costs one comparison instead of a walk over every model.</summary>
+    public static int RevisionTick { get; private set; }
 
     /// <inheritdoc />
     public int? RecordId { get; set; }
