@@ -190,9 +190,12 @@ public sealed class LandscapeRebuilder
 
     private void MarkAll()
     {
-        foreach (LandscapeChunk chunk in _context.Scene.Entities.OfType<LandscapeChunk>())
+        foreach (LandscapeTerrainBatch batch in _context.Scene.Entities.OfType<LandscapeTerrainBatch>())
         {
-            _dirty.Add(chunk.Coord);
+            foreach (ChunkCoord coord in batch.Chunks.Keys)
+            {
+                _dirty.Add(coord);
+            }
         }
     }
 
@@ -221,46 +224,91 @@ public sealed class LandscapeRebuilder
             return;
         }
 
-        // Only chunks that are actually loaded: anything else will be built by streaming when it
-        // comes into range, using the same inputs.
-        var loaded = new HashSet<ChunkCoord>(
-            _context.Scene.Entities.OfType<LandscapeChunk>().Select(chunk => chunk.Coord));
+        int batchChunks = Mathf.Clamp(_context.View.TerrainBatchChunks, 1, LandscapeTerrainBatch.MaxTerrainBatchChunks);
+
+        // Only batches that are actually loaded: anything else is streaming's job when it comes into
+        // range, from the same inputs. A dirty chunk drags its whole batch in — the batch is one mesh.
+        var loadedBatches = new Dictionary<LandscapeBatchCoord, LandscapeTerrainBatch>();
+        foreach (LandscapeTerrainBatch batch in _context.Scene.Entities.OfType<LandscapeTerrainBatch>())
+        {
+            loadedBatches[batch.BatchCoord] = batch;
+        }
 
         var grid = new LandscapeGrid(snapshot.Settings);
-        List<ChunkCoord> coords = _dirty
-            .Where(loaded.Contains)
-            .OrderBy(coord => grid.OriginOf(coord).DistanceSquaredTo(focus))
-            .ToList();
+
+        var dirtyBatches = new HashSet<LandscapeBatchCoord>();
+        foreach (ChunkCoord coord in _dirty)
+        {
+            LandscapeBatchCoord batchCoord = LandscapeBatchCoord.Of(coord, batchChunks);
+            if (loadedBatches.ContainsKey(batchCoord))
+            {
+                dirtyBatches.Add(batchCoord);
+            }
+        }
 
         _dirty.Clear();
-        if (coords.Count == 0)
+        if (dirtyBatches.Count == 0)
         {
             return;
         }
 
-        int waveChunks = coords.Count;
-        _running = WorkQueue.Schedule($"Rebuild {coords.Count} chunks", async ctx =>
+        List<LandscapeBatchCoord> ordered = dirtyBatches
+            .OrderBy(batchCoord => grid.OriginOf(batchCoord.Origin(batchChunks)).DistanceSquaredTo(focus))
+            .ToList();
+
+        var coordsByBatch = new Dictionary<LandscapeBatchCoord, List<ChunkCoord>>();
+        var union = new List<ChunkCoord>();
+        foreach (LandscapeBatchCoord batchCoord in ordered)
+        {
+            List<ChunkCoord> coords = ExpandBatch(grid, batchCoord, batchChunks);
+            coordsByBatch[batchCoord] = coords;
+            union.AddRange(coords);
+        }
+
+        int waveChunks = union.Count;
+        _running = WorkQueue.Schedule($"Rebuild {ordered.Count} terrain batches", async ctx =>
         {
             var stopwatch = Stopwatch.StartNew();
             ctx.Step("Building");
             var builder = new LandscapeBuilder(snapshot.Settings, snapshot.Catalog, snapshot.Functions);
-            LandscapeBuildResult result = builder.Build(coords, snapshot.Deformers);
+            LandscapeBuildResult result = builder.Build(union, snapshot.Deformers);
 
-            // Still on the worker: each chunk's mesh and material is real Godot resource construction
-            // (texture decode, mesh upload), and building it here means the main-thread slice below
-            // only has to attach it to a node, not build it.
+            // Still on the worker: each batch's mesh and material is real Godot resource construction,
+            // so the main-thread slice below only attaches it.
             ctx.Step("Building visuals");
-            var visuals = new Dictionary<ChunkCoord, (ArrayMesh Mesh, ShaderMaterial Material)>();
-            foreach (KeyValuePair<ChunkCoord, LandscapeChunkOutput> built in result.Chunks)
+            var visuals = new List<(LandscapeBatchCoord Coord, IReadOnlyDictionary<ChunkCoord, LandscapeChunkOutput> Chunks, ArrayMesh Mesh, ShaderMaterial Material)>();
+            foreach (LandscapeBatchCoord batchCoord in ordered)
             {
-                visuals[built.Key] = (
-                    LandscapeChunkMesh.BuildMesh(built.Value, grid.ChunkSize),
-                    LandscapeChunkMesh.BuildMaterial(built.Value, _context.Assets, snapshot.Settings));
+                var outputs = new Dictionary<ChunkCoord, LandscapeChunkOutput>();
+                foreach (ChunkCoord coord in coordsByBatch[batchCoord])
+                {
+                    if (result.Chunks.TryGetValue(coord, out LandscapeChunkOutput? output))
+                    {
+                        outputs[coord] = output;
+                    }
+                }
+
+                if (outputs.Count == 0)
+                {
+                    continue;
+                }
+
+                var list = outputs
+                    .OrderBy(pair => pair.Key.Y)
+                    .ThenBy(pair => pair.Key.X)
+                    .Select(pair => (pair.Key, pair.Value))
+                    .ToList();
+
+                visuals.Add((
+                    batchCoord,
+                    outputs,
+                    LandscapeBatchMesh.BuildMesh(list, batchCoord, grid, batchChunks),
+                    LandscapeBatchMesh.BuildMaterial(list, batchCoord, batchChunks, _context.Assets, snapshot.Settings)));
             }
 
             await ctx.SwitchToMain();
             ctx.Step("Applying");
-            await ApplyAsync(ctx, result, visuals);
+            await ApplyAsync(ctx, visuals);
 
             landscape.Reporter.Report(result, grid, snapshot.Deformers);
 
@@ -269,30 +317,50 @@ public sealed class LandscapeRebuilder
         });
     }
 
-    // Main thread. Attaching an already-built mesh and material is cheap, but this still yields
-    // between small batches so a very large rebuild's node churn never fills a whole frame budget.
+    private static List<ChunkCoord> ExpandBatch(LandscapeGrid grid, LandscapeBatchCoord batchCoord, int batchChunks)
+    {
+        ChunkCoord origin = batchCoord.Origin(batchChunks);
+        var coords = new List<ChunkCoord>();
+        for (int y = 0; y < batchChunks; y++)
+        {
+            for (int x = 0; x < batchChunks; x++)
+            {
+                var coord = new ChunkCoord(origin.X + x, origin.Y + y);
+                if (grid.IsInLimits(coord))
+                {
+                    coords.Add(coord);
+                }
+            }
+        }
+
+        return coords;
+    }
+
+    // Main thread. Swapping an already-built mesh and material is cheap, but this still yields between
+    // small batches so a very large rebuild's node churn never fills a whole frame budget.
     private async System.Threading.Tasks.Task ApplyAsync(
         WorkContext ctx,
-        LandscapeBuildResult result,
-        IReadOnlyDictionary<ChunkCoord, (ArrayMesh Mesh, ShaderMaterial Material)> visuals)
+        IReadOnlyList<(LandscapeBatchCoord Coord, IReadOnlyDictionary<ChunkCoord, LandscapeChunkOutput> Chunks, ArrayMesh Mesh, ShaderMaterial Material)> visuals)
     {
-        // Built once rather than re-scanned per applied chunk: a coord's chunk may no longer resolve
-        // if streaming unloaded it while this was building, but that check does not need an O(loaded
-        // chunk count) scan for every one of the (possibly hundreds of) chunks being applied here —
-        // that made a large rebuild at a real view distance quadratic in the chunk count.
-        var loaded = new Dictionary<ChunkCoord, LandscapeChunk>();
-        foreach (LandscapeChunk candidate in _context.Scene.Entities.OfType<LandscapeChunk>())
+        var loaded = new Dictionary<LandscapeBatchCoord, LandscapeTerrainBatch>();
+        foreach (LandscapeTerrainBatch candidate in _context.Scene.Entities.OfType<LandscapeTerrainBatch>())
         {
-            loaded[candidate.Coord] = candidate;
+            loaded[candidate.BatchCoord] = candidate;
         }
 
         int applied = 0;
-        foreach (KeyValuePair<ChunkCoord, LandscapeChunkOutput> built in result.Chunks)
+        foreach ((LandscapeBatchCoord coord, IReadOnlyDictionary<ChunkCoord, LandscapeChunkOutput> chunks, ArrayMesh mesh, ShaderMaterial material) in visuals)
         {
-            loaded.TryGetValue(built.Key, out LandscapeChunk? chunk);
-
-            (ArrayMesh mesh, ShaderMaterial material) = visuals[built.Key];
-            chunk?.Rebuild(built.Value, mesh, material);
+            if (loaded.TryGetValue(coord, out LandscapeTerrainBatch? batch))
+            {
+                batch.Rebuild(chunks, mesh, material);
+            }
+            else
+            {
+                // Streaming unloaded it while this built; free the orphaned resources.
+                mesh.Dispose();
+                LandscapeTerrainBatch.DisposeMaterial(material);
+            }
 
             if (++applied % ApplyBatch == 0)
             {

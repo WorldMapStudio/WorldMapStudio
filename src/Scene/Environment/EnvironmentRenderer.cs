@@ -531,7 +531,7 @@ public sealed class EnvironmentRenderer
     private Shader SkyShader() => _skyShader ??= new Shader { Code = SkyShaderCode };
 
     // Kept in source rather than a .gdshader resource so it needs no Godot import step, matching
-    // LandscapeChunkMesh's splat shader.
+    // LandscapeBatchMesh's splat shader.
     //
     // Colours travel as a plain array uniform rather than a baked gradient texture: a sky shader's
     // background renders through Godot's own radiance-bake pipeline (see Environment.BackgroundMode.Sky

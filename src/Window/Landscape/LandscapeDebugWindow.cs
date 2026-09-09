@@ -27,7 +27,7 @@ public sealed class LandscapeDebugWindow : Window
     private readonly List<ImageTexture> _textures = [];
     private ImageTexture? _holeTexture;
 
-    private LandscapeChunk? _inspected;
+    private ChunkCoord? _inspected;
     private int _shownVersion = -1;
 
     public LandscapeDebugWindow(WindowManager manager)
@@ -44,21 +44,19 @@ public sealed class LandscapeDebugWindow : Window
             return;
         }
 
-        LandscapeChunk? chunk = NearestChunk();
-        if (chunk == null)
+        if (NearestChunk() is not (ChunkCoord coord, LandscapeChunkOutput output))
         {
             ImGui.TextDisabled("No chunk loaded near the camera.");
             return;
         }
 
-        if (!ReferenceEquals(chunk, _inspected) || _shownVersion != _context.Scene.Version)
+        if (_inspected != coord || _shownVersion != _context.Scene.Version)
         {
-            _inspected = chunk;
+            _inspected = coord;
             _shownVersion = _context.Scene.Version;
-            Refresh(chunk);
+            Refresh(output);
         }
 
-        LandscapeChunkOutput output = chunk.Output;
         ImGui.Text($"Chunk {output.Coord}");
         ImGui.TextDisabled($"{output.Layers.Count} slots · {output.HeightResolution}² vertices");
 
@@ -130,10 +128,9 @@ public sealed class LandscapeDebugWindow : Window
 
     // Rebuilds the preview textures. Called only when the chunk or the scene changed, since this
     // allocates images.
-    private void Refresh(LandscapeChunk chunk)
+    private void Refresh(LandscapeChunkOutput output)
     {
         _textures.Clear();
-        LandscapeChunkOutput output = chunk.Output;
 
         (float min, float max) = HeightRange(output);
         float span = Mathf.Max(max - min, 0.0001f);
@@ -180,19 +177,24 @@ public sealed class LandscapeDebugWindow : Window
         return output.Heights.Length == 0 ? (0.0f, 0.0f) : (min, max);
     }
 
-    private LandscapeChunk? NearestChunk()
+    private (ChunkCoord Coord, LandscapeChunkOutput Output)? NearestChunk()
     {
+        if (_context.Landscape.Grid is not { } grid)
+        {
+            return null;
+        }
+
         Vector3 focus = _context.Landscape.Focus;
-        LandscapeChunk? best = null;
+        (ChunkCoord Coord, LandscapeChunkOutput Output)? best = null;
         float bestDistance = float.MaxValue;
 
-        foreach (LandscapeChunk chunk in _context.Scene.Entities.OfType<LandscapeChunk>())
+        foreach (KeyValuePair<ChunkCoord, (LandscapeTerrainBatch Batch, LandscapeChunkOutput Output)> entry in _context.Landscape.ChunkIndex.ByCoord)
         {
-            float distance = chunk.Transform.Origin.DistanceSquaredTo(focus);
+            float distance = grid.OriginOf(entry.Key).DistanceSquaredTo(focus);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = chunk;
+                best = (entry.Key, entry.Value.Output);
             }
         }
 

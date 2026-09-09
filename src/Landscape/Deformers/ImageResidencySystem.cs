@@ -15,7 +15,7 @@ namespace WorldMapStudio;
 /// load region actually moved:
 /// <list type="bullet">
 /// <item>Evict — any resident, clean chunk that fell outside every placement's (load-region-grown)
-/// footprint is dropped from memory <em>unconditionally</em>, the same way <c>LandscapeChunkLoader</c>
+/// footprint is dropped from memory <em>unconditionally</em>, the same way <c>LandscapeBatchLoader</c>
 /// drops terrain the moment it leaves the load region — an image's memory footprint must never outlive
 /// the view it was loaded for, regardless of how small the image is or how far under budget the editor
 /// happens to be. <see cref="BudgetBytes"/> is a second, independent pass on top of that: a backstop
@@ -303,7 +303,7 @@ public sealed class ImageResidencySystem
 
     // The query itself lives on EditorStorage so the offline build preparation can run the same one.
     // The Task.Yield stays here: an uncontended reader lock can complete synchronously and leave the
-    // whole query on the calling thread otherwise (see LandscapeChunkLoader for the same note).
+    // whole query on the calling thread otherwise (see LandscapeBatchLoader for the same note).
     private async Task<List<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)>> LoadAsync(
         List<(PaintImage Image, ImageChunkCoord Coord)> toLoad)
     {

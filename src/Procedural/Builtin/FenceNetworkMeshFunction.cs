@@ -502,7 +502,7 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
     /// clockwise as seen from the front (the opposite of the OpenGL habit): for corners <c>p0..p3</c>
     /// wound so the shape's outside is the front face, the correct shading normal is always
     /// <c>-(p1-p0) x (p2-p0)</c>, never the plain right-hand-rule cross product of that same winding.
-    /// See <c>LandscapeChunkMesh.BuildIndices</c> for the same rule pinned against a terrain grid.</summary>
+    /// See <c>LandscapeBatchMesh.BuildIndices</c> for the same rule pinned against a terrain grid.</summary>
     private static void AddQuadExplicit(
         Vector3 p0,
         Vector3 p1,

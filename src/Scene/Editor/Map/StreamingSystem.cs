@@ -52,6 +52,17 @@ public sealed class StreamingSystem : IWorldParticipant
     private bool _scanStarted;  // a scan has been launched for the current map and position
     private bool _reconciled;   // a scan has landed, so there is a region to judge fates against
 
+    // A landed scan is folded into the scene in time-budgeted slices across frames: on a large scan
+    // the whole reconcile plus the node creation it triggers is a multi-hundred-millisecond frame,
+    // and because streaming advances one step per slow frame, that directly slows loading. _reconciled
+    // and ScanVersion only advance once the whole list is consumed, so nothing keyed on either sees a
+    // half-applied scene.
+    private const double ReconcileBudgetMs = 4.0;
+    private static readonly System.Diagnostics.Stopwatch ReconcileClock = new();
+    private List<SceneEntity>? _reconcileScan;
+    private int _reconcileIndex;
+    private Dictionary<(Type, long), SceneEntity>? _reconcileLoaded;
+
     public StreamingSystem(EditorContext context)
     {
         _context = context;
@@ -88,7 +99,7 @@ public sealed class StreamingSystem : IWorldParticipant
 
     /// <summary>Whether a scan is in flight — a reload's quiescence wait gates on this so an unload
     /// never runs while a background scan is about to write results into what it just dropped.</summary>
-    bool IWorldParticipant.IsBusy => _pendingScan != null;
+    bool IWorldParticipant.IsBusy => _pendingScan != null || _reconcileScan != null;
 
     /// <summary>
     /// Observes and applies a landed scan without starting a new one. <see cref="Update"/> normally
@@ -97,7 +108,11 @@ public sealed class StreamingSystem : IWorldParticipant
     /// needs to keep draining this itself, or a scan that was in flight the instant the reload started
     /// would sit "busy" forever: nothing else would ever notice it finished.
     /// </summary>
-    public void PumpCompletion() => ApplyCompletedScan();
+    public void PumpCompletion()
+    {
+        ApplyCompletedScan();
+        StepReconcile(budgeted: false);
+    }
 
     /// <summary>
     /// Forgets everything read from the database: the last landed scan, what is present, and the
@@ -108,6 +123,8 @@ public sealed class StreamingSystem : IWorldParticipant
     void IWorldParticipant.UnloadWorld()
     {
         _pendingScan = null;
+        _reconcileScan = null;
+        _reconcileLoaded = null;
         _present.Clear();
         _scanStarted = false;
         _reconciled = false;
@@ -140,11 +157,27 @@ public sealed class StreamingSystem : IWorldParticipant
     public void Invalidate() => _scanStarted = false;
 
     /// <summary>
-    /// Forces a fresh terrain scan. What terrain chunks are grouped into for rendering is a display
-    /// choice, so changing it has to discard what is loaded rather than wait for the view to move past
-    /// it.
+    /// Drops every derived terrain entity and forces a fresh scan. What terrain chunks are grouped
+    /// into for rendering is a display choice, so changing it has to discard what is loaded rather
+    /// than wait for the view to move past it.
     /// </summary>
-    public void ReloadTerrain() => Invalidate();
+    public void ReloadTerrain()
+    {
+        foreach (SceneEntity entity in new List<SceneEntity>(_context.Scene.Entities))
+        {
+            if (entity is not LandscapeTerrainBatch)
+            {
+                continue;
+            }
+
+            _context.Selection.Remove(entity);
+            entity.DestroyRepresentation();
+            _context.Scene.Remove(entity);
+            _present.Remove(entity);
+        }
+
+        Invalidate();
+    }
 
     /// <summary>
     /// Re-judges every loaded entity right now against the last scan, then forces a re-scan.
@@ -160,6 +193,10 @@ public sealed class StreamingSystem : IWorldParticipant
     {
         Invalidate();
 
+        // Finish any in-flight sliced reconcile first: ApplyFates judges against _present, which a
+        // half-applied reconcile has not finished rebuilding.
+        StepReconcile(budgeted: false);
+
         // Nothing has been scanned yet, so there is no region to judge against; the first scan will
         // do it. Judging against a default region here would unload the whole scene.
         if (_reconciled)
@@ -172,8 +209,10 @@ public sealed class StreamingSystem : IWorldParticipant
     public void Update(Vector3 focus)
     {
         ApplyCompletedScan();
+        StepReconcile(budgeted: true);
 
-        if (_pendingScan != null)
+        // A completed scan still being folded in holds off the next one, same as one in flight.
+        if (_pendingScan != null || _reconcileScan != null)
         {
             return;
         }
@@ -226,7 +265,7 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        Reconcile(scan.Result);
+        BeginReconcile(scan.Result);
     }
 
     /// <summary>The widest margin any loader needs its inputs loaded over.</summary>
@@ -279,23 +318,40 @@ public sealed class StreamingSystem : IWorldParticipant
         return result;
     }
 
-    private void Reconcile(List<SceneEntity> scanned)
+    private void BeginReconcile(List<SceneEntity> scanned)
     {
         // Index entities already in the scene that carry a persistent key, so a scan never duplicates
         // one that is already loaded — including one this session created and committed, whose row
         // the scan is seeing for the first time.
-        var loaded = new Dictionary<(Type, long), SceneEntity>();
+        _reconcileLoaded = new Dictionary<(Type, long), SceneEntity>();
         foreach (SceneEntity entity in _context.Scene.Entities)
         {
             if (KeyOf(entity) is long key)
             {
-                loaded[(entity.GetType(), key)] = entity;
+                _reconcileLoaded[(entity.GetType(), key)] = entity;
             }
         }
 
+        _reconcileScan = scanned;
+        _reconcileIndex = 0;
         _present.Clear();
-        foreach (SceneEntity entity in scanned)
+    }
+
+    // Folds the landed scan into the scene, at most a time budget's worth per call unless
+    // <paramref name="budgeted"/> is false (a reload draining to quiescence needs it done now). The
+    // scene is left half-applied between budgeted calls; _reconciled and ScanVersion only move once
+    // the whole list is in, so nothing keyed on either sees that intermediate state.
+    private void StepReconcile(bool budgeted)
+    {
+        if (_reconcileScan is not { } scanned || _reconcileLoaded is not { } loaded)
         {
+            return;
+        }
+
+        ReconcileClock.Restart();
+        while (_reconcileIndex < scanned.Count)
+        {
+            SceneEntity entity = scanned[_reconcileIndex++];
             if (KeyOf(entity) is not long key)
             {
                 continue;
@@ -315,7 +371,15 @@ public sealed class StreamingSystem : IWorldParticipant
                 loaded[id] = entity;
                 _present.Add(entity);
             }
+
+            if (budgeted && ReconcileClock.Elapsed.TotalMilliseconds >= ReconcileBudgetMs)
+            {
+                return;
+            }
         }
+
+        _reconcileScan = null;
+        _reconcileLoaded = null;
 
         RelinkLoadedParents();
 

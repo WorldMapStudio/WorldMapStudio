@@ -279,7 +279,7 @@ public static class LandscapeBuilderTests
     {
         // The streaming seam: unlike the test above, this never builds (0,0) and (1,0) together — each
         // gets its own LandscapeBuilder and its own Build() call, exactly like two chunks that stream in
-        // on separate LandscapeChunkLoader.ScanAsync scans. Without a halo floored to at least one
+        // on separate LandscapeBatchLoader.ScanAsync scans. Without a halo floored to at least one
         // chunk, each side would sample the other's not-yet-rasterized territory as zero and disagree
         // right at the edge — a real seam, only papered over once something (e.g. a paint stroke) forces
         // every loaded chunk to rebuild together in one call.
