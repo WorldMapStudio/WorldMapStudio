@@ -77,14 +77,23 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
                 .ToListAsync().ConfigureAwait(false))
             .ToLookup(row => row.ImageId, row => new ImageChunkCoord(row.ChunkX, row.ChunkY));
 
+        var diskStore = new ImageDiskStore(_storage.Assets);
         var entities = new List<PaintImage>();
         var eagerImageIds = new List<int>();
         foreach (PaintImageRecord header in headers)
         {
             var entity = new PaintImage { RecordId = header.Id, Name = header.Name };
             entity.ConfigureNew(header.Width, header.Height, header.ChunkSize, header.Components, (PaintImagePixelFormat)header.PixelFormat);
+            if ((PaintImageStorageKind)header.StorageKind == PaintImageStorageKind.Disk)
+            {
+                entity.ConfigureDiskSource(header.DiskSourceId ?? "", header.DiskPath ?? "", header.DiskTilePattern ?? "");
+            }
 
-            List<ImageChunkCoord> coords = manifestByImage[header.Id].ToList();
+            // A disk-backed image's manifest is the set of tile files that exist on disk, not a row
+            // query — the two storage kinds share every other load step below.
+            List<ImageChunkCoord> coords = entity.IsDiskBacked
+                ? (await diskStore.ListManifestAsync(entity).ConfigureAwait(false)).ToList()
+                : manifestByImage[header.Id].ToList();
             entity.LoadManifest(coords);
             entity.IsSaved = true;
             entities.Add(entity);
@@ -93,6 +102,11 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             {
                 eagerImageIds.Add(header.Id);
             }
+        }
+
+        foreach (PaintImage entity in entities.Where(entity => entity.IsDiskBacked && eagerImageIds.Contains(entity.RecordId ?? 0)))
+        {
+            entity.LoadChunks(await diskStore.ReadChunksAsync(entity, entity.PersistedChunkCoords.ToList()).ConfigureAwait(false));
         }
 
         if (eagerImageIds.Count > 0)
@@ -105,7 +119,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             foreach (PaintImage entity in entities)
             {
                 int imageId = entity.RecordId ?? 0;
-                if (!eagerImageIds.Contains(imageId))
+                if (entity.IsDiskBacked || !eagerImageIds.Contains(imageId))
                 {
                     continue;
                 }
@@ -133,6 +147,10 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             ChunkSize = image.ChunkSize,
             Components = image.Components,
             PixelFormat = (int)image.Format,
+            StorageKind = (int)image.StorageKind,
+            DiskSourceId = image.IsDiskBacked ? image.DiskSourceId : null,
+            DiskPath = image.IsDiskBacked ? image.DiskPath : null,
+            DiskTilePattern = image.IsDiskBacked ? image.DiskTilePattern : null,
         };
 
         // Ids are assigned at creation, so having one no longer means a row exists — IsSaved is what
@@ -148,13 +166,18 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
 
         var current = new HashSet<ImageChunkCoord>(image.ChunkCoords);
         var previouslyPersisted = new HashSet<ImageChunkCoord>(image.PersistedChunkCoords);
+        var toDelete = new HashSet<ImageChunkCoord>(image.RemovedSincePersist.Where(previouslyPersisted.Contains));
+
+        if (image.IsDiskBacked)
+        {
+            return StageDisk(image, current, toDelete);
+        }
 
         // Deletes are driven by RemovedSincePersist — coordinates an edit explicitly emptied out —
         // never by "absent from ChunkCoords" on its own: a chunk ImageResidencySystem merely evicted
         // is also absent from ChunkCoords, and deleting its (perfectly intact) row would be data loss
         // the user never asked for. Intersected with previouslyPersisted so a removal that was never
         // actually saved does not stage a pointless delete.
-        var toDelete = new HashSet<ImageChunkCoord>(image.RemovedSincePersist.Where(previouslyPersisted.Contains));
         foreach (ImageChunkCoord coord in toDelete)
         {
             db.ImageChunks.Remove(new ImageChunkRecord { ImageId = imageId, ChunkX = coord.X, ChunkY = coord.Y });
@@ -197,6 +220,41 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         };
     }
 
+    // Disk-backed images keep only the header row in storage; their chunk pixels are image files
+    // under an asset source, written here from the commit write-back. The DB transaction and these
+    // file writes are not one atomic unit — the write-back runs after SaveChanges has committed — so
+    // a crash between the two can leave the header saved with a tile still holding its pre-commit
+    // pixels; the next commit re-stages the dirty chunk and heals it.
+    private Action StageDisk(PaintImage image, HashSet<ImageChunkCoord> current, HashSet<ImageChunkCoord> toDelete)
+    {
+        // Only chunks actually edited this session are rewritten — a chunk loaded clean from an
+        // existing file (the "use tiles as a base" case) is already on disk in the right state.
+        // Snapshotted here under the write lock, not read live in the write-back below: the write-back
+        // runs on a background thread while painting may keep mutating the buffer, exactly as the
+        // database path encodes its bytes synchronously inside Stage.
+        var upserts = new List<(ImageChunkCoord Coord, byte[] Pixels)>();
+        foreach (ImageChunkCoord coord in current)
+        {
+            if (image.IsDirty(coord) && image.CopyChunkBytes(coord) is { } pixels)
+            {
+                upserts.Add((coord, (byte[])pixels.Clone()));
+            }
+        }
+
+        var diskStore = new ImageDiskStore(_storage.Assets);
+        return () =>
+        {
+            image.IsSaved = true;
+
+            // Runs on the commit's background thread (see Storage.CommitAsync) — blocking the
+            // write-back on the file IO here keeps the manifest reconcile below correctly ordered
+            // after it.
+            diskStore.WriteChunksAsync(image, upserts, [.. toDelete]).GetAwaiter().GetResult();
+
+            image.CommitChunkPersistence(current, toDelete);
+        };
+    }
+
     public void StageDelete(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
@@ -209,9 +267,15 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         }
 
         db.Images.Remove(new PaintImageRecord { Id = id });
-        foreach (ImageChunkCoord coord in image.PersistedChunkCoords)
+
+        // A disk-backed image has no wms_image_chunks rows, and its tile files are user-owned assets
+        // — deleting the catalog entry leaves them on disk untouched.
+        if (!image.IsDiskBacked)
         {
-            db.ImageChunks.Remove(new ImageChunkRecord { ImageId = id, ChunkX = coord.X, ChunkY = coord.Y });
+            foreach (ImageChunkCoord coord in image.PersistedChunkCoords)
+            {
+                db.ImageChunks.Remove(new ImageChunkRecord { ImageId = id, ChunkX = coord.X, ChunkY = coord.Y });
+            }
         }
 
         image.IsSaved = false;

@@ -318,10 +318,12 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         new(new MapId(record.MapId), new ChunkCoord(record.ChunkX, record.ChunkY), record.LastEditedUtc);
 
     /// <summary>
-    /// Stored pixels for the wanted chunks, decoded. One query per image bounded by that image's own
-    /// wanted rect rather than a scan of its whole chunk table — an image can hold far more stored
-    /// chunks than are ever wanted at once. A coord that has no stored row simply does not come back,
-    /// which the sampler already reads as all-zero.
+    /// Stored pixels for the wanted chunks, decoded. One query per database-backed image bounded by
+    /// that image's own wanted rect rather than a scan of its whole chunk table — an image can hold
+    /// far more stored chunks than are ever wanted at once. A disk-backed image
+    /// (<see cref="PaintImageStorageKind.Disk"/>) is served from its asset-source files by
+    /// <see cref="ImageDiskStore"/> instead. A coord with no stored row / no file simply does not come
+    /// back, which the sampler already reads as all-zero.
     /// </summary>
     public async Task<IReadOnlyList<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)>> LoadImageChunksAsync(
         IReadOnlyDictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>> wanted)
@@ -332,12 +334,31 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             return result;
         }
 
+        var diskStore = new ImageDiskStore(Assets);
+        foreach ((PaintImage image, IReadOnlyCollection<ImageChunkCoord> coords) in wanted)
+        {
+            if (coords.Count == 0 || !image.IsDiskBacked)
+            {
+                continue;
+            }
+
+            foreach ((ImageChunkCoord coord, byte[] pixels) in await diskStore.ReadChunksAsync(image, coords).ConfigureAwait(false))
+            {
+                result.Add((image, coord, pixels));
+            }
+        }
+
+        if (wanted.All(pair => pair.Key.IsDiskBacked || pair.Value.Count == 0))
+        {
+            return result;
+        }
+
         using IDisposable read = await Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
 
         foreach ((PaintImage image, IReadOnlyCollection<ImageChunkCoord> coords) in wanted)
         {
-            if (coords.Count == 0)
+            if (coords.Count == 0 || image.IsDiskBacked)
             {
                 continue;
             }

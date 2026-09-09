@@ -42,6 +42,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// display against the same limit rather than duplicating the number.</summary>
     public const int MaxDimension = 1_048_576;
 
+    /// <summary>Default <see cref="DiskTilePattern"/> — <c>{x}</c>/<c>{y}</c> are replaced with a
+    /// chunk's grid coordinate. Public so the creation form can show and pre-fill the same string.</summary>
+    public const string DefaultDiskTilePattern = "{x}_{y}.png";
+
     private const int MinDimension = 1;
     private const int MinChunkSize = 16;
     private const int MaxChunkSize = 4096;
@@ -55,6 +59,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     private int _chunksX = 1;
     private int _chunksY = 1;
     private Dictionary<ImageChunkCoord, ImageChunk> _chunks = [];
+
+    private PaintImageStorageKind _storageKind = PaintImageStorageKind.Database;
+    private string _diskSourceId = "";
+    private string _diskPath = "";
+    private string _diskTilePattern = DefaultDiskTilePattern;
 
     // What PaintImageFactory last wrote to (or read from) the image_chunks table, kept up to date by
     // its Stage/LoadChunks rather than recomputed from a query — the same "IsSaved" bookkeeping shape
@@ -111,6 +120,40 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// ever did before <see cref="PaintImagePixelFormat.Float32"/> existed, when every channel was
     /// exactly one byte.</summary>
     public int Stride => _components * ElementSize;
+
+    /// <summary>Where this image's chunk pixels are stored — see <see cref="PaintImageStorageKind"/>.
+    /// Set once at creation via <see cref="ConfigureDiskSource"/> (or left <see cref="PaintImageStorageKind.Database"/>).</summary>
+    public PaintImageStorageKind StorageKind => _storageKind;
+
+    /// <summary>Whether this image reads and writes its pixels as disk files rather than storage rows.</summary>
+    public bool IsDiskBacked => _storageKind == PaintImageStorageKind.Disk;
+
+    /// <summary>The asset source (<see cref="AssetSourceSettings.Id"/>) a disk-backed image's files
+    /// resolve against. Empty for a database-backed image.</summary>
+    public string DiskSourceId => _diskSourceId;
+
+    /// <summary>A disk-backed image's path within its asset source — the image file itself when the
+    /// grid is a single chunk, otherwise the directory holding the tile files. Empty for a
+    /// database-backed image.</summary>
+    [ScriptProperty]
+    public string DiskPath => _diskPath;
+
+    /// <summary>Tile file name pattern for a multi-chunk disk-backed image — <c>{x}</c>/<c>{y}</c> are
+    /// replaced with the chunk's grid coordinate. Unused for a single-chunk or database-backed image.</summary>
+    public string DiskTilePattern => _diskTilePattern;
+
+    /// <summary>Whether a disk-backed image stores one tile file per chunk (grid larger than 1x1)
+    /// rather than a single image file.</summary>
+    public bool IsTiledDisk => IsDiskBacked && (_chunksX > 1 || _chunksY > 1);
+
+    /// <summary>The image file extension a disk-backed image reads and writes — <c>.exr</c> for a
+    /// <see cref="PaintImagePixelFormat.Float32"/> image (PNG has no float pixel format), <c>.png</c>
+    /// otherwise.</summary>
+    public string DiskExtension => _format == PaintImagePixelFormat.Float32 ? ".exr" : ".png";
+
+    /// <summary>The name of <see cref="StorageKind"/>, for a script or a diagnostic readout.</summary>
+    [ScriptProperty]
+    public string StorageKindName => _storageKind.ToString();
 
     /// <summary>The chunk grid's extent — every valid chunk coordinate's X falls in <c>[0, ChunksX)</c>,
     /// Y in <c>[0, ChunksY)</c>. The last column/row typically only partly overlaps the canvas, when
@@ -283,6 +326,35 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         // Stage to still know which now-orphaned rows to delete — clearing it here would silently leak
         // those rows forever.
         BumpContent();
+    }
+
+    /// <summary>Switches this image to <see cref="PaintImageStorageKind.Disk"/>, backed by files under
+    /// asset source <paramref name="sourceId"/>. Call right after <see cref="ConfigureNew"/> at
+    /// creation, and from the loader when rehydrating a stored disk-backed image. <paramref name="path"/>
+    /// is the image file for a single-chunk grid, the directory holding the tile files otherwise;
+    /// <paramref name="tilePattern"/> names each tile (see <see cref="DiskTilePattern"/>).</summary>
+    public void ConfigureDiskSource(string sourceId, string path, string tilePattern)
+    {
+        _storageKind = PaintImageStorageKind.Disk;
+        _diskSourceId = sourceId ?? "";
+        _diskPath = AssetPath.Normalize(path ?? "");
+        _diskTilePattern = string.IsNullOrWhiteSpace(tilePattern) ? DefaultDiskTilePattern : tilePattern;
+    }
+
+    /// <summary>The path within <see cref="DiskSourceId"/> for one chunk's file — <see cref="DiskPath"/>
+    /// itself for a single-chunk image, otherwise the directory joined with
+    /// <see cref="DiskTilePattern"/> with <c>{x}</c>/<c>{y}</c> substituted.</summary>
+    public string DiskChunkPath(ImageChunkCoord coord)
+    {
+        if (!IsTiledDisk)
+        {
+            return _diskPath;
+        }
+
+        string file = _diskTilePattern
+            .Replace("{x}", coord.X.ToString(System.Globalization.CultureInfo.InvariantCulture))
+            .Replace("{y}", coord.Y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        return _diskPath.Length == 0 ? file : $"{_diskPath}/{file}";
     }
 
     /// <summary>What <see cref="PaintImageFactory"/> last wrote to (or loaded from) storage — the set
