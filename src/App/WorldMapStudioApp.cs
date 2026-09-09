@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using WorldMapStudio;
 using Godot;
 
@@ -22,7 +23,11 @@ public partial class WorldMapStudioApp : Node3D
 
 	public override void _Process(double delta)
 	{
-		WorkQueue.PumpMainThread();
+		// A quarter of the frame rather than a flat 4 ms. The budget exists so draining queued work
+		// never stalls rendering, and that is a proportion of a frame, not an absolute: on a 250 ms
+		// frame the flat figure hands the queue 1.6% of the time, and the landscape rebuild behind a
+		// paint stroke then lands tens of seconds after the stroke that caused it.
+		WorkQueue.PumpMainThread(Math.Clamp(delta * 250.0, 4.0, 40.0));
 
 		IScene? nextScene = _currentScene.Update();
 		if (nextScene == null)
