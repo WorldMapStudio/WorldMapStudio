@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Godot;
 
 namespace WorldMapStudio;
@@ -434,6 +435,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     // every chunk the stroke has touched so far. Not the same as PersistedChunkCoords/manifest
     // bookkeeping — this is purely in-memory, scoped to one stroke, and reset on every BeginStroke.
     private Dictionary<ImageChunkCoord, byte[]?>? _strokeBefore;
+
+    // Reused dx² scratch for PaintChunkFloat, one slot per chunk column. Painting is single-threaded
+    // (the paint tool, main thread), so one buffer on the image is enough and costs no per-stamp
+    // allocation.
+    private float[]? _stampColumnDistSq;
 
     /// <summary>Starts recording per-chunk "before" snapshots for an undo command. Call once when a
     /// paint stroke begins (e.g. on mouse-down) — not once per <see cref="Paint"/> call, since a single
@@ -1009,38 +1015,57 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         }
 
         byte[] pixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize * Stride];
+
+        // Scalar Float32 image, one component per pixel, so the chunk is just a float grid — cast it
+        // once here rather than re-deriving a byte offset and rebuilding a span per pixel.
+        Span<float> values = MemoryMarshal.Cast<byte, float>(pixels);
+
+        // dx² per column, computed once for the whole stamp rather than once per row: the falloff is
+        // radially symmetric, so each row only adds its own dy².
+        float[] columnDistSq = _stampColumnDistSq ??= new float[_chunkSize];
+        float invWidth = 1.0f / _width;
+        float invHeight = 1.0f / _height;
+        float invRadiusU = 1.0f / radiusU;
+        float invRadiusV = 1.0f / radiusV;
+        for (int px = loX; px <= hiX; px++)
+        {
+            float dx = (((px + 0.5f) * invWidth) - u) * invRadiusU;
+            columnDistSq[px - loX] = dx * dx;
+        }
+
+        // erase subtracts the same non-negative weight the brush would otherwise add.
+        float sign = erase ? -1.0f : 1.0f;
         bool changed = false;
 
         for (int py = loY; py <= hiY; py++)
         {
-            float cy = (py + 0.5f) / _height;
-            float dy = (cy - v) / radiusV;
+            float dy = (((py + 0.5f) * invHeight) - v) * invRadiusV;
+            float dySq = dy * dy;
+            int rowStart = ((py - chunkBaseY) * _chunkSize) - chunkBaseX;
+
             for (int px = loX; px <= hiX; px++)
             {
-                float cx = (px + 0.5f) / _width;
-                float dx = (cx - u) / radiusU;
-                float distance = Mathf.Sqrt((dx * dx) + (dy * dy));
-                if (distance > 1.0f)
+                float distSq = columnDistSq[px - loX] + dySq;
+                if (distSq > 1.0f)
                 {
                     continue;
                 }
 
-                float weight = Mathf.SmoothStep(0.0f, 1.0f, 1.0f - distance);
-                float delta = amount * weight;
+                // Mathf.SmoothStep(0, 1, s) with s already in [0,1] is s²(3 - 2s); inlined to skip its
+                // per-pixel IsEqualApprox against 0 and 1.
+                float s = 1.0f - MathF.Sqrt(distSq);
+                float delta = amount * (s * s * (3.0f - (2.0f * s))) * sign;
                 if (delta == 0.0f)
                 {
                     continue;
                 }
 
-                int localX = px - chunkBaseX;
-                int localY = py - chunkBaseY;
-                int elementIndex = (localY * _chunkSize) + localX;
-                float before = PaintImagePixelIO.Read(pixels, elementIndex, _format);
-                float after = erase ? before - delta : before + delta;
-
+                int index = rowStart + px;
+                float before = values[index];
+                float after = before + delta;
                 if (after != before)
                 {
-                    PaintImagePixelIO.Write(pixels, elementIndex, _format, after);
+                    values[index] = after;
                     changed = true;
                 }
             }
