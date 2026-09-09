@@ -82,7 +82,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _maps = context.Maps;
         _viewMap = _maps.CurrentMap;
         _axes = context.Axes;
-        _terrainProbe = new TerrainProbe(_scene);
+        _terrainProbe = new TerrainProbe(_scene, _landscape);
         _pointer = context.Pointer;
         _header = new ViewportHeader(context);
 

@@ -44,8 +44,12 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
     /// <summary>Rebuilds loaded chunks when the entities or catalog that shape them change.</summary>
     public LandscapeRebuilder Rebuilder => _rebuilder ??= new LandscapeRebuilder(_context);
 
+    /// <summary>Coord→chunk lookup over the loaded chunks, for callers that would otherwise scan them all.</summary>
+    public LandscapeChunkIndex ChunkIndex => _chunkIndex ??= new LandscapeChunkIndex(_context.Scene);
+
     private LandscapeChunkLoader? _chunkLoader;
     private LandscapeRebuilder? _rebuilder;
+    private LandscapeChunkIndex? _chunkIndex;
 
     // Compared as a pair, never hashed into one int. Two counters fit in a tuple exactly, so folding
     // them into a hash buys nothing and costs a class of bug that cannot be debugged: a collision, or
