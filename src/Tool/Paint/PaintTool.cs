@@ -264,20 +264,31 @@ public sealed class PaintTool : ITool
         return TryHitFallbackPlane(target, rayOrigin, rayDir, out local);
     }
 
-    /// <summary>Object display mode paints directly onto its own mesh instead of projecting through
-    /// the terrain — reuses the same ray-vs-triangle test <see cref="IMeshPickable"/> click-selection
-    /// already gets (<see cref="SceneEntity.TryPickGeometry"/>) rather than inventing separate plane
-    /// math, since the built object is just an ordinary mesh child.</summary>
+    /// <summary>Object display mode paints directly onto its own surface instead of projecting through
+    /// the terrain. That surface is a backdrop plus one quad per resident chunk, every one of them
+    /// coplanar at the placement's local y=0 (see <see cref="ImageComponent.BuildNode"/>), and the
+    /// backdrop spans the whole footprint — so intersecting that one plane gives exactly what a
+    /// ray-vs-triangle sweep of every quad gives, without a per-frame walk of the node tree and the
+    /// marshalled child list, transform and AABB fetch each node costs.</summary>
     private static bool TryHitObject(ImageComponent target, GVector3 rayOrigin, GVector3 rayDir, out GVector3 local)
     {
         local = default;
-        if (!target.Owner!.TryPickGeometry(rayOrigin, rayDir, out float t, out _))
+
+        Transform3D inverse = target.Owner!.Transform.AffineInverse();
+        GVector3 origin = inverse * rayOrigin;
+        GVector3 direction = inverse.Basis * rayDir;
+        if (Mathf.Abs(direction.Y) < 1e-6f)
         {
             return false;
         }
 
-        GVector3 world = rayOrigin + (rayDir * t);
-        GVector3 candidate = target.Owner!.Transform.AffineInverse() * world;
+        float t = -origin.Y / direction.Y;
+        if (t < 0.0f)
+        {
+            return false;
+        }
+
+        GVector3 candidate = origin + (direction * t);
         if (!TargetContains(target, candidate))
         {
             return false;
