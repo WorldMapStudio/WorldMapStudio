@@ -16,6 +16,7 @@ public sealed class PaintTool : ITool
     private readonly SelectionSystem _selection;
     private readonly SceneEntityRegistry _scene;
     private readonly EditSessionManager _sessions;
+    private readonly LandscapeSystem _landscape;
     private readonly TerrainProbe _terrain;
 
     private float _radius = 4.0f;
@@ -42,7 +43,8 @@ public sealed class PaintTool : ITool
         _selection = context.Selection;
         _scene = context.Scene;
         _sessions = context.Sessions;
-        _terrain = new TerrainProbe(context.Scene, context.Editor.Landscape);
+        _landscape = context.Editor.Landscape;
+        _terrain = new TerrainProbe(context.Scene, _landscape);
     }
 
     public string Name => "Paint";
@@ -137,7 +139,9 @@ public sealed class PaintTool : ITool
 
             if (_strokeTarget == target && hit && StampAlong(target, local))
             {
-                _scene.Touch(target.Owner!);
+                // A content signal the rebuilder polls on a timer — not a scene-version bump, which
+                // every per-frame cache in the editor would then rebuild for the length of the stroke.
+                _landscape.Rebuilder.NoticePaint();
             }
         }
     }
