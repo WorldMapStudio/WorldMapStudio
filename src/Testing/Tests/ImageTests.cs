@@ -181,6 +181,60 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Avx2_stamp_matches_the_scalar_stamp()
+    {
+        // A 3x3 grid of chunks so a dab crosses seams, giving rows both wider and narrower than one
+        // vector plus partial tails. The first dab is centred exactly on a pixel centre, so squared
+        // distance zero — where a reciprocal-sqrt path would NaN — is actually exercised.
+        (float U, float V, float RadiusU, float RadiusV, float Opacity, bool Erase)[] dabs =
+        {
+            (0.5f, 0.5f, 0.31f, 0.31f, 0.4f, false),
+            (0.5f, 0.5f, 0.31f, 0.31f, 0.4f, false),
+            (0.27f, 0.62f, 0.20f, 0.15f, 0.5f, false),
+            (0.80f, 0.35f, 0.44f, 0.44f, 0.3f, false),
+            (0.5f, 0.5f, 0.31f, 0.31f, 0.6f, true),
+        };
+
+        float[] scalar = StampAll(dabs, forceScalar: true);
+        float[] simd = StampAll(dabs, forceScalar: false);
+
+        Assert.AreEqual(scalar.Length, simd.Length);
+        float maxDiff = 0.0f;
+        for (int i = 0; i < scalar.Length; i++)
+        {
+            maxDiff = MathF.Max(maxDiff, MathF.Abs(scalar[i] - simd[i]));
+        }
+
+        Assert.IsTrue(maxDiff <= 1e-4f, $"AVX2 stamp diverged from the scalar stamp by {maxDiff}");
+    }
+
+    private static float[] StampAll(
+        (float U, float V, float RadiusU, float RadiusV, float Opacity, bool Erase)[] dabs, bool forceScalar)
+    {
+        var image = new PaintImage();
+        image.ConfigureNew(96, 96, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
+
+        bool previous = PaintImage.ForceScalarStamp;
+        PaintImage.ForceScalarStamp = forceScalar;
+        try
+        {
+            foreach ((float u, float v, float ru, float rv, float opacity, bool erase) in dabs)
+            {
+                image.Paint(u, v, ru, rv, opacity, erase);
+            }
+        }
+        finally
+        {
+            PaintImage.ForceScalarStamp = previous;
+        }
+
+        byte[] bytes = image.CopyPixels();
+        var floats = new float[bytes.Length / 4];
+        Buffer.BlockCopy(bytes, 0, floats, 0, bytes.Length);
+        return floats;
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Chunk_codec_round_trips_both_a_sparse_and_a_dense_buffer()
     {
         var sparse = new byte[64 * 64]; // mostly zero, like a real paint mask — should favor deflate
