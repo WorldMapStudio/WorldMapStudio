@@ -27,14 +27,18 @@ public readonly record struct KeyboardShortcut(ImGuiKey Key, ShortcutModifiers M
 
     public static KeyboardShortcut None => new(ImGuiKey.None, ShortcutModifiers.None);
 
-    public bool IsPressed()
+    public bool IsPressed() => IsPressed(ImGui.GetIO());
+
+    // Key test first: the no-op path (no key down this frame) then costs one check instead of a
+    // marshalled GetIO() plus modifier compare per action per frame.
+    public bool IsPressed(ImGuiIOPtr io)
     {
-        if (!IsBound || !ModifiersMatch(ImGui.GetIO()))
+        if (!IsBound || !ImGui.IsKeyPressed(Key, false))
         {
             return false;
         }
 
-        return ImGui.IsKeyPressed(Key, false);
+        return ModifiersMatch(io);
     }
 
     public bool ConflictsWith(KeyboardShortcut other) =>
