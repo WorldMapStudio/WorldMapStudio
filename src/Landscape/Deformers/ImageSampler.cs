@@ -46,25 +46,29 @@ public struct ImageSampler
     /// <see cref="PaintImagePixelFormat.Byte"/> image — the whole value for a scalar image, its red
     /// component for a color one — or unclamped, straight from storage, for a
     /// <see cref="PaintImagePixelFormat.Float32"/> one.</summary>
-    public float Sample(float u, float v) => SampleComponent(u, v, 0);
+    public float Sample(float u, float v) => Resolve(u, v).Read(0);
 
     /// <summary>Bilinear sample as a color: native for a 3/4-component image, or the value replicated
     /// into every channel (fully opaque) for a scalar one — the same widening
     /// <see cref="LandscapeChannelPool.SampleColor"/> applies to a channel.</summary>
     public Color SampleColor(float u, float v)
     {
-        float r = SampleComponent(u, v, 0);
+        Bilinear taps = Resolve(u, v);
+        float r = taps.Read(0);
         if (_components == 1)
         {
             return new Color(r, r, r, r);
         }
 
-        float g = SampleComponent(u, v, 1);
-        float b = SampleComponent(u, v, 2);
-        return _components == 3 ? new Color(r, g, b, 1.0f) : new Color(r, g, b, SampleComponent(u, v, 3));
+        float g = taps.Read(1);
+        float b = taps.Read(2);
+        return _components == 3 ? new Color(r, g, b, 1.0f) : new Color(r, g, b, taps.Read(3));
     }
 
-    private float SampleComponent(float u, float v, int component)
+    // The four bilinear corners of one tap, resolved once. Reading a second component of the same
+    // sample is then four array reads rather than another round of clamping, flooring and chunk
+    // lookups — which is what a 4-component image cost per texel.
+    private Bilinear Resolve(float u, float v)
     {
         float x = Mathf.Clamp((u * _width) - 0.5f, 0.0f, _width - 1.0f);
         float y = Mathf.Clamp((v * _height) - 0.5f, 0.0f, _height - 1.0f);
@@ -72,16 +76,19 @@ public struct ImageSampler
         int y0 = Mathf.FloorToInt(y);
         int x1 = Math.Min(x0 + 1, _width - 1);
         int y1 = Math.Min(y0 + 1, _height - 1);
-        float tx = x - x0;
-        float ty = y - y0;
 
-        float a = Mathf.Lerp(PixelAt(x0, y0, component), PixelAt(x1, y0, component), tx);
-        float b = Mathf.Lerp(PixelAt(x0, y1, component), PixelAt(x1, y1, component), tx);
-        float raw = Mathf.Lerp(a, b, ty);
-        return _format == PaintImagePixelFormat.Float32 ? raw : raw / 255.0f;
+        return new Bilinear(
+            PixelAt(x0, y0),
+            PixelAt(x1, y0),
+            PixelAt(x0, y1),
+            PixelAt(x1, y1),
+            x - x0,
+            y - y0,
+            _components,
+            _format);
     }
 
-    private float PixelAt(int x, int y, int component)
+    private Tap PixelAt(int x, int y)
     {
         // A scanline of taps stays inside one chunk for a run of _chunkSize pixels, so only a tap that
         // actually leaves the cached chunk's pixel span pays the divisions and the table lookup.
@@ -102,12 +109,36 @@ public struct ImageSampler
 
         if (_cursorPixels is not { } pixels)
         {
-            return 0.0f;
+            return default;
         }
 
         int localX = x - _cursorBaseX;
         int localY = y - _cursorBaseY;
-        int elementIndex = (((localY * _chunkSize) + localX) * _components) + component;
-        return PaintImagePixelIO.Read(pixels, elementIndex, _format);
+        return new Tap(pixels, ((localY * _chunkSize) + localX) * _components);
+    }
+
+    // One bilinear corner: the chunk pixels that own it and the element index its first component sits
+    // at, or no pixels at all for a corner in an absent chunk, which reads as zero.
+    private readonly struct Tap(byte[]? pixels, int index)
+    {
+        public float Read(int component, PaintImagePixelFormat format) =>
+            pixels is { } texels ? PaintImagePixelIO.Read(texels, index + component, format) : 0.0f;
+    }
+
+    private readonly struct Bilinear(
+        Tap topLeft, Tap topRight, Tap bottomLeft, Tap bottomRight, float tx, float ty, int components, PaintImagePixelFormat format)
+    {
+        public float Read(int component)
+        {
+            if (component >= components)
+            {
+                return 0.0f;
+            }
+
+            float a = Mathf.Lerp(topLeft.Read(component, format), topRight.Read(component, format), tx);
+            float b = Mathf.Lerp(bottomLeft.Read(component, format), bottomRight.Read(component, format), tx);
+            float raw = Mathf.Lerp(a, b, ty);
+            return format == PaintImagePixelFormat.Float32 ? raw : raw / 255.0f;
+        }
     }
 }
