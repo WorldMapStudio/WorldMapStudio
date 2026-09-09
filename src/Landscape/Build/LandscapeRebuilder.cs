@@ -78,12 +78,16 @@ public sealed class LandscapeRebuilder
 
         NoticeChanges(landscape);
 
-        // Mid-stroke: fold the accumulated dabs into dirty regions at a fixed cadence instead of once
-        // per frame. The full collect on mouse-up (via the recorded command) is what makes it exact.
+        // Mid-stroke: fold the accumulated dabs into dirty regions rather than once per frame. The
+        // moment a wave is not in flight is the useful moment, because the collect below is what the
+        // schedule below it will pick up — waiting out a timer there only adds latency to terrain the
+        // rebuilder is already idle and ready to redo. The interval is the cap for the other case, a
+        // wave running long enough that a stroke would otherwise accumulate one enormous dirty set.
+        // The full collect on mouse-up (via the recorded command) is what makes it exact.
         if (_paintPending)
         {
             ulong now = Time.GetTicksMsec();
-            if (now - _lastPaintCollectMs >= PaintCollectIntervalMs)
+            if (!IsBuilding || now - _lastPaintCollectMs >= PaintCollectIntervalMs)
             {
                 _lastPaintCollectMs = now;
                 _paintPending = false;
