@@ -1354,31 +1354,27 @@ public static class ImageTests
     }
 
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
-    public static void Disk_store_writes_and_reads_tiled_chunks_through_an_asset_source()
+    public static void Disk_store_writes_and_reads_tiled_chunks_on_disk()
     {
-        string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wms_disk_store_test_" + System.Guid.NewGuid().ToString("N"));
-        System.IO.Directory.CreateDirectory(root);
+        string dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wms_disk_store_test_" + System.Guid.NewGuid().ToString("N"), "tiles");
         try
         {
-            EditorContext context = NewContext("__wms_disk_store_test__");
-            context.Project.AssetSources.Add(new AssetSourceSettings { Id = "test", Name = "Test", RootPath = root, Enabled = true });
-
             var image = new PaintImage { RecordId = 1, Name = "Disk" };
             image.ConfigureNew(32, 32, chunkSize: 16); // a 2x2 tile grid
-            image.ConfigureDiskSource("test", "tiles", PaintImage.DefaultDiskTilePattern);
+            image.ConfigureDiskSource(dir, PaintImage.DefaultDiskTilePattern);
 
             var a = new byte[16 * 16];
             var b = new byte[16 * 16];
             Array.Fill(a, (byte)200);
             Array.Fill(b, (byte)50);
 
-            var store = new ImageDiskStore(context.Assets);
+            var store = new ImageDiskStore();
             store.WriteChunksAsync(image,
                 [(new ImageChunkCoord(0, 0), a), (new ImageChunkCoord(1, 0), b)],
                 []).GetAwaiter().GetResult();
 
-            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "0_0.png")));
-            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "1_0.png")));
+            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(dir, "0_0.png")));
+            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(dir, "1_0.png")));
 
             IReadOnlyList<ImageChunkCoord> manifest = store.ListManifestAsync(image).GetAwaiter().GetResult();
             Assert.AreEqual(2, manifest.Count);
@@ -1391,11 +1387,15 @@ public static class ImageTests
             Assert.IsTrue(b.AsSpan().SequenceEqual(read.First(r => r.Coord == new ImageChunkCoord(1, 0)).Pixels));
 
             store.WriteChunksAsync(image, [], [new ImageChunkCoord(0, 0)]).GetAwaiter().GetResult();
-            Assert.IsFalse(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "0_0.png")), "a tiled delete removes the tile file");
+            Assert.IsFalse(System.IO.File.Exists(System.IO.Path.Combine(dir, "0_0.png")), "a tiled delete removes the tile file");
         }
         finally
         {
-            System.IO.Directory.Delete(root, recursive: true);
+            string parent = System.IO.Path.GetDirectoryName(dir)!;
+            if (System.IO.Directory.Exists(parent))
+            {
+                System.IO.Directory.Delete(parent, recursive: true);
+            }
         }
     }
 
