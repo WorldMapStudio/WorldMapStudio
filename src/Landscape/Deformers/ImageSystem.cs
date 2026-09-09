@@ -14,6 +14,12 @@ public sealed class ImageSystem : IWorldParticipant
 {
     private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
 
+    private int _indexedCatalogVersion = -1;
+    private readonly List<PaintImage> _images = [];
+    private readonly List<ImageDisplayLayer> _layers = [];
+    private readonly Dictionary<int, PaintImage> _imagesById = [];
+    private readonly Dictionary<int, ImageDisplayLayer> _layersById = [];
+
     public ImageSystem(EditorContext context)
     {
         Context = context;
@@ -26,17 +32,96 @@ public sealed class ImageSystem : IWorldParticipant
     /// rest under a byte budget. See <see cref="ImageResidencySystem"/>.</summary>
     public ImageResidencySystem Residency { get; }
 
-    /// <summary>The loaded image catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
-    public IEnumerable<PaintImage> Images => Context.Catalog.OfType<PaintImage>();
+    /// <summary>The loaded image catalog. Membership comes from <see cref="EditorContext.Catalog"/>,
+    /// materialized once per <see cref="CatalogEntityRegistry.Version"/>. Every read of
+    /// <see cref="ImageComponent.Image"/> resolves through <see cref="FindImage"/>, and a placement
+    /// reads it several times a frame, so a fresh scan of the whole catalog per read is a scan of
+    /// every loaded row of every catalog type to find one image.</summary>
+    public IReadOnlyList<PaintImage> Images
+    {
+        get
+        {
+            EnsureIndex();
+            return _images;
+        }
+    }
 
-    /// <summary>The loaded display-layer catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
-    public IEnumerable<ImageDisplayLayer> DisplayLayers => Context.Catalog.OfType<ImageDisplayLayer>();
+    /// <summary>The loaded display-layer catalog. Materialized the same way <see cref="Images"/> is.</summary>
+    public IReadOnlyList<ImageDisplayLayer> DisplayLayers
+    {
+        get
+        {
+            EnsureIndex();
+            return _layers;
+        }
+    }
 
-    public PaintImage? FindImage(int? id) =>
-        id is int value ? Images.FirstOrDefault(image => image.RecordId == value) : null;
+    public PaintImage? FindImage(int? id) => id is int value ? Lookup(_imagesById, Images, value) : null;
 
     public ImageDisplayLayer? FindDisplayLayer(int? id) =>
-        id is int value ? DisplayLayers.FirstOrDefault(layer => layer.RecordId == value) : null;
+        id is int value ? Lookup(_layersById, DisplayLayers, value) : null;
+
+    private void EnsureIndex()
+    {
+        if (_indexedCatalogVersion == Context.Catalog.Version)
+        {
+            return;
+        }
+
+        _indexedCatalogVersion = Context.Catalog.Version;
+        _images.Clear();
+        _layers.Clear();
+        _imagesById.Clear();
+        _layersById.Clear();
+
+        foreach (CatalogEntity entity in Context.Catalog.Entities)
+        {
+            switch (entity)
+            {
+                case PaintImage image:
+                    _images.Add(image);
+                    Index(_imagesById, image, image.RecordId);
+                    break;
+                case ImageDisplayLayer layer:
+                    _layers.Add(layer);
+                    Index(_layersById, layer, layer.RecordId);
+                    break;
+            }
+        }
+    }
+
+    private static void Index<TEntity>(Dictionary<int, TEntity> index, TEntity entity, int? recordId)
+    {
+        if (recordId is int id)
+        {
+            index[id] = entity;
+        }
+    }
+
+    // Verified on the way out rather than trusted: a record id is assigned when an entity is first
+    // saved, which the registry's membership version never sees, so an index entry can name an entity
+    // whose id has since moved. Falling back to the materialized list keeps the answer identical to a
+    // scan while still costing one only when the index is actually stale.
+    private static TEntity? Lookup<TEntity>(Dictionary<int, TEntity> index, IReadOnlyList<TEntity> loaded, int id)
+        where TEntity : class, IKeyedCatalogEntity
+    {
+        if (index.TryGetValue(id, out TEntity? cached) && cached.RecordId == id)
+        {
+            return cached;
+        }
+
+        index.Remove(id);
+        foreach (TEntity candidate in loaded)
+        {
+            if (candidate.RecordId == id)
+            {
+                index[id] = candidate;
+                return candidate;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>How many loaded scene entities currently reference this image — what the picker and
     /// the images window show so an edit or delete does not surprise the user.</summary>
@@ -58,6 +143,7 @@ public sealed class ImageSystem : IWorldParticipant
     void IWorldParticipant.UnloadWorld()
     {
         _lastUpdateTick = (-1, -1, -1);
+        _indexedCatalogVersion = -1;
         Residency.UnloadWorld();
     }
 
