@@ -26,8 +26,10 @@ public sealed class OutlineWindow : Window
     private readonly List<SceneEntity> _listed = [];
     private readonly HashSet<SceneEntity> _visible = [];
     private readonly List<(SceneEntity Entity, int Depth)> _rows = [];
-    private readonly HashSet<SceneEntity> _flattened = [];
     private int _listedVersion = -1;
+    private int _rowsListedVersion = -1;
+    private int _rowsHierarchyVersion = -1;
+    private bool _rowsDirty = true;
 
     public OutlineWindow(WindowManager manager)
         : base("Outline", defaultSize: new Vector2(240, 400))
@@ -46,7 +48,7 @@ public sealed class OutlineWindow : Window
             return;
         }
 
-        Flatten(entities);
+        Flatten();
 
         // Rows are flattened first and drawn through a clipper rather than recursed into directly:
         // ImGui pays a tree node's per-item cost whether or not the row is on screen, and an imported
@@ -95,13 +97,29 @@ public sealed class OutlineWindow : Window
     }
 
     // The rows the tree would draw, in order, descending only into nodes that are actually open.
-    // Rebuilt every frame because parenting changes without the registry's version moving.
-    private void Flatten(IReadOnlyList<SceneEntity> entities)
+    //
+    // Held across frames rather than rebuilt each one: the walk is over everything loaded, not over
+    // what is on screen, so at a real view distance rewalking it per frame costs more than drawing the
+    // tree ever did. Only three things can change the answer — what is loaded (the registry version),
+    // how entities are parented (the hierarchy version) and which nodes the user has folded open
+    // (_rowsDirty, set by DrawEntity when a node toggles).
+    private void Flatten()
     {
-        _rows.Clear();
-        _flattened.Clear();
-        foreach (SceneEntity entity in entities)
+        if (!_rowsDirty && _rowsListedVersion == _listedVersion && _rowsHierarchyVersion == SceneEntity.HierarchyVersion)
         {
+            return;
+        }
+
+        _rowsDirty = false;
+        _rowsListedVersion = _listedVersion;
+        _rowsHierarchyVersion = SceneEntity.HierarchyVersion;
+
+        _rows.Clear();
+        foreach (SceneEntity entity in _listed)
+        {
+            // A listed entity is either a root here or reached below as some visible parent's child,
+            // never both, and SceneEntity.Parent refuses to build a cycle — so no "already drawn" set
+            // is needed to keep a row from appearing twice.
             if (entity.Parent == null || !_visible.Contains(entity.Parent))
             {
                 FlattenEntity(entity, 0);
@@ -111,11 +129,6 @@ public sealed class OutlineWindow : Window
 
     private void FlattenEntity(SceneEntity entity, int depth)
     {
-        if (!_visible.Contains(entity) || !_flattened.Add(entity))
-        {
-            return;
-        }
-
         _rows.Add((entity, depth));
         if (!HasVisibleChildren(entity) || !IsExpanded(entity))
         {
@@ -124,7 +137,10 @@ public sealed class OutlineWindow : Window
 
         foreach (SceneEntity child in entity.Children)
         {
-            FlattenEntity(child, depth + 1);
+            if (_visible.Contains(child))
+            {
+                FlattenEntity(child, depth + 1);
+            }
         }
     }
 
@@ -150,7 +166,10 @@ public sealed class OutlineWindow : Window
         DrawDragSource(entity);
         DrawParentDropTarget(entity);
 
-        if (ImGui.IsItemClicked() && !ImGui.IsItemToggledOpen())
+        bool toggled = ImGui.IsItemToggledOpen();
+        _rowsDirty |= toggled;
+
+        if (ImGui.IsItemClicked() && !toggled)
         {
             ImGuiIOPtr io = ImGui.GetIO();
             if (io.KeyCtrl || io.KeyShift)
