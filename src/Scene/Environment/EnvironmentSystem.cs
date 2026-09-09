@@ -28,6 +28,10 @@ public sealed class EnvironmentSystem : IWorldParticipant
     private float _lastDayFraction = -1.0f;
     private int _lastSceneVersion = -1;
 
+    private List<IEnvironmentSource> _sources = [];
+    private int _sourcesSceneVersion = -1;
+    private MapId? _sourcesMap;
+
     public EnvironmentSystem(EditorContext context)
     {
         _context = context;
@@ -42,7 +46,7 @@ public sealed class EnvironmentSystem : IWorldParticipant
     /// </summary>
     public IReadOnlyList<(IEnvironmentSource Source, float Weight)> Active => _active;
 
-    public bool HasSources => Sources.Any();
+    public bool HasSources => Sources.Count > 0;
 
     /// <summary>Bumps whenever <see cref="Current"/> is recomputed, so views can tell when to refresh.</summary>
     public int Version { get; private set; }
@@ -51,18 +55,40 @@ public sealed class EnvironmentSystem : IWorldParticipant
     // map's entities pinned in the registry for as long as it holds undo commands into them (see
     // MapSystem's own docs), and an IEnvironmentSource among those has no business affecting what's
     // rendered here — most importantly a global source, since picking the wrong map's would silently
-    // override the current map's own default.
-    private IEnumerable<IEnvironmentSource> Sources => _context.Scene.Entities
-        .Where(entity => entity.Map == _context.Maps.CurrentMap)
-        .SelectMany(entity => entity.Components)
-        .OfType<IEnvironmentSource>();
+    // override the current map's own default. Materialised and held across frames: it is walked more
+    // than once per frame (Update and HasSources) and only changes when the scene or the open map do.
+    private IReadOnlyList<IEnvironmentSource> Sources
+    {
+        get
+        {
+            MapId map = _context.Maps.CurrentMap;
+            int sceneVersion = _context.Scene.Version;
+            if (_sourcesSceneVersion == sceneVersion && _sourcesMap == map)
+            {
+                return _sources;
+            }
+
+            _sources = _context.Scene.Entities
+                .Where(entity => entity.Map == map)
+                .SelectMany(entity => entity.Components)
+                .OfType<IEnvironmentSource>()
+                .ToList();
+            _sourcesSceneVersion = sceneVersion;
+            _sourcesMap = map;
+            return _sources;
+        }
+    }
 
     /// <summary>
     /// Forces the next <see cref="Update"/> to recompute regardless of what moved. An edit to a
     /// source's own fields (its colours, its radii) has to be able to say "what you have is stale",
     /// the same way <see cref="StreamingSystem.Invalidate"/> does for streamed content.
     /// </summary>
-    public void Invalidate() => _forceUpdate = true;
+    public void Invalidate()
+    {
+        _forceUpdate = true;
+        _sourcesSceneVersion = -1;
+    }
 
     /// <summary>
     /// Recomputes <see cref="Current"/> if the focus, the clock, or the scene moved since the last
@@ -102,5 +128,6 @@ public sealed class EnvironmentSystem : IWorldParticipant
         _active = [];
         _forceUpdate = true;
         _lastSceneVersion = -1;
+        _sourcesSceneVersion = -1;
     }
 }
