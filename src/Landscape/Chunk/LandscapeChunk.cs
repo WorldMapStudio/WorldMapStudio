@@ -19,6 +19,7 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
     public const uint RenderLayer = 1u << 1;
 
     private readonly float _chunkSize;
+    private readonly Aabb _localBounds;
 
     /// <summary>
     /// Takes the mesh and material already built for <paramref name="output"/>, rather than building
@@ -33,6 +34,9 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
         Mesh = mesh;
         Material = material;
         _chunkSize = grid.ChunkSize;
+        _localBounds = new Aabb(
+            new Vector3(0.0f, -LandscapeGrid.NominalHeightExtent, 0.0f),
+            new Vector3(_chunkSize, LandscapeGrid.NominalHeightExtent * 2.0f, _chunkSize));
         Map = map;
         Transform = new Transform3D(Basis.Identity, grid.OriginOf(output.Coord));
     }
@@ -54,9 +58,7 @@ public sealed class LandscapeChunk : SceneEntity, IDerivedEntity
 
     public override SelfScale SelfScale => SelfScale.None;
 
-    public override Aabb LocalBounds => new(
-        new Vector3(0.0f, -LandscapeGrid.NominalHeightExtent, 0.0f),
-        new Vector3(_chunkSize, LandscapeGrid.NominalHeightExtent * 2.0f, _chunkSize));
+    public override Aabb LocalBounds => _localBounds;
 
     /// <summary>Slots the chunk resolved to, base included. Shown in the inspector.</summary>
     public int UsedSlots => Output.Layers.Count;
