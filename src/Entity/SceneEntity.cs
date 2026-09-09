@@ -436,9 +436,13 @@ public class SceneEntity : Entity
             }
         }
 
-        foreach (Node child in node.GetChildren())
+        // Indexed rather than GetChildren(): that returns a Godot array whose enumeration marshals a
+        // Variant per element and whose own handle is left to the finalizer, per node of every tree
+        // this walks.
+        int children = node.GetChildCount();
+        for (int i = 0; i < children; i++)
         {
-            if (child is Node3D child3D)
+            if (node.GetChild(i) is Node3D child3D)
             {
                 hit |= TryPickNode(child3D, origin, dir, ref best, ref hadGeometry);
             }
