@@ -609,6 +609,15 @@ void fragment() {
         int resolution = channel.Resolution;
         Transform3D inverse = Entity.Transform.AffineInverse();
 
+        // Texel centre -> entity-local -> uv is affine in (x, y), so instead of a chunk-origin
+        // recompute, a full Transform3D multiply and a division per texel (TexelCentre / TryLocalToUv),
+        // step entity-local space by a constant vector per column and rebuild it once per row.
+        Vector3 chunkOrigin = context.Grid.OriginOf(context.Coord);
+        float texelStep = context.Grid.ChunkSize / resolution;
+        Vector3 columnStep = inverse.Basis * new Vector3(texelStep, 0.0f, 0.0f);
+        float invWorldSizeX = 1.0f / WorldSizeX;
+        float invWorldSizeZ = 1.0f / WorldSizeZ;
+
         // Snapshotted once per rasterize rather than sampled straight off the image: this runs on a
         // landscape build worker while the image may be being painted concurrently on the main
         // thread — see ImageChunkTable for why a snapshot is what makes that safe. An offline build
@@ -623,10 +632,18 @@ void fragment() {
 
         for (int y = 0; y < resolution; y++)
         {
-            for (int x = 0; x < resolution; x++)
+            // Rebuilt per row rather than accumulated across the whole grid, so column-step rounding
+            // cannot drift past one row's width.
+            Vector3 local = inverse * new Vector3(
+                chunkOrigin.X + (0.5f * texelStep),
+                0.0f,
+                chunkOrigin.Z + ((y + 0.5f) * texelStep));
+
+            for (int x = 0; x < resolution; x++, local += columnStep)
             {
-                Vector3 local = inverse * context.TexelCentre(resolution, x, y);
-                if (!TryLocalToUv(local, out float u, out float v))
+                float u = (local.X * invWorldSizeX) + 0.5f;
+                float v = (local.Z * invWorldSizeZ) + 0.5f;
+                if (u < 0.0f || u > 1.0f || v < 0.0f || v > 1.0f)
                 {
                     continue;
                 }
