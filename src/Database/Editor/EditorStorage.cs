@@ -392,6 +392,92 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return result;
     }
 
+    // How many chunk rows go into one INSERT … ON DUPLICATE KEY UPDATE here. Each row carries a whole
+    // pixel blob, so this is far smaller than the chunk-change batch — it keeps one statement's total
+    // byte size sane rather than the parameter count.
+    private const int ImageChunkRowsPerStatement = 64;
+
+    /// <summary>
+    /// Writes chunk pixels straight to storage for one image, bypassing residency and the dirty
+    /// tracking a <see cref="PaintImage"/> keeps — the write counterpart to
+    /// <see cref="LoadImageChunksAsync"/>. A bulk producer that never makes its chunks resident (so it
+    /// stays bounded in memory across a very large run) writes through here instead of staging them
+    /// into a commit. The <see cref="PaintImage"/> is not touched; its manifest catches up on the next
+    /// load.
+    ///
+    /// A disk-backed image goes to tile files through <see cref="ImageDiskStore"/>; a database-backed
+    /// one is upserted into the chunk table in batches, each buffer encoded the same way
+    /// <see cref="PaintImageFactory"/> encodes a staged chunk.
+    /// </summary>
+    public async Task UpsertImageChunksAsync(PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
+    {
+        if (chunks.Count == 0)
+        {
+            return;
+        }
+
+        if (image.IsDiskBacked)
+        {
+            await new ImageDiskStore().WriteChunksAsync(image, chunks, Array.Empty<ImageChunkCoord>()).ConfigureAwait(false);
+            return;
+        }
+
+        int imageId = image.RecordId
+            ?? throw new InvalidOperationException("Image has no record id — its header must be saved before chunks are written.");
+
+        var clock = Stopwatch.StartNew();
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        (string table, string idColumn, string xColumn, string yColumn, string formatColumn, string pixelsColumn) =
+            ImageChunkColumns(context);
+
+        DbConnection connection = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+
+        for (int start = 0; start < chunks.Count; start += ImageChunkRowsPerStatement)
+        {
+            int count = Math.Min(ImageChunkRowsPerStatement, chunks.Count - start);
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandTimeout = 120;
+
+            var sql = new StringBuilder(
+                $"INSERT INTO `{table}` (`{idColumn}`, `{xColumn}`, `{yColumn}`, `{formatColumn}`, `{pixelsColumn}`) VALUES ");
+            for (int i = 0; i < count; i++)
+            {
+                (ImageChunkCoord coord, byte[] pixels) = chunks[start + i];
+                (byte format, byte[] bytes) = ImageChunkCodec.Encode(pixels);
+                sql.Append(i == 0 ? "(" : ",(").Append($"@i{i},@x{i},@y{i},@f{i},@p{i})");
+                AddParameter(command, $"@i{i}", imageId);
+                AddParameter(command, $"@x{i}", coord.X);
+                AddParameter(command, $"@y{i}", coord.Y);
+                AddParameter(command, $"@f{i}", format);
+                AddParameter(command, $"@p{i}", bytes);
+            }
+
+            sql.Append($" ON DUPLICATE KEY UPDATE `{formatColumn}` = VALUES(`{formatColumn}`), `{pixelsColumn}` = VALUES(`{pixelsColumn}`)");
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        GD.Print($"[ImageChunks] Upserted {chunks.Count} chunk(s) for image {imageId} in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    private static (string Table, string Id, string X, string Y, string Format, string Pixels) ImageChunkColumns(EditorDbContext context)
+    {
+        IEntityType type = context.Model.FindEntityType(typeof(ImageChunkRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        string Column(string property) => type.FindProperty(property)!.GetColumnName(table)!;
+
+        return (
+            type.GetTableName()!,
+            Column(nameof(ImageChunkRecord.ImageId)),
+            Column(nameof(ImageChunkRecord.ChunkX)),
+            Column(nameof(ImageChunkRecord.ChunkY)),
+            Column(nameof(ImageChunkRecord.Format)),
+            Column(nameof(ImageChunkRecord.Pixels)));
+    }
+
     public async Task<string?> LoadBatchStateAsync(string operationId, string key)
     {
         using IDisposable reader = await Lock.ReaderAsync().ConfigureAwait(false);
