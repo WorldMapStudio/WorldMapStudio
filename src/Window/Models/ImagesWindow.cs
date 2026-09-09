@@ -48,6 +48,11 @@ public sealed class ImagesWindow : Window
             {
                 string formatSuffix = image.Format == PaintImagePixelFormat.Float32 ? " (f32)" : "";
                 ImGui.TextDisabled($"Id #{image.RecordId} · {image.Width}x{image.Height} · {ComponentsLabel(image.Components)}{formatSuffix}");
+                if (image.IsDiskBacked)
+                {
+                    ImGui.TextDisabled($"Disk: {image.DiskSourceId}:{image.DiskPath}{(image.IsTiledDisk ? $"/  ({image.DiskTilePattern})" : "")}");
+                }
+
                 DrawName(image, image.Name, value => image.Name = value);
                 DrawFooter(image, uses);
             }
@@ -105,6 +110,8 @@ public sealed class ImagesWindow : Window
 
     private void Duplicate(PaintImage image)
     {
+        // A duplicate is always database-backed, even of a disk-backed source: two catalog entries
+        // writing the same files on commit is never what "duplicate" should mean.
         var clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Images.Select(m => m.Name)) };
         clone.ConfigureNew(image.Width, image.Height, image.ChunkSize, image.Components, image.Format);
 

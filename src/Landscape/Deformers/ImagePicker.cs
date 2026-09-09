@@ -19,8 +19,11 @@ public sealed class ImagePicker
     private readonly ImageSystem _system;
     private readonly ModalOperator<ImageSelectionOperation, ImageSelectionContext> _modal =
         new("SelectImage", () => new ImageSelectionOperation(), new Vector2(760, 0));
+    private readonly ModalOperator<DiskImageSourceSelectionOperation, DiskImageSourceSelectionContext> _diskModal =
+        new("SelectDiskImageSource", () => new DiskImageSourceSelectionOperation(), new Vector2(760, 0));
 
     private ImageSelectionContext? _context;
+    private DiskImageSourceSelectionContext? _diskContext;
 
     private bool _createOpenRequested;
     private bool _createActive;
@@ -34,6 +37,8 @@ public sealed class ImagePicker
     private int _createChunksY = 1;
     private int _createComponents = 1;
     private PaintImagePixelFormat _createFormat = PaintImagePixelFormat.Byte;
+    private PaintImageStorageKind _createStorageKind = PaintImageStorageKind.Database;
+    private DiskImageSourceResult? _createDiskSource;
 
     public ImagePicker(ImageSystem system)
     {
@@ -60,6 +65,8 @@ public sealed class ImagePicker
         _createChunksY = 1;
         _createComponents = 1;
         _createFormat = PaintImagePixelFormat.Byte;
+        _createStorageKind = PaintImageStorageKind.Database;
+        _createDiskSource = null;
         _createOpenRequested = true;
     }
 
@@ -97,13 +104,22 @@ public sealed class ImagePicker
             ImGui.InputInt("Id", ref _createId);
             ImGui.InputText("Name", ref _createName, 128);
             ImGui.Separator();
-            DrawFormatCombo();
-            DrawPrecisionCombo();
-            ImGui.InputInt("Chunk Size (px)", ref _createChunkSize);
-            ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
-            ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
-            ImGui.TextDisabled($"= {ClampedPixelSize(_createChunksX, _createChunkSize)} x {ClampedPixelSize(_createChunksY, _createChunkSize)} px total");
-            ImGui.TextDisabled("Fixed once created — see .godot/ImageChunkPlan.md for why.");
+            DrawStorageCombo();
+
+            if (_createStorageKind == PaintImageStorageKind.Disk)
+            {
+                DrawDiskSourceRow();
+            }
+            else
+            {
+                DrawFormatCombo();
+                DrawPrecisionCombo();
+                ImGui.InputInt("Chunk Size (px)", ref _createChunkSize);
+                ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
+                ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
+                ImGui.TextDisabled($"= {ClampedPixelSize(_createChunksX, _createChunkSize)} x {ClampedPixelSize(_createChunksY, _createChunkSize)} px total");
+                ImGui.TextDisabled("Fixed once created — see .godot/ImageChunkPlan.md for why.");
+            }
 
             string? error = ValidationError();
             if (error != null)
@@ -132,6 +148,17 @@ public sealed class ImagePicker
             {
                 open = false;
             }
+
+            // Drawn from inside the create popup's content so its OpenPopup/BeginPopupModal nest one
+            // level deeper rather than replacing the create popup on the stack.
+            if (_diskContext != null)
+            {
+                ModalOperationState diskState = _diskModal.Draw(_diskContext, true, ImGuiWindowFlags.None);
+                if (diskState is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+                {
+                    _diskContext = null;
+                }
+            }
         });
 
         if (!open)
@@ -146,6 +173,50 @@ public sealed class ImagePicker
         4 => "RGBA",
         _ => "Scalar",
     };
+
+    private static string StorageLabel(PaintImageStorageKind kind) => kind switch
+    {
+        PaintImageStorageKind.Disk => "Disk (PNG / EXR files)",
+        _ => "Database",
+    };
+
+    private void DrawStorageCombo()
+    {
+        if (ImGui.BeginCombo("Storage", StorageLabel(_createStorageKind)))
+        {
+            foreach (PaintImageStorageKind candidate in new[] { PaintImageStorageKind.Database, PaintImageStorageKind.Disk })
+            {
+                if (ImGui.Selectable(StorageLabel(candidate), candidate == _createStorageKind))
+                {
+                    _createStorageKind = candidate;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    /// <summary>Disk storage takes its geometry from the file(s) picked, not the form fields — the
+    /// browse modal probes them and drops the result into <see cref="_createDiskSource"/>.</summary>
+    private void DrawDiskSourceRow()
+    {
+        if (ImGui.Button("Browse disk source..."))
+        {
+            _diskContext = new DiskImageSourceSelectionContext(_system.Context.Assets, result => _createDiskSource = result);
+            _diskModal.Show();
+        }
+
+        if (_createDiskSource is not { } source)
+        {
+            ImGui.TextDisabled("No file or tile folder selected.");
+            return;
+        }
+
+        ImGui.TextDisabled(source.IsTiled ? $"Tiles: {source.Path}/  ({source.TilePattern})" : $"File: {source.Path}");
+        ImGui.TextDisabled(
+            $"{source.Width} x {source.Height} px · chunk {source.ChunkSize} · {ComponentsLabel(source.Components)}" +
+            (source.Format == PaintImagePixelFormat.Float32 ? " · f32" : ""));
+    }
 
     private void DrawFormatCombo()
     {
@@ -212,6 +283,11 @@ public sealed class ImagePicker
             return $"Id {_createId} is already used.";
         }
 
+        if (_createStorageKind == PaintImageStorageKind.Disk)
+        {
+            return _createDiskSource == null ? "Pick a disk file or tile folder." : null;
+        }
+
         if (_createChunkSize <= 0)
         {
             return "Chunk size must be positive.";
@@ -237,12 +313,21 @@ public sealed class ImagePicker
             RecordId = _createId,
             Name = _createName.Trim().Length == 0 ? "Image" : _createName,
         };
-        image.ConfigureNew(
-            ClampedPixelSize(_createChunksX, _createChunkSize),
-            ClampedPixelSize(_createChunksY, _createChunkSize),
-            _createChunkSize,
-            _createComponents,
-            _createFormat);
+
+        if (_createStorageKind == PaintImageStorageKind.Disk && _createDiskSource is { } disk)
+        {
+            image.ConfigureNew(disk.Width, disk.Height, disk.ChunkSize, disk.Components, disk.Format);
+            image.ConfigureDiskSource(disk.SourceId, disk.Path, disk.IsTiled ? disk.TilePattern : "");
+        }
+        else
+        {
+            image.ConfigureNew(
+                ClampedPixelSize(_createChunksX, _createChunkSize),
+                ClampedPixelSize(_createChunksY, _createChunkSize),
+                _createChunkSize,
+                _createComponents,
+                _createFormat);
+        }
 
         var command = new CreateCatalogEntityCommand(_createCatalog, image);
         command.Apply();
