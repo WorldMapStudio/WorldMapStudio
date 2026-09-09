@@ -36,6 +36,7 @@ public sealed class ChannelVertexColorTint : ILandscapeVertexColorFunction
         Color target = context.Color(Tint);
         float strength = Mathf.Clamp(context.Float(Strength), 0.0f, 1.0f);
         int resolution = context.Resolution;
+        LandscapeChannelBinding binding = context.ChannelBinding(Mask);
 
         for (int y = 0; y < resolution; y++)
         {
@@ -43,7 +44,7 @@ public sealed class ChannelVertexColorTint : ILandscapeVertexColorFunction
             {
                 int index = (y * resolution) + x;
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                float mask = context.SampleChannel(Mask, world);
+                float mask = context.SampleChannel(binding, world);
 
                 // Reads what earlier layers built and pulls it toward the target, the same
                 // accumulate-and-transform shape as height's flatten.
@@ -86,6 +87,7 @@ public sealed class ChannelVertexLightAdd : ILandscapeVertexLightFunction
         Color color = context.Color(Tint);
         float amount = context.Float(Amount);
         int resolution = context.Resolution;
+        LandscapeChannelBinding binding = context.ChannelBinding(Mask);
 
         for (int y = 0; y < resolution; y++)
         {
@@ -93,7 +95,7 @@ public sealed class ChannelVertexLightAdd : ILandscapeVertexLightFunction
             {
                 int index = (y * resolution) + x;
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                float mask = context.SampleChannel(Mask, world);
+                float mask = context.SampleChannel(binding, world);
                 float scale = mask * amount;
 
                 light[index] += new Color(color.R * scale, color.G * scale, color.B * scale, 0.0f);
@@ -138,7 +140,9 @@ public sealed class ChannelVertexColorPaint : ILandscapeVertexColorFunction
     public void Evaluate(in LandscapeEvalContext context, Color[] colors)
     {
         float strength = Mathf.Clamp(context.Float(Strength), 0.0f, 1.0f);
-        bool hasMask = !context.Values.GetChannelBinding(Mask).IsEmpty;
+        LandscapeChannelBinding mask = context.ChannelBinding(Mask);
+        LandscapeChannelBinding source = context.ChannelBinding(Source);
+        bool hasMask = !mask.IsEmpty;
         int resolution = context.Resolution;
 
         for (int y = 0; y < resolution; y++)
@@ -147,8 +151,8 @@ public sealed class ChannelVertexColorPaint : ILandscapeVertexColorFunction
             {
                 int index = (y * resolution) + x;
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                Color sampled = context.SampleChannelColor(Source, world);
-                float weight = Mathf.Clamp((hasMask ? context.SampleChannel(Mask, world) : sampled.A) * strength, 0.0f, 1.0f);
+                Color sampled = context.SampleChannelColor(source, world);
+                float weight = Mathf.Clamp((hasMask ? context.SampleChannel(mask, world) : sampled.A) * strength, 0.0f, 1.0f);
 
                 if (weight <= 0.0f)
                 {
@@ -193,6 +197,7 @@ public sealed class ChannelVertexLightPaint : ILandscapeVertexLightFunction
     {
         float amount = context.Float(Amount);
         int resolution = context.Resolution;
+        LandscapeChannelBinding source = context.ChannelBinding(Source);
 
         for (int y = 0; y < resolution; y++)
         {
@@ -200,7 +205,7 @@ public sealed class ChannelVertexLightPaint : ILandscapeVertexLightFunction
             {
                 int index = (y * resolution) + x;
                 Vector3 world = context.WorldAt(x, y, vertices: true);
-                Color sampled = context.SampleChannelColor(Source, world);
+                Color sampled = context.SampleChannelColor(source, world);
 
                 light[index] += new Color(sampled.R * amount, sampled.G * amount, sampled.B * amount, 0.0f);
             }

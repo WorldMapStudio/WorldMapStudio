@@ -57,16 +57,30 @@ public readonly struct LandscapeEvalContext
         return new Vector3(origin.X + ((x + 0.5f) * texel), 0.0f, origin.Z + ((y + 0.5f) * texel));
     }
 
+    /// <summary>What a channel parameter is bound to. Resolving it means parsing the material's
+    /// stored value, so a function sampling per texel reads it once before its loop rather than on
+    /// every sample.</summary>
+    public LandscapeChannelBinding ChannelBinding(LandscapeParameter parameter) =>
+        Values.GetChannelBinding(parameter);
+
     /// <summary>Samples the channel a parameter is bound to, anywhere in the neighbourhood, honoring
     /// the binding's swizzle (see <see cref="LandscapeChannelBinding"/>).</summary>
     public float SampleChannel(LandscapeParameter parameter, Vector3 world) =>
         Channels.SampleScalar(Values.GetChannelBinding(parameter), world);
+
+    /// <inheritdoc cref="SampleChannel(LandscapeParameter, Vector3)"/>
+    public float SampleChannel(in LandscapeChannelBinding binding, Vector3 world) =>
+        Channels.SampleScalar(binding, world);
 
     /// <summary>Samples the channel a parameter is bound to as a color, honoring the binding's
     /// swizzle. What a color-consuming function (e.g. a vertex color paint) reads instead of
     /// <see cref="SampleChannel"/>.</summary>
     public Color SampleChannelColor(LandscapeParameter parameter, Vector3 world) =>
         Channels.SampleColor(Values.GetChannelBinding(parameter), world);
+
+    /// <inheritdoc cref="SampleChannelColor(LandscapeParameter, Vector3)"/>
+    public Color SampleChannelColor(in LandscapeChannelBinding binding, Vector3 world) =>
+        Channels.SampleColor(binding, world);
 
     public float Float(LandscapeParameter parameter) => Values.GetFloat(parameter);
 
