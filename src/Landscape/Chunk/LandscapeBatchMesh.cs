@@ -22,8 +22,15 @@ public static class LandscapeBatchMesh
     /// <summary>How many times a slot texture tiles across one chunk.</summary>
     private const float TextureTiling = 8.0f;
 
-    /// <summary>The shader's compile-time slot loop bound; matches <see cref="LandscapeTerrainBatch.MaxSlots"/>.</summary>
+    /// <summary>The shader's compile-time per-chunk slot loop bound and the slot-map width; matches
+    /// <see cref="LandscapeTerrainBatch.MaxSlots"/>. This bounds one <em>chunk</em>'s resolved slots,
+    /// not the batch — a batch pools every distinct material its chunks use.</summary>
     private const int MaxSlots = LandscapeTerrainBatch.MaxSlots;
+
+    /// <summary>How many distinct materials one batch can pool. The slot-map stores an array layer
+    /// index in an 8-bit channel, and layer 0 is the "no material" placeholder, so 255 real ones fit
+    /// — far more than a texture array's layer limit would ever let render anyway.</summary>
+    private const int MaxBatchLayers = 255;
 
     private static Shader? _shader;
 
@@ -44,14 +51,25 @@ public static class LandscapeBatchMesh
     {
         ChunkCoord batchOrigin = batchCoord.Origin(batchChunks);
 
-        var vertices = new List<Vector3>();
-        var normals = new List<Vector3>();
-        var uvs = new List<Vector2>();
-        var colors = new List<Color>();
-        var light = new List<float>();
-        var chunkIndex = new List<float>();
-        var indices = new List<int>();
+        int totalVerts = 0;
+        int maxIndices = 0;
+        foreach ((ChunkCoord _, LandscapeChunkOutput output) in chunks)
+        {
+            int r = output.HeightResolution;
+            totalVerts += r * r;
+            maxIndices += (r - 1) * (r - 1) * 6;
+        }
 
+        var vertices = new Vector3[totalVerts];
+        var normals = new Vector3[totalVerts];
+        var uvs = new Vector2[totalVerts];
+        var colors = new Color[totalVerts];
+        var light = new float[totalVerts * 3];
+        var chunkIndex = new float[totalVerts];
+        var indices = new int[maxIndices];
+
+        int v = 0;
+        int idx = 0;
         foreach ((ChunkCoord coord, LandscapeChunkOutput output) in chunks)
         {
             int resolution = output.HeightResolution;
@@ -60,42 +78,48 @@ public static class LandscapeBatchMesh
             float offsetX = (coord.X - batchOrigin.X) * grid.ChunkSize;
             float offsetZ = (coord.Y - batchOrigin.Y) * grid.ChunkSize;
             float index = batchCoord.IndexOf(coord, batchChunks);
-            int vertexBase = vertices.Count;
+            int vertexBase = v;
 
             for (int y = 0; y < resolution; y++)
             {
                 for (int x = 0; x < resolution; x++)
                 {
-                    vertices.Add(new Vector3(offsetX + (x * step), output.HeightAt(x, y), offsetZ + (y * step)));
-                    uvs.Add(new Vector2((float)x / quads, (float)y / quads));
-                    normals.Add(NormalAt(output, x, y, step));
-                    colors.Add(output.VertexColorAt(x, y));
+                    vertices[v] = new Vector3(offsetX + (x * step), output.HeightAt(x, y), offsetZ + (y * step));
+                    uvs[v] = new Vector2((float)x / quads, (float)y / quads);
+                    normals[v] = NormalAt(output, x, y, step);
+                    colors[v] = output.VertexColorAt(x, y);
 
                     Color glow = output.VertexLightAt(x, y);
-                    light.Add(glow.R);
-                    light.Add(glow.G);
-                    light.Add(glow.B);
+                    light[v * 3] = glow.R;
+                    light[(v * 3) + 1] = glow.G;
+                    light[(v * 3) + 2] = glow.B;
 
-                    chunkIndex.Add(index);
+                    chunkIndex[v] = index;
+                    v++;
                 }
             }
 
             foreach (int i in BuildIndices(resolution, output.Holes, output.HoleResolution))
             {
-                indices.Add(vertexBase + i);
+                indices[idx++] = vertexBase + i;
             }
+        }
+
+        if (idx != indices.Length)
+        {
+            System.Array.Resize(ref indices, idx);
         }
 
         // Disposed as soon as AddSurfaceFromArrays has copied it.
         using var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
-        arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
-        arrays[(int)Mesh.ArrayType.Normal] = normals.ToArray();
-        arrays[(int)Mesh.ArrayType.TexUV] = uvs.ToArray();
-        arrays[(int)Mesh.ArrayType.Color] = colors.ToArray();
-        arrays[(int)Mesh.ArrayType.Custom0] = light.ToArray();
-        arrays[(int)Mesh.ArrayType.Custom1] = chunkIndex.ToArray();
-        arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
+        arrays[(int)Mesh.ArrayType.Vertex] = vertices;
+        arrays[(int)Mesh.ArrayType.Normal] = normals;
+        arrays[(int)Mesh.ArrayType.TexUV] = uvs;
+        arrays[(int)Mesh.ArrayType.Color] = colors;
+        arrays[(int)Mesh.ArrayType.Custom0] = light;
+        arrays[(int)Mesh.ArrayType.Custom1] = chunkIndex;
+        arrays[(int)Mesh.ArrayType.Index] = indices;
 
         Mesh.ArrayFormat customFlags =
             (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift) |
@@ -213,8 +237,8 @@ public static class LandscapeBatchMesh
 
     // The distinct materials any slot of any chunk in the batch resolves to, ordered deterministically
     // so the texture arrays can be cached and shared between batches. Keyed by RecordId when there is
-    // one, else by reference. If more than the shader's slot bound turn up, the surplus is dropped and
-    // a warning raised — visibly wrong beats a crash, and MaxSlots is far above any authored count.
+    // one, else by reference. A batch pools far more than one chunk's worth — the cap here is only the
+    // slot-map channel's 255, which no real map approaches.
     private static List<LandscapeMaterial> BatchSlotMaterials(
         IReadOnlyList<(ChunkCoord Coord, LandscapeChunkOutput Output)> chunks,
         LandscapeBatchCoord batchCoord,
@@ -237,13 +261,12 @@ public static class LandscapeBatchMesh
             .ThenBy(m => m.Name, StringComparer.Ordinal)
             .ToList();
 
-        // Layer 0 is reserved for "no material", so the usable layers are 1..MaxSlots-1.
-        if (ordered.Count > MaxSlots - 1)
+        if (ordered.Count > MaxBatchLayers)
         {
             GD.PushWarning(
-                $"[Landscape] Terrain batch {batchCoord.X},{batchCoord.Y} resolves to {ordered.Count} distinct " +
-                $"materials; keeping the first {MaxSlots - 1}.");
-            ordered = ordered.Take(MaxSlots - 1).ToList();
+                $"[Landscape] Terrain batch {batchCoord.X},{batchCoord.Y} pools {ordered.Count} distinct " +
+                $"materials; keeping the first {MaxBatchLayers}.");
+            ordered = ordered.Take(MaxBatchLayers).ToList();
         }
 
         return ordered;

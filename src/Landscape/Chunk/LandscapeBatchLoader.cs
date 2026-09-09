@@ -23,23 +23,17 @@ public sealed class LandscapeBatchLoader : ISceneEntityLoader
     }
 
     /// <summary>
-    /// One chunk beyond the view, plus whatever the bound functions reach, plus room for a batch the
-    /// view's edge touches to be completed: expanding a partly-visible batch to whole pulls in up to
-    /// <c>BatchChunks - 1</c> chunks past the view, and those need their shaping entities loaded too.
+    /// One chunk beyond the view, plus whatever the bound functions reach. Expanding a partly-visible
+    /// batch to whole can pull chunks a little further past the view than that, and those get built
+    /// from whatever deformers happen to be loaded — the same "edge terrain settles as you approach"
+    /// tolerance the per-chunk loader had, just at a batch boundary. Not widened by the batch size:
+    /// that would grow the region <em>every</em> stored entity type is read over, which is its own
+    /// load cost far bigger than the occasional wrong batch edge.
     /// </summary>
-    public float LoadMargin
-    {
-        get
-        {
-            if (_landscape.Settings is not { } settings)
-            {
-                return 0.0f;
-            }
-
-            int batchChunks = BatchChunks();
-            return (settings.ChunkWorldSize * batchChunks) + _landscape.Catalog.MaxSampleRadius;
-        }
-    }
+    public float LoadMargin =>
+        _landscape.Settings is { } settings
+            ? settings.ChunkWorldSize + _landscape.Catalog.MaxSampleRadius
+            : 0.0f;
 
     public bool Handles(SceneEntity entity) => entity is LandscapeTerrainBatch;
 
