@@ -101,12 +101,13 @@ public sealed class PaintTool : ITool
 
         bool onObject = _paintOnObject && target.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
 
-        DrawTargetOutline(target, onObject, context.Camera, context.ImageMin);
+        var projector = new ViewportProjector(context.Camera, context.ImageMin, context.ImageSize);
+        DrawTargetOutline(target, onObject, projector);
 
         bool hit = TryHit(target, onObject, context, out GVector3 local);
         if (hit)
         {
-            DrawBrush(target, onObject, local, context.Camera, context.ImageMin);
+            DrawBrush(target, onObject, local, projector);
         }
 
         if (!_painting && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && target.Image is { } image)
@@ -268,7 +269,7 @@ public sealed class PaintTool : ITool
         return onObject ? world : _terrain.DropToHeight(world);
     }
 
-    private void DrawTargetOutline(ImageComponent target, bool onObject, Camera3D camera, NVector2 imageMin)
+    private void DrawTargetOutline(ImageComponent target, bool onObject, in ViewportProjector projector)
     {
         GVector3 half = new(target.WorldSizeX * 0.5f, 0.0f, target.WorldSizeZ * 0.5f);
         GVector3[] local =
@@ -282,7 +283,7 @@ public sealed class PaintTool : ITool
         Span<NVector2> screen = stackalloc NVector2[4];
         for (int i = 0; i < local.Length; i++)
         {
-            if (!ObjectSelection.WorldToScreen(camera, SurfacePoint(target, local[i], onObject), imageMin, out screen[i]))
+            if (!projector.TryProject(SurfacePoint(target, local[i], onObject), out screen[i]))
             {
                 return;
             }
@@ -296,7 +297,7 @@ public sealed class PaintTool : ITool
         }
     }
 
-    private void DrawBrush(ImageComponent target, bool onObject, GVector3 local, Camera3D camera, NVector2 imageMin)
+    private void DrawBrush(ImageComponent target, bool onObject, GVector3 local, in ViewportProjector projector)
     {
         const int Segments = 48;
 
@@ -314,7 +315,7 @@ public sealed class PaintTool : ITool
                 0.0f,
                 local.Z + (Mathf.Sin(angle) * _radius));
             GVector3 world = SurfacePoint(target, point, onObject);
-            if (!ObjectSelection.WorldToScreen(camera, world, imageMin, out NVector2 screen))
+            if (!projector.TryProject(world, out NVector2 screen))
             {
                 previous = null;
                 continue;
