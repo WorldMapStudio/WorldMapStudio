@@ -1293,6 +1293,126 @@ public static class ImageTests
             "a chunk with no resident image chunk under it must receive no paint");
     }
 
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Disk_codec_round_trips_a_scalar_and_an_rgba_chunk_as_png()
+    {
+        var scalar = new byte[16 * 16];
+        for (int i = 0; i < scalar.Length; i++)
+        {
+            scalar[i] = (byte)(i * 7);
+        }
+
+        byte[] scalarFile = ImageDiskCodec.Encode(scalar, 16, 1, 1, PaintImagePixelFormat.Byte, 16, 16);
+        byte[] scalarBack = ImageDiskCodec.Decode(scalarFile, ".png", 16, 1, 1, PaintImagePixelFormat.Byte);
+        Assert.IsTrue(scalar.AsSpan().SequenceEqual(scalarBack), "an L8 chunk must survive a PNG round trip byte for byte");
+
+        var rgba = new byte[8 * 8 * 4];
+        for (int i = 0; i < rgba.Length; i++)
+        {
+            rgba[i] = (byte)(255 - (i % 256));
+        }
+
+        byte[] rgbaTile = new byte[16 * 16 * 4];
+        for (int y = 0; y < 8; y++)
+        {
+            Array.Copy(rgba, y * 8 * 4, rgbaTile, y * 16 * 4, 8 * 4);
+        }
+
+        byte[] rgbaFile = ImageDiskCodec.Encode(rgbaTile, 16, 4, 4, PaintImagePixelFormat.Byte, 8, 8);
+        byte[] rgbaBack = ImageDiskCodec.Decode(rgbaFile, ".png", 16, 4, 4, PaintImagePixelFormat.Byte);
+        for (int y = 0; y < 8; y++)
+        {
+            for (int x = 0; x < 8 * 4; x++)
+            {
+                Assert.AreEqual(rgbaTile[(y * 16 * 4) + x], rgbaBack[(y * 16 * 4) + x], $"rgba edge tile mismatch at row {y} byte {x}");
+            }
+        }
+
+        // Everything outside the 8x8 fill rect must decode back to zero, not garbage.
+        Assert.AreEqual(0, rgbaBack[(9 * 16 * 4) + 0], "a decoded edge tile pads the uncovered area with zero");
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Disk_codec_round_trips_a_float32_chunk_as_exr()
+    {
+        var tile = new byte[4 * 4 * 4];
+        Span<float> values = MemoryMarshal.Cast<byte, float>(tile);
+        float[] samples = [-1.0f, 0.0f, 0.5f, 2.0f];
+        for (int i = 0; i < 16; i++)
+        {
+            values[i] = samples[i % samples.Length];
+        }
+
+        byte[] file = ImageDiskCodec.Encode(tile, 4, 4, 1, PaintImagePixelFormat.Float32, 4, 4);
+        byte[] back = ImageDiskCodec.Decode(file, ".exr", 4, 4, 1, PaintImagePixelFormat.Float32);
+        Span<float> restored = MemoryMarshal.Cast<byte, float>(back);
+
+        for (int i = 0; i < 16; i++)
+        {
+            Assert.AreApproximatelyEqual(values[i], restored[i], 1e-2, $"float32 EXR round trip lost pixel {i}");
+        }
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Disk_store_writes_and_reads_tiled_chunks_through_an_asset_source()
+    {
+        string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "wms_disk_store_test_" + System.Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(root);
+        try
+        {
+            EditorContext context = NewContext("__wms_disk_store_test__");
+            context.Project.AssetSources.Add(new AssetSourceSettings { Id = "test", Name = "Test", RootPath = root, Enabled = true });
+
+            var image = new PaintImage { RecordId = 1, Name = "Disk" };
+            image.ConfigureNew(32, 32, chunkSize: 16); // a 2x2 tile grid
+            image.ConfigureDiskSource("test", "tiles", PaintImage.DefaultDiskTilePattern);
+
+            var a = new byte[16 * 16];
+            var b = new byte[16 * 16];
+            Array.Fill(a, (byte)200);
+            Array.Fill(b, (byte)50);
+
+            var store = new ImageDiskStore(context.Assets);
+            store.WriteChunksAsync(image,
+                [(new ImageChunkCoord(0, 0), a), (new ImageChunkCoord(1, 0), b)],
+                []).GetAwaiter().GetResult();
+
+            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "0_0.png")));
+            Assert.IsTrue(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "1_0.png")));
+
+            IReadOnlyList<ImageChunkCoord> manifest = store.ListManifestAsync(image).GetAwaiter().GetResult();
+            Assert.AreEqual(2, manifest.Count);
+
+            IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> read = store
+                .ReadChunksAsync(image, [new ImageChunkCoord(0, 0), new ImageChunkCoord(1, 0), new ImageChunkCoord(1, 1)])
+                .GetAwaiter().GetResult();
+            Assert.AreEqual(2, read.Count, "a coord with no tile file must not come back");
+            Assert.IsTrue(a.AsSpan().SequenceEqual(read.First(r => r.Coord == new ImageChunkCoord(0, 0)).Pixels));
+            Assert.IsTrue(b.AsSpan().SequenceEqual(read.First(r => r.Coord == new ImageChunkCoord(1, 0)).Pixels));
+
+            store.WriteChunksAsync(image, [], [new ImageChunkCoord(0, 0)]).GetAwaiter().GetResult();
+            Assert.IsFalse(System.IO.File.Exists(System.IO.Path.Combine(root, "tiles", "0_0.png")), "a tiled delete removes the tile file");
+        }
+        finally
+        {
+            System.IO.Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [EditorTest(Category = "Image", Thread = TestThread.Main)]
+    public static void Tile_pattern_regex_matches_the_coordinate_tokens_only()
+    {
+        System.Text.RegularExpressions.Regex regex = ImageDiskStore.TilePatternRegex("{x}_{y}.png");
+
+        Assert.IsTrue(regex.IsMatch("3_12.png"));
+        Assert.IsFalse(regex.IsMatch("3_12.exr"));
+        Assert.IsFalse(regex.IsMatch("tile_3_12.png"));
+
+        System.Text.RegularExpressions.Match match = regex.Match("7_4.png");
+        Assert.AreEqual("7", match.Groups["x"].Value);
+        Assert.AreEqual("4", match.Groups["y"].Value);
+    }
+
     private static EditorContext NewContext(string name) =>
         new(new Node3D(), new Project { Name = name });
 
