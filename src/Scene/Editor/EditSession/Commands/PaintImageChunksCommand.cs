@@ -35,10 +35,15 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand,
         List<SceneEntity> affected = affectedEntities.ToList();
         List<ImageChunkCoord> coords = edits.Select(edit => edit.Coord).ToList();
 
-        _image.ApplyChunkEdits(edits.Select(edit => (edit.Coord, edit.Before)));
-        Dictionary<SceneEntity, ChunkChangeSnapshot> beforeSnapshots = CaptureAll(affected, coords);
-        _image.ApplyChunkEdits(edits.Select(edit => (edit.Coord, edit.After)));
-        Dictionary<SceneEntity, ChunkChangeSnapshot> afterSnapshots = CaptureAll(affected, coords);
+        // Both fingerprints come from the recorded edit bytes, which this already holds, rather than
+        // from rolling the image back to its "before" content and reading it there. A landscape build
+        // worker samples this image's chunks while it rebuilds, so that round trip was a structural
+        // mutation of the live chunk table under a concurrent reader: a stroke's terrain would land at
+        // its pre-stroke height for a frame on release, and worse was available.
+        Dictionary<SceneEntity, ChunkChangeSnapshot> beforeSnapshots =
+            CaptureAll(affected, coords, ConcatenateChunkBytes(edits, before: true));
+        Dictionary<SceneEntity, ChunkChangeSnapshot> afterSnapshots =
+            CaptureAll(affected, coords, ConcatenateChunkBytes(edits, before: false));
 
         ChunkImpacts = afterSnapshots
             .Select(pair => new ChunkChangeImpact(pair.Key, beforeSnapshots.GetValueOrDefault(pair.Key), pair.Value))
@@ -60,10 +65,12 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand,
 
     // One snapshot per affected placement, bounded to just the touched chunks' world footprint rather
     // than ChunkChangeSnapshot.Capture's whole-entity bounds.
-    private Dictionary<SceneEntity, ChunkChangeSnapshot> CaptureAll(IEnumerable<SceneEntity> entities, IReadOnlyCollection<ImageChunkCoord> coords)
+    private static Dictionary<SceneEntity, ChunkChangeSnapshot> CaptureAll(
+        IEnumerable<SceneEntity> entities,
+        IReadOnlyCollection<ImageChunkCoord> coords,
+        byte[] contentHash)
     {
         var result = new Dictionary<SceneEntity, ChunkChangeSnapshot>();
-        byte[]? contentHash = null;
 
         foreach (SceneEntity entity in entities)
         {
@@ -73,7 +80,6 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand,
                 continue;
             }
 
-            contentHash ??= ConcatenateChunkBytes(coords);
             string fingerprint = ChunkChangeSnapshot.FingerprintBytes(
                 entity, contentHash, entity.Map.Value, component.ImageId, component.WorldSizeX, component.WorldSizeZ);
             result[entity] = new ChunkChangeSnapshot(entity.Map, bounds, fingerprint);
@@ -82,13 +88,18 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand,
         return result;
     }
 
-    // Deterministic order so the same content always hashes the same way regardless of paint order.
-    private byte[] ConcatenateChunkBytes(IEnumerable<ImageChunkCoord> coords)
+    // One side of the recorded edits, in a deterministic order so the same content always hashes the
+    // same way regardless of paint order. A chunk with no bytes on that side did not exist then, which
+    // is what reading an absent chunk off the image used to report.
+    private static byte[] ConcatenateChunkBytes(
+        IReadOnlyList<(ImageChunkCoord Coord, byte[]? Before, byte[]? After)> edits,
+        bool before)
     {
         using var stream = new MemoryStream();
-        foreach (ImageChunkCoord coord in coords.OrderBy(coord => coord.Y).ThenBy(coord => coord.X))
+        foreach ((_, byte[]? beforeBytes, byte[]? afterBytes) in
+            edits.OrderBy(edit => edit.Coord.Y).ThenBy(edit => edit.Coord.X))
         {
-            if (_image.CopyChunkBytes(coord) is { } bytes)
+            if ((before ? beforeBytes : afterBytes) is { } bytes)
             {
                 stream.Write(bytes);
             }
