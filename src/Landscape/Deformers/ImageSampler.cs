@@ -21,7 +21,10 @@ public struct ImageSampler
     private readonly int _components;
     private readonly PaintImagePixelFormat _format;
 
-    private ImageChunkCoord _cursorCoord;
+    // The cached chunk's pixel-space origin, so a tap can be tested against its span with two int
+    // comparisons instead of rebuilding an ImageChunkCoord and comparing that.
+    private int _cursorBaseX;
+    private int _cursorBaseY;
     private byte[]? _cursorPixels;
     private bool _cursorValid;
 
@@ -33,7 +36,8 @@ public struct ImageSampler
         _chunkSize = chunkSize;
         _components = components;
         _format = format;
-        _cursorCoord = default;
+        _cursorBaseX = 0;
+        _cursorBaseY = 0;
         _cursorPixels = null;
         _cursorValid = false;
     }
@@ -79,17 +83,20 @@ public struct ImageSampler
 
     private float PixelAt(int x, int y, int component)
     {
-        var coord = new ImageChunkCoord(x / _chunkSize, y / _chunkSize);
-
-        // Caches an absent chunk as well as a present one. _cursorValid used to mean "the lookup
-        // found something", so every tap landing on an unpainted chunk missed the cache and repeated
-        // the dictionary lookup — the common case on a large, mostly-empty canvas, where all four
-        // bilinear taps of every texel paid a fresh lookup only to return zero.
-        if (!_cursorValid || coord != _cursorCoord)
+        // A scanline of taps stays inside one chunk for a run of _chunkSize pixels, so only a tap that
+        // actually leaves the cached chunk's pixel span pays the divisions and the table lookup.
+        // Caches an absent chunk as well as a present one — on a large, mostly-empty canvas every tap
+        // otherwise repeated the lookup only to return zero.
+        if (!_cursorValid ||
+            x < _cursorBaseX || x >= _cursorBaseX + _chunkSize ||
+            y < _cursorBaseY || y >= _cursorBaseY + _chunkSize)
         {
-            _table.TryGet(coord, out ImageChunk? chunk);
+            int chunkX = x / _chunkSize;
+            int chunkY = y / _chunkSize;
+            _table.TryGet(new ImageChunkCoord(chunkX, chunkY), out ImageChunk? chunk);
             _cursorPixels = chunk?.Pixels;
-            _cursorCoord = coord;
+            _cursorBaseX = chunkX * _chunkSize;
+            _cursorBaseY = chunkY * _chunkSize;
             _cursorValid = true;
         }
 
@@ -98,8 +105,8 @@ public struct ImageSampler
             return 0.0f;
         }
 
-        int localX = x - (coord.X * _chunkSize);
-        int localY = y - (coord.Y * _chunkSize);
+        int localX = x - _cursorBaseX;
+        int localY = y - _cursorBaseY;
         int elementIndex = (((localY * _chunkSize) + localX) * _components) + component;
         return PaintImagePixelIO.Read(pixels, elementIndex, _format);
     }
