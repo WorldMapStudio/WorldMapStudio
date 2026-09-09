@@ -153,24 +153,36 @@ public static class LandscapeChunkMesh
 
         Texture2DArray albedoArray = AlbedoArrayCache.GetOrAdd(AlbedoArrayKey(output.Layers), _ => BuildAlbedoArray(output, assets));
 
-        var alphas = new Godot.Collections.Array<Image>();
+        // Gathered as a plain list as well as a Godot array so the images can be released through the
+        // same references that created them.
+        var alphaImages = new List<Image>();
         for (int i = 0; i < output.Layers.Count; i++)
         {
             // Slot 0 is the opaque base and has no alpha; the array holds one image per alpha slot.
             if (output.Layers[i].Alpha is { } alpha)
             {
-                alphas.Add(AlphaImage(alpha, output.AlphaResolution));
+                alphaImages.Add(AlphaImage(alpha, output.AlphaResolution));
             }
         }
 
         // A sampler2DArray needs at least one layer even when nothing composites over the base.
-        if (alphas.Count == 0)
+        if (alphaImages.Count == 0)
         {
-            alphas.Add(Image.CreateEmpty(1, 1, false, Image.Format.R8));
+            alphaImages.Add(Image.CreateEmpty(1, 1, false, Image.Format.R8));
         }
 
+        var alphas = new Godot.Collections.Array<Image>(alphaImages);
         var alphaArray = new Texture2DArray();
         alphaArray.CreateFromImages(alphas);
+
+        // CreateFromImages uploads the pixels, so nothing needs these afterwards. Released here rather
+        // than left to the finalizer: a chunk's alpha images are built per chunk and never shared, and
+        // at streaming rates a wave of them queues up behind Godot's disposables tracker — where the
+        // finalizer thread then contends for the same lock the threads still building chunks need.
+        foreach (Image image in alphaImages)
+        {
+            image.Dispose();
+        }
 
         material.SetShaderParameter("slot_albedo", albedoArray);
         material.SetShaderParameter("slot_alpha", alphaArray);
