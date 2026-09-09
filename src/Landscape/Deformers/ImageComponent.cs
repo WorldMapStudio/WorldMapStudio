@@ -69,6 +69,13 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     private sealed record ChunkNode(Node3D Node, ImageTexture Texture)
     {
         public int Revision { get; set; } = -1;
+
+        // The widened pixels and the Godot Image handed to ImageTexture.Update, kept per chunk rather
+        // than rebuilt per upload. A stroke re-uploads every chunk under the brush every frame, and a
+        // full tile is a quarter of a megabyte, so allocating both each time buried the stamp itself.
+        public byte[]? Pixels { get; set; }
+
+        public Image? Buffer { get; set; }
     }
 
     public ImageComponent(ImageSystem system)
@@ -301,7 +308,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
             {
                 if (existing.Revision != revision)
                 {
-                    existing.Texture.Update(ChunkImage(image, layer, coord));
+                    UploadChunkImage(image, layer, coord, existing);
                     existing.Revision = revision;
                 }
 
@@ -346,10 +353,22 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         node.Node.QueueFree();
     }
 
-    private Image ChunkImage(PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord) =>
-        layer.DisplayMode == ImageDisplayMode.LandscapeOverlay && layer.ColorSource == ImageColorSource.Ramp
-            ? PaintImageTextures.ChunkTintedImage(image, coord, layer.BaseColor, layer.FullColor)
-            : PaintImageTextures.ChunkImage(image, coord);
+    /// <summary>Re-uploads one chunk's pixels into the texture it already has, through that chunk
+    /// node's own pixel buffer and <see cref="Image"/> rather than a freshly built pair. Both are the
+    /// full tile size and a stroke comes back here for every chunk under the brush every frame, so
+    /// rebuilding them is what a wide brush actually spends its time on.</summary>
+    private static void UploadChunkImage(PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord, ChunkNode node)
+    {
+        int width;
+        int height;
+        node.Pixels = layer.DisplayMode == ImageDisplayMode.LandscapeOverlay && layer.ColorSource == ImageColorSource.Ramp
+            ? PaintImageTextures.WriteChunkTintedRgba(image, coord, layer.BaseColor, layer.FullColor, node.Pixels, out width, out height)
+            : PaintImageTextures.WriteChunkRgba(image, coord, node.Pixels, out width, out height);
+
+        node.Buffer ??= Godot.Image.CreateEmpty(width, height, false, Godot.Image.Format.Rgba8);
+        node.Buffer.SetData(width, height, false, Godot.Image.Format.Rgba8, node.Pixels);
+        node.Texture.Update(node.Buffer);
+    }
 
     private ChunkNode? AddChunkNode(Node3D root, PaintImage image, ImageDisplayLayer layer, ImageChunkCoord coord)
     {
