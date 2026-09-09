@@ -487,7 +487,10 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             byte[]? afterPixels = CopyChunkBytes(coord);
             if (!BytesEqual(beforePixels, afterPixels))
             {
-                result.Add((coord, beforePixels, afterPixels));
+                // Copied, the way the "before" side already is: that is the chunk's live buffer, and a
+                // later stroke over the same chunk paints into it in place, which would rewrite this
+                // record's "after" content long after the stroke it describes.
+                result.Add((coord, beforePixels, (byte[]?)afterPixels?.Clone()));
             }
         }
 
