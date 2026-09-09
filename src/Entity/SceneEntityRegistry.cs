@@ -12,6 +12,12 @@ public sealed class SceneEntityRegistry : IWorldParticipant
 {
     private readonly List<SceneEntity> _entities = [];
     private readonly HashSet<SceneEntity> _entitySet = [];
+
+    // InView is re-derived several times a frame; the predicate over every loaded entity is about 6%
+    // of a small-brush frame. Everything that changes the result — a load, an unload, a peripheral
+    // flag flipping — bumps Version, so a list rebuilt whenever Version moves is always current.
+    private readonly List<SceneEntity> _inView = [];
+    private int _inViewVersion = -1;
     private readonly HashSet<SceneEntity> _peripheral = [];
     private readonly HashSet<SceneEntity> _resident = [];
     private readonly Dictionary<EntityId, SceneEntity> _byId = [];
@@ -23,7 +29,26 @@ public sealed class SceneEntityRegistry : IWorldParticipant
     /// The entities the user is actually looking at — everything loaded except the peripheral ones.
     /// This is what the outline lists and the viewport picks against.
     /// </summary>
-    public IEnumerable<SceneEntity> InView => _entities.Where(entity => !_peripheral.Contains(entity));
+    public IReadOnlyList<SceneEntity> InView
+    {
+        get
+        {
+            if (_inViewVersion != Version)
+            {
+                _inViewVersion = Version;
+                _inView.Clear();
+                foreach (SceneEntity entity in _entities)
+                {
+                    if (!_peripheral.Contains(entity))
+                    {
+                        _inView.Add(entity);
+                    }
+                }
+            }
+
+            return _inView;
+        }
+    }
 
     public int Version { get; private set; }
 
