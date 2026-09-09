@@ -80,6 +80,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         _system = system;
     }
 
+    [ScriptProperty]
     public int? ImageId
     {
         get => _imageId;
@@ -97,6 +98,24 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
 
     /// <summary>The bound image, or null if <see cref="ImageId"/> is unset or dangling.</summary>
     public PaintImage? Image => _system.FindImage(_imageId);
+
+    /// <summary>Bound image pixel width, or null when nothing is bound. Read-only diagnostic accessor
+    /// so a script can size a brush or a rebuild-wave check against the actual raster.</summary>
+    [ScriptProperty]
+    public int? ImageWidth => Image?.Width;
+
+    /// <summary>Bound image pixel height, or null when nothing is bound.</summary>
+    [ScriptProperty]
+    public int? ImageHeight => Image?.Height;
+
+    /// <summary>Bound image chunk tile size, or null when nothing is bound.</summary>
+    [ScriptProperty]
+    public int? ImageChunkSize => Image?.ChunkSize;
+
+    /// <summary>Bound image stored pixel format (<c>Byte</c> or <c>Float32</c>), or null when nothing
+    /// is bound.</summary>
+    [ScriptProperty]
+    public string? ImagePixelFormat => Image?.Format.ToString();
 
     public int? DisplayLayerId
     {
@@ -118,6 +137,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     /// or <see cref="ContentVersion"/>.</summary>
     public ImageDisplayLayer? DisplayLayer => _system.FindDisplayLayer(_displayLayerId);
 
+    [ScriptProperty]
     public float WorldSizeX
     {
         get => _worldSizeX;
@@ -134,6 +154,7 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         }
     }
 
+    [ScriptProperty]
     public float WorldSizeZ
     {
         get => _worldSizeZ;
@@ -150,8 +171,10 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
         }
     }
 
+    [ScriptProperty]
     public float Strength { get; set; } = 1.0f;
 
+    [ScriptProperty]
     public string Channel { get; set; } = "";
 
     public override string TypeId => Kind;
