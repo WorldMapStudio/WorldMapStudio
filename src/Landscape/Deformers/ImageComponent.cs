@@ -361,12 +361,22 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
     {
         int width;
         int height;
-        node.Pixels = layer.DisplayMode == ImageDisplayMode.LandscapeOverlay && layer.ColorSource == ImageColorSource.Ramp
-            ? PaintImageTextures.WriteChunkTintedRgba(image, coord, layer.BaseColor, layer.FullColor, node.Pixels, out width, out height)
-            : PaintImageTextures.WriteChunkRgba(image, coord, node.Pixels, out width, out height);
 
-        node.Buffer ??= Godot.Image.CreateEmpty(width, height, false, Godot.Image.Format.Rgba8);
-        node.Buffer.SetData(width, height, false, Godot.Image.Format.Rgba8, node.Pixels);
+        // Object mode's quad is unshaded and opaque, so it never reads the alpha a widened scalar
+        // would carry — it can take the chunk in the narrower encoding. A decal reads alpha, so the
+        // overlay paths stay on RGBA.
+        Godot.Image.Format format = Godot.Image.Format.Rgba8;
+        node.Pixels = layer.DisplayMode switch
+        {
+            ImageDisplayMode.Object =>
+                PaintImageTextures.WriteChunkOpaque(image, coord, node.Pixels, out width, out height, out format),
+            ImageDisplayMode.LandscapeOverlay when layer.ColorSource == ImageColorSource.Ramp =>
+                PaintImageTextures.WriteChunkTintedRgba(image, coord, layer.BaseColor, layer.FullColor, node.Pixels, out width, out height),
+            _ => PaintImageTextures.WriteChunkRgba(image, coord, node.Pixels, out width, out height),
+        };
+
+        node.Buffer ??= Godot.Image.CreateEmpty(width, height, false, format);
+        node.Buffer.SetData(width, height, false, format, node.Pixels);
         node.Texture.Update(node.Buffer);
     }
 
@@ -505,7 +515,9 @@ public sealed class ImageComponent : SceneComponent, ISceneBoundsProvider, ITran
             return null;
         }
 
-        ImageTexture texture = PaintImageTextures.ChunkTexture(image, coord);
+        // Must match what UploadChunkImage will hand ImageTexture.Update later: Godot rejects an
+        // update whose image format differs from the one the texture was created with.
+        ImageTexture texture = PaintImageTextures.ChunkOpaqueTexture(image, coord);
         var mesh = new MeshInstance3D
         {
             Name = $"Chunk_{coord.X}_{coord.Y}",
