@@ -12,6 +12,7 @@ public sealed class GodotTextureLoader : ITextureLoader
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".bmp",
+        ".exr",
         ".jpg",
         ".jpeg",
         ".png",
@@ -40,6 +41,7 @@ public sealed class GodotTextureLoader : ITextureLoader
         Error error = AssetPath.Extension(path).ToLowerInvariant() switch
         {
             ".bmp" => image.LoadBmpFromBuffer(bytes),
+            ".exr" => image.LoadExrFromBuffer(bytes),
             ".jpg" or ".jpeg" => image.LoadJpgFromBuffer(bytes),
             ".png" => image.LoadPngFromBuffer(bytes),
             ".svg" => image.LoadSvgFromBuffer(bytes),

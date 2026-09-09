@@ -353,6 +353,98 @@ public sealed partial class AssetSystem : ISubsystemHost
         return null;
     }
 
+    /// <summary>Reads an asset from one named source only, rather than the first active source that
+    /// happens to resolve <paramref name="path"/> — what a disk-backed <see cref="PaintImage"/> uses so
+    /// its tiles always come from the source it was configured against.</summary>
+    public async Task<byte[]?> ReadAssetBytesFromAsync(string sourceId, string path)
+    {
+        if (FindSource(sourceId) is not { } source)
+        {
+            return null;
+        }
+
+        foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+        {
+            if (await provider.ReadBytesAsync(source, path).ConfigureAwait(false) is { } bytes)
+            {
+                return bytes;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Writes an asset into one named source. Returns whether a provider took the write.</summary>
+    public async Task<bool> WriteAssetBytesAsync(string sourceId, string path, byte[] bytes)
+    {
+        if (FindSource(sourceId) is not { } source)
+        {
+            return false;
+        }
+
+        foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+        {
+            if (await provider.WriteBytesAsync(source, path, bytes).ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Deletes an asset from one named source. Returns whether a file was removed.</summary>
+    public async Task<bool> DeleteAssetAsync(string sourceId, string path)
+    {
+        if (FindSource(sourceId) is not { } source)
+        {
+            return false;
+        }
+
+        foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+        {
+            if (await provider.DeleteAsync(source, path).ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private AssetSourceSettings? FindSource(string sourceId) =>
+        ActiveSources().FirstOrDefault(source => source.Id == sourceId);
+
+    /// <summary>Every asset path in one named source, optionally restricted to those under
+    /// <paramref name="underDirectory"/> (a source-relative prefix). Runs off the main thread — a
+    /// provider's listing can open and index archives — so callers on the render loop must await it.</summary>
+    public Task<IReadOnlyList<string>> ListSourcePathsAsync(string sourceId, string underDirectory = "")
+    {
+        string prefix = underDirectory.Length == 0 ? "" : AssetPath.Normalize(underDirectory).TrimEnd('/') + "/";
+        return Task.Run<IReadOnlyList<string>>(() =>
+        {
+            if (FindSource(sourceId) is not { } source)
+            {
+                return [];
+            }
+
+            var paths = new List<string>();
+            foreach (IAssetProvider provider in Providers.Where(provider => provider.Supports(source.Type)))
+            {
+                foreach (AssetRef asset in provider.ListAssets(source))
+                {
+                    string normalized = AssetPath.Normalize(asset.Path);
+                    if (prefix.Length == 0 || normalized.StartsWith(prefix, System.StringComparison.OrdinalIgnoreCase))
+                    {
+                        paths.Add(normalized);
+                    }
+                }
+            }
+
+            return paths;
+        });
+    }
+
     private Texture2D? Cache(string key, Texture2D? texture, int? generation = null)
     {
         if (texture != null)
