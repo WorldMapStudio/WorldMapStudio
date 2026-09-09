@@ -27,6 +27,16 @@ public sealed class PaintTool : ITool
     private ImageComponent? _strokeTarget;
     private PaintImage? _strokeImage;
 
+    // Where the last dab of the current stroke was stamped, in target-local space, and whether the
+    // stroke's first dab has been placed yet. Dabs are spaced by pointer travel rather than laid down
+    // once per frame, so stroke density no longer rides on the frame rate.
+    private GVector3 _lastStampLocal;
+    private bool _strokeStamped;
+
+    private const float StampSpacingFraction = 0.25f;
+    private const float MinStampSpacing = 0.05f;
+    private const int MaxStampsPerFrame = 512;
+
     public PaintTool(ToolContext context)
     {
         _selection = context.Selection;
@@ -125,11 +135,50 @@ public sealed class PaintTool : ITool
                 return;
             }
 
-            if (_strokeTarget == target && hit && target.Paint(local, _radius, _color, _opacity, _erase))
+            if (_strokeTarget == target && hit && StampAlong(target, local))
             {
                 _scene.Touch(target.Owner!);
             }
         }
+    }
+
+    // Lays dabs from the last stamped point up to <paramref name="local"/>, one every
+    // StampSpacingFraction of the brush radius of travel, carrying the leftover distance to the next
+    // frame. The first dab of a stroke lands wherever the stroke started.
+    private bool StampAlong(ImageComponent target, GVector3 local)
+    {
+        bool changed = false;
+
+        if (!_strokeStamped)
+        {
+            _strokeStamped = true;
+            _lastStampLocal = local;
+            return target.Paint(local, _radius, _color, _opacity, _erase);
+        }
+
+        float spacing = Math.Max(_radius * StampSpacingFraction, MinStampSpacing);
+        GVector3 travel = new(local.X - _lastStampLocal.X, 0.0f, local.Z - _lastStampLocal.Z);
+        float distance = travel.Length();
+        if (distance < spacing)
+        {
+            return false;
+        }
+
+        GVector3 step = (travel / distance) * spacing;
+        int stamps = Math.Min((int)(distance / spacing), MaxStampsPerFrame);
+        for (int i = 0; i < stamps; i++)
+        {
+            _lastStampLocal += step;
+            changed |= target.Paint(_lastStampLocal, _radius, _color, _opacity, _erase);
+        }
+
+        // If the pointer outran the per-frame cap, drop the backlog rather than let it accumulate.
+        if (stamps == MaxStampsPerFrame)
+        {
+            _lastStampLocal = local;
+        }
+
+        return changed;
     }
 
     public void Deactivate()
@@ -151,6 +200,7 @@ public sealed class PaintTool : ITool
         }
 
         _painting = false;
+        _strokeStamped = false;
         ImageComponent? target = _strokeTarget;
         PaintImage? image = _strokeImage;
         _strokeTarget = null;
