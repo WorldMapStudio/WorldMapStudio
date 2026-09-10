@@ -3,6 +3,7 @@
     "tasks": [
         {
             "label": "build",
+            "hide": true,
             "type": "process",
             "command": "dotnet",
             "args": [
@@ -18,49 +19,44 @@
             "problemMatcher": "$msCompile"
         },
         {
-            "label": "build (optimized)",
-            "detail": "Compiles optimized IL into the Debug output slot the editor loads, so release-speed code runs without a full export.",
-            "type": "process",
-            "command": "dotnet",
-            "args": [
-                "build",
-                "-p:Optimized=true"
-            ],
+            "label": "prepare debug",
+            "hide": true,
+            "type": "shell",
+            "command": "dotnet build; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-Command"]
+                }
             },
-            "group": "build",
-            "problemMatcher": "$msCompile"
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
         },
         {
-            "label": "run godot (optimized)",
-            "detail": "Runs the project with optimized managed code and no debugger attached. Use this for profiling instead of the export.",
-            "type": "process",
-            "command": "godot",
-            "args": [
-                "."
-            ],
+            "label": "prepare release",
+            "hide": true,
+            "type": "shell",
+            "command": "dotnet build -p:Optimized=true; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
             "options": {
-                "cwd": "${workspaceFolder}"
+                "cwd": "${workspaceFolder}",
+                "shell": {
+                    "executable": "powershell.exe",
+                    "args": ["-NoProfile", "-Command"]
+                }
             },
-            "dependsOn": "build (optimized)",
-            "problemMatcher": []
+            "problemMatcher": "$msCompile",
+            "presentation": {
+                "reveal": "silent",
+                "close": true
+            }
         },
         {
-            "label": "run godot",
-            "type": "process",
-            "command": "godot",
-            "args": [
-                "."
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            },
-            "dependsOn": "build",
-            "problemMatcher": []
-        },
-        {
-            "label": "export release",
+            "label": "export",
+            "hide": true,
             "type": "shell",
             "command": "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release \"Windows Desktop\" build/release/WorldMapStudio.exe | Out-Host; exit $LASTEXITCODE",
             "options": {
@@ -72,15 +68,45 @@
             },
             "problemMatcher": []
         },
+
         {
-            "label": "run release",
+            "label": "Debug",
+            "detail": "Editor engine, unoptimized managed code. Use this when you need to step through code.",
+            "type": "process",
+            "command": "godot",
+            "args": [
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "prepare debug",
+            "problemMatcher": []
+        },
+        {
+            "label": "Release (fast)",
+            "detail": "Editor engine, optimized managed code. No export, a couple of seconds. Use this for day-to-day profiling.",
+            "type": "process",
+            "command": "godot",
+            "args": [
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "prepare release",
+            "problemMatcher": []
+        },
+        {
+            "label": "Release (exported)",
+            "detail": "Release engine, optimized managed code. Full export, around twenty seconds. The only mode without the engine's debug-only checks.",
             "type": "process",
             "command": "${workspaceFolder}/build/release/WorldMapStudio.exe",
             "args": [],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
-            "dependsOn": "export release",
+            "dependsOn": "export",
             "problemMatcher": []
         }
     ]
