@@ -52,6 +52,7 @@ public sealed class LandscapeWindow : Window
         {
             DrawTab("Settings", DrawSettings);
             DrawTab("Channels", DrawChannels);
+            DrawTab("Attributes", DrawAttributes);
             DrawTab("Layers", DrawLayers);
             DrawTab("Materials", DrawMaterials);
             ImGui.EndTabBar();
@@ -330,6 +331,180 @@ public sealed class LandscapeWindow : Window
         }
     }
 
+    private void DrawAttributes()
+    {
+        if (ImGui.Button("Add attribute"))
+        {
+            string name = UniqueName("Attribute", Landscape.Catalog.Attributes.Select(a => a.Name));
+            Create(new TerrainAttribute
+            {
+                Map = _context.Maps.CurrentMap,
+                Name = name,
+                Key = UniqueName("attribute", Landscape.Catalog.Attributes.Select(a => a.Key)),
+            });
+        }
+
+        ImGui.TextDisabled("A declared output kind: materials write it, an exporter reads it, nothing filters it.");
+        ImGui.Separator();
+
+        foreach (TerrainAttribute attribute in Landscape.Catalog.Attributes)
+        {
+            ImGui.PushID(attribute.Id.Value.GetHashCode());
+            if (ImGui.CollapsingHeader($"{attribute.Name}##header", ImGuiTreeNodeFlags.DefaultOpen))
+            {
+                DrawName(attribute, attribute.Name, value => attribute.Name = value);
+
+                string key = attribute.Key;
+                if (ImGui.InputText("Key", ref key, NameMaxLength)) { attribute.Key = key; }
+                _tracker.Track(_context.EditSessions, attribute, "key", attribute.Key, v => attribute.Key = v);
+                ImGui.SameLine();
+                ImGui.TextDisabled("(what a material write binds to)");
+
+                string description = attribute.Description;
+                if (ImGui.InputText("Description", ref description, PathMaxLength)) { attribute.Description = description; }
+                _tracker.Track(_context.EditSessions, attribute, "description", attribute.Description, v => attribute.Description = v);
+
+                int cells = attribute.CellsPerChunkEdge;
+                if (ImGui.DragInt("Cells per chunk edge", ref cells, 1.0f, 1, 256)) { attribute.CellsPerChunkEdge = cells; }
+                _tracker.Track(_context.EditSessions, attribute, "cells", attribute.CellsPerChunkEdge, v => attribute.CellsPerChunkEdge = v);
+
+                DrawAttributeComponentsCombo(attribute);
+                DrawAttributeWidthCombo(attribute);
+                DrawAttributeKindCombo(attribute);
+
+                if (attribute.Kind == TerrainAttributeKind.CatalogRef)
+                {
+                    string catalog = attribute.CatalogName;
+                    if (ImGui.InputText("Catalog", ref catalog, NameMaxLength)) { attribute.CatalogName = catalog; }
+                    _tracker.Track(_context.EditSessions, attribute, "catalog", attribute.CatalogName, v => attribute.CatalogName = v);
+                }
+
+                int defaultValue = unchecked((int)attribute.DefaultValue);
+                if (ImGui.DragInt("Default value", ref defaultValue)) { attribute.DefaultValue = unchecked((uint)defaultValue); }
+                _tracker.Track(_context.EditSessions, attribute, "default", (int)attribute.DefaultValue,
+                    v => attribute.DefaultValue = unchecked((uint)v));
+
+                if (attribute.Components > 1)
+                {
+                    string names = attribute.ComponentNames;
+                    if (ImGui.InputText("Component names (comma-separated)", ref names, PathMaxLength))
+                    {
+                        attribute.ComponentNames = names;
+                    }
+
+                    _tracker.Track(_context.EditSessions, attribute, "component names", attribute.ComponentNames,
+                        v => attribute.ComponentNames = v);
+                }
+
+                if (attribute.Kind is TerrainAttributeKind.Enum or TerrainAttributeKind.Flags)
+                {
+                    DrawAttributeValues(attribute);
+                }
+
+                ImGui.TextDisabled($"{attribute.BytesPerChunk / 1024.0f:0.##} KB per chunk");
+                DrawDelete(attribute);
+            }
+
+            ImGui.PopID();
+        }
+    }
+
+    private void DrawAttributeComponentsCombo(TerrainAttribute attribute)
+    {
+        int components = attribute.Components;
+        if (ImGui.BeginCombo("Format", ComponentsLabel(components)))
+        {
+            foreach (int candidate in new[] { 1, 3, 4 })
+            {
+                if (ImGui.Selectable(ComponentsLabel(candidate), candidate == components))
+                {
+                    RecordNow(attribute, "format", components, candidate, v => attribute.Components = v);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    private void DrawAttributeWidthCombo(TerrainAttribute attribute)
+    {
+        int width = attribute.ElementWidth;
+        if (ImGui.BeginCombo("Element width", $"{width}-bit"))
+        {
+            foreach (int candidate in new[] { 8, 16, 32 })
+            {
+                if (ImGui.Selectable($"{candidate}-bit", candidate == width))
+                {
+                    RecordNow(attribute, "element width", width, candidate, v => attribute.ElementWidth = v);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    private void DrawAttributeKindCombo(TerrainAttribute attribute)
+    {
+        TerrainAttributeKind kind = attribute.Kind;
+        if (ImGui.BeginCombo("Kind", kind.ToString()))
+        {
+            foreach (TerrainAttributeKind candidate in System.Enum.GetValues<TerrainAttributeKind>())
+            {
+                if (ImGui.Selectable(candidate.ToString(), candidate == kind))
+                {
+                    RecordNow(attribute, "kind", (int)kind, (int)candidate, v => attribute.Kind = (TerrainAttributeKind)v);
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+    }
+
+    private void DrawAttributeValues(TerrainAttribute attribute)
+    {
+        Heading(attribute.Kind == TerrainAttributeKind.Flags ? "Bits" : "Values");
+
+        int attributeId = attribute.RecordId ?? 0;
+        List<TerrainAttributeValue> rows = _context.Catalog.OfType<TerrainAttributeValue>()
+            .Where(row => row.AttributeId == attributeId)
+            .ToList();
+
+        foreach (TerrainAttributeValue row in rows)
+        {
+            ImGui.PushID(row.Id.Value.GetHashCode());
+
+            int value = (int)row.Value;
+            ImGui.SetNextItemWidth(120.0f);
+            if (ImGui.DragInt("##value", ref value)) { row.Value = value; }
+            _tracker.Track(_context.EditSessions, row, "value", (int)row.Value, v => row.Value = v);
+
+            ImGui.SameLine();
+            string name = row.Name;
+            ImGui.SetNextItemWidth(220.0f);
+            if (ImGui.InputText("##name", ref name, NameMaxLength)) { row.Name = name; }
+            _tracker.Track(_context.EditSessions, row, "name", row.Name, v => row.Name = v);
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Remove"))
+            {
+                var command = new DeleteCatalogEntityCommand(_context.Catalog, row);
+                command.Apply();
+                _context.EditSessions.Record(command);
+            }
+
+            ImGui.PopID();
+        }
+
+        if (ImGui.SmallButton("Add value"))
+        {
+            Create(new TerrainAttributeValue
+            {
+                Map = attribute.Map,
+                AttributeId = attributeId,
+            });
+        }
+    }
+
     private void DrawLayers()
     {
         if (ImGui.Button("Add layer"))
@@ -446,10 +621,126 @@ public sealed class LandscapeWindow : Window
                     material.VertexLightParameters, value => material.VertexLightParameters = value,
                     optional: true);
 
+                Heading("Attributes");
+                DrawAttributeWrites(material);
+
                 DrawDelete(material);
             }
 
             ImGui.PopID();
+        }
+    }
+
+    private static readonly LandscapeSwizzle[] AttributeSwizzleChoices =
+    [
+        LandscapeSwizzle.Native, LandscapeSwizzle.R, LandscapeSwizzle.G, LandscapeSwizzle.B, LandscapeSwizzle.A,
+        LandscapeSwizzle.Rgb, LandscapeSwizzle.Rgba,
+    ];
+
+    // A material's list of terrain-attribute writes — the open-ended sixth output kind. Each row
+    // picks an attribute, the component(s) to land on when it has more than one, a function, then
+    // that function's parameters (with the AttributeValue editor rendered against the chosen
+    // attribute). The writes are child rows, so each is its own undoable create/delete.
+    private void DrawAttributeWrites(LandscapeMaterial material)
+    {
+        IReadOnlyList<TerrainAttribute> attributes = Landscape.Catalog.Attributes;
+        if (attributes.Count == 0)
+        {
+            ImGui.TextDisabled("No attributes are declared for this map. Add one on the Attributes tab.");
+            return;
+        }
+
+        foreach (LandscapeMaterialAttributeWrite write in Landscape.Catalog.AttributeWritesOf(material).ToList())
+        {
+            ImGui.PushID(write.Id.Value.GetHashCode());
+
+            TerrainAttributeBinding binding = write.Binding;
+            TerrainAttribute? target = attributes.FirstOrDefault(a => a.Key == binding.Attribute);
+
+            string attrLabel = target?.Name
+                ?? (binding.Attribute.Length == 0 ? "(pick attribute)" : $"{binding.Attribute} (missing)");
+            if (ImGui.BeginCombo("Attribute", attrLabel))
+            {
+                foreach (TerrainAttribute attribute in attributes)
+                {
+                    if (ImGui.Selectable($"{attribute.Name}##{attribute.Key}", attribute.Key == binding.Attribute))
+                    {
+                        string next = new TerrainAttributeBinding(attribute.Key, LandscapeSwizzle.Native).ToString();
+                        RecordNow(write, "attribute", write.Attribute, next, v => write.Attribute = v);
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (target is { Components: > 1 })
+            {
+                ImGui.SameLine();
+                ImGui.SetNextItemWidth(110.0f);
+                if (ImGui.BeginCombo("##component", SwizzleLabel(binding.Swizzle)))
+                {
+                    foreach (LandscapeSwizzle candidate in AttributeSwizzleChoices)
+                    {
+                        if (ImGui.Selectable(SwizzleLabel(candidate), candidate == binding.Swizzle))
+                        {
+                            string next = new TerrainAttributeBinding(binding.Attribute, candidate).ToString();
+                            RecordNow(write, "component", write.Attribute, next, v => write.Attribute = v);
+                        }
+                    }
+
+                    ImGui.EndCombo();
+                }
+            }
+
+            ILandscapeAttributeFunction? bound = Landscape.Functions.FindAttribute(write.Function);
+            string fnLabel = bound?.DisplayName
+                ?? (write.Function.Length == 0 ? "(none)" : $"{write.Function} (missing)");
+            if (ImGui.BeginCombo("Function", fnLabel))
+            {
+                foreach (ILandscapeAttributeFunction function in Landscape.Functions.Attribute)
+                {
+                    if (ImGui.Selectable($"{function.DisplayName}##{function.Id}", function.Id == write.Function))
+                    {
+                        RecordNow(write, "function", write.Function, function.Id, v => write.Function = v);
+                    }
+
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(function.Description);
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            if (bound != null)
+            {
+                DrawParameters(write, bound, write.Parameters, v => write.Parameters = v, target);
+            }
+            else if (write.Function.Length > 0)
+            {
+                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded function provides '{write.Function}'.");
+            }
+
+            if (ImGui.SmallButton("Remove write"))
+            {
+                var command = new DeleteCatalogEntityCommand(_context.Catalog, write);
+                command.Apply();
+                _context.EditSessions.Record(command);
+            }
+
+            ImGui.Separator();
+            ImGui.PopID();
+        }
+
+        if (ImGui.Button("Add attribute write"))
+        {
+            Create(new LandscapeMaterialAttributeWrite
+            {
+                Map = material.Map,
+                MaterialId = material.RecordId ?? 0,
+                Attribute = attributes[0].Key,
+            });
         }
     }
 
@@ -511,11 +802,15 @@ public sealed class LandscapeWindow : Window
         ImGui.PopID();
     }
 
+    // <paramref name="attribute"/> is set only when these parameters belong to a material's terrain-
+    // attribute write — it drives the AttributeValue editor (catalog picker / flags / enum). Every
+    // other binding passes null and an AttributeValue parameter falls back to a plain integer.
     private void DrawParameters(
-        LandscapeMaterial material,
+        CatalogEntity entity,
         ILandscapeFunction function,
         string serialized,
-        System.Action<string> setParameters)
+        System.Action<string> setParameters,
+        TerrainAttribute? attribute = null)
     {
         LandscapeParameterValues values = LandscapeParameterValues.Parse(serialized);
 
@@ -533,7 +828,7 @@ public sealed class LandscapeWindow : Window
                         values.Set(parameter, value);
                     }
 
-                    TrackParameter(material, function, values, serialized, setParameters);
+                    TrackParameter(entity, function, values, serialized, setParameters);
                     break;
                 }
 
@@ -545,7 +840,7 @@ public sealed class LandscapeWindow : Window
                         values.Set(parameter, value);
                     }
 
-                    TrackParameter(material, function, values, serialized, setParameters);
+                    TrackParameter(entity, function, values, serialized, setParameters);
                     break;
                 }
 
@@ -555,7 +850,7 @@ public sealed class LandscapeWindow : Window
                     if (ImGui.Checkbox(parameter.DisplayName, ref value))
                     {
                         values.Set(parameter, value);
-                        RecordNow(material, parameter.DisplayName, serialized, values.Serialize(), setParameters);
+                        RecordNow(entity, parameter.DisplayName, serialized, values.Serialize(), setParameters);
                     }
 
                     break;
@@ -563,22 +858,13 @@ public sealed class LandscapeWindow : Window
 
                 case LandscapeParameterKind.Channel:
                 {
-                    DrawChannelParameter(material, parameter, values, serialized, setParameters);
+                    DrawChannelParameter(entity, parameter, values, serialized, setParameters);
                     break;
                 }
 
                 case LandscapeParameterKind.AttributeValue:
                 {
-                    // The attribute-aware editor (catalog picker / flags / enum) lives in the
-                    // material's Attributes section, which knows the target attribute. Here — an
-                    // attribute value shown on some other binding — a plain integer is the fallback.
-                    int value = values.GetInt(parameter);
-                    if (ImGui.DragInt(parameter.DisplayName, ref value))
-                    {
-                        values.Set(parameter, value);
-                    }
-
-                    TrackParameter(material, function, values, serialized, setParameters);
+                    DrawAttributeValueParameter(entity, function, parameter, values, serialized, setParameters, attribute);
                     break;
                 }
 
@@ -591,7 +877,7 @@ public sealed class LandscapeWindow : Window
                         values.Set(parameter, new Godot.Color(value.X, value.Y, value.Z, value.W));
                     }
 
-                    TrackParameter(material, function, values, serialized, setParameters);
+                    TrackParameter(entity, function, values, serialized, setParameters);
                     break;
                 }
             }
@@ -603,6 +889,73 @@ public sealed class LandscapeWindow : Window
 
             ImGui.PopID();
         }
+    }
+
+    // The AttributeValue editor: a plain int with no attribute context, otherwise rendered against
+    // the target attribute's declaration — a value picker for CatalogRef/Enum, a checkbox list for
+    // Flags. The column stays a serialized integer whatever the widget.
+    private void DrawAttributeValueParameter(
+        CatalogEntity entity,
+        ILandscapeFunction function,
+        LandscapeParameter parameter,
+        LandscapeParameterValues values,
+        string serialized,
+        System.Action<string> setParameters,
+        TerrainAttribute? attribute)
+    {
+        uint current = values.GetUInt(parameter);
+
+        void Commit(uint next)
+        {
+            values.Set(parameter, unchecked((int)next));
+            RecordNow(entity, parameter.DisplayName, serialized, values.Serialize(), setParameters);
+        }
+
+        List<TerrainAttributeValue> named = attribute is { RecordId: { } id }
+            ? _context.Catalog.OfType<TerrainAttributeValue>().Where(row => row.AttributeId == id).ToList()
+            : [];
+
+        if (attribute is { Kind: TerrainAttributeKind.Flags } && named.Count > 0)
+        {
+            foreach (TerrainAttributeValue bit in named)
+            {
+                uint mask = unchecked((uint)bit.Value);
+                bool on = (current & mask) == mask && mask != 0;
+                if (ImGui.Checkbox($"{bit.Name}##{bit.RecordId}", ref on))
+                {
+                    Commit(on ? current | mask : current & ~mask);
+                }
+            }
+
+            return;
+        }
+
+        if (attribute is { Kind: TerrainAttributeKind.Enum } && named.Count > 0)
+        {
+            string label = named.FirstOrDefault(row => unchecked((uint)row.Value) == current)?.Name ?? current.ToString();
+            if (ImGui.BeginCombo(parameter.DisplayName, label))
+            {
+                foreach (TerrainAttributeValue option in named)
+                {
+                    if (ImGui.Selectable($"{option.Name}##{option.RecordId}", unchecked((uint)option.Value) == current))
+                    {
+                        Commit(unchecked((uint)option.Value));
+                    }
+                }
+
+                ImGui.EndCombo();
+            }
+
+            return;
+        }
+
+        int raw = unchecked((int)current);
+        if (ImGui.DragInt(parameter.DisplayName, ref raw))
+        {
+            values.Set(parameter, raw);
+        }
+
+        TrackParameter(entity, function, values, serialized, setParameters);
     }
 
     private static readonly LandscapeSwizzle[] SwizzleChoices =
@@ -627,7 +980,7 @@ public sealed class LandscapeWindow : Window
     // Channels belong to the open map, same as the material itself, so the choices offered here are
     // always the material's own map's channels.
     private void DrawChannelParameter(
-        LandscapeMaterial material,
+        CatalogEntity entity,
         LandscapeParameter parameter,
         LandscapeParameterValues values,
         string serialized,
@@ -645,7 +998,7 @@ public sealed class LandscapeWindow : Window
                 {
                     var next = new LandscapeChannelBinding(channel.Name, binding.Swizzle);
                     values.Set(parameter, next.ToString());
-                    RecordNow(material, parameter.DisplayName, serialized, values.Serialize(), setParameters);
+                    RecordNow(entity, parameter.DisplayName, serialized, values.Serialize(), setParameters);
                 }
             }
 
@@ -680,7 +1033,7 @@ public sealed class LandscapeWindow : Window
                 {
                     var next = new LandscapeChannelBinding(binding.Channel, candidate);
                     values.Set(parameter, next.ToString());
-                    RecordNow(material, $"{parameter.DisplayName} swizzle", serialized, values.Serialize(), setParameters);
+                    RecordNow(entity, $"{parameter.DisplayName} swizzle", serialized, values.Serialize(), setParameters);
                 }
             }
 
@@ -690,7 +1043,7 @@ public sealed class LandscapeWindow : Window
 
     // Numeric parameters are dragged, so the whole drag is one undo step like every other field here.
     private void TrackParameter(
-        LandscapeMaterial material,
+        CatalogEntity entity,
         ILandscapeFunction function,
         LandscapeParameterValues values,
         string serialized,
@@ -712,7 +1065,7 @@ public sealed class LandscapeWindow : Window
         string after = values.Serialize();
         if (before != after)
         {
-            RecordNow(material, $"{function.DisplayName} parameters", before, after, setParameters);
+            RecordNow(entity, $"{function.DisplayName} parameters", before, after, setParameters);
         }
     }
 
