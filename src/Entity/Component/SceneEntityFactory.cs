@@ -71,6 +71,8 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
     public float Priority => 0.0f;
 
+    public Type EntityType => typeof(SceneEntity);
+
     public bool Handles(IEntity entity) => entity.GetType() == typeof(SceneEntity);
 
     public void Configure(ModelBuilder model)
@@ -88,7 +90,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
 
-    public async Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region)
+    public async Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded)
     {
         Vector3 min = region.Position;
         Vector3 max = region.End;
@@ -96,33 +98,53 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         await using EditorDbContext context = _storage.CreateContext();
 
         long clock = DiagnosticLog.Start();
-        List<SceneEntityRecord> rows = await context.SceneEntities.AsNoTracking()
+        List<(int Id, int? ParentId)> inRegion = await context.SceneEntities.AsNoTracking()
             .Where(record => record.MapId == map.Value
                 && record.MinX <= max.X && record.MaxX >= min.X
                 && record.MinY <= max.Y && record.MaxY >= min.Y
                 && record.MinZ <= max.Z && record.MaxZ >= min.Z)
+            .Select(record => new ValueTuple<int, int?>(record.Id, record.ParentId))
             .ToListAsync()
             .ConfigureAwait(false);
-        DiagnosticLog.Log($"    region query: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {rows.Count} rows");
+        DiagnosticLog.Log($"    region query: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {inRegion.Count} rows");
+
+        var parentById = new Dictionary<int, int?>();
+        foreach ((int id, int? parentId) in inRegion)
+        {
+            parentById[id] = parentId;
+        }
 
         clock = DiagnosticLog.Start();
-        await ExpandRowsToFamiliesAsync(context, rows, map).ConfigureAwait(false);
-        DiagnosticLog.Log($"    family expansion: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {rows.Count} rows total");
+        await ExpandIdsToFamiliesAsync(context, map, parentById).ConfigureAwait(false);
+        DiagnosticLog.Log($"    family expansion: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {parentById.Count} rows total");
+
+        long[] keys = parentById.Keys.Select(id => (long)id).ToArray();
+        int[] wanted = parentById.Keys.Where(id => !loaded.Contains(id)).ToArray();
+        if (wanted.Length == 0)
+        {
+            return new SceneEntityScan([], keys);
+        }
+
+        clock = DiagnosticLog.Start();
+        List<SceneEntityRecord> rows = await context.SceneEntities.AsNoTracking()
+            .Where(record => wanted.Contains(record.Id))
+            .ToListAsync()
+            .ConfigureAwait(false);
+        DiagnosticLog.Log($"    row fetch: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {rows.Count} rows");
 
         Dictionary<int, SceneEntity> entities = rows.ToDictionary(row => row.Id, ToEntity);
-        int[] ids = rows.Select(row => row.Id).ToArray();
 
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
         {
             using IDisposable scope = DiagnosticLog.Scope(persistence.GetType().Name);
             clock = DiagnosticLog.Start();
-            await persistence.LoadAsync(context, entities, ids).ConfigureAwait(false);
+            await persistence.LoadAsync(context, entities, wanted).ConfigureAwait(false);
             DiagnosticLog.Log($"    {persistence.GetType().Name}: {DiagnosticLog.MillisecondsSince(clock):F0}ms");
         }
 
         List<SceneEntity> result = entities.Values.ToList();
         LinkParents(result);
-        return result;
+        return new SceneEntityScan(result, keys);
     }
 
     public Action Stage(DbContext context, IEntity entity)
@@ -213,7 +235,8 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         record.MaxZ = bounds.End.Z;
     }
 
-    private static async Task ExpandRowsToFamiliesAsync(EditorDbContext context, List<SceneEntityRecord> rows, MapId map)
+    private static async Task ExpandIdsToFamiliesAsync(
+        EditorDbContext context, MapId map, Dictionary<int, int?> parentById)
     {
         // Completing families only means anything on a map that has any. One indexed existence check
         // stands in for a pair of queries whose IN lists carry every scanned id — tens of kilobytes of
@@ -226,47 +249,45 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
             return;
         }
 
-        var byId = rows.ToDictionary(row => row.Id);
         bool changed;
         do
         {
             changed = false;
 
-            int[] missingParents = rows
-                .Select(row => row.ParentId)
-                .Where(id => id is not null && !byId.ContainsKey(id.Value))
+            int[] missingParents = parentById.Values
+                .Where(id => id is not null && !parentById.ContainsKey(id.Value))
                 .Select(id => id!.Value)
                 .Distinct()
                 .ToArray();
             if (missingParents.Length > 0)
             {
-                List<SceneEntityRecord> parents = await context.SceneEntities.AsNoTracking()
+                List<(int Id, int? ParentId)> parents = await context.SceneEntities.AsNoTracking()
                     .Where(record => record.MapId == map.Value && missingParents.Contains(record.Id))
+                    .Select(record => new ValueTuple<int, int?>(record.Id, record.ParentId))
                     .ToListAsync()
                     .ConfigureAwait(false);
-                foreach (SceneEntityRecord parent in parents)
+                foreach ((int id, int? parentId) in parents)
                 {
-                    if (byId.TryAdd(parent.Id, parent))
+                    if (parentById.TryAdd(id, parentId))
                     {
-                        rows.Add(parent);
                         changed = true;
                     }
                 }
             }
 
-            int[] parentIds = byId.Keys.ToArray();
-            List<SceneEntityRecord> children = await context.SceneEntities.AsNoTracking()
+            int[] parentIds = parentById.Keys.ToArray();
+            List<(int Id, int? ParentId)> children = await context.SceneEntities.AsNoTracking()
                 .Where(record => record.MapId == map.Value
                     && record.ParentId != null
                     && parentIds.Contains(record.ParentId.Value)
                     && !parentIds.Contains(record.Id))
+                .Select(record => new ValueTuple<int, int?>(record.Id, record.ParentId))
                 .ToListAsync()
                 .ConfigureAwait(false);
-            foreach (SceneEntityRecord child in children)
+            foreach ((int id, int? parentId) in children)
             {
-                if (byId.TryAdd(child.Id, child))
+                if (parentById.TryAdd(id, parentId))
                 {
-                    rows.Add(child);
                     changed = true;
                 }
             }

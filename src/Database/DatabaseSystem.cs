@@ -20,6 +20,9 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
 
+    // Offline scans want every entity built, so nothing is reported as already loaded.
+    private static readonly HashSet<long> Nothing = [];
+
     private readonly EditorContext _context;
     private readonly List<DoltServer> _servers = [];
 
@@ -123,8 +126,8 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                IReadOnlyList<SceneEntity> loaded = await factory.ScanAsync(map, region).ConfigureAwait(false);
-                result.AddRange(loaded);
+                SceneEntityScan scan = await factory.ScanAsync(map, region, Nothing).ConfigureAwait(false);
+                result.AddRange(scan.Built);
             }
         }
 

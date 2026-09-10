@@ -47,7 +47,7 @@ public sealed class StreamingSystem : IWorldParticipant
     // an entity created in the editor is loaded but has no row for a scan to find.
     private readonly HashSet<SceneEntity> _present = [];
 
-    private Task<List<SceneEntity>>? _pendingScan;
+    private Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)>? _pendingScan;
     private MapId _scanMap;
     private Aabb _scanView;
     private Vector3 _lastFocus;
@@ -235,13 +235,34 @@ public sealed class StreamingSystem : IWorldParticipant
             loader.Prepare();
         }
 
+        // Captured here, on the main thread, for the same reason Prepare is: the scan runs off the
+        // main thread and must not read the scene registry. Each factory is handed the keys of its
+        // own entities that are already loaded, so it can report them without rebuilding them.
+        var loadedKeys = new Dictionary<Type, HashSet<long>>();
+        foreach (SceneEntity entity in _context.Scene.Entities)
+        {
+            if (KeyOf(entity) is not long key)
+            {
+                continue;
+            }
+
+            Type type = entity.GetType();
+            if (!loadedKeys.TryGetValue(type, out HashSet<long>? keys))
+            {
+                keys = [];
+                loadedKeys[type] = keys;
+            }
+
+            keys.Add(key);
+        }
+
         // Recorded here, on the main thread, and read back when the scan lands: the view a scan was
         // taken over is what every later fate is judged against, so it must not be written from the
         // scan's own thread. Only one scan is ever in flight, so it cannot change underneath one.
         float range = _context.View.ViewDistanceChunks * ChunkWorldSize();
         var extent = new Vector3(range, VerticalRange, range);
         _scanView = new Aabb(focus - extent, extent * 2.0f);
-        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()));
+        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()), loadedKeys);
     }
 
     private void ApplyCompletedScan()
@@ -251,7 +272,7 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        Task<List<SceneEntity>> scan = _pendingScan;
+        Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)> scan = _pendingScan;
         _pendingScan = null;
 
         if (!scan.IsCompletedSuccessfully)
@@ -262,10 +283,10 @@ public sealed class StreamingSystem : IWorldParticipant
 
         double elapsed = DiagnosticLog.MillisecondsSince(_scanClock);
         long reconcileClock = DiagnosticLog.Start();
-        Reconcile(scan.Result);
+        Reconcile(scan.Result.Built, scan.Result.Seen);
         DiagnosticLog.Log(
             $"done: {elapsed:F0}ms scan + {DiagnosticLog.MillisecondsSince(reconcileClock):F0}ms reconcile, "
-            + $"{scan.Result.Count} entities");
+            + $"{scan.Result.Built.Count} built of {scan.Result.Seen.Count} in region");
     }
 
     /// <summary>The widest margin any loader needs its inputs loaded over.</summary>
@@ -296,10 +317,12 @@ public sealed class StreamingSystem : IWorldParticipant
 
     // Stored entities are loaded over the wider region, because they are what derived data is built
     // from; loaders produce what the user sees, so they get the view region.
-    private async Task<List<SceneEntity>> ScanAsync(MapId map, Aabb view, Aabb load)
+    private async Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)> ScanAsync(
+        MapId map, Aabb view, Aabb load, Dictionary<Type, HashSet<long>> loadedKeys)
     {
         using IDisposable scope = DiagnosticLog.Scope($"scan {ScanVersion + 1}");
-        var result = new List<SceneEntity>();
+        var built = new List<SceneEntity>();
+        var seen = new List<(Type Type, long Key)>();
         foreach (Storage storage in _context.Database.Storages)
         {
             // One reader for the whole storage rather than one per factory: re-acquiring per factory
@@ -314,10 +337,16 @@ public sealed class StreamingSystem : IWorldParticipant
             {
                 using IDisposable factoryScope = DiagnosticLog.Scope(factory.GetType().Name);
                 long factoryClock = DiagnosticLog.Start();
-                IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, load).ConfigureAwait(false);
+                HashSet<long> known = loadedKeys.TryGetValue(factory.EntityType, out HashSet<long>? set) ? set : [];
+                SceneEntityScan scanned = await factory.ScanAsync(map, load, known).ConfigureAwait(false);
                 DiagnosticLog.Log(
-                    $"  {factory.GetType().Name}: {DiagnosticLog.MillisecondsSince(factoryClock):F0}ms, {scanned.Count} entities");
-                result.AddRange(scanned);
+                    $"  {factory.GetType().Name}: {DiagnosticLog.MillisecondsSince(factoryClock):F0}ms, "
+                    + $"{scanned.Built.Count} built of {scanned.Keys.Count} in region");
+                built.AddRange(scanned.Built);
+                foreach (long key in scanned.Keys)
+                {
+                    seen.Add((factory.EntityType, key));
+                }
             }
         }
 
@@ -329,13 +358,17 @@ public sealed class StreamingSystem : IWorldParticipant
             IReadOnlyList<SceneEntity> produced = await loader.ScanAsync(map, view).ConfigureAwait(false);
             DiagnosticLog.Log(
                 $"  {loader.GetType().Name}: {DiagnosticLog.MillisecondsSince(loaderClock):F0}ms, {produced.Count} entities");
-            result.AddRange(produced);
+            built.AddRange(produced);
+            foreach (SceneEntity entity in produced)
+            {
+                seen.Add((entity.GetType(), loader.KeyOf(entity)));
+            }
         }
 
-        return result;
+        return (built, seen);
     }
 
-    private void Reconcile(List<SceneEntity> scanned)
+    private void Reconcile(List<SceneEntity> built, List<(Type Type, long Key)> seen)
     {
         // Index entities already in the scene that carry a persistent key, so a scan never duplicates
         // one that is already loaded — including one this session created and committed, whose row
@@ -350,7 +383,7 @@ public sealed class StreamingSystem : IWorldParticipant
         }
 
         _present.Clear();
-        foreach (SceneEntity entity in scanned)
+        foreach (SceneEntity entity in built)
         {
             if (KeyOf(entity) is not long key)
             {
@@ -370,6 +403,17 @@ public sealed class StreamingSystem : IWorldParticipant
                 _context.Scene.Add(entity);
                 loaded[id] = entity;
                 _present.Add(entity);
+            }
+        }
+
+        // Entities the scan matched but did not rebuild because they were already loaded. Present is
+        // what FateOf reads to keep a peripheral input resident, so a key the scan saw counts the same
+        // whether an entity was constructed for it or not.
+        foreach ((Type type, long key) in seen)
+        {
+            if (loaded.TryGetValue((type, key), out SceneEntity? existing))
+            {
+                _present.Add(existing);
             }
         }
 

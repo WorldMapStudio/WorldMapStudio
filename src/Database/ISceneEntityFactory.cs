@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Godot;
@@ -12,6 +13,13 @@ namespace WorldMapStudio;
 /// </summary>
 public interface ISceneEntityFactory : IEntityFactory
 {
+    /// <summary>
+    /// The exact runtime type this factory's entities have. Must agree with
+    /// <see cref="IEntityFactory.Handles"/>, so a caller can bucket loaded entities by factory
+    /// without an instance to test.
+    /// </summary>
+    Type EntityType { get; }
+
     /// <summary>A stable key for the entity's persisted row, or null if it was never saved. Used to
     /// deduplicate streaming so a re-scan doesn't reload an entity that is already in the scene.</summary>
     long? PersistentKey(SceneEntity entity);
@@ -21,6 +29,10 @@ public interface ISceneEntityFactory : IEntityFactory
     /// <em>overlap</em> the region. Overlap, not containment of the origin: a large building or a long
     /// spline influences a region its origin is nowhere near, and the landscape system asks this same
     /// question to find the entities that deform a chunk.
+    ///
+    /// <paramref name="loaded"/> is the keys of this factory's entities streaming already holds. The
+    /// factory must not build those, but must still report them in <see cref="SceneEntityScan.Keys"/>.
+    /// Callers with nothing loaded pass an empty set.
     /// </summary>
-    Task<IReadOnlyList<SceneEntity>> ScanAsync(MapId map, Aabb region);
+    Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded);
 }
