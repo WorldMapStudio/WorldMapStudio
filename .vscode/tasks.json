@@ -18,6 +18,35 @@
             "problemMatcher": "$msCompile"
         },
         {
+            "label": "build (optimized)",
+            "detail": "Compiles optimized IL into the Debug output slot the editor loads, so release-speed code runs without a full export.",
+            "type": "process",
+            "command": "dotnet",
+            "args": [
+                "build",
+                "-p:Optimized=true"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": "build",
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "run godot (optimized)",
+            "detail": "Runs the project with optimized managed code and no debugger attached. Use this for profiling instead of the export.",
+            "type": "process",
+            "command": "godot",
+            "args": [
+                "."
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "dependsOn": "build (optimized)",
+            "problemMatcher": []
+        },
+        {
             "label": "run godot",
             "type": "process",
             "command": "godot",

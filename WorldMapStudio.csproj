@@ -7,6 +7,17 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <!--
+  The editor build of Godot only ever loads assemblies from the Debug output slot, so
+  ExportRelease code can otherwise only be run through a full export. `-p:Optimized=true`
+  puts optimized IL in that slot instead. The separate obj dir keeps the optimized and
+  unoptimized builds from invalidating each other's incremental state.
+  -->
+  <PropertyGroup Condition=" '$(Optimized)' == 'true' ">
+    <Optimize>true</Optimize>
+    <IntermediateOutputPath>$(GodotProjectDir).godot\mono\temp\obj\DebugOptimized\</IntermediateOutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
     <PackageReference Include="Jint" Version="4.15.3" />
