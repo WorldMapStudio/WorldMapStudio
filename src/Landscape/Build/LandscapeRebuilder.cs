@@ -144,16 +144,6 @@ public sealed class LandscapeRebuilder
             return;
         }
 
-        // A catalog edit — a material's height amount, a layer's draw order — can change any chunk
-        // that binds it, and nothing cheap narrows that down. Membership and content both count: an
-        // edit mutates a catalog entity in place, which the registry's version never sees.
-        (int, int) catalog = (_context.Catalog.Version, landscape.Catalog.ContentVersion);
-        if (_catalogVersion != catalog)
-        {
-            _catalogVersion = catalog;
-            MarkAll();
-        }
-
         // Two things change the deformer set. An edit is the obvious one. The other is streaming:
         // a chunk is built from a snapshot taken when its scan *started*, so entities that same scan
         // loads were not there yet. In steady flight the load margin covers it — a deformer enters
@@ -161,6 +151,22 @@ public sealed class LandscapeRebuilder
         // all, and the first chunks come out empty until something notices.
         bool edited = _historyRevision != _context.EditSessions.Active.History.Revision;
         bool loadedSetChanged = _sceneVersion != _context.Scene.Version;
+
+        // A catalog edit — a material's height amount, a layer's draw order — can change any chunk
+        // that binds it, and nothing cheap narrows that down. Both membership and in-place content
+        // count, and both only move through a recorded command, so the catalog content hash (a walk
+        // over every channel, layer and material) is only worth recomputing on a frame where an edit
+        // actually landed rather than every frame.
+        if (edited)
+        {
+            (int, int) catalog = (_context.Catalog.Version, landscape.Catalog.ContentVersion);
+            if (_catalogVersion != catalog)
+            {
+                _catalogVersion = catalog;
+                MarkAll();
+            }
+        }
+
         if (!edited && !loadedSetChanged)
         {
             return;
