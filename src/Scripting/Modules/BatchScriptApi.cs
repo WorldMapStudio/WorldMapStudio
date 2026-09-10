@@ -43,6 +43,7 @@ public sealed class BatchRunDescriptor
         Progress = status.Progress;
         Message = status.Message;
         Log = status.Log.ToArray();
+        Timings = run.Timings().ToArray();
         ElapsedSeconds = work.ElapsedSeconds;
         Error = work.Error ?? "";
         ReloadRequired = run.ReloadRequired;
@@ -73,6 +74,11 @@ public sealed class BatchRunDescriptor
 
     [ScriptProperty]
     public string[] Log { get; }
+
+    /// <summary>Where the run's wall clock went, slowest phase first. Populated while it is still
+    /// running, so a long batch can be asked what it is stuck on.</summary>
+    [ScriptProperty]
+    public string[] Timings { get; }
 
     [ScriptProperty]
     public double ElapsedSeconds { get; }

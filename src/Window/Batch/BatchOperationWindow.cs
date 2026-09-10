@@ -277,6 +277,7 @@ public sealed class BatchOperationWindow : Window
                 }
 
                 DrawLog(status);
+                DrawTimings(run);
 
                 ImGui.Spacing();
                 if (snapshot.IsActive)
@@ -337,6 +338,27 @@ public sealed class BatchOperationWindow : Window
         float fraction = status.Progress ?? -1.0f * (float)ImGui.GetTime();
         string overlay = status.Progress is { } value ? $"{value * 100.0f:0}%" : "";
         ImGui.ProgressBar(fraction, new NVector2(-1.0f, 0.0f), overlay);
+    }
+
+    /// <summary>The run's phase breakdown, live. Collapsed by default — it answers "why is this taking
+    /// so long", which is a question only asked once a run is already long.</summary>
+    private static void DrawTimings(BatchRun run)
+    {
+        IReadOnlyList<string> lines = run.Timings();
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        if (!ImGui.CollapsingHeader("Where the time went"))
+        {
+            return;
+        }
+
+        foreach (string line in lines)
+        {
+            ImGui.TextUnformatted(line);
+        }
     }
 
     private static void DrawLog(BatchStatus status)
