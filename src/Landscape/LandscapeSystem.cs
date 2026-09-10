@@ -418,7 +418,73 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
             return "This map already has a landscape.";
         }
 
-        return Save(profile.CreateSettings());
+        string? error = Save(profile.CreateSettings());
+        if (error == null)
+        {
+            SeedAttributes(profile);
+        }
+
+        return error;
+    }
+
+    // Creates the profile's declared terrain attributes (and their value names) for the open map,
+    // skipping any key that already exists so a re-enable — or a hand-added attribute of the same
+    // key — is left alone. Committed straight to storage like the settings above, not through the
+    // edit session, since enabling a landscape is not an undoable step.
+    private void SeedAttributes(ILandscapeProfile profile)
+    {
+        IReadOnlyList<TerrainAttributeSeed> seeds = profile.SeedAttributes();
+        if (seeds.Count == 0)
+        {
+            return;
+        }
+
+        MapId map = _context.Maps.CurrentMap;
+        var created = new List<IEntity>();
+
+        foreach (TerrainAttributeSeed seed in seeds)
+        {
+            if (_context.Catalog.OfType<TerrainAttribute>().Any(a => a.Map.Equals(map) && a.Key == seed.Attribute.Key))
+            {
+                continue;
+            }
+
+            TerrainAttribute attribute = seed.Attribute;
+            attribute.Map = map;
+            attribute.Seeded = true;
+            _context.Catalog.AssignId(attribute);
+            _context.Catalog.Add(attribute);
+            created.Add(attribute);
+
+            foreach (TerrainAttributeValueSeed value in seed.Values)
+            {
+                var row = new TerrainAttributeValue
+                {
+                    Map = map,
+                    AttributeId = attribute.RecordId ?? 0,
+                    Value = value.Value,
+                    Name = value.Name,
+                };
+                _context.Catalog.AssignId(row);
+                _context.Catalog.Add(row);
+                created.Add(row);
+            }
+        }
+
+        if (created.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            BlockingWork.Run(() =>
+                _context.Database.Storages.OfType<EditorStorage>().First().CommitAsync(created, []));
+        }
+        catch (Exception e)
+        {
+            GD.PushError($"[Landscape] Seeding attributes for map {map.Value} failed: {e.Message}");
+        }
     }
 
     /// <summary>Writes settings for the open map, returning an error or null.</summary>
