@@ -52,9 +52,10 @@ public static class LayeredSurfaceMaterial
     /// renderer's per-material "unfogged" flag on effect-style materials.</summary>
     public static readonly MeshParameter Unfogged = MeshParameter.Bool("unfogged", "Unfogged", false);
 
-    /// <summary>Whether vertex COLOR.rgb multiplies the composited albedo. Vertex COLOR.a always drives
-    /// the interior/exterior ambient blend regardless of this — the two are independent.</summary>
-    public static readonly MeshParameter VertexColorTint = MeshParameter.Bool("vertex_color_tint", "Use Vertex Color", false);
+    /// <summary>Whether vertex COLOR.rgb is added to ambient as precomputed per-vertex light (e.g. a
+    /// WMO group's baked MOCV) rather than tinting albedo. Vertex COLOR.a always drives the
+    /// interior/exterior ambient blend regardless of this — the two are independent.</summary>
+    public static readonly MeshParameter VertexColorTint = MeshParameter.Bool("vertex_color_tint", "Vertex Light", false);
 
     public static readonly MeshParameter DetailTexture = MeshParameter.Texture("detail_texture", "Detail Texture", "Optional second diffuse layer, multiplied over the primary texture. Empty disables it entirely.");
 
