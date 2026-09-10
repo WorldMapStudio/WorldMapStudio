@@ -290,10 +290,10 @@ public sealed class LandscapeCatalog
             // made per entity and per chunk — so the only thing checkable here is that it does
             // something at all. The builder reports a material missing the half its layer needed.
             if (!material.PaintsTexture && !material.DeformsHeight && !material.CutsHole &&
-                !material.PaintsVertexColor && !material.PaintsVertexLight)
+                !material.PaintsVertexColor && !material.PaintsVertexLight && !WritesAttributes(material))
             {
                 issues.Add(new LandscapeIssue(LandscapeIssueSeverity.Warning,
-                    $"Material '{material.Name}' has no alpha, height, hole, vertex color or vertex light function, so it does nothing."));
+                    $"Material '{material.Name}' has no alpha, height, hole, vertex color, vertex light or attribute function, so it does nothing."));
             }
 
             if (material.PaintsTexture && material.TexturePath.Length == 0)
