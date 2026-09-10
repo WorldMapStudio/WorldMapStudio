@@ -2,10 +2,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug Godot",
+            "name": "Debug",
             "type": "coreclr",
             "request": "launch",
-            "preLaunchTask": "build",
+            "preLaunchTask": "prepare debug",
             "program": "godot",
             "args": [
                 "."
@@ -15,33 +15,34 @@
             "stopAtEntry": false
         },
         {
-            "name": "Attach to Godot",
+            "name": "Release (fast)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "prepare release",
+            "program": "godot",
+            "args": [
+                "."
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Release (exported)",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "export",
+            "program": "${workspaceFolder}/build/release/WorldMapStudio.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
+            "name": "Attach",
             "type": "coreclr",
             "request": "attach",
             "processId": "${command:pickProcess}"
-        },
-        {
-            "name": "Run Optimized",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "build (optimized)",
-            "program": "godot",
-            "args": [
-                "."
-            ],
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "stopAtEntry": false
-        },
-        {
-            "name": "Run Release",
-            "type": "coreclr",
-            "request": "launch",
-            "preLaunchTask": "export release",
-            "program": "${workspaceFolder}/build/release/WorldMapStudio.exe",
-            "cwd": "${workspaceFolder}",
-            "console": "integratedTerminal",
-            "stopAtEntry": false
         }
     ]
 }
