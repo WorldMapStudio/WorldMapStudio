@@ -214,9 +214,9 @@ void fragment() {
         albedo = mix(albedo, albedo * detail.rgb * 2.0, detail_blend * detail.a);
     }
 
-    if (vertex_color_tint) {
-        albedo *= COLOR.rgb;
-    }
+    // COLOR.rgb as precomputed per-vertex light (e.g. a WMO group's rebased MOCV): folded into the
+    // ambient term below, not multiplied into albedo — baked vertex light adds, it doesn't tint.
+    vec3 precomputed_light = vertex_color_tint ? COLOR.rgb : vec3(0.0);
 
     if (has_matcap) {
         vec3 view_normal = normalize((VIEW_MATRIX * vec4(world_normal, 0.0)).xyz);
@@ -240,9 +240,11 @@ void fragment() {
     // Manual ambient (see InteriorAmbientBlendCode's doc comment for why): COLOR.a is the
     // interior/exterior blend factor, defaulting to 1.0 (fully exterior) on any mesh that carries no
     // real vertex color data at all, so untouched geometry behaves as if this were ordinary ambient.
+    // precomputed_light adds on top of ambient before it modulates albedo, matching how the reference
+    // renderer accumulates baked vertex light.
     float n_dot_up = clamp(dot(world_normal, vec3(0.0, 1.0, 0.0)), -1.0, 1.0);
     vec3 ambient = wms_blend_interior_ambient(n_dot_up, COLOR.a);
-    EMISSION = ambient * albedo + emissive_color * emissive_strength;
+    EMISSION = (ambient + precomputed_light) * albedo + emissive_color * emissive_strength;
 
     if (!unfogged) {
         vec3 view_vec = world_pos - CAMERA_POSITION_WORLD;
