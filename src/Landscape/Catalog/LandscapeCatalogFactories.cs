@@ -93,6 +93,34 @@ public sealed class TerrainAttributeValueFactory(EditorStorage storage)
     }
 }
 
+/// <summary>Maps <see cref="LandscapeMaterialAttributeWrite"/> to and from the Editor storage's
+/// <c>wms_landscape_material_attribute_writes</c> table.</summary>
+[Subsystem(nameof(EditorStorage))]
+public sealed class LandscapeMaterialAttributeWriteFactory(EditorStorage storage)
+    : EditorCatalogFactory<LandscapeMaterialAttributeWrite, LandscapeMaterialAttributeWriteRecord>(storage)
+{
+    protected override string TableName => "wms_landscape_material_attribute_writes";
+
+    protected override LandscapeMaterialAttributeWrite ToEntity(LandscapeMaterialAttributeWriteRecord record) => new()
+    {
+        RecordId = record.Id,
+        Map = new MapId(record.MapId),
+        MaterialId = record.MaterialId,
+        Attribute = record.Attribute,
+        Function = record.Function,
+        Parameters = record.Parameters,
+    };
+
+    protected override void WriteRecord(LandscapeMaterialAttributeWrite entity, LandscapeMaterialAttributeWriteRecord record)
+    {
+        record.MapId = entity.Map.Value;
+        record.MaterialId = entity.MaterialId;
+        record.Attribute = entity.Attribute;
+        record.Function = entity.Function;
+        record.Parameters = entity.Parameters;
+    }
+}
+
 /// <summary>Maps <see cref="LandscapeLayer"/> to and from the Editor storage's <c>wms_landscape_layers</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeLayerFactory(EditorStorage storage)

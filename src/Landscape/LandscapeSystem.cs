@@ -300,7 +300,8 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
                 _context.Catalog.OfType<LandscapeLayer>().Where(layer => layer.Map.Equals(map)).ToList(),
                 _context.Catalog.OfType<LandscapeMaterial>().Where(material => material.Map.Equals(map)).ToList(),
                 Functions,
-                _context.Catalog.OfType<TerrainAttribute>().Where(attribute => attribute.Map.Equals(map)).ToList());
+                _context.Catalog.OfType<TerrainAttribute>().Where(attribute => attribute.Map.Equals(map)).ToList(),
+                _context.Catalog.OfType<LandscapeMaterialAttributeWrite>().Where(write => write.Map.Equals(map)).ToList());
 
             _catalogs[map] = (_context.Catalog.Version, Functions.Version, built);
             return built;

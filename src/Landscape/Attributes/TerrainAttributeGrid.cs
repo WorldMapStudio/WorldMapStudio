@@ -74,6 +74,20 @@ public readonly struct TerrainAttributeGrid
         return new TerrainAttributeGrid(cellsPerEdge, components, elementWidth, bytes);
     }
 
+    /// <summary>Packs an interleaved <c>uint</c>-per-component buffer — what
+    /// <see cref="TerrainAttributeWriter"/> fills — into a width-sized grid.</summary>
+    public static TerrainAttributeGrid FromComponents(int cellsPerEdge, int components, int elementWidth, uint[] values)
+    {
+        int stride = elementWidth / 8;
+        var bytes = new byte[values.Length * stride];
+        for (int i = 0; i < values.Length; i++)
+        {
+            WriteInto(bytes, i * stride, elementWidth, values[i]);
+        }
+
+        return new TerrainAttributeGrid(cellsPerEdge, components, elementWidth, bytes);
+    }
+
     internal static void WriteInto(byte[] bytes, int offset, int elementWidth, uint value)
     {
         switch (elementWidth)

@@ -117,6 +117,11 @@ public sealed class LandscapeProblemReporter
         LandscapeProblemKind.MissingHoleFunction => ProblemSeverity.Warning,
         LandscapeProblemKind.MissingVertexColorFunction => ProblemSeverity.Warning,
         LandscapeProblemKind.MissingVertexLightFunction => ProblemSeverity.Warning,
+        LandscapeProblemKind.MissingAttributeFunction => ProblemSeverity.Warning,
+
+        // The value was masked to fit rather than dropped, so the build is still usable — but it is
+        // almost certainly not what the author meant.
+        LandscapeProblemKind.AttributeValueOverflow => ProblemSeverity.Warning,
 
         _ => ProblemSeverity.Error,
     };

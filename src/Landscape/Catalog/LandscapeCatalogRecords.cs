@@ -61,6 +61,22 @@ public sealed class TerrainAttributeValueRecord : IKeyedRecord
     public string Name { get; set; } = "";
 }
 
+/// <summary>EF Core row backing a <see cref="LandscapeMaterialAttributeWrite"/> in the Editor storage.</summary>
+public sealed class LandscapeMaterialAttributeWriteRecord : IKeyedRecord
+{
+    public int Id { get; set; }
+
+    public int MapId { get; set; }
+
+    public int MaterialId { get; set; }
+
+    public string Attribute { get; set; } = "";
+
+    public string Function { get; set; } = "";
+
+    public string Parameters { get; set; } = "";
+}
+
 /// <summary>EF Core row backing a <see cref="LandscapeLayer"/> in the Editor storage.</summary>
 public sealed class LandscapeLayerRecord : IKeyedRecord
 {

@@ -31,14 +31,29 @@ public sealed class LandscapeCatalog
         IReadOnlyList<LandscapeLayer> layers,
         IReadOnlyList<LandscapeMaterial> materials,
         LandscapeFunctions? functions = null,
-        IReadOnlyList<TerrainAttribute>? attributes = null)
+        IReadOnlyList<TerrainAttribute>? attributes = null,
+        IReadOnlyList<LandscapeMaterialAttributeWrite>? attributeWrites = null)
     {
         Channels = channels;
         Layers = layers;
         Materials = materials;
         Functions = functions;
         Attributes = attributes ?? [];
+        AttributeWrites = attributeWrites ?? [];
+
+        foreach (LandscapeMaterialAttributeWrite write in AttributeWrites)
+        {
+            if (!_writesByMaterial.TryGetValue(write.MaterialId, out List<LandscapeMaterialAttributeWrite>? list))
+            {
+                list = [];
+                _writesByMaterial[write.MaterialId] = list;
+            }
+
+            list.Add(write);
+        }
     }
+
+    private readonly Dictionary<int, List<LandscapeMaterialAttributeWrite>> _writesByMaterial = [];
 
     public IReadOnlyList<LandscapeChannel> Channels { get; }
 
@@ -50,6 +65,20 @@ public sealed class LandscapeCatalog
     /// write, an exporter reads and the debug overlay renders. Sits with <see cref="Channels"/> /
     /// <see cref="Layers"/> / <see cref="Materials"/>; declares no storage of its own.</summary>
     public IReadOnlyList<TerrainAttribute> Attributes { get; }
+
+    /// <summary>Every material's terrain-attribute writes, flat. Use <see cref="AttributeWritesOf"/> to
+    /// get one material's, in the order they were authored.</summary>
+    public IReadOnlyList<LandscapeMaterialAttributeWrite> AttributeWrites { get; }
+
+    /// <summary>The attribute writes declared on <paramref name="material"/>, or empty.</summary>
+    public IReadOnlyList<LandscapeMaterialAttributeWrite> AttributeWritesOf(LandscapeMaterial material) =>
+        material.RecordId is { } id && _writesByMaterial.TryGetValue(id, out List<LandscapeMaterialAttributeWrite>? list)
+            ? list
+            : [];
+
+    /// <summary>Whether <paramref name="material"/> writes any terrain attribute — the resolver routes
+    /// on this, matching <c>DeformsHeight</c> / <c>CutsHole</c> / <c>PaintsVertexColor</c>.</summary>
+    public bool WritesAttributes(LandscapeMaterial material) => AttributeWritesOf(material).Count > 0;
 
     /// <summary>The function registry material bindings resolve against, or null to skip those checks.</summary>
     public LandscapeFunctions? Functions { get; }
@@ -86,6 +115,14 @@ public sealed class LandscapeCatalog
                 hash.Add(attribute.ElementWidth);
                 hash.Add(attribute.Kind);
                 hash.Add(attribute.DefaultValue);
+            }
+
+            foreach (LandscapeMaterialAttributeWrite write in AttributeWrites)
+            {
+                hash.Add(write.MaterialId);
+                hash.Add(write.Attribute);
+                hash.Add(write.Function);
+                hash.Add(write.Parameters);
             }
 
             foreach (LandscapeLayer layer in Layers)
