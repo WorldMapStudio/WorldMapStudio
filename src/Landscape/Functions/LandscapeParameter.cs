@@ -18,6 +18,13 @@ public enum LandscapeParameterKind
 
     /// <summary>An RGBA color, e.g. the tint a vertex color or vertex light function paints toward.</summary>
     Color,
+
+    /// <summary>A value for the <see cref="TerrainAttribute"/> a material write targets, stored as a
+    /// plain integer. The editor renders it against that attribute's declaration — a catalog picker, a
+    /// flag checkbox list, an enum combo, or a plain int — so a <see cref="TerrainAttributeKind.CatalogRef"/>
+    /// attribute is not authored by typing a raw id. Only meaningful on an
+    /// <see cref="ILandscapeAttributeFunction"/>.</summary>
+    AttributeValue,
 }
 
 /// <summary>How a function touches a channel it is bound to.</summary>
@@ -152,6 +159,16 @@ public sealed class LandscapeParameter
                 @default.G.ToString(CultureInfo.InvariantCulture),
                 @default.B.ToString(CultureInfo.InvariantCulture),
                 @default.A.ToString(CultureInfo.InvariantCulture)),
+            Description = description,
+        };
+
+    public static LandscapeParameter AttributeValue(string name, string displayName, string description = "") =>
+        new()
+        {
+            Name = name,
+            DisplayName = displayName,
+            Kind = LandscapeParameterKind.AttributeValue,
+            Default = "0",
             Description = description,
         };
 
