@@ -171,6 +171,7 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         VertexColorParameters = record.VertexColorParameters,
         VertexLightFunction = record.VertexLightFunction,
         VertexLightParameters = record.VertexLightParameters,
+        SurfaceEffectId = record.SurfaceEffectId,
     };
 
     protected override void WriteRecord(LandscapeMaterial entity, LandscapeMaterialRecord record)
@@ -188,5 +189,6 @@ public sealed class LandscapeMaterialFactory(EditorStorage storage)
         record.VertexColorParameters = entity.VertexColorParameters;
         record.VertexLightFunction = entity.VertexLightFunction;
         record.VertexLightParameters = entity.VertexLightParameters;
+        record.SurfaceEffectId = entity.SurfaceEffectId;
     }
 }
