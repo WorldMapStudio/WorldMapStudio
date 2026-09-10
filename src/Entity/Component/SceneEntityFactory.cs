@@ -215,6 +215,17 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
     private static async Task ExpandRowsToFamiliesAsync(EditorDbContext context, List<SceneEntityRecord> rows, MapId map)
     {
+        // Completing families only means anything on a map that has any. One indexed existence check
+        // stands in for a pair of queries whose IN lists carry every scanned id — tens of kilobytes of
+        // SQL per pass — and on a map where nothing is parented that pair is the whole cost.
+        bool hasFamilies = await context.SceneEntities.AsNoTracking()
+            .AnyAsync(record => record.MapId == map.Value && record.ParentId != null)
+            .ConfigureAwait(false);
+        if (!hasFamilies)
+        {
+            return;
+        }
+
         var byId = rows.ToDictionary(row => row.Id);
         bool changed;
         do
