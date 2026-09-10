@@ -130,17 +130,23 @@ public sealed class LandscapeTerrainBatch : SceneEntity, IDerivedEntity
         DisposeMaterial(Material);
     }
 
+    // Cached rather than converted from a string literal per call: each conversion is a finalizable
+    // StringName, and material disposal runs at streaming rates.
+    private static readonly StringName SlotAlphaParam = "slot_alpha";
+    private static readonly StringName SlotMapParam = "slot_map";
+    private static readonly StringName ShowChunkEdgesParam = "show_chunk_edges";
+
     /// <summary>Frees a batch material with its per-batch alpha array and slot-map texture. The albedo
     /// and height arrays come from <see cref="LandscapeBatchMesh"/>'s shared caches and must outlive
     /// any one batch, so they are deliberately left alone.</summary>
     public static void DisposeMaterial(ShaderMaterial material)
     {
-        if (material.GetShaderParameter("slot_alpha").As<Texture2DArray>() is { } alpha)
+        if (material.GetShaderParameter(SlotAlphaParam).As<Texture2DArray>() is { } alpha)
         {
             alpha.Dispose();
         }
 
-        if (material.GetShaderParameter("slot_map").As<Texture2D>() is { } slotMap)
+        if (material.GetShaderParameter(SlotMapParam).As<Texture2D>() is { } slotMap)
         {
             slotMap.Dispose();
         }
@@ -153,7 +159,7 @@ public sealed class LandscapeTerrainBatch : SceneEntity, IDerivedEntity
     {
         if (Node?.GetChildOrNull<MeshInstance3D>(0) is { MaterialOverride: ShaderMaterial material })
         {
-            material.SetShaderParameter("show_chunk_edges", visible);
+            material.SetShaderParameter(ShowChunkEdgesParam, visible);
         }
     }
 

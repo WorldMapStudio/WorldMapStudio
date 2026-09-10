@@ -297,31 +297,39 @@ public static class LandscapeBatchMesh
     // set, and building a Texture2DArray is real Godot resource construction plus a GPU upload.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Texture2DArray> AlbedoArrayCache = new();
 
-    private static Texture2DArray BuildAlbedoArray(IReadOnlyList<LandscapeMaterial> ordered, AssetSystem assets)
-    {
-        var albedos = new Godot.Collections.Array<Image> { Placeholder(0) };
-        for (int i = 0; i < ordered.Count; i++)
-        {
-            albedos.Add(LoadAlbedo(ordered[i], i + 1, assets));
-        }
-
-        var array = new Texture2DArray();
-        array.CreateFromImages(albedos);
-        return array;
-    }
+    private static Texture2DArray BuildAlbedoArray(IReadOnlyList<LandscapeMaterial> ordered, AssetSystem assets) =>
+        BuildLayerArray(ordered.Count + 1, i => i == 0 ? (Placeholder(0), false) : LoadAlbedo(ordered[i - 1], i, assets));
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Texture2DArray> HeightArrayCache = new();
 
-    private static Texture2DArray BuildHeightArray(IReadOnlyList<LandscapeMaterial> ordered, AssetSystem assets)
+    private static Texture2DArray BuildHeightArray(IReadOnlyList<LandscapeMaterial> ordered, AssetSystem assets) =>
+        BuildLayerArray(ordered.Count + 1, i => i == 0 ? (NeutralHeight(), false) : LoadHeight(ordered[i - 1], assets));
+
+    // CreateFromImages copies the pixels straight away, so every source image that is not one of the
+    // shared decode-cache entries is disposed here rather than left for the finalizer thread — a wave
+    // of undisposed Images is exactly what the finalizer was drowning in.
+    private static Texture2DArray BuildLayerArray(int count, System.Func<int, (Image Image, bool Shared)> layer)
     {
-        var heights = new Godot.Collections.Array<Image> { NeutralHeight() };
-        for (int i = 0; i < ordered.Count; i++)
+        var images = new Godot.Collections.Array<Image>();
+        var throwaway = new List<Image>();
+        for (int i = 0; i < count; i++)
         {
-            heights.Add(LoadHeight(ordered[i], assets));
+            (Image image, bool shared) = layer(i);
+            images.Add(image);
+            if (!shared)
+            {
+                throwaway.Add(image);
+            }
         }
 
         var array = new Texture2DArray();
-        array.CreateFromImages(heights);
+        array.CreateFromImages(images);
+
+        foreach (Image image in throwaway)
+        {
+            image.Dispose();
+        }
+
         return array;
     }
 
@@ -398,8 +406,9 @@ public static class LandscapeBatchMesh
             images.Add(Image.CreateFromData(tileStride, tileStride, false, Image.Format.R8, bytes));
         }
 
+        var godotImages = new Godot.Collections.Array<Image>(images);
         var array = new Texture2DArray();
-        array.CreateFromImages(new Godot.Collections.Array<Image>(images));
+        array.CreateFromImages(godotImages);
 
         // CreateFromImages has uploaded the pixels; release now rather than leave a wave of these to
         // the finalizer, which contends with the threads still building batches.
@@ -455,27 +464,33 @@ public static class LandscapeBatchMesh
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Image> HeightCache = new();
 
-    private static Image LoadHeight(LandscapeMaterial? material, AssetSystem assets)
+    private static (Image Image, bool Shared) LoadHeight(LandscapeMaterial? material, AssetSystem assets)
     {
         if (material is not { BlendHeightTexturePath.Length: > 0 } materialWithHeight)
         {
-            return NeutralHeight();
+            return (NeutralHeight(), false);
         }
 
         if (HeightCache.TryGetValue(materialWithHeight.BlendHeightTexturePath, out Image? cached))
         {
-            return cached;
+            return (cached, true);
         }
 
         if (assets.LoadTextureAsset(materialWithHeight.BlendHeightTexturePath) is not { } texture)
         {
-            return NeutralHeight();
+            return (NeutralHeight(), false);
         }
 
         Image image = texture.GetImage();
         image.Resize(PlaceholderSize, PlaceholderSize);
         image.Convert(Image.Format.R8);
-        return HeightCache.GetOrAdd(materialWithHeight.BlendHeightTexturePath, image);
+        Image stored = HeightCache.GetOrAdd(materialWithHeight.BlendHeightTexturePath, image);
+        if (!ReferenceEquals(stored, image))
+        {
+            image.Dispose();
+        }
+
+        return (stored, true);
     }
 
     private static Image NeutralHeight()
@@ -500,27 +515,33 @@ public static class LandscapeBatchMesh
     // invalidated: a texture path is immutable once authored.
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Image> AlbedoCache = new();
 
-    private static Image LoadAlbedo(LandscapeMaterial? material, int slot, AssetSystem assets)
+    private static (Image Image, bool Shared) LoadAlbedo(LandscapeMaterial? material, int slot, AssetSystem assets)
     {
         if (material is not { TexturePath.Length: > 0 } materialWithTexture)
         {
-            return Placeholder(slot);
+            return (Placeholder(slot), false);
         }
 
         if (AlbedoCache.TryGetValue(materialWithTexture.TexturePath, out Image? cached))
         {
-            return cached;
+            return (cached, true);
         }
 
         if (assets.LoadTextureAsset(materialWithTexture.TexturePath) is not { } texture)
         {
-            return Placeholder(slot);
+            return (Placeholder(slot), false);
         }
 
         Image image = texture.GetImage();
         image.Resize(PlaceholderSize, PlaceholderSize);
         image.Convert(Image.Format.Rgba8);
-        return AlbedoCache.GetOrAdd(materialWithTexture.TexturePath, image);
+        Image stored = AlbedoCache.GetOrAdd(materialWithTexture.TexturePath, image);
+        if (!ReferenceEquals(stored, image))
+        {
+            image.Dispose();
+        }
+
+        return (stored, true);
     }
 
     private static Image Placeholder(int slot)

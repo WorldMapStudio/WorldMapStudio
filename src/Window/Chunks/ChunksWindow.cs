@@ -20,6 +20,11 @@ public sealed class ChunksWindow : Window
     private readonly SceneEntityRegistry _scene;
     private readonly SelectionSystem _selection;
 
+    // The row list is O(loaded chunks) to build — thousands at a large batch/view size — and only
+    // changes when the registry does, so it is held across frames rather than rebuilt each draw.
+    private readonly List<(ChunkCoord Coord, LandscapeTerrainBatch Batch)> _rows = [];
+    private int _rowsVersion = -1;
+
     public ChunksWindow(WindowManager manager)
         : base("Chunks", startOpen: false, defaultSize: new Vector2(240, 400))
     {
@@ -29,11 +34,17 @@ public sealed class ChunksWindow : Window
 
     protected override void DrawContent()
     {
-        List<(ChunkCoord Coord, LandscapeTerrainBatch Batch)> rows = _scene.InView.OfType<LandscapeTerrainBatch>()
-            .SelectMany(batch => batch.Chunks.Keys.Select(coord => (coord, batch)))
-            .OrderBy(row => row.coord.X)
-            .ThenBy(row => row.coord.Y)
-            .ToList();
+        if (_rowsVersion != _scene.Version)
+        {
+            _rowsVersion = _scene.Version;
+            _rows.Clear();
+            _rows.AddRange(_scene.InView.OfType<LandscapeTerrainBatch>()
+                .SelectMany(batch => batch.Chunks.Keys.Select(coord => (coord, batch)))
+                .OrderBy(row => row.coord.X)
+                .ThenBy(row => row.coord.Y));
+        }
+
+        List<(ChunkCoord Coord, LandscapeTerrainBatch Batch)> rows = _rows;
 
         if (rows.Count == 0)
         {
