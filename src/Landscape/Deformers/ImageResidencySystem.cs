@@ -309,6 +309,7 @@ public sealed class ImageResidencySystem
     {
         await Task.Yield();
 
+        using IDisposable scope = DiagnosticLog.Scope($"image chunks x{toLoad.Count}");
         EditorStorage? storage = _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
         if (storage == null)
         {
