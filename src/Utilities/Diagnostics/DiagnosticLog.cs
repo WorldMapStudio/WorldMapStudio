@@ -42,6 +42,27 @@ public static class DiagnosticLog
 
                 _enabled = value;
                 Close();
+
+                // Opened here rather than lazily on the first line: the point of the file is to be
+                // read afterwards, and "it is at this path, and it exists now" has to be answerable
+                // while the run is still set up, not discovered to be wrong once the run is over.
+                if (value)
+                {
+                    WriteLine($"logging enabled, writing to {Path.GetFullPath(_filePath)}");
+                }
+            }
+        }
+    }
+
+    /// <summary>Bytes written so far, or -1 when nothing is open. Shown in the performance window so a
+    /// log that is silently going nowhere is visible as one.</summary>
+    public static long BytesWritten
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _file?.BaseStream.Length ?? -1L;
             }
         }
     }
@@ -84,16 +105,15 @@ public static class DiagnosticLog
             return;
         }
 
+        WriteLine(message);
+    }
+
+    private static void WriteLine(string message)
+    {
         double at = Stopwatch.GetElapsedTime(Origin).TotalSeconds;
         string scope = CurrentScope.Value is { } name ? $" [{name}]" : string.Empty;
         string line = string.Create(CultureInfo.InvariantCulture, $"{at,8:F3}s{scope} {message}");
 
-        GD.Print($"[Diag] {line}");
-        WriteToFile(line);
-    }
-
-    private static void WriteToFile(string line)
-    {
         lock (Gate)
         {
             if (!_enabled)
@@ -111,8 +131,11 @@ public static class DiagnosticLog
                 _enabled = false;
                 Close();
                 GD.PushError($"[Diag] Log file '{_filePath}' failed, logging disabled: {e.Message}");
+                return;
             }
         }
+
+        GD.Print($"[Diag] {line}");
     }
 
     private static StreamWriter Open()

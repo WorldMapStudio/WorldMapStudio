@@ -82,6 +82,9 @@ public sealed class PerformanceWindow : Window
         DrawRenderStats();
         ImGui.Separator();
 
+        DrawDiagnosticLog();
+        ImGui.Separator();
+
         DrawToolStatus();
         ImGui.Separator();
 
@@ -118,6 +121,40 @@ public sealed class PerformanceWindow : Window
             RefreshToolAvailability();
         }
         ImGui.EndDisabled();
+    }
+
+    // Above the trace controls, and deliberately not one of their settings: a CPU trace cannot see an
+    // awaited database round-trip at all, so for anything on the load path this is the measurement and
+    // the trace is the supporting detail, not the other way round.
+    private void DrawDiagnosticLog()
+    {
+        bool enabled = DiagnosticLog.Enabled;
+        if (ImGui.Checkbox("Log scan and SQL timings", ref enabled))
+        {
+            DiagnosticLog.Enabled = enabled;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Wall-clock breakdown of every streaming scan and every SQL command it runs.");
+        }
+
+        string logPath = DiagnosticLog.FilePath;
+        ImGui.BeginDisabled(DiagnosticLog.Enabled);
+        ImGui.PushItemWidth(420.0f);
+        if (ImGui.InputText("Log file", ref logPath, 512))
+        {
+            DiagnosticLog.FilePath = logPath;
+        }
+
+        ImGui.PopItemWidth();
+        ImGui.EndDisabled();
+
+        long written = DiagnosticLog.BytesWritten;
+        ImGui.TextColored(MutedColor, Path.GetFullPath(DiagnosticLog.FilePath));
+        ImGui.TextColored(
+            written < 0 ? MutedColor : OkColor,
+            written < 0 ? "not writing" : $"writing — {written / 1024.0:F1} KB");
     }
 
     private void DrawSettings()
@@ -159,28 +196,6 @@ public sealed class PerformanceWindow : Window
 
         ImGui.EndDisabled();
 
-        // Outside the recording gate: a scan is a chain of awaited database round-trips, which a CPU
-        // trace cannot see at all, so this is the measurement that answers "why was the process idle".
-        bool diagnosticLog = DiagnosticLog.Enabled;
-        if (ImGui.Checkbox("Log scan and SQL timings", ref diagnosticLog))
-        {
-            DiagnosticLog.Enabled = diagnosticLog;
-        }
-
-        if (ImGui.IsItemHovered())
-        {
-            ImGui.SetTooltip("Wall-clock breakdown of every streaming scan and every SQL command it runs.");
-        }
-
-        string logPath = DiagnosticLog.FilePath;
-        ImGui.BeginDisabled(DiagnosticLog.Enabled);
-        if (ImGui.InputText("Log file", ref logPath, 512))
-        {
-            DiagnosticLog.FilePath = logPath;
-        }
-
-        ImGui.EndDisabled();
-        ImGui.TextColored(MutedColor, Path.GetFullPath(DiagnosticLog.FilePath));
     }
 
     private void DrawTraceControls()
