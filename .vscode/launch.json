@@ -21,6 +21,19 @@
             "processId": "${command:pickProcess}"
         },
         {
+            "name": "Run Optimized",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "build (optimized)",
+            "program": "godot",
+            "args": [
+                "."
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        },
+        {
             "name": "Run Release",
             "type": "coreclr",
             "request": "launch",
