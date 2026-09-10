@@ -68,9 +68,13 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
             .ToListAsync()
             .ConfigureAwait(false);
 
-        Dictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> entries =
-            await context.Set<SceneLandscapeMaterialBindEntryRecord>().AsNoTracking()
-                .Where(record => ids.Contains(record.EntityId))
+        // See TerrainValueComponentPersistence: the entry table's key is (EntityId, SortOrder), and
+        // a scan-wide IN against its leading column is hundreds of milliseconds whatever it returns.
+        int[] owners = rows.Select(row => row.EntityId).ToArray();
+        Dictionary<int, List<SceneLandscapeMaterialBindEntryRecord>> entries = owners.Length == 0
+            ? []
+            : await context.Set<SceneLandscapeMaterialBindEntryRecord>().AsNoTracking()
+                .Where(record => owners.Contains(record.EntityId))
                 .OrderBy(record => record.SortOrder)
                 .GroupBy(record => record.EntityId)
                 .ToDictionaryAsync(group => group.Key, group => group.ToList())
