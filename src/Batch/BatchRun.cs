@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace WorldMapStudio;
 
 /// <summary>
@@ -30,6 +32,11 @@ public sealed class BatchRun
     /// <summary>A snapshot taken under the status lock — safe to call every frame from the main thread
     /// while the run writes it from a worker.</summary>
     public BatchStatus Status() => _session.Status();
+
+    /// <summary>Where this run's wall clock went, as log-ready lines. Readable while the run is still
+    /// going, so a multi-minute batch can be asked what it is spending its time on without waiting for
+    /// it to finish.</summary>
+    public IReadOnlyList<string> Timings() => _session.Timings.Format($"{OperationId} phase breakdown");
 
     /// <summary>Requests cooperative cancellation. The operation observes it through
     /// <see cref="WorkContext.ThrowIfCancellationRequested"/>.</summary>
