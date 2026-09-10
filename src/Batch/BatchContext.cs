@@ -37,6 +37,11 @@ public sealed class BatchContext
     /// anything else it needs between runs lives.</summary>
     public BatchOperationState State { get; }
 
+    /// <summary>Where a batch attributes its own wall clock, so a multi-minute run can say which
+    /// phase spent the minutes. Logged automatically when the run ends, whether or not it faulted, so
+    /// an operation only has to wrap the phases it cares about.</summary>
+    public PhaseTimings Timings => _session.Timings;
+
     /// <summary>The whole editor — the escape hatch for anything the facade does not forward.</summary>
     public EditorContext Editor => _session.Batch.Context;
 

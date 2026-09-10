@@ -142,6 +142,7 @@ public sealed partial class BatchSystem : ISubsystemHost, IWorldParticipant
                 }
                 finally
                 {
+                    LogTimings(name, session);
                     session.End();
                     if (ReferenceEquals(ActiveSession, session))
                     {
@@ -168,6 +169,19 @@ public sealed partial class BatchSystem : ISubsystemHost, IWorldParticipant
 
         session.BindHandle(handle);
         return session;
+    }
+
+    /// <summary>Writes a finished run's phase breakdown to its own log and to the Godot output, where
+    /// it outlives the bounded log ring a long run scrolls through. Faulted and cancelled runs report
+    /// too — where a run got stuck is exactly what a breakdown is for.</summary>
+    private static void LogTimings(string name, BatchSession session)
+    {
+        foreach (string line in session.Timings.Format($"{name} phase breakdown"))
+        {
+            session.Log(line);
+            GD.Print($"[Batch] {line}");
+            DiagnosticLog.Log(line);
+        }
     }
 
     /// <summary>An operation's stored settings blob, or an empty one when it has never been saved.</summary>

@@ -46,6 +46,10 @@ public sealed class BatchSession : IDisposable
     /// <summary>Everything the session can do to the editor.</summary>
     public BatchContext Context { get; }
 
+    /// <summary>This session's phase breakdown, started with the session so its wall clock covers the
+    /// whole run rather than only the part an operation remembered to measure.</summary>
+    public PhaseTimings Timings { get; } = new();
+
     public DateTime OpenedUtc { get; }
 
     /// <summary>When a <see cref="BatchContext"/> call last came in. Display only — see the class
