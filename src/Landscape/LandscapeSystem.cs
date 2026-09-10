@@ -421,17 +421,23 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         string? error = Save(profile.CreateSettings());
         if (error == null)
         {
-            SeedAttributes(profile);
+            SeedAttributes(_context.Maps.CurrentMap, profile);
         }
 
         return error;
     }
 
-    // Creates the profile's declared terrain attributes (and their value names) for the open map,
-    // skipping any key that already exists so a re-enable — or a hand-added attribute of the same
-    // key — is left alone. Committed straight to storage like the settings above, not through the
-    // edit session, since enabling a landscape is not an undoable step.
-    private void SeedAttributes(ILandscapeProfile profile)
+    /// <summary>
+    /// Creates <paramref name="profile"/>'s declared terrain attributes (and their value names) for
+    /// <paramref name="map"/>, skipping any key that already exists so a re-run — or a hand-added
+    /// attribute of the same key — is left alone. Committed straight to storage, not through the edit
+    /// session, since this is setup rather than an undoable step.
+    ///
+    /// Called both from <see cref="Enable"/> and from an importer that writes settings directly (so a
+    /// map set up by an import still gets the profile's attributes). Safe to call for any map, not
+    /// just the open one.
+    /// </summary>
+    public void SeedAttributes(MapId map, ILandscapeProfile profile)
     {
         IReadOnlyList<TerrainAttributeSeed> seeds = profile.SeedAttributes();
         if (seeds.Count == 0)
@@ -439,7 +445,6 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
             return;
         }
 
-        MapId map = _context.Maps.CurrentMap;
         var created = new List<IEntity>();
 
         foreach (TerrainAttributeSeed seed in seeds)
