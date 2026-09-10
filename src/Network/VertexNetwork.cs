@@ -56,6 +56,56 @@ public sealed class VertexNetwork
         return id;
     }
 
+    /// <summary>
+    /// Builds a network in one pass from a generator's vertex positions and faces (0-based indices into
+    /// that list), synthesising each face loop's boundary edges. Skips the per-call topology checks
+    /// <see cref="AddVertex"/>/<see cref="AddFace"/> run for interactive editing — <see cref="AddFace"/>
+    /// scans every existing face and edge, so adding faces one by one is O(n²) and a mesh-scale network
+    /// (thousands of faces) hangs. The caller owns validity: distinct positions, loops of 3+ in-range
+    /// distinct indices, no duplicate faces. Vertex ids are <c>index + 1</c>.
+    /// </summary>
+    public static VertexNetwork FromMesh(IReadOnlyList<Vector3> vertices, IReadOnlyList<IReadOnlyList<int>> faces)
+    {
+        var network = new VertexNetwork();
+        for (int i = 0; i < vertices.Count; i++)
+        {
+            network._vertices.Add(new NetworkVertex(i + 1, vertices[i]));
+        }
+
+        network._nextVertexId = vertices.Count + 1;
+
+        var edgeKeys = new HashSet<(int, int)>();
+        foreach (IReadOnlyList<int> loop in faces)
+        {
+            if (loop.Count < 3)
+            {
+                continue;
+            }
+
+            var ids = new int[loop.Count];
+            for (int i = 0; i < loop.Count; i++)
+            {
+                ids[i] = loop[i] + 1;
+            }
+
+            network._faces.Add(new NetworkFace(network._nextFaceId++, ids));
+
+            for (int i = 0; i < ids.Length; i++)
+            {
+                int a = ids[i];
+                int b = ids[(i + 1) % ids.Length];
+                (int, int) key = a < b ? (a, b) : (b, a);
+                if (edgeKeys.Add(key))
+                {
+                    network._edges.Add(new NetworkEdge(network._nextEdgeId++, a, b));
+                }
+            }
+        }
+
+        network._version++;
+        return network;
+    }
+
     public int? AddEdge(int a, int b)
     {
         if (a == b || Vertex(a) == null || Vertex(b) == null || HasEdge(a, b))
