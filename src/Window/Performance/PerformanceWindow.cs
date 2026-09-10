@@ -158,6 +158,19 @@ public sealed class PerformanceWindow : Window
         }
 
         ImGui.EndDisabled();
+
+        // Outside the recording gate: a scan is a chain of awaited database round-trips, which a CPU
+        // trace cannot see at all, so this is the measurement that answers "why was the process idle".
+        bool logScans = StreamingDiagnostics.Enabled;
+        if (ImGui.Checkbox("Log scan timings", ref logScans))
+        {
+            StreamingDiagnostics.Enabled = logScans;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("Prints each streaming scan's wall-clock breakdown to the output log.");
+        }
     }
 
     private void DrawTraceControls()

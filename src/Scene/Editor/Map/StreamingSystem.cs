@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using Godot;
 
@@ -51,6 +53,8 @@ public sealed class StreamingSystem : IWorldParticipant
     private Vector3 _lastFocus;
     private bool _scanStarted;  // a scan has been launched for the current map and position
     private bool _reconciled;   // a scan has landed, so there is a region to judge fates against
+    private string _invalidatedBy = string.Empty;
+    private long _scanClock;
 
     public StreamingSystem(EditorContext context)
     {
@@ -137,7 +141,11 @@ public sealed class StreamingSystem : IWorldParticipant
     /// returns can depend on more than position — landscape chunks are rebuilt from the entities that
     /// shape them — so an edit has to be able to say "what you have is stale".
     /// </summary>
-    public void Invalidate() => _scanStarted = false;
+    public void Invalidate([CallerMemberName] string member = "", [CallerFilePath] string file = "")
+    {
+        _scanStarted = false;
+        _invalidatedBy = $"{Path.GetFileNameWithoutExtension(file)}.{member}";
+    }
 
     /// <summary>
     /// Drops every derived terrain entity and forces a fresh scan. What terrain chunks are grouped
@@ -207,6 +215,14 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
+        StreamingDiagnostics.Log(mapChanged
+            ? "start: map changed"
+            : _invalidatedBy.Length > 0
+                ? $"start: invalidated by {_invalidatedBy}"
+                : $"start: focus moved {HorizontalDistance(focus, _lastFocus):F0}");
+        _invalidatedBy = string.Empty;
+        _scanClock = StreamingDiagnostics.Start();
+
         _scanStarted = true;
         _scanMap = map;
         _lastFocus = focus;
@@ -242,7 +258,12 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
+        double elapsed = StreamingDiagnostics.MillisecondsSince(_scanClock);
+        long reconcileClock = StreamingDiagnostics.Start();
         Reconcile(scan.Result);
+        StreamingDiagnostics.Log(
+            $"done: {elapsed:F0}ms scan + {StreamingDiagnostics.MillisecondsSince(reconcileClock):F0}ms reconcile, "
+            + $"{scan.Result.Count} entities");
     }
 
     /// <summary>The widest margin any loader needs its inputs loaded over.</summary>
@@ -282,10 +303,16 @@ public sealed class StreamingSystem : IWorldParticipant
             // lets an unrelated writer (image-chunk residency loads, mostly) wedge in between every
             // factory, and each of those stalls the scan by however long that write runs — turning a
             // handful of millisecond queries into seconds.
+            long lockClock = StreamingDiagnostics.Start();
             using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
+            StreamingDiagnostics.Log($"  {storage.Name}: reader lock {StreamingDiagnostics.MillisecondsSince(lockClock):F0}ms");
+
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
+                long factoryClock = StreamingDiagnostics.Start();
                 IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, load).ConfigureAwait(false);
+                StreamingDiagnostics.Log(
+                    $"  {factory.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(factoryClock):F0}ms, {scanned.Count} entities");
                 result.AddRange(scanned);
             }
         }
@@ -293,7 +320,11 @@ public sealed class StreamingSystem : IWorldParticipant
         // Storage-free sources (landscape chunks) take no lock: there is no database behind them.
         foreach (ISceneEntityLoader loader in _loaders)
         {
-            result.AddRange(await loader.ScanAsync(map, view).ConfigureAwait(false));
+            long loaderClock = StreamingDiagnostics.Start();
+            IReadOnlyList<SceneEntity> produced = await loader.ScanAsync(map, view).ConfigureAwait(false);
+            StreamingDiagnostics.Log(
+                $"  {loader.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(loaderClock):F0}ms, {produced.Count} entities");
+            result.AddRange(produced);
         }
 
         return result;
