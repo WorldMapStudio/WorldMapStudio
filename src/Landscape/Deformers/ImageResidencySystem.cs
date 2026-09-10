@@ -212,10 +212,8 @@ public sealed class ImageResidencySystem
         if (evicted.Count > 0)
         {
             // A landscape chunk built while an evicted coordinate was resident has that contribution
-            // baked into its mesh/texture. Invalidate covers chunks streaming's next scan rebuilds
-            // from scratch; MarkTerrainDirty covers the ones already loaded, which that scan skips —
-            // without it they keep showing paint from an image chunk no longer even in memory.
-            _context.Streaming.Invalidate();
+            // baked into its mesh/texture; MarkTerrainDirty rebuilds those. Terrain not built yet is
+            // not in the scene and does not need marking — it is built from whatever is resident then.
             MarkTerrainDirty(evicted);
         }
 
@@ -237,8 +235,8 @@ public sealed class ImageResidencySystem
     /// chunk coordinates. A coordinate becoming resident or leaving residency changes what a landscape
     /// chunk sampling it was built from, but moves no deformer's <c>ContentVersion</c> (only
     /// <see cref="PaintImage.ViewRevision"/>), so <see cref="LandscapeRebuilder"/> has to be told
-    /// directly — <see cref="StreamingSystem.Invalidate"/> on its own only rebuilds chunks newly
-    /// entering range, never ones already loaded.</summary>
+    /// directly. Terrain not yet built is not in the scene and needs no mark — it samples whatever is
+    /// resident at the moment it is built.</summary>
     private void MarkTerrainDirty(Dictionary<PaintImage, HashSet<ImageChunkCoord>> changedByImage)
     {
         LandscapeRebuilder rebuilder = _context.Landscape.Rebuilder;
@@ -356,9 +354,8 @@ public sealed class ImageResidencySystem
         if (loaded.Count > 0)
         {
             // Terrain that was sampling zeros over these chunks while they were evicted needs a
-            // rebuild now that real pixels are resident again. Invalidate rebuilds chunks entering
-            // range from scratch; MarkTerrainDirty covers the already-loaded ones that scan skips.
-            _context.Streaming.Invalidate();
+            // rebuild now that real pixels are resident again; MarkTerrainDirty rebuilds the terrain
+            // already in the scene. Terrain not built yet samples these pixels when it is built.
             MarkTerrainDirty(loaded);
         }
     }
