@@ -55,6 +55,10 @@ public sealed class LandscapeResolution
     /// <summary>Surviving vertex light claims in evaluation order — the layer draw order.</summary>
     public required IReadOnlyList<LandscapeClaim> VertexLightClaims { get; init; }
 
+    /// <summary>Surviving claims whose material writes at least one terrain attribute, in evaluation
+    /// order — the layer draw order.</summary>
+    public required IReadOnlyList<LandscapeClaim> AttributeClaims { get; init; }
+
     /// <summary>Keys of the groups that did not survive, in the order they were dropped.</summary>
     public required IReadOnlyList<string> DroppedGroups { get; init; }
 

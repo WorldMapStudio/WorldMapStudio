@@ -62,6 +62,15 @@ public sealed class LandscapeChunkOutput
     /// </summary>
     public required Color[] VertexLight { get; init; }
 
+    /// <summary>
+    /// Per-chunk terrain attribute values, keyed by <see cref="TerrainAttribute.Key"/>. An attribute
+    /// no surviving claim wrote is absent — read it as its declared default. Not <c>required</c>: only
+    /// an exporter and the debug overlay consume it, and the many test construction sites should not
+    /// have to name it.
+    /// </summary>
+    public IReadOnlyDictionary<string, TerrainAttributeGrid> Attributes { get; init; } =
+        new Dictionary<string, TerrainAttributeGrid>();
+
     public float HeightAt(int x, int y) => Heights[(y * HeightResolution) + x];
 
     public bool IsHole(int x, int y) => Holes[(y * HoleResolution) + x];

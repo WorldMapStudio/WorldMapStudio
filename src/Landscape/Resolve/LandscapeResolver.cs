@@ -231,6 +231,10 @@ public static class LandscapeResolver
         List<LandscapeClaim> vertexColors = ordered.Where(claim => claim.Material!.PaintsVertexColor).ToList();
         List<LandscapeClaim> vertexLight = ordered.Where(claim => claim.Material!.PaintsVertexLight).ToList();
 
+        // Whether a claim writes an attribute is a property of the map's declared writes, not of the
+        // material entity — so it is asked of the catalog, unlike the five built-in output kinds.
+        List<LandscapeClaim> attributes = ordered.Where(claim => catalog.WritesAttributes(claim.Material!)).ToList();
+
         return new LandscapeResolution
         {
             Base = baseSlot,
@@ -239,6 +243,7 @@ public static class LandscapeResolver
             HoleClaims = holes,
             VertexColorClaims = vertexColors,
             VertexLightClaims = vertexLight,
+            AttributeClaims = attributes,
             DroppedGroups = dropped.ToList(),
             Problems = problems.ToList(),
         };

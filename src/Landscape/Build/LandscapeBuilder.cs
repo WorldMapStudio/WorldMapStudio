@@ -318,6 +318,73 @@ public sealed class LandscapeBuilder
             function.Evaluate(context, vertexLight);
         }
 
+        // Terrain attributes: the declared, open-ended output kind. One buffer per attribute the map
+        // declares that at least one surviving claim writes; an attribute nothing writes allocates
+        // nothing and stays out of the dictionary. Claims run in draw order, then writes in the order
+        // they were authored on the material — the accumulate-and-transform shape height has, never
+        // holes' write-only union.
+        var attributes = new Dictionary<string, TerrainAttributeGrid>();
+        foreach (TerrainAttribute attribute in _catalog.Attributes)
+        {
+            int cells = Mathf.Max(1, attribute.CellsPerChunkEdge);
+            int components = Mathf.Max(1, attribute.Components);
+            uint[]? buffer = null;
+            var overflow = new bool[1];
+
+            foreach (LandscapeClaim claim in resolution.AttributeClaims)
+            {
+                if (claim.Material is not { } material)
+                {
+                    problems.Add((coord, LandscapeProblem.Create(
+                        LandscapeProblemKind.MissingMaterial,
+                        $"Attribute layer '{claim.Layer.Name}' was claimed without a material, so nothing writes.")));
+                    continue;
+                }
+
+                foreach (LandscapeMaterialAttributeWrite write in _catalog.AttributeWritesOf(material))
+                {
+                    if (write.Binding.Attribute != attribute.Key)
+                    {
+                        continue;
+                    }
+
+                    if (_functions.FindAttribute(write.Function) is not { } function)
+                    {
+                        string reason = write.Function.Length == 0
+                            ? "binds no function"
+                            : $"binds function '{write.Function}', which nothing provides";
+                        problems.Add((coord, LandscapeProblem.Create(
+                            LandscapeProblemKind.MissingAttributeFunction,
+                            $"Material '{material.Name}' writes attribute '{attribute.Key}' but {reason}, so nothing is written.")));
+                        continue;
+                    }
+
+                    buffer ??= NewAttributeBuffer(cells, components, attribute.DefaultValue);
+                    var values = LandscapeParameterValues.Parse(write.Parameters);
+                    var context = new LandscapeEvalContext(coord, _pool, _settings, values, cells);
+                    var writer = new TerrainAttributeWriter(
+                        buffer, cells, components, attribute.ElementWidth, write.Binding.Swizzle, overflow);
+                    function.Evaluate(context, writer);
+                }
+            }
+
+            if (buffer == null)
+            {
+                continue;
+            }
+
+            if (overflow[0])
+            {
+                problems.Add((coord, LandscapeProblem.Create(
+                    LandscapeProblemKind.AttributeValueOverflow,
+                    $"A write to attribute '{attribute.Key}' produced a value wider than its " +
+                    $"{attribute.ElementWidth}-bit elements; it was masked to fit.")));
+            }
+
+            attributes[attribute.Key] = TerrainAttributeGrid.FromComponents(
+                cells, components, attribute.ElementWidth, buffer);
+        }
+
         var layers = new List<LandscapeChunkLayer>();
         foreach (LandscapeSlot slot in resolution.Slots)
         {
@@ -347,7 +414,19 @@ public sealed class LandscapeBuilder
             Holes = holes,
             VertexColors = vertexColors,
             VertexLight = vertexLight,
+            Attributes = attributes,
         };
+    }
+
+    private static uint[] NewAttributeBuffer(int cells, int components, uint defaultValue)
+    {
+        var buffer = new uint[cells * cells * components];
+        if (defaultValue != 0)
+        {
+            System.Array.Fill(buffer, defaultValue);
+        }
+
+        return buffer;
     }
 
     private byte[] EvaluateAlpha(ChunkCoord coord, LandscapeSlot slot, int resolution)

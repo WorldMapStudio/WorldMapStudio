@@ -43,6 +43,14 @@ public enum LandscapeProblemKind
     /// lights. Silent otherwise: the claim resolves fine and simply does nothing.</summary>
     MissingVertexLightFunction,
 
+    /// <summary>A layer was claimed with a material whose attribute write binds no function, or one
+    /// nothing provides, so that write does nothing. Silent otherwise, like the height/hole cases.</summary>
+    MissingAttributeFunction,
+
+    /// <summary>An attribute write produced a value too wide for the attribute's declared element
+    /// width. Reported rather than silently truncated.</summary>
+    AttributeValueOverflow,
+
     /// <summary>A layer that paints sorts below the chunk's base, which is opaque, so it is never seen.</summary>
     BelowBase,
 

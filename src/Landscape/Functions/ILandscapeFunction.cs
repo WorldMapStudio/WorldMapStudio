@@ -121,6 +121,24 @@ public interface ILandscapeVertexLightFunction : ILandscapeFunction
     void Evaluate(in LandscapeEvalContext context, Color[] light);
 }
 
+/// <summary>
+/// Transforms a chunk's accumulated values for one terrain attribute. Accumulate-and-transform like
+/// height, not write-only like holes: a function receives what earlier layers wrote and rewrites it,
+/// so "set where covered", "set bits" and "clear bits" are all ordinary. Order is the layer's draw
+/// order.
+///
+/// Writes go through <see cref="TerrainAttributeWriter"/> rather than a raw array so a function
+/// declared against a scalar keeps working against a 3- or 4-component attribute — the swizzle on the
+/// material's write decides which components a scalar write lands on. Chunk-local: the writer's cells
+/// never blend across a chunk edge, and any channel a function reads is sampled with
+/// <see cref="LandscapeEvalContext.ReadChannel"/> (nearest texel), never the bilinear
+/// <see cref="LandscapeEvalContext.SampleChannel"/> — filtering an id turns it into a different id.
+/// </summary>
+public interface ILandscapeAttributeFunction : ILandscapeFunction
+{
+    void Evaluate(in LandscapeEvalContext context, in TerrainAttributeWriter cells);
+}
+
 /// <summary>Shared helpers over a function's declared parameters.</summary>
 public static class LandscapeFunctionExtensions
 {

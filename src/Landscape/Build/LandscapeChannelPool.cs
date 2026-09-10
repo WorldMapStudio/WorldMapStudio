@@ -166,6 +166,39 @@ public sealed class LandscapeChannelPool
         static Color Grey(float v) => new(v, v, v, 1.0f);
     }
 
+    /// <summary>
+    /// Reads a channel as a scalar at the single nearest (containing) texel — no bilinear blend —
+    /// honoring <paramref name="binding"/>'s swizzle. A terrain-attribute function reading a discrete
+    /// id must use this, never <see cref="SampleScalar"/>: blending across a texel or chunk edge turns
+    /// a valid id (1519 next to 12) into an invalid one (something near 700). Positions outside the
+    /// block's halo read as zero, like the bilinear samplers.
+    /// </summary>
+    public float ReadScalarNearest(in LandscapeChannelBinding binding, Vector3 world)
+    {
+        if (Store(binding.Channel) is not { } store)
+        {
+            return 0.0f;
+        }
+
+        LandscapeChannel channel = store.Channel;
+        int resolution = channel.Resolution;
+        int components = channel.Components;
+
+        int gx = Mathf.FloorToInt(world.X / Grid.ChunkSize * resolution);
+        int gy = Mathf.FloorToInt(world.Z / Grid.ChunkSize * resolution);
+
+        var cursor = new StoreCursor(store);
+        Tap tap = Texel(ref cursor, resolution, components, gx, gy);
+
+        if (binding.Swizzle == LandscapeSwizzle.Native)
+        {
+            return tap.Read(0);
+        }
+
+        int component = ComponentOf(channel, binding.Swizzle);
+        return component >= 0 ? tap.Read(component) : tap.Read(0);
+    }
+
     /// <summary>The world position of a channel texel centre, for rasterizers walking a chunk.</summary>
     public Vector3 TexelCentre(ChunkCoord coord, int resolution, int x, int y)
     {

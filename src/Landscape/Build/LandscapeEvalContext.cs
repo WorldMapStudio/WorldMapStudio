@@ -82,6 +82,17 @@ public readonly struct LandscapeEvalContext
     public Color SampleChannelColor(in LandscapeChannelBinding binding, Vector3 world) =>
         Channels.SampleColor(binding, world);
 
+    /// <summary>Reads the channel a parameter is bound to at the single nearest texel — no bilinear
+    /// blend — honoring the binding's swizzle. What a terrain-attribute function reading a discrete id
+    /// must use instead of <see cref="SampleChannel"/>, which would filter the id into a different one
+    /// across a texel or chunk edge.</summary>
+    public float ReadChannel(LandscapeParameter parameter, Vector3 world) =>
+        Channels.ReadScalarNearest(Values.GetChannelBinding(parameter), world);
+
+    /// <inheritdoc cref="ReadChannel(LandscapeParameter, Vector3)"/>
+    public float ReadChannel(in LandscapeChannelBinding binding, Vector3 world) =>
+        Channels.ReadScalarNearest(binding, world);
+
     public float Float(LandscapeParameter parameter) => Values.GetFloat(parameter);
 
     public int Int(LandscapeParameter parameter) => Values.GetInt(parameter);
