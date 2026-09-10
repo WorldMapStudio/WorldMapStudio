@@ -89,6 +89,7 @@ public sealed class WorldLifecycle
     /// tests without a live <see cref="EditorContext"/> behind it.</summary>
     internal static void RunLoad(IEnumerable<IWorldParticipant> participants, Action<string>? onStep)
     {
+        var timings = new PhaseTimings();
         foreach (IWorldParticipant participant in participants.OrderBy(participant => participant.LoadPriority))
         {
             if (participant.LoadStep is { } step)
@@ -96,7 +97,20 @@ public sealed class WorldLifecycle
                 onStep?.Invoke(step);
             }
 
-            participant.LoadWorld();
+            using (timings.Measure(participant.LoadStep ?? participant.GetType().Name))
+            {
+                participant.LoadWorld();
+            }
+        }
+
+        // A load that follows a bulk import can spend minutes in one participant reading back what the
+        // import wrote, with nothing on screen to say which. Printed rather than logged behind
+        // DiagnosticLog.Enabled: a load is rare, and the answer is wanted on the run that surprised
+        // someone, not on the one after they went back and turned logging on.
+        foreach (string line in timings.Format("World load", minimumSeconds: 0.1))
+        {
+            GD.Print($"[World] {line}");
+            DiagnosticLog.Log(line);
         }
     }
 
