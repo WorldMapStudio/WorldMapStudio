@@ -27,6 +27,72 @@ public sealed class LandscapeChannelFactory(EditorStorage storage)
     }
 }
 
+/// <summary>Maps <see cref="TerrainAttribute"/> to and from the Editor storage's <c>wms_landscape_attributes</c> table.</summary>
+[Subsystem(nameof(EditorStorage))]
+public sealed class TerrainAttributeFactory(EditorStorage storage)
+    : EditorCatalogFactory<TerrainAttribute, TerrainAttributeRecord>(storage)
+{
+    protected override string TableName => "wms_landscape_attributes";
+
+    protected override TerrainAttribute ToEntity(TerrainAttributeRecord record) => new()
+    {
+        RecordId = record.Id,
+        Map = new MapId(record.MapId),
+        Key = record.Key,
+        Name = record.Name,
+        Description = record.Description,
+        CellsPerChunkEdge = record.CellsPerChunkEdge,
+        Components = record.Components,
+        ElementWidth = record.ElementWidth,
+        ComponentNames = record.ComponentNames,
+        Kind = (TerrainAttributeKind)record.Kind,
+        CatalogName = record.CatalogName,
+        DefaultValue = unchecked((uint)record.DefaultValue),
+        Seeded = record.Seeded,
+    };
+
+    protected override void WriteRecord(TerrainAttribute entity, TerrainAttributeRecord record)
+    {
+        record.MapId = entity.Map.Value;
+        record.Key = entity.Key;
+        record.Name = entity.Name;
+        record.Description = entity.Description;
+        record.CellsPerChunkEdge = entity.CellsPerChunkEdge;
+        record.Components = entity.Components;
+        record.ElementWidth = entity.ElementWidth;
+        record.ComponentNames = entity.ComponentNames;
+        record.Kind = (int)entity.Kind;
+        record.CatalogName = entity.CatalogName;
+        record.DefaultValue = entity.DefaultValue;
+        record.Seeded = entity.Seeded;
+    }
+}
+
+/// <summary>Maps <see cref="TerrainAttributeValue"/> to and from the Editor storage's <c>wms_landscape_attribute_values</c> table.</summary>
+[Subsystem(nameof(EditorStorage))]
+public sealed class TerrainAttributeValueFactory(EditorStorage storage)
+    : EditorCatalogFactory<TerrainAttributeValue, TerrainAttributeValueRecord>(storage)
+{
+    protected override string TableName => "wms_landscape_attribute_values";
+
+    protected override TerrainAttributeValue ToEntity(TerrainAttributeValueRecord record) => new()
+    {
+        RecordId = record.Id,
+        Map = new MapId(record.MapId),
+        AttributeId = record.AttributeId,
+        Value = record.Value,
+        Name = record.Name,
+    };
+
+    protected override void WriteRecord(TerrainAttributeValue entity, TerrainAttributeValueRecord record)
+    {
+        record.MapId = entity.Map.Value;
+        record.AttributeId = entity.AttributeId;
+        record.Value = entity.Value;
+        record.Name = entity.Name;
+    }
+}
+
 /// <summary>Maps <see cref="LandscapeLayer"/> to and from the Editor storage's <c>wms_landscape_layers</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeLayerFactory(EditorStorage storage)
