@@ -57,43 +57,14 @@ public readonly record struct LandscapeChannelBinding(string Channel, LandscapeS
             return Empty;
         }
 
-        int separator = raw.IndexOf(':');
-        if (separator < 0)
-        {
-            return new LandscapeChannelBinding(raw, LandscapeSwizzle.Native);
-        }
-
-        string name = raw[..separator];
-        string suffix = raw[(separator + 1)..];
-        LandscapeSwizzle swizzle = suffix.ToLowerInvariant() switch
-        {
-            "r" => LandscapeSwizzle.R,
-            "g" => LandscapeSwizzle.G,
-            "b" => LandscapeSwizzle.B,
-            "a" => LandscapeSwizzle.A,
-            "rgb" => LandscapeSwizzle.Rgb,
-            "rgba" => LandscapeSwizzle.Rgba,
-            "lum" => LandscapeSwizzle.Luminance,
-            _ => LandscapeSwizzle.Native,
-        };
-
+        (string name, LandscapeSwizzle swizzle) = LandscapeSwizzleSyntax.Parse(raw);
         return new LandscapeChannelBinding(name, swizzle);
     }
 
     /// <summary>The suffix a non-native swizzle serializes as, or empty for native — shared by
     /// <see cref="ToString"/> and anything building the stored string incrementally (e.g. an editor
     /// combo that only changes the swizzle, keeping the channel name).</summary>
-    public static string SuffixOf(LandscapeSwizzle swizzle) => swizzle switch
-    {
-        LandscapeSwizzle.R => "r",
-        LandscapeSwizzle.G => "g",
-        LandscapeSwizzle.B => "b",
-        LandscapeSwizzle.A => "a",
-        LandscapeSwizzle.Rgb => "rgb",
-        LandscapeSwizzle.Rgba => "rgba",
-        LandscapeSwizzle.Luminance => "lum",
-        _ => "",
-    };
+    public static string SuffixOf(LandscapeSwizzle swizzle) => LandscapeSwizzleSyntax.SuffixOf(swizzle);
 
     public override string ToString() =>
         Swizzle == LandscapeSwizzle.Native ? Channel : $"{Channel}:{SuffixOf(Swizzle)}";

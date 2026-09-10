@@ -30,12 +30,14 @@ public sealed class LandscapeCatalog
         IReadOnlyList<LandscapeChannel> channels,
         IReadOnlyList<LandscapeLayer> layers,
         IReadOnlyList<LandscapeMaterial> materials,
-        LandscapeFunctions? functions = null)
+        LandscapeFunctions? functions = null,
+        IReadOnlyList<TerrainAttribute>? attributes = null)
     {
         Channels = channels;
         Layers = layers;
         Materials = materials;
         Functions = functions;
+        Attributes = attributes ?? [];
     }
 
     public IReadOnlyList<LandscapeChannel> Channels { get; }
@@ -43,6 +45,11 @@ public sealed class LandscapeCatalog
     public IReadOnlyList<LandscapeLayer> Layers { get; }
 
     public IReadOnlyList<LandscapeMaterial> Materials { get; }
+
+    /// <summary>The terrain attributes this map declares — the open-ended output kinds a material can
+    /// write, an exporter reads and the debug overlay renders. Sits with <see cref="Channels"/> /
+    /// <see cref="Layers"/> / <see cref="Materials"/>; declares no storage of its own.</summary>
+    public IReadOnlyList<TerrainAttribute> Attributes { get; }
 
     /// <summary>The function registry material bindings resolve against, or null to skip those checks.</summary>
     public LandscapeFunctions? Functions { get; }
@@ -68,6 +75,17 @@ public sealed class LandscapeCatalog
                 hash.Add(channel.Resolution);
                 hash.Add(channel.BitDepth);
                 hash.Add(channel.Components);
+            }
+
+            foreach (TerrainAttribute attribute in Attributes)
+            {
+                // The key is part of it: writes bind by key, so renaming one rebinds it.
+                hash.Add(attribute.Key);
+                hash.Add(attribute.CellsPerChunkEdge);
+                hash.Add(attribute.Components);
+                hash.Add(attribute.ElementWidth);
+                hash.Add(attribute.Kind);
+                hash.Add(attribute.DefaultValue);
             }
 
             foreach (LandscapeLayer layer in Layers)

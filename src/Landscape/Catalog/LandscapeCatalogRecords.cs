@@ -16,6 +16,51 @@ public sealed class LandscapeChannelRecord : IKeyedRecord
     public int Components { get; set; } = 1;
 }
 
+/// <summary>EF Core row backing a <see cref="TerrainAttribute"/> in the Editor storage.</summary>
+public sealed class TerrainAttributeRecord : IKeyedRecord
+{
+    public int Id { get; set; }
+
+    public int MapId { get; set; }
+
+    public string Key { get; set; } = "attribute";
+
+    public string Name { get; set; } = "Attribute";
+
+    public string Description { get; set; } = "";
+
+    public int CellsPerChunkEdge { get; set; } = 1;
+
+    public int Components { get; set; } = 1;
+
+    public int ElementWidth { get; set; } = 32;
+
+    public string ComponentNames { get; set; } = "";
+
+    public int Kind { get; set; }
+
+    public string CatalogName { get; set; } = "";
+
+    // BIGINT: DefaultValue is an unsigned 32-bit value, which an INT column cannot hold in full.
+    public long DefaultValue { get; set; }
+
+    public bool Seeded { get; set; }
+}
+
+/// <summary>EF Core row backing a <see cref="TerrainAttributeValue"/> in the Editor storage.</summary>
+public sealed class TerrainAttributeValueRecord : IKeyedRecord
+{
+    public int Id { get; set; }
+
+    public int MapId { get; set; }
+
+    public int AttributeId { get; set; }
+
+    public long Value { get; set; }
+
+    public string Name { get; set; } = "";
+}
+
 /// <summary>EF Core row backing a <see cref="LandscapeLayer"/> in the Editor storage.</summary>
 public sealed class LandscapeLayerRecord : IKeyedRecord
 {
