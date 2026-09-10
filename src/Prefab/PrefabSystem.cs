@@ -34,6 +34,9 @@ public sealed class PrefabSystem : IWorldParticipant
     private static readonly Aabb LibraryBounds = new(
         new Vector3(-1.0e8f, -1.0e8f, -1.0e8f), new Vector3(2.0e8f, 2.0e8f, 2.0e8f));
 
+    // The library load wants every template built, so nothing is reported as already loaded.
+    private static readonly HashSet<long> Nothing = [];
+
     private readonly EditorContext _context;
 
     public PrefabSystem(EditorContext context)
@@ -150,8 +153,8 @@ public sealed class PrefabSystem : IWorldParticipant
             using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                IReadOnlyList<SceneEntity> loaded = await factory.ScanAsync(LibraryMap, LibraryBounds).ConfigureAwait(false);
-                result.AddRange(loaded);
+                SceneEntityScan scan = await factory.ScanAsync(LibraryMap, LibraryBounds, Nothing).ConfigureAwait(false);
+                result.AddRange(scan.Built);
             }
         }
 
