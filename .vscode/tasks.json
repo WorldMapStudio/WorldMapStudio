@@ -57,14 +57,15 @@
         {
             "label": "export",
             "hide": true,
-            "type": "shell",
-            "command": "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release \"Windows Desktop\" build/release/WorldMapStudio.exe | Out-Host; exit $LASTEXITCODE",
+            "type": "process",
+            "command": "powershell.exe",
+            "args": [
+                "-NoProfile",
+                "-Command",
+                "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release 'Windows Desktop' build/release/WorldMapStudio.exe | Out-Host; exit $LASTEXITCODE"
+            ],
             "options": {
-                "cwd": "${workspaceFolder}",
-                "shell": {
-                    "executable": "powershell.exe",
-                    "args": ["-NoProfile", "-Command"]
-                }
+                "cwd": "${workspaceFolder}"
             },
             "problemMatcher": []
         },
