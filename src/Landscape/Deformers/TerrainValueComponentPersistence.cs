@@ -78,9 +78,14 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
             .ToListAsync()
             .ConfigureAwait(false);
 
-        Dictionary<int, List<SceneTerrainValueChannelRecord>> channels =
-            await context.Set<SceneTerrainValueChannelRecord>().AsNoTracking()
-                .Where(record => ids.Contains(record.EntityId))
+        // Keyed off the rows this component actually has, not the scan's whole id set: the child
+        // table is keyed (EntityId, SortOrder), and a several-thousand-element IN against a composite
+        // key's leading column costs hundreds of milliseconds regardless of how few rows come back.
+        int[] owners = rows.Select(row => row.EntityId).ToArray();
+        Dictionary<int, List<SceneTerrainValueChannelRecord>> channels = owners.Length == 0
+            ? []
+            : await context.Set<SceneTerrainValueChannelRecord>().AsNoTracking()
+                .Where(record => owners.Contains(record.EntityId))
                 .OrderBy(record => record.SortOrder)
                 .GroupBy(record => record.EntityId)
                 .ToDictionaryAsync(group => group.Key, group => group.ToList())
