@@ -15,11 +15,14 @@ public static class EnvironmentBlender
         IReadOnlyList<(IEnvironmentSource Source, float Weight)> Active);
 
     /// <summary>
-    /// Blends every source in range at <paramref name="focus"/>. The (at most one) global source is
-    /// the base, always included at weight 1; the rest are weighted by
-    /// <see cref="IEnvironmentSource.WeightAt"/> and folded in strongest to weakest — matching
-    /// WebWowViewerCpp's <c>calculateLightParamBlends</c>/<c>getLightResultsFromDB</c> exactly
-    /// (<c>LightParamCalculate.h</c> sorts positional lights descending by blend before composing).
+    /// Blends every source in range at <paramref name="focus"/>. The global source is the base,
+    /// always included at weight 1 — the one with the highest
+    /// <see cref="IEnvironmentSource.GlobalPriority"/> when a map has more than one, ties going to
+    /// first-found. The rest are weighted by <see cref="IEnvironmentSource.WeightAt"/> and folded in
+    /// by ascending <see cref="IEnvironmentSource.BlendLayer"/>, strongest to weakest within a layer
+    /// — matching WebWowViewerCpp's <c>calculateLightParamBlends</c>/<c>getLightResultsFromDB</c>
+    /// exactly (<c>LightParamCalculate.h</c> composes its priority tiers in order, and sorts
+    /// positional lights descending by blend within one).
     /// Composing strongest-first means a source near full weight (deep in its own radius) all but
     /// overwrites the base outright, and every weaker source after it only nudges the result — the
     /// opposite order would let a distant, barely-in-range source's small blend still count for as
@@ -38,7 +41,11 @@ public static class EnvironmentBlender
         {
             if (source.IsGlobal)
             {
-                global ??= source;
+                if (global is null || source.GlobalPriority > global.GlobalPriority)
+                {
+                    global = source;
+                }
+
                 continue;
             }
 
@@ -49,7 +56,11 @@ public static class EnvironmentBlender
             }
         }
 
-        weighted.Sort((a, b) => b.Weight.CompareTo(a.Weight));
+        weighted.Sort((a, b) =>
+        {
+            int byLayer = a.Source.BlendLayer.CompareTo(b.Source.BlendLayer);
+            return byLayer != 0 ? byLayer : b.Weight.CompareTo(a.Weight);
+        });
 
         EnvironmentValues blended = global?.Evaluate(time) ?? new EnvironmentValues();
         foreach ((IEnvironmentSource source, float weight) in weighted)

@@ -15,10 +15,24 @@ public interface IEnvironmentSource
 {
     /// <summary>
     /// The map-wide base a query starts from. Its <see cref="WeightAt"/> is never evaluated — a
-    /// global source is always the first thing blended, at full weight, and only one is used (the
-    /// first one <see cref="EnvironmentSystem"/> finds).
+    /// global source is always the first thing blended, at full weight, and only one is used: the
+    /// one with the highest <see cref="GlobalPriority"/>, ties going to whichever
+    /// <see cref="EnvironmentSystem"/> finds first.
     /// </summary>
     bool IsGlobal { get; }
+
+    /// <summary>
+    /// Which global source wins when more than one is loaded for a map. The blender keeps the
+    /// highest. Only meaningful alongside <see cref="IsGlobal"/>; a lone global's value is moot.
+    /// </summary>
+    int GlobalPriority => 0;
+
+    /// <summary>
+    /// The tier a non-global source composes in. Sources fold in by ascending layer, and strongest
+    /// first within a layer, so a lower layer is fully in place before a higher one blends over it.
+    /// Ignored for a global source, which is always the base.
+    /// </summary>
+    int BlendLayer => 0;
 
     /// <summary>0 = no influence at this position, 1 = full override.</summary>
     float WeightAt(Vector3 worldPosition);
