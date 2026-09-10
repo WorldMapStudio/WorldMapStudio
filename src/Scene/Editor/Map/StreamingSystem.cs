@@ -61,11 +61,11 @@ public sealed class StreamingSystem : IWorldParticipant
     private float ChunkWorldSize() =>
         _context.Landscape.Settings?.ChunkWorldSize is > 0.0f and float size ? size : DefaultChunkWorldSize;
 
-    // Focus travel before a re-scan. A rescan costs work in proportion to how much is loaded, so the
-    // distance that triggers one scales with the view: at a large view distance, a chunk of travel is
-    // a much smaller fraction of what is already loaded than it is at a small one.
-    private float RescanDistance =>
-        Mathf.Max(ChunkWorldSize(), _context.View.ViewDistanceChunks * ChunkWorldSize() * 0.25f);
+    // Focus travel before a re-scan — about one chunk. A rescan only builds terrain batches that are
+    // not already loaded and only adds stored entities not already present, so re-scanning often and
+    // small keeps terrain close behind the camera; scaling this up with the view distance just makes
+    // terrain lag further behind while flying.
+    private float RescanDistance => ChunkWorldSize();
 
     /// <summary>What streaming does with one loaded entity when it re-judges the registry.</summary>
     public enum EntityFate
@@ -278,9 +278,13 @@ public sealed class StreamingSystem : IWorldParticipant
         var result = new List<SceneEntity>();
         foreach (Storage storage in _context.Database.Storages)
         {
+            // One reader for the whole storage rather than one per factory: re-acquiring per factory
+            // lets an unrelated writer (image-chunk residency loads, mostly) wedge in between every
+            // factory, and each of those stalls the scan by however long that write runs — turning a
+            // handful of millisecond queries into seconds.
+            using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
                 IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, load).ConfigureAwait(false);
                 result.AddRange(scanned);
             }
