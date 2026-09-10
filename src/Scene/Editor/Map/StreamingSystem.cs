@@ -215,11 +215,13 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        DiagnosticLog.Log(mapChanged
-            ? "start: map changed"
-            : _invalidatedBy.Length > 0
-                ? $"start: invalidated by {_invalidatedBy}"
-                : $"start: focus moved {HorizontalDistance(focus, _lastFocus):F0}");
+        // Invalidation first: it clears _scanStarted, which is half of what mapChanged tests, so
+        // asking mapChanged first reports every forced re-scan as a map change.
+        DiagnosticLog.Log(
+            _invalidatedBy.Length > 0 ? $"start: invalidated by {_invalidatedBy}"
+            : !map.Equals(_scanMap) ? "start: map changed"
+            : !_scanStarted ? "start: first scan"
+            : $"start: focus moved {HorizontalDistance(focus, _lastFocus):F0}");
         _invalidatedBy = string.Empty;
         _scanClock = DiagnosticLog.Start();
 
