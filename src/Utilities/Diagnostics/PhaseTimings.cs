@@ -61,8 +61,12 @@ public sealed class PhaseTimings
     public IReadOnlyList<string> Format(string title, double minimumSeconds = 0.0)
     {
         List<(string Phase, TimeSpan Elapsed, int Count)> rows;
+        long measuredTicks;
         lock (_lock)
         {
+            // Summed before the threshold filter, so a low bar for what is worth printing does not
+            // turn every phase it hid into apparent unattributed time.
+            measuredTicks = _entries.Values.Sum(entry => entry.Ticks);
             rows = _entries
                 .Select(pair => (pair.Key, new TimeSpan(pair.Value.Ticks), pair.Value.Count))
                 .Where(row => row.Item2.TotalSeconds >= minimumSeconds)
@@ -76,10 +80,19 @@ public sealed class PhaseTimings
         }
 
         double wall = ElapsedSeconds;
+
+        // Only meaningful while no phase nests inside another, which is why it is a remainder rather
+        // than a row: an operation that nests can drive it negative, and a negative remainder is a
+        // truthful "these phases overlap" rather than a number to trust.
+        double measured = new TimeSpan(measuredTicks).TotalSeconds;
+        double unattributed = wall - measured;
+
         int width = rows.Max(row => row.Phase.Length);
-        var lines = new List<string>(rows.Count + 1)
+        var lines = new List<string>(rows.Count + 2)
         {
-            string.Create(CultureInfo.InvariantCulture, $"{title} — {wall:F1}s wall:"),
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"{title} — {wall:F1}s wall, {measured:F1}s measured, {unattributed:F1}s outside any phase:"),
         };
 
         foreach ((string phase, TimeSpan elapsed, int count) in rows)
