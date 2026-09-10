@@ -13,18 +13,24 @@ public static class EnvironmentTests
         private readonly float _inner;
         private readonly float _outer;
 
-        public FakeSource(EnvironmentValues values, bool isGlobal = false, Vector3 position = default, float inner = 0.0f, float outer = 0.0f)
+        public FakeSource(EnvironmentValues values, bool isGlobal = false, Vector3 position = default, float inner = 0.0f, float outer = 0.0f, int globalPriority = 0, int blendLayer = 0)
         {
             Values = values;
             IsGlobal = isGlobal;
             _position = position;
             _inner = inner;
             _outer = outer;
+            GlobalPriority = globalPriority;
+            BlendLayer = blendLayer;
         }
 
         public EnvironmentValues Values { get; }
 
         public bool IsGlobal { get; }
+
+        public int GlobalPriority { get; }
+
+        public int BlendLayer { get; }
 
         public float WeightAt(Vector3 worldPosition) =>
             EnvironmentFalloff.Sphere(worldPosition.DistanceTo(_position), _inner, _outer);
@@ -180,6 +186,35 @@ public static class EnvironmentTests
         Assert.AreApproximatelyEqual(0.1, result.Current.AmbientColor.B, tolerance: 1e-4);
         Assert.AreEqual(3, result.Active.Count);
         Assert.IsTrue(result.Active[1].Weight >= result.Active[2].Weight, "positional sources are ordered strongest-first");
+    }
+
+    [EditorTest(Category = "Environment")]
+    public static void Blender_keeps_the_highest_priority_global_ties_going_to_first_found()
+    {
+        var low = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Red }, isGlobal: true, globalPriority: 0);
+        var high = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Blue }, isGlobal: true, globalPriority: 1);
+        var alsoHigh = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Green }, isGlobal: true, globalPriority: 1);
+
+        Assert.AreEqual(Colors.Blue, EnvironmentBlender.Blend([low, high, alsoHigh], Vector3.Zero, default).Current.AmbientColor);
+        Assert.AreEqual(Colors.Blue, EnvironmentBlender.Blend([high, alsoHigh], Vector3.Zero, default).Current.AmbientColor);
+    }
+
+    [EditorTest(Category = "Environment")]
+    public static void Blender_composes_a_lower_layer_before_a_higher_one_regardless_of_weight()
+    {
+        var global = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Black }, isGlobal: true);
+
+        // The higher-layer source is at full weight and the lower-layer one only half, but the lower
+        // layer still composes first, so the higher one blends last and dominates the result.
+        var lower = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Red }, position: Vector3.Zero, inner: 10.0f, outer: 20.0f, blendLayer: 1);
+        var higher = new FakeSource(new EnvironmentValues { AmbientColor = Colors.Blue }, position: Vector3.Zero, inner: 20.0f, outer: 20.0f, blendLayer: 2);
+
+        EnvironmentBlender.Result result = EnvironmentBlender.Blend([global, higher, lower], new Vector3(15.0f, 0.0f, 0.0f), default);
+
+        Assert.IsFalse(result.Active[1].Source.IsGlobal);
+        Assert.AreEqual(1, ((FakeSource)result.Active[1].Source).BlendLayer, "the lower layer is folded in first");
+        Assert.AreEqual(2, ((FakeSource)result.Active[2].Source).BlendLayer);
+        Assert.AreApproximatelyEqual(1.0, result.Current.AmbientColor.B, tolerance: 1e-4);
     }
 
     [EditorTest(Category = "Environment")]
