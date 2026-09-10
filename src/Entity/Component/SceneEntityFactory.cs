@@ -94,6 +94,8 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         Vector3 max = region.End;
 
         await using EditorDbContext context = _storage.CreateContext();
+
+        long clock = StreamingDiagnostics.Start();
         List<SceneEntityRecord> rows = await context.SceneEntities.AsNoTracking()
             .Where(record => record.MapId == map.Value
                 && record.MinX <= max.X && record.MaxX >= min.X
@@ -101,14 +103,20 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 && record.MinZ <= max.Z && record.MaxZ >= min.Z)
             .ToListAsync()
             .ConfigureAwait(false);
+        StreamingDiagnostics.Log($"    region query: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms, {rows.Count} rows");
+
+        clock = StreamingDiagnostics.Start();
         await ExpandRowsToFamiliesAsync(context, rows, map).ConfigureAwait(false);
+        StreamingDiagnostics.Log($"    family expansion: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms, {rows.Count} rows total");
 
         Dictionary<int, SceneEntity> entities = rows.ToDictionary(row => row.Id, ToEntity);
         int[] ids = rows.Select(row => row.Id).ToArray();
 
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
         {
+            clock = StreamingDiagnostics.Start();
             await persistence.LoadAsync(context, entities, ids).ConfigureAwait(false);
+            StreamingDiagnostics.Log($"    {persistence.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms");
         }
 
         List<SceneEntity> result = entities.Values.ToList();
