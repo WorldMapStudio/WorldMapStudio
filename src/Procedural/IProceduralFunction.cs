@@ -62,6 +62,12 @@ public interface IProceduralFunction : ISubsystem
     /// the ground under the cursor rather than needing to be dragged down to it by hand.</summary>
     bool SnapToTerrainOnPlace => false;
 
+    /// <summary>Adjusts a vertex world position as it is placed or moved — e.g. snapping it onto a fixed
+    /// lattice. Identity by default. Applied by <see cref="NetworkEditTool"/> after
+    /// <see cref="PlanarNetwork"/>/<see cref="SnapToTerrainOnPlace"/> have resolved where the vertex
+    /// would otherwise land.</summary>
+    Vector3 SnapVertex(Vector3 worldPosition) => worldPosition;
+
     void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output);
 }
 

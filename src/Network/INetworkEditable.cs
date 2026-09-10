@@ -34,6 +34,15 @@ public interface INetworkEditable
     bool SnapToTerrainOnPlace => false;
 
     /// <summary>
+    /// Adjusts a vertex world position as it is placed or moved — e.g. snapping it onto a fixed
+    /// lattice. Identity by default. Applied by <see cref="NetworkEditTool"/> after
+    /// <see cref="PlanarXZ"/>/<see cref="SnapToTerrainOnPlace"/> have resolved where the vertex would
+    /// otherwise land, so a component that wants it forwards to whatever owns the policy (a procedural
+    /// mesh, to its bound function).
+    /// </summary>
+    Godot.Vector3 SnapVertex(Godot.Vector3 worldPosition) => worldPosition;
+
+    /// <summary>
     /// What an edit session pins and persists a network edit against — a road's own entity, but a
     /// procedural mesh's <em>model</em> rather than the placement being edited, since the network
     /// lives on the model and may be shared by other placements. Defaults to <see cref="Owner"/> for

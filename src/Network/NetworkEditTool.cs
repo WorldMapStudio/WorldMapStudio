@@ -744,7 +744,7 @@ public sealed class NetworkEditTool : ITool
             moved.Y = 0.0f;
         }
 
-        return moved;
+        return entityTransform.AffineInverse() * component.SnapVertex(entityTransform * moved);
     }
 
     private Transform3D ComputePivot(INetworkEditable component, SceneEntity entity)
@@ -859,6 +859,7 @@ public sealed class NetworkEditTool : ITool
 
         if (ctrl && TryPlacementPoint(component, entity, viewport, out GVector3 local))
         {
+            local = entity.Transform.AffineInverse() * component.SnapVertex(entity.Transform * local);
             Mutate(component, "Add network vertex", network =>
             {
                 int id = network.AddVertex(local, component.PlanarXZ);

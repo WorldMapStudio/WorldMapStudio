@@ -87,6 +87,8 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
     public bool SnapToTerrainOnPlace => BoundFunction?.SnapToTerrainOnPlace ?? false;
 
+    public Vector3 SnapVertex(Vector3 worldPosition) => BoundFunction?.SnapVertex(worldPosition) ?? worldPosition;
+
     public override string TypeId => Kind;
 
     public override string DisplayName => "Procedural Mesh";
