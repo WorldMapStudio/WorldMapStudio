@@ -76,6 +76,14 @@ public sealed class LandscapeMaterial : CatalogEntity, IKeyedCatalogEntity, ILan
     /// <summary>Serialized parameter values for <see cref="VertexLightFunction"/>.</summary>
     public string VertexLightParameters { get; set; } = "";
 
+    /// <summary>
+    /// An export-target id naming a per-texture surface effect — for WoW, the MCLY <c>effectId</c>
+    /// (ground-effect scatter / footstep audio). 0 means none. It is a property of the texture, so it
+    /// lives on the material rather than being written per chunk. Exporters that have no such concept
+    /// ignore it.
+    /// </summary>
+    public int SurfaceEffectId { get; set; }
+
     /// <inheritdoc />
     public int? RecordId { get; set; }
 

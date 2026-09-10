@@ -123,6 +123,8 @@ public sealed class LandscapeMaterialRecord : IKeyedRecord
     public string VertexLightFunction { get; set; } = "";
 
     public string VertexLightParameters { get; set; } = "";
+
+    public int SurfaceEffectId { get; set; }
 }
 
 /// <summary>

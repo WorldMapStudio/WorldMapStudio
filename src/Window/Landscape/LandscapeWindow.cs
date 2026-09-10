@@ -586,6 +586,17 @@ public sealed class LandscapeWindow : Window
                         RecordNow(material, "texture", material.TexturePath, selected, v => material.TexturePath = v));
                 }
 
+                int surfaceEffect = material.SurfaceEffectId;
+                if (ImGui.DragInt("Surface effect id", ref surfaceEffect, 1.0f, 0, int.MaxValue))
+                {
+                    material.SurfaceEffectId = surfaceEffect;
+                }
+
+                _tracker.Track(_context.EditSessions, material, "surface effect id", material.SurfaceEffectId,
+                    v => material.SurfaceEffectId = v);
+                ImGui.SameLine();
+                ImGui.TextDisabled("(0 = none; a per-texture export id, e.g. WoW's MCLY effectId)");
+
                 Heading("Alpha");
                 DrawFunctionBinding(
                     material, "alpha", Landscape.Functions.Alpha,

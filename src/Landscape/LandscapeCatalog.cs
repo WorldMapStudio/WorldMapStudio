@@ -147,6 +147,7 @@ public sealed class LandscapeCatalog
                 hash.Add(material.VertexColorParameters);
                 hash.Add(material.VertexLightFunction);
                 hash.Add(material.VertexLightParameters);
+                hash.Add(material.SurfaceEffectId);
             }
 
             return hash.ToHashCode();
