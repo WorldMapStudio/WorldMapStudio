@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace WorldMapStudio;
@@ -192,24 +191,7 @@ public sealed class AttributesScriptApi : IScriptModule
             return value.ToString();
         }
 
-        List<TerrainAttributeValue> rows = _context.Catalog.OfType<TerrainAttributeValue>()
-            .Where(row => row.AttributeId == (attribute.RecordId ?? -1))
-            .ToList();
-
-        if (attribute.Kind == TerrainAttributeKind.Enum)
-        {
-            return rows.FirstOrDefault(row => row.Value == value)?.Name ?? value.ToString();
-        }
-
-        if (attribute.Kind == TerrainAttributeKind.Flags)
-        {
-            string[] names = rows.Where(row => row.Value != 0 && (value & row.Value) == row.Value)
-                .Select(row => row.Name)
-                .ToArray();
-            return names.Length > 0 ? string.Join(" ", names) : value.ToString();
-        }
-
-        return value.ToString();
+        return TerrainAttributeNames.Resolve(attribute, value, _context.Catalog.OfType<TerrainAttributeValue>());
     }
 
     private TerrainAttribute RequireAttribute(string key) =>

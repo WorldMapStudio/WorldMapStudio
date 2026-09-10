@@ -78,7 +78,39 @@ public sealed class LandscapeDebugWindow : Window
         ImGui.Separator();
         DrawPreviews(output);
         ImGui.Separator();
+        DrawAttributes(output);
+        ImGui.Separator();
         DrawProblems();
+    }
+
+    // The value of each declared attribute in this chunk, name-resolved. An attribute nothing wrote
+    // is absent from output.Attributes — shown as its declared default so it is not mistaken for
+    // "unwritten means zero".
+    private void DrawAttributes(LandscapeChunkOutput output)
+    {
+        IReadOnlyList<TerrainAttribute> declared = _context.Landscape.Catalog.Attributes;
+        if (declared.Count == 0)
+        {
+            ImGui.TextDisabled("No terrain attributes declared.");
+            return;
+        }
+
+        List<TerrainAttributeValue> allValues = _context.Catalog.OfType<TerrainAttributeValue>().ToList();
+
+        foreach (TerrainAttribute attribute in declared)
+        {
+            bool written = output.Attributes.TryGetValue(attribute.Key, out TerrainAttributeGrid grid);
+            string cells = attribute.CellsPerChunkEdge > 1 ? $" · {attribute.CellsPerChunkEdge}² cells (showing 0,0)" : "";
+            ImGui.Text($"{attribute.Name} [{attribute.Key}]{(written ? cells : " · default")}");
+
+            int components = written ? grid.Components : attribute.Components;
+            for (int c = 0; c < components; c++)
+            {
+                long raw = written ? grid.At(0, 0, c) : attribute.DefaultValue;
+                string label = components > 1 ? $"  {attribute.ComponentLabel(c)}: " : "  ";
+                ImGui.TextDisabled($"{label}{raw}  ({TerrainAttributeNames.Resolve(attribute, raw, allValues)})");
+            }
+        }
     }
 
     private void DrawPreviews(LandscapeChunkOutput output)
