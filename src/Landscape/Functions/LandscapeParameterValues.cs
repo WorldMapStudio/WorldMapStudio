@@ -41,6 +41,13 @@ public sealed class LandscapeParameterValues
     public int GetInt(LandscapeParameter parameter) =>
         int.TryParse(GetRaw(parameter), NumberStyles.Integer, CultureInfo.InvariantCulture, out int value) ? value : 0;
 
+    /// <summary>Reads a parameter as an unsigned 32-bit value — the stored form of a
+    /// <see cref="LandscapeParameterKind.AttributeValue"/>, which may name a bit above <c>int.MaxValue</c>.</summary>
+    public uint GetUInt(LandscapeParameter parameter) =>
+        long.TryParse(GetRaw(parameter), NumberStyles.Integer, CultureInfo.InvariantCulture, out long value)
+            ? unchecked((uint)value)
+            : 0u;
+
     public bool GetBool(LandscapeParameter parameter) =>
         GetRaw(parameter).Equals("true", StringComparison.OrdinalIgnoreCase);
 

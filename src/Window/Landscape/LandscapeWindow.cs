@@ -567,6 +567,21 @@ public sealed class LandscapeWindow : Window
                     break;
                 }
 
+                case LandscapeParameterKind.AttributeValue:
+                {
+                    // The attribute-aware editor (catalog picker / flags / enum) lives in the
+                    // material's Attributes section, which knows the target attribute. Here — an
+                    // attribute value shown on some other binding — a plain integer is the fallback.
+                    int value = values.GetInt(parameter);
+                    if (ImGui.DragInt(parameter.DisplayName, ref value))
+                    {
+                        values.Set(parameter, value);
+                    }
+
+                    TrackParameter(material, function, values, serialized, setParameters);
+                    break;
+                }
+
                 case LandscapeParameterKind.Color:
                 {
                     Godot.Color color = values.GetColor(parameter);

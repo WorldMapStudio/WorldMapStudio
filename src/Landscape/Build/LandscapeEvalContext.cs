@@ -97,6 +97,8 @@ public readonly struct LandscapeEvalContext
 
     public int Int(LandscapeParameter parameter) => Values.GetInt(parameter);
 
+    public uint UInt(LandscapeParameter parameter) => Values.GetUInt(parameter);
+
     public bool Bool(LandscapeParameter parameter) => Values.GetBool(parameter);
 
     public Color Color(LandscapeParameter parameter) => Values.GetColor(parameter);
