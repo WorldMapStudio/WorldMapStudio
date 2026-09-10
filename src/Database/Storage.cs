@@ -239,9 +239,13 @@ public abstract class Storage : ISubsystem
     protected IEntityFactory? FactoryFor(IEntity entity) =>
         EntityFactories.FirstOrDefault(factory => factory.Handles(entity));
 
-    /// <summary>Builds Pomelo MySQL options for one of this storage's contexts.</summary>
+    /// <summary>Builds Pomelo MySQL options for one of this storage's contexts. The diagnostic
+    /// interceptors are always registered and gate themselves on <see cref="DiagnosticLog.Enabled"/>:
+    /// registering them conditionally would change the options shape mid-session and rebuild EF's
+    /// cached internal service provider on the next context.</summary>
     protected DbContextOptions<TContext> BuildOptions<TContext>() where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
             .UseMySql(Connection.BuildConnectionString(), new MySqlServerVersion(new Version(8, 0, 0)))
+            .AddInterceptors(SqlCommandLog.Instance, SqlConnectionLog.Instance)
             .Options;
 }

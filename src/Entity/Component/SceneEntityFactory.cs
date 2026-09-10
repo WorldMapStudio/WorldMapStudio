@@ -95,7 +95,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
         await using EditorDbContext context = _storage.CreateContext();
 
-        long clock = StreamingDiagnostics.Start();
+        long clock = DiagnosticLog.Start();
         List<SceneEntityRecord> rows = await context.SceneEntities.AsNoTracking()
             .Where(record => record.MapId == map.Value
                 && record.MinX <= max.X && record.MaxX >= min.X
@@ -103,20 +103,21 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
                 && record.MinZ <= max.Z && record.MaxZ >= min.Z)
             .ToListAsync()
             .ConfigureAwait(false);
-        StreamingDiagnostics.Log($"    region query: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms, {rows.Count} rows");
+        DiagnosticLog.Log($"    region query: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {rows.Count} rows");
 
-        clock = StreamingDiagnostics.Start();
+        clock = DiagnosticLog.Start();
         await ExpandRowsToFamiliesAsync(context, rows, map).ConfigureAwait(false);
-        StreamingDiagnostics.Log($"    family expansion: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms, {rows.Count} rows total");
+        DiagnosticLog.Log($"    family expansion: {DiagnosticLog.MillisecondsSince(clock):F0}ms, {rows.Count} rows total");
 
         Dictionary<int, SceneEntity> entities = rows.ToDictionary(row => row.Id, ToEntity);
         int[] ids = rows.Select(row => row.Id).ToArray();
 
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
         {
-            clock = StreamingDiagnostics.Start();
+            using IDisposable scope = DiagnosticLog.Scope(persistence.GetType().Name);
+            clock = DiagnosticLog.Start();
             await persistence.LoadAsync(context, entities, ids).ConfigureAwait(false);
-            StreamingDiagnostics.Log($"    {persistence.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(clock):F0}ms");
+            DiagnosticLog.Log($"    {persistence.GetType().Name}: {DiagnosticLog.MillisecondsSince(clock):F0}ms");
         }
 
         List<SceneEntity> result = entities.Values.ToList();

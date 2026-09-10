@@ -215,13 +215,13 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        StreamingDiagnostics.Log(mapChanged
+        DiagnosticLog.Log(mapChanged
             ? "start: map changed"
             : _invalidatedBy.Length > 0
                 ? $"start: invalidated by {_invalidatedBy}"
                 : $"start: focus moved {HorizontalDistance(focus, _lastFocus):F0}");
         _invalidatedBy = string.Empty;
-        _scanClock = StreamingDiagnostics.Start();
+        _scanClock = DiagnosticLog.Start();
 
         _scanStarted = true;
         _scanMap = map;
@@ -258,11 +258,11 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        double elapsed = StreamingDiagnostics.MillisecondsSince(_scanClock);
-        long reconcileClock = StreamingDiagnostics.Start();
+        double elapsed = DiagnosticLog.MillisecondsSince(_scanClock);
+        long reconcileClock = DiagnosticLog.Start();
         Reconcile(scan.Result);
-        StreamingDiagnostics.Log(
-            $"done: {elapsed:F0}ms scan + {StreamingDiagnostics.MillisecondsSince(reconcileClock):F0}ms reconcile, "
+        DiagnosticLog.Log(
+            $"done: {elapsed:F0}ms scan + {DiagnosticLog.MillisecondsSince(reconcileClock):F0}ms reconcile, "
             + $"{scan.Result.Count} entities");
     }
 
@@ -296,6 +296,7 @@ public sealed class StreamingSystem : IWorldParticipant
     // from; loaders produce what the user sees, so they get the view region.
     private async Task<List<SceneEntity>> ScanAsync(MapId map, Aabb view, Aabb load)
     {
+        using IDisposable scope = DiagnosticLog.Scope($"scan {ScanVersion + 1}");
         var result = new List<SceneEntity>();
         foreach (Storage storage in _context.Database.Storages)
         {
@@ -303,16 +304,17 @@ public sealed class StreamingSystem : IWorldParticipant
             // lets an unrelated writer (image-chunk residency loads, mostly) wedge in between every
             // factory, and each of those stalls the scan by however long that write runs — turning a
             // handful of millisecond queries into seconds.
-            long lockClock = StreamingDiagnostics.Start();
+            long lockClock = DiagnosticLog.Start();
             using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-            StreamingDiagnostics.Log($"  {storage.Name}: reader lock {StreamingDiagnostics.MillisecondsSince(lockClock):F0}ms");
+            DiagnosticLog.Log($"  {storage.Name}: reader lock {DiagnosticLog.MillisecondsSince(lockClock):F0}ms");
 
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                long factoryClock = StreamingDiagnostics.Start();
+                using IDisposable factoryScope = DiagnosticLog.Scope(factory.GetType().Name);
+                long factoryClock = DiagnosticLog.Start();
                 IReadOnlyList<SceneEntity> scanned = await factory.ScanAsync(map, load).ConfigureAwait(false);
-                StreamingDiagnostics.Log(
-                    $"  {factory.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(factoryClock):F0}ms, {scanned.Count} entities");
+                DiagnosticLog.Log(
+                    $"  {factory.GetType().Name}: {DiagnosticLog.MillisecondsSince(factoryClock):F0}ms, {scanned.Count} entities");
                 result.AddRange(scanned);
             }
         }
@@ -320,10 +322,11 @@ public sealed class StreamingSystem : IWorldParticipant
         // Storage-free sources (landscape chunks) take no lock: there is no database behind them.
         foreach (ISceneEntityLoader loader in _loaders)
         {
-            long loaderClock = StreamingDiagnostics.Start();
+            using IDisposable loaderScope = DiagnosticLog.Scope(loader.GetType().Name);
+            long loaderClock = DiagnosticLog.Start();
             IReadOnlyList<SceneEntity> produced = await loader.ScanAsync(map, view).ConfigureAwait(false);
-            StreamingDiagnostics.Log(
-                $"  {loader.GetType().Name}: {StreamingDiagnostics.MillisecondsSince(loaderClock):F0}ms, {produced.Count} entities");
+            DiagnosticLog.Log(
+                $"  {loader.GetType().Name}: {DiagnosticLog.MillisecondsSince(loaderClock):F0}ms, {produced.Count} entities");
             result.AddRange(produced);
         }
 
