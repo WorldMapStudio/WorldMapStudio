@@ -107,10 +107,28 @@ public sealed class LandscapeDebugWindow : Window
             for (int c = 0; c < components; c++)
             {
                 long raw = written ? grid.At(0, 0, c) : attribute.DefaultValue;
-                string label = components > 1 ? $"  {attribute.ComponentLabel(c)}: " : "  ";
+                ImGui.ColorButton($"##{attribute.Key}_{c}", HashColor(raw),
+                    ImGuiColorEditFlags.NoTooltip | ImGuiColorEditFlags.NoDragDrop, new NVector2(12.0f, 12.0f));
+                ImGui.SameLine();
+                string label = components > 1 ? $"{attribute.ComponentLabel(c)}: " : "";
                 ImGui.TextDisabled($"{label}{raw}  ({TerrainAttributeNames.Resolve(attribute, raw, allValues)})");
             }
         }
+    }
+
+    // A stable per-value hue, the same idea the plan's overlay legend uses — so two cells holding the
+    // same id read as the same colour and a change of id is a change of colour.
+    private static NVector4 HashColor(long value)
+    {
+        if (value == 0)
+        {
+            return new NVector4(0.3f, 0.3f, 0.3f, 1.0f);
+        }
+
+        uint h = (uint)(value * 2654435761u);
+        float hue = (h & 0xFFFF) / 65535.0f;
+        Color rgb = Color.FromHsv(hue, 0.55f, 0.85f);
+        return new NVector4(rgb.R, rgb.G, rgb.B, 1.0f);
     }
 
     private void DrawPreviews(LandscapeChunkOutput output)
