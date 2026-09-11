@@ -394,7 +394,7 @@ public sealed class GltfModelLoader : IModelLoader
 
     private static ArrayMesh BuildMesh(Vector3[] positions, Vector3[] normals, Vector2[] uvs, int[] indices)
     {
-        var arrays = new Godot.Collections.Array();
+        using var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = positions;
         arrays[(int)Mesh.ArrayType.Normal] = normals;

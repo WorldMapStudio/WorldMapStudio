@@ -173,7 +173,7 @@ public sealed class ObjModelLoader : IModelLoader
 
     private static ArrayMesh BuildMesh(SurfaceBuilder surface)
     {
-        var arrays = new Godot.Collections.Array();
+        using var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = surface.Vertices.ToArray();
         arrays[(int)Mesh.ArrayType.Normal] = surface.Normals.ToArray();
