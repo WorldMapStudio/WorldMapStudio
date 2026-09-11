@@ -24,7 +24,7 @@ public sealed class ObjectSelection
     private const float MarqueeThreshold = 5.0f;
 
     private readonly SelectionSystem _selection;
-    private readonly SceneEntityRegistry _scene;
+    private readonly ViewCategorySystem _viewCategories;
 
     private readonly List<SceneEntity> _selectionCache = [];
     private int _cachedVersion = -1;
@@ -36,10 +36,10 @@ public sealed class ObjectSelection
     private bool _marquee;
     private NVector2 _marqueeStart;
 
-    public ObjectSelection(SelectionSystem selection, SceneEntityRegistry scene)
+    public ObjectSelection(SelectionSystem selection, ViewCategorySystem viewCategories)
     {
         _selection = selection;
-        _scene = scene;
+        _viewCategories = viewCategories;
     }
 
     /// <summary>The selected scene entities, cached until the shared selection next changes.</summary>
@@ -145,7 +145,7 @@ public sealed class ObjectSelection
             _selection.Clear();
         }
 
-        foreach (SceneEntity obj in _scene.InView)
+        foreach (SceneEntity obj in _viewCategories.Visible)
         {
             if (obj is IDerivedEntity)
             {
@@ -193,7 +193,7 @@ public sealed class ObjectSelection
 
         // (entity, nearest possible distance, distance to use if it has no geometry to test)
         var candidates = new List<(SceneEntity Entity, float Near, float BoxHit)>();
-        foreach (SceneEntity obj in _scene.InView)
+        foreach (SceneEntity obj in _viewCategories.Visible)
         {
             if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float boxHit, out float near))
             {

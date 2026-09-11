@@ -88,9 +88,30 @@ public sealed partial class ViewCategorySystem : ISubsystemHost
     public void SetHidden(string categoryId, bool hidden)
     {
         bool changed = hidden ? _hidden.Add(categoryId) : _hidden.Remove(categoryId);
-        if (changed)
+        if (!changed)
         {
-            Version++;
+            return;
+        }
+
+        Version++;
+
+        // Hiding a category takes its entities out from under the transform gizmo — otherwise it
+        // floats over nothing and drags what the user can no longer see.
+        if (hidden && Find(categoryId) is { } category)
+        {
+            PruneSelection(category);
+        }
+    }
+
+    private void PruneSelection(IViewCategory category)
+    {
+        SelectionSystem selection = Context.Selection;
+        foreach (IEntity entity in selection.Selected.ToArray())
+        {
+            if (entity is SceneEntity scene && category.Includes(scene))
+            {
+                selection.Remove(entity);
+            }
         }
     }
 

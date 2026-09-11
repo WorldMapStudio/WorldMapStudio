@@ -161,6 +161,33 @@ public class SceneEntity : Entity
 
     public bool IsRepresented => Node != null;
 
+    private bool _visible = true;
+
+    /// <summary>
+    /// Whether the view filter (<see cref="ViewCategorySystem"/>) wants this entity drawn and
+    /// pickable. A mirror of <see cref="Transform"/>'s own shape: the field is the truth, the node's
+    /// <see cref="Node3D.Visible"/> is a write-only reflection of it, and <see cref="CreateRepresentation"/>
+    /// applies whatever this already holds — so hiding a represented entity never destroys or rebuilds
+    /// its node, and hiding an unrepresented one costs nothing at all.
+    /// </summary>
+    public bool Visible
+    {
+        get => _visible;
+        set
+        {
+            if (_visible == value)
+            {
+                return;
+            }
+
+            _visible = value;
+            if (Node != null)
+            {
+                Node.Visible = value;
+            }
+        }
+    }
+
     public IReadOnlyList<SceneComponent> Components => _components;
 
     public override string DisplayName => Name;
@@ -276,6 +303,7 @@ public class SceneEntity : Entity
         Node = BuildNode();
         parent.AddChild(Node);
         Node.GlobalTransform = _transform;
+        Node.Visible = _visible;
     }
 
     /// <summary>
