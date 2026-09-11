@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using Godot;
 
 namespace WorldMapStudio;
@@ -160,6 +161,14 @@ public sealed partial class EditorContext : ISubsystemHost
         Assets = new AssetSystem(this);
         MeshMaterials = new MeshMaterialSystem(this);
         Database = new DatabaseSystem(this);
+
+        // Bound here rather than injected, because the catalog registry is constructed before the
+        // database that owns each type's factory. Lets AssignId seed a type's high-water mark from
+        // storage the first time it is needed instead of assuming the loaded set is everything.
+        Catalog.BindFactoryLookup(entityType =>
+            Database.Storages.SelectMany(storage => storage.CatalogFactories)
+                .FirstOrDefault(factory => factory.EntityType == entityType));
+
         Landscape = new LandscapeSystem(this);
         Procedural = new ProceduralSystem(this);
         Images = new ImageSystem(this);

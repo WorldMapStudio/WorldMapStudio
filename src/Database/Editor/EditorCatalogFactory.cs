@@ -66,6 +66,12 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
         }).ToList();
     }
 
+    public async Task<int> MaxRecordIdAsync()
+    {
+        await using EditorDbContext context = Storage.CreateContext();
+        return await context.Set<TRecord>().MaxAsync(record => (int?)record.Id).ConfigureAwait(false) ?? 0;
+    }
+
     public Action Stage(DbContext context, IEntity entity)
     {
         var typed = (TEntity)entity;

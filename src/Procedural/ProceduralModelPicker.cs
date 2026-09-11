@@ -184,14 +184,9 @@ public sealed class ProceduralModelPicker
         _onCreated(model);
     }
 
-    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId"/> would hand out next, without
-    /// adding anything to the catalog — the form pre-fills it but lets the user type another.</summary>
-    private static int NextFreeId(CatalogEntityRegistry catalog)
-    {
-        var probe = new ProceduralModel();
-        catalog.AssignId(probe);
-        return probe.RecordId ?? 1;
-    }
+    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId{TEntity}"/> would hand out next —
+    /// the form pre-fills it but lets the user type another.</summary>
+    private static int NextFreeId(CatalogEntityRegistry catalog) => catalog.PeekNextId<ProceduralModel>();
 
     /// <summary>A single edge to start from, the same seed <c>ProceduralComponentType.Create</c> used
     /// to give before models existed separately from components.</summary>

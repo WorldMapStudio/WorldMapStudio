@@ -18,6 +18,9 @@ public sealed class CatalogEntityRegistry
     private readonly List<CatalogEntity> _entities = [];
     private readonly HashSet<CatalogEntity> _entitySet = [];
     private readonly Dictionary<EntityId, CatalogEntity> _byId = [];
+    private readonly Dictionary<Type, int> _highWaterMarks = [];
+
+    private Func<Type, ICatalogEntityFactory?>? _factoryLookup;
 
     public IReadOnlyList<CatalogEntity> Entities => _entities;
 
@@ -33,24 +36,65 @@ public sealed class CatalogEntityRegistry
         _entities.OfType<TEntity>();
 
     /// <summary>
+    /// Bound once by <see cref="EditorContext"/> after <see cref="DatabaseSystem"/> exists, since this
+    /// registry is constructed first. Lets <see cref="AssignId{TEntity}"/> seed a type's high-water mark
+    /// from storage rather than assuming the loaded set is everything — required once a catalog can be
+    /// lazily loaded, where most rows are never loaded at all.
+    /// </summary>
+    public void BindFactoryLookup(Func<Type, ICatalogEntityFactory?> lookup) => _factoryLookup = lookup;
+
+    /// <summary>
     /// Gives a newly created entity the next free row id for its type, so other entities can
     /// reference it immediately rather than only after a commit. Call before adding it.
     ///
-    /// Highest-in-use plus one, over the loaded set — catalogs are loaded whole, so that is every id
-    /// there is.
+    /// Backed by a per-type high-water mark rather than a scan of the loaded set on every call: seeded
+    /// once, from <c>max(loaded, stored)</c>, the first time a type is assigned, then only incremented —
+    /// eviction never lowers it, so an id already handed out can never be reused. For an eagerly-loaded
+    /// type the seed equals what the old per-call scan produced, so behaviour is unchanged; for a
+    /// lazily-loaded type most rows are never loaded, so the stored MAX is the only thing that can
+    /// answer this correctly.
     /// </summary>
     public void AssignId<TEntity>(TEntity entity) where TEntity : CatalogEntity, IKeyedCatalogEntity
     {
-        int next = 1;
+        Type type = typeof(TEntity);
+        if (!_highWaterMarks.TryGetValue(type, out int mark))
+        {
+            mark = SeedHighWaterMark<TEntity>(type);
+        }
+
+        mark++;
+        _highWaterMarks[type] = mark;
+        entity.RecordId = mark;
+    }
+
+    /// <summary>Peeks the id <see cref="AssignId{TEntity}"/> would hand out next, without reserving it —
+    /// unlike the old scan-based AssignId, calling AssignId itself to peek would now advance the
+    /// high-water mark and skip an id, so a caller that wants to pre-fill a form uses this instead.</summary>
+    public int PeekNextId<TEntity>() where TEntity : CatalogEntity, IKeyedCatalogEntity
+    {
+        Type type = typeof(TEntity);
+        if (!_highWaterMarks.TryGetValue(type, out int mark))
+        {
+            mark = SeedHighWaterMark<TEntity>(type);
+            _highWaterMarks[type] = mark;
+        }
+
+        return mark + 1;
+    }
+
+    private int SeedHighWaterMark<TEntity>(Type type) where TEntity : CatalogEntity, IKeyedCatalogEntity
+    {
+        int seed = _factoryLookup?.Invoke(type) is { } factory ? BlockingWork.Run(factory.MaxRecordIdAsync) : 0;
+
         foreach (TEntity existing in OfType<TEntity>())
         {
-            if (existing.RecordId is { } id && id >= next)
+            if (existing.RecordId is { } id && id > seed)
             {
-                next = id + 1;
+                seed = id;
             }
         }
 
-        entity.RecordId = next;
+        return seed;
     }
 
     public void Add(CatalogEntity entity)

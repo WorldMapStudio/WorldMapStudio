@@ -23,4 +23,9 @@ public interface ICatalogEntityFactory : IEntityFactory
 
     /// <summary>Loads every entity of this factory's type. Catalogs are small and loaded whole.</summary>
     Task<IReadOnlyList<CatalogEntity>> LoadAllAsync();
+
+    /// <summary>The highest row id stored for this type, or 0 if none. What
+    /// <see cref="CatalogEntityRegistry.AssignId{TEntity}"/> seeds its high-water mark from, so a newly
+    /// created entity never collides with a row that exists in storage but is not currently loaded.</summary>
+    Task<int> MaxRecordIdAsync();
 }
