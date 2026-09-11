@@ -92,6 +92,12 @@ public sealed class NetworkEditTool : ITool
 
     public string Name => _name;
 
+    /// <summary>The currently selected vertex ids, regardless of select mode (edge/face selections
+    /// resolve to their vertices the same way <see cref="EffectiveVertices"/> does for a transform).
+    /// Lets an inspector show fields for "whichever node the user has clicked" without this tool
+    /// needing to know anything about what those fields mean.</summary>
+    public IReadOnlyCollection<int> SelectedVertices(INetworkEditable component) => EffectiveVertices(component).ToHashSet();
+
     public bool CapturesMouse => _gizmo.IsUsing || _mouseDown;
 
     // While a network is being edited, Delete/Backspace must only ever remove selected vertices/
