@@ -61,7 +61,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneLandscapeMaterialBindComponentRecord> rows = await context.Set<SceneLandscapeMaterialBindComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

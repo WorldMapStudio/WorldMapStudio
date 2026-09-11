@@ -27,8 +27,12 @@ public interface ISceneComponentPersistence : ISubsystem
     /// <summary>
     /// Loads this component for every entity in <paramref name="ids"/> that has one, attaching it via
     /// <see cref="SceneEntity.LoadComponent"/> on the matching entry of <paramref name="byId"/>.
+    ///
+    /// <paramref name="catalog"/> is the scan's collector for any lazily-loaded catalog reference a
+    /// component owns — most persisters have none and ignore it; see
+    /// <see cref="ProceduralComponentPersistence"/> for the one that resolves models through it.
     /// </summary>
-    Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids);
+    Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog);
 
     /// <summary>
     /// Stages an insert or update of <paramref name="entity"/>'s component of this kind, or a delete if

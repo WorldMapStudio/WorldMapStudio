@@ -51,9 +51,21 @@ public sealed class PrefabSystem : IWorldParticipant
     /// <see cref="IWorldParticipant"/>.</summary>
     public void LoadLibrary()
     {
-        List<SceneEntity> entities = BlockingWork.Run(ScanLibraryAsync);
+        (List<SceneEntity> entities, List<CatalogEntity> catalog) = BlockingWork.Run(ScanLibraryAsync);
+
+        // Published before the entities themselves so a template placement's model is never observed
+        // unresolved — the same order StreamingSystem.Reconcile uses.
+        foreach (CatalogEntity entity in catalog)
+        {
+            if (!_context.Catalog.Contains(entity))
+            {
+                _context.Catalog.Add(entity);
+            }
+        }
+
         foreach (SceneEntity entity in entities)
         {
+            entity.Component<ProceduralComponent>()?.ClearAttachment();
             _context.Scene.Add(entity);
             _context.Scene.SetPeripheral(entity, true);
             _context.Scene.SetResident(entity, true);
@@ -145,20 +157,23 @@ public sealed class PrefabSystem : IWorldParticipant
         return new BatchEditCommand($"Delete Prefab '{prefab.Name}'", commands);
     }
 
-    private async Task<List<SceneEntity>> ScanLibraryAsync()
+    private async Task<(List<SceneEntity> Entities, List<CatalogEntity> Catalog)> ScanLibraryAsync()
     {
         var result = new List<SceneEntity>();
+        var catalog = new List<CatalogEntity>();
         foreach (Storage storage in _context.Database.Storages)
         {
             using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                SceneEntityScan scan = await factory.ScanAsync(LibraryMap, LibraryBounds, Nothing).ConfigureAwait(false);
+                // Publishing: templates are loaded straight into the live scene registry below.
+                SceneEntityScan scan = await factory.ScanAsync(LibraryMap, LibraryBounds, Nothing, publishing: true).ConfigureAwait(false);
                 result.AddRange(scan.Built);
+                catalog.AddRange(scan.Catalog);
             }
         }
 
-        return result;
+        return (result, catalog);
     }
 
     /// <summary>Clones <paramref name="source"/> and its descendants, relinking parents among the

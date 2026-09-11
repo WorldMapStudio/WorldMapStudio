@@ -71,7 +71,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneTerrainValueComponentRecord> rows = await context.Set<SceneTerrainValueComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

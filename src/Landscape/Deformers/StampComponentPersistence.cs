@@ -52,7 +52,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneStampComponentRecord> rows = await context.Set<SceneStampComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

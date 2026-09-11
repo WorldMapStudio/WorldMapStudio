@@ -47,7 +47,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneModelRendererComponentRecord> rows = await context.Set<SceneModelRendererComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

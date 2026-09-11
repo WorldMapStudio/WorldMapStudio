@@ -38,7 +38,7 @@ public sealed class PrefabRootComponentPersistence : ISceneComponentPersistence
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<ScenePrefabRootComponentRecord> rows = await context.Set<ScenePrefabRootComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))
