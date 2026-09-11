@@ -17,5 +17,10 @@ public interface IModelLoader : ISubsystem
     /// </summary>
     public bool CanList(string path) => CanLoad(path);
 
-    public Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path);
+    /// <summary>
+    /// <paramref name="work"/> is null only for the synchronous, main-thread-only <see cref="AssetSystem.LoadModelAsset"/>
+    /// path; otherwise use it to hop to the main thread (<see cref="WorkContext.SwitchToMain"/>) before touching
+    /// any Godot resource (e.g. building an <see cref="Godot.ArrayMesh"/>) since those aren't safe to create off it.
+    /// </summary>
+    public Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path, WorkContext? work);
 }
