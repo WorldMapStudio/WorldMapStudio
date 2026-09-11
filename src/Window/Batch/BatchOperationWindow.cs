@@ -402,9 +402,20 @@ public sealed class BatchOperationWindow : Window
 
         if (ImGui.BeginChild("log", new NVector2(0.0f, 140.0f), true))
         {
-            foreach (string line in status.Log)
+            unsafe
             {
-                ImGui.TextUnformatted(line);
+                var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+                clipper.Begin(status.Log.Count);
+                while (clipper.Step())
+                {
+                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                    {
+                        ImGui.TextUnformatted(status.Log[i]);
+                    }
+                }
+
+                clipper.End();
+                clipper.Destroy();
             }
 
             // Follow the tail while it is being written, but leave the user free to scroll back.
