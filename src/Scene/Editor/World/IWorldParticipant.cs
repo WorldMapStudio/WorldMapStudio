@@ -26,6 +26,13 @@ public interface IWorldParticipant
     /// the implementing type for whether it does.</summary>
     void LoadWorld() { }
 
+    /// <summary>Same as <see cref="LoadWorld()"/>, but given the load's shared phase breakdown so a
+    /// participant whose own load has hot sub-steps (e.g. <see cref="DatabaseSystem"/> loading many
+    /// catalog types) can attribute time within its own <see cref="LoadStep"/> instead of reporting it
+    /// as one lump sum. Override this instead of <see cref="LoadWorld()"/> only when that detail is
+    /// worth reporting; the default just calls the plain overload.</summary>
+    void LoadWorld(PhaseTimings timings) => LoadWorld();
+
     /// <summary>
     /// Drops everything read (or derived) since the last <see cref="LoadWorld"/>. Always runs on the
     /// main thread. Must be idempotent (called on an already-empty participant is a no-op) and must

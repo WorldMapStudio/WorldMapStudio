@@ -85,6 +85,13 @@ public sealed class WorldLifecycle
         return report;
     }
 
+    /// <summary>The most recent <see cref="RunLoad"/>'s phase breakdown — a load happens on startup and
+    /// on every world reload, neither of which has a log window open by default, so this is what the
+    /// Performance window's "Last Load" tab reads instead of asking someone to go find it in the log.</summary>
+    public static LoadReport? LastLoad { get; private set; }
+
+    public readonly record struct LoadReport(DateTime CompletedUtc, double WallSeconds, IReadOnlyList<string> Lines);
+
     /// <summary>The load half, factored out so it can be driven against a fake participant list in
     /// tests without a live <see cref="EditorContext"/> behind it.</summary>
     internal static void RunLoad(IEnumerable<IWorldParticipant> participants, Action<string>? onStep)
@@ -99,7 +106,7 @@ public sealed class WorldLifecycle
 
             using (timings.Measure(participant.LoadStep ?? participant.GetType().Name))
             {
-                participant.LoadWorld();
+                participant.LoadWorld(timings);
             }
         }
 
@@ -112,6 +119,10 @@ public sealed class WorldLifecycle
             GD.Print($"[World] {line}");
             DiagnosticLog.Log(line);
         }
+
+        // Unthresholded, unlike the log above: a UI tab someone opens on purpose isn't spam, and a
+        // catalog type too small to earn a log line is exactly the kind of thing worth ruling out there.
+        LastLoad = new LoadReport(DateTime.UtcNow, timings.ElapsedSeconds, timings.Format("World load"));
     }
 
     /// <summary>

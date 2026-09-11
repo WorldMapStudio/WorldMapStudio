@@ -201,11 +201,18 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 
     string? IWorldParticipant.LoadStep => "Loading catalogs";
 
-    void IWorldParticipant.LoadWorld()
+    // Broken down per catalog type, nested inside the "Loading catalogs" phase WorldLifecycle already
+    // measures around this call — this is the whole reason DatabaseSystem opts into the timings
+    // overload instead of the plain one: "Loading catalogs" alone never says which of the (often
+    // dozens of) registered catalog types is the one worth optimizing.
+    void IWorldParticipant.LoadWorld(PhaseTimings timings)
     {
         foreach (Type entityType in CatalogEntityTypes())
         {
-            LoadCatalog(entityType);
+            using (timings.Measure($"catalog: {entityType.Name}"))
+            {
+                LoadCatalog(entityType);
+            }
         }
     }
 
