@@ -46,7 +46,22 @@ public sealed class OutlineWindow : Window
     protected override void DrawContent()
     {
         DrawFilter();
+        ImGui.Separator();
 
+        // The list scrolls in its own child region so the filter box above stays put rather than
+        // scrolling out of view with the rows.
+        if (!ImGui.BeginChild("outline-scroll", Vector2.Zero, true))
+        {
+            ImGui.EndChild();
+            return;
+        }
+
+        DrawList();
+        ImGui.EndChild();
+    }
+
+    private void DrawList()
+    {
         IReadOnlyList<SceneEntity> entities = Listed();
         if (entities.Count == 0)
         {
