@@ -111,7 +111,7 @@ public sealed class ProceduralOutputBuilder
         IReadOnlyList<Vector3>? normals,
         IReadOnlyList<Vector2>? uvs)
     {
-        var arrays = new Godot.Collections.Array();
+        using var arrays = new Godot.Collections.Array();
         arrays.Resize((int)Mesh.ArrayType.Max);
         arrays[(int)Mesh.ArrayType.Vertex] = vertices.ToArray();
         arrays[(int)Mesh.ArrayType.Index] = indices.ToArray();
