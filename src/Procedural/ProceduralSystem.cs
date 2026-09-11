@@ -20,6 +20,14 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
 
     private (int CatalogVersion, int SceneVersion, int RevisionTick) _lastUpdateTick = (-1, -1, -1);
 
+    // Published as one immutable snapshot rather than a table kept up to date in place, mirroring
+    // ImageSystem.CatalogIndex: ProceduralComponent.Model is read several times a frame per placement,
+    // and a scan resolving models off the main thread reads it too, so a fresh scan of the whole
+    // registry per read is not acceptable.
+    private sealed record CatalogIndex(int Version, IReadOnlyList<ProceduralModel> Models, Dictionary<int, ProceduralModel> ById);
+
+    private CatalogIndex _index = new(-1, [], []);
+
     public ProceduralSystem(EditorContext context)
     {
         Context = context;
@@ -35,14 +43,67 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
 
     public int Version { get; private set; }
 
-    /// <summary>The loaded model catalog. Membership comes from <see cref="EditorContext.Catalog"/>.</summary>
-    public IEnumerable<ProceduralModel> Models => Context.Catalog.OfType<ProceduralModel>();
+    /// <summary>The loaded model catalog. Membership comes from <see cref="EditorContext.Catalog"/>,
+    /// materialized once per <see cref="CatalogEntityRegistry.Version"/> rather than rescanned on every
+    /// read — see <see cref="Index"/>.</summary>
+    public IReadOnlyList<ProceduralModel> Models => Index().Models;
 
     public IProceduralFunction? Find(string id) =>
         id.Length > 0 && _byId.TryGetValue(id, out IProceduralFunction? function) ? function : null;
 
-    public ProceduralModel? FindModel(int? id) =>
-        id is int value ? Models.FirstOrDefault(model => model.RecordId == value) : null;
+    public ProceduralModel? FindModel(int? id)
+    {
+        if (id is not int value)
+        {
+            return null;
+        }
+
+        CatalogIndex index = Index();
+        if (index.ById.TryGetValue(value, out ProceduralModel? cached) && cached.RecordId == value)
+        {
+            return cached;
+        }
+
+        // Verified rather than trusted: a record id is assigned when an entity is first saved, which
+        // the registry's membership version never sees, so an index entry can name an entity whose id
+        // has since moved. A miss falls back to a scan and does not write what it finds — the snapshot
+        // read here is shared with every other thread reading it.
+        foreach (ProceduralModel candidate in index.Models)
+        {
+            if (candidate.RecordId == value)
+            {
+                return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    private CatalogIndex Index()
+    {
+        CatalogIndex current = _index;
+        int version = Context.Catalog.Version;
+        if (current.Version == version)
+        {
+            return current;
+        }
+
+        var models = new List<ProceduralModel>();
+        var byId = new Dictionary<int, ProceduralModel>();
+
+        foreach (ProceduralModel model in Context.Catalog.OfType<ProceduralModel>())
+        {
+            models.Add(model);
+            if (model.RecordId is int id)
+            {
+                byId[id] = model;
+            }
+        }
+
+        var built = new CatalogIndex(version, models, byId);
+        _index = built;
+        return built;
+    }
 
     /// <summary>How many loaded scene entities currently reference this model — what the picker and
     /// the models window show so an edit or delete does not surprise the user.</summary>
@@ -73,6 +134,7 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         }
 
         _lastUpdateTick = (-1, -1, -1);
+        _index = new CatalogIndex(-1, [], []);
         Version++;
     }
 
