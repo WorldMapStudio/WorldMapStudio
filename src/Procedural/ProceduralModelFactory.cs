@@ -18,7 +18,7 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
             Formats = record.Formats,
             Materials = record.Materials,
         };
-        entity.ReplaceNetwork(VertexNetwork.Parse(record.NetworkJson));
+        entity.LoadNetwork(VertexNetwork.Parse(record.NetworkJson));
         return entity;
     }
 
