@@ -52,10 +52,9 @@ public sealed partial class ViewCategorySystem : ISubsystemHost
             Register(category);
         }
 
-        All = _byId.Values
-            .OrderBy(category => category.Group, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(category => category.DisplayName, StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        // Priority order, so a menu grouping this by Group (which preserves the order elements
+        // arrive in) draws each group's own entries in the order their authors intended.
+        All = _byId.Values.OrderBy(category => category.Priority).ToList();
 
         foreach (string warning in _warnings)
         {
