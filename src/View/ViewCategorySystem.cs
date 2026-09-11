@@ -29,7 +29,8 @@ public sealed partial class ViewCategorySystem : ISubsystemHost
     {
         Context = context;
         InitializeSubsystems();
-        DiscoverFrom(Subsystems.OfType<IViewCategory>());
+        DiscoverFrom(Subsystems.OfType<IViewCategory>()
+            .Concat(Subsystems.OfType<IViewCategorySource>().SelectMany(source => source.Categories())));
     }
 
     public EditorContext Context { get; }
