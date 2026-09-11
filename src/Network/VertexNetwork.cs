@@ -874,7 +874,21 @@ public sealed class VertexNetwork
         return new Aabb(min, size);
     }
 
-    public VertexNetwork Clone() => Parse(Serialize());
+    public VertexNetwork Clone()
+    {
+        var copy = new VertexNetwork();
+        copy._vertices.AddRange(_vertices);
+        copy._edges.AddRange(_edges);
+        foreach (NetworkFace face in _faces)
+        {
+            copy._faces.Add(new NetworkFace(face.Id, face.Vertices.ToArray()));
+        }
+
+        copy._nextVertexId = _nextVertexId;
+        copy._nextEdgeId = _nextEdgeId;
+        copy._nextFaceId = _nextFaceId;
+        return copy;
+    }
 
     public string Fingerprint() =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(Serialize()))).ToLowerInvariant();
