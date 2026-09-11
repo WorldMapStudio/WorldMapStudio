@@ -33,7 +33,7 @@ public sealed class ObjModelLoader : IModelLoader
 
     public bool CanLoad(string path) => string.Equals(AssetPath.Extension(path), ".obj", StringComparison.OrdinalIgnoreCase);
 
-    public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path)
+    public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path, WorkContext? work)
     {
         string? text = await assets.ReadAssetTextAsync(path).ConfigureAwait(false);
         if (text == null)
@@ -76,6 +76,11 @@ public sealed class ObjModelLoader : IModelLoader
                         SurfaceFor(surfaces, currentMaterial), positions, uvs, normals);
                     break;
             }
+        }
+
+        if (work != null)
+        {
+            await work.SwitchToMain();
         }
 
         var modelSurfaces = new List<ModelSurface>();

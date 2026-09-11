@@ -272,7 +272,7 @@ public sealed partial class AssetSystem : ISubsystemHost
 
         foreach (IModelLoader loader in ModelLoaders.Where(loader => loader.CanLoad(path)))
         {
-            if (loader.LoadModelAsync(this, path).GetAwaiter().GetResult() is { } model)
+            if (loader.LoadModelAsync(this, path, null).GetAwaiter().GetResult() is { } model)
             {
                 return Cache(path, model);
             }
@@ -449,7 +449,7 @@ public sealed partial class AssetSystem : ISubsystemHost
             try
             {
                 work.Step(path);
-                ModelAsset? model = await LoadModelAsync(path).ConfigureAwait(false);
+                ModelAsset? model = await LoadModelAsync(path, work).ConfigureAwait(false);
                 await work.SwitchToMain();
                 Cache(path, model, generation);
                 completion.SetResult(model);
@@ -476,11 +476,11 @@ public sealed partial class AssetSystem : ISubsystemHost
         return null;
     }
 
-    private async Task<ModelAsset?> LoadModelAsync(string path)
+    private async Task<ModelAsset?> LoadModelAsync(string path, WorkContext work)
     {
         foreach (IModelLoader loader in ModelLoaders.Where(loader => loader.CanLoad(path)))
         {
-            if (await loader.LoadModelAsync(this, path).ConfigureAwait(false) is { } model)
+            if (await loader.LoadModelAsync(this, path, work).ConfigureAwait(false) is { } model)
             {
                 return model;
             }

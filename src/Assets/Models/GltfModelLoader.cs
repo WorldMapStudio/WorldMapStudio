@@ -38,7 +38,7 @@ public sealed class GltfModelLoader : IModelLoader
             string.Equals(extension, ".glb", StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path)
+    public async Task<ModelAsset?> LoadModelAsync(AssetSystem assets, string path, WorkContext? work)
     {
         GltfSource? source = await LoadSourceAsync(assets, path).ConfigureAwait(false);
         if (source == null)
@@ -57,6 +57,11 @@ public sealed class GltfModelLoader : IModelLoader
         if (!root.TryGetProperty("meshes", out JsonElement meshes) || meshes.ValueKind != JsonValueKind.Array)
         {
             return null;
+        }
+
+        if (work != null)
+        {
+            await work.SwitchToMain();
         }
 
         var surfaces = new List<ModelSurface>();
