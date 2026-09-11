@@ -352,14 +352,24 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         }
     }
 
+    /// <summary>The <see cref="EditorStorage"/> that hosts <see cref="ModelFactory"/> — resolved once
+    /// rather than per call, since the subsystem tree never changes after startup.</summary>
+    private EditorStorage? _modelStorage;
+    private EditorStorage ModelStorage => _modelStorage ??= Context.Database.Storages.OfType<EditorStorage>().First();
+
+    private ProceduralModelFactory? _modelFactory;
+
+    /// <summary>The lazy factory backing the model catalog — resolved by concrete type rather than a
+    /// facet, so it is found the same way whether or not it currently implements <see cref="ICatalogEntityFactory"/>
+    /// or <see cref="ILazyCatalogEntityFactory"/>. Shared by the pending-load pump and by the browse/pick
+    /// UI, which both need to reach <see cref="ProceduralModelFactory.LoadByIdAsync"/> outside a scan.</summary>
+    public ProceduralModelFactory ModelFactory => _modelFactory ??= ModelStorage.Subsystems.OfType<ProceduralModelFactory>().First();
+
     private async Task<IReadOnlyList<CatalogEntity>> LoadPendingBatchAsync(IReadOnlyCollection<int> ids)
     {
-        EditorStorage storage = Context.Database.Storages.OfType<EditorStorage>().First();
-        ProceduralModelFactory factory = storage.Subsystems.OfType<ProceduralModelFactory>().First();
-
-        using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-        await using EditorDbContext context = storage.CreateContext();
-        return await factory.LoadByIdAsync(context, ids).ConfigureAwait(false);
+        using IDisposable read = await ModelStorage.Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = ModelStorage.CreateContext();
+        return await ModelFactory.LoadByIdAsync(context, ids).ConfigureAwait(false);
     }
 
     private void RefreshPlacements(HashSet<int> modelIds)
