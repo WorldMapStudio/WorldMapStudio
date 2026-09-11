@@ -26,7 +26,7 @@ public sealed class ObjectTool : ITool
     public ObjectTool(ToolContext context)
     {
         _sessions = context.Sessions;
-        _objectSelection = new ObjectSelection(context.Selection, context.Scene);
+        _objectSelection = new ObjectSelection(context.Selection, context.Editor.ViewCategories);
         _gizmo.Axes = context.Axes;
         _modalTransform.Axes = context.Axes;
     }

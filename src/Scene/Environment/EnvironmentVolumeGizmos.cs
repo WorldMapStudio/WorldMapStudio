@@ -22,15 +22,15 @@ public sealed class EnvironmentVolumeGizmos
     }
 
     private readonly Node _root;
-    private readonly SceneEntityRegistry _scene;
+    private readonly ViewCategorySystem _viewCategories;
     private readonly ViewSettings _view;
     private readonly SelectionSystem _selection;
     private readonly Dictionary<SceneComponent, VolumeGizmo> _gizmos = new();
 
-    public EnvironmentVolumeGizmos(Node viewport, SceneEntityRegistry scene, ViewSettings view, SelectionSystem selection)
+    public EnvironmentVolumeGizmos(Node viewport, ViewCategorySystem viewCategories, ViewSettings view, SelectionSystem selection)
     {
         _root = viewport;
-        _scene = scene;
+        _viewCategories = viewCategories;
         _view = view;
         _selection = selection;
     }
@@ -44,7 +44,7 @@ public sealed class EnvironmentVolumeGizmos
         }
 
         var seen = new HashSet<SceneComponent>();
-        foreach (SceneEntity entity in _scene.InView)
+        foreach (SceneEntity entity in _viewCategories.Visible)
         {
             if (!_selection.IsSelected(entity))
             {

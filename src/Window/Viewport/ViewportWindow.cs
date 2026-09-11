@@ -50,6 +50,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     private readonly FlyCamera _flyCamera;
     private readonly ViewSettings _view;
     private readonly SceneEntityRegistry _scene;
+    private readonly ViewCategorySystem _viewCategories;
     private readonly ToolSystem _tools;
     private readonly StreamingSystem _streaming;
     private readonly EnvironmentSystem _environments;
@@ -62,8 +63,9 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     private readonly ViewportHeader _header;
     private readonly HashSet<SceneEntity> _represented = [];
 
-    // The scene version _represented was last brought in step with; -1 until it has been.
+    // The scene/filter versions _represented was last brought in step with; -1 until each has been.
     private int _representedVersion = -1;
+    private int _representedFilterVersion = -1;
 
     // Building a Godot node per newly-in-view entity is capped at a time budget per frame, with the
     // rest carried here: a large scan brings hundreds in at once, and doing them all on one frame is
@@ -85,6 +87,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _flyCamera = new FlyCamera(owner, DefaultCameraPosition);
         _view = context.View;
         _scene = context.Scene;
+        _viewCategories = context.ViewCategories;
         _tools = context.Tools;
         _streaming = context.Streaming;
         _environments = context.Environments;
@@ -141,7 +144,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
 
         _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _view);
         _camera.Environment = _environmentRenderer.Environment;
-        _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _scene, _view, context.Selection);
+        _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _viewCategories, _view, context.Selection);
 
         // The map picker previews each map with a snapshot of this view; only the viewport can take one.
         _maps.CaptureView = () => _viewport.GetTexture()?.GetImage();
@@ -169,23 +172,25 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
     // representation of any entity that has left the registry (e.g. an undone creation).
     private void SyncRepresentations()
     {
-        // Every answer below — what is in view, what is still registered, what turned peripheral —
-        // comes from registry state that bumps its version when it changes, so between bumps this
-        // pass can only reach the same conclusions it reached last frame. Skipping it matters because
-        // the removal sweep is over everything represented, which at a real view distance is the
-        // whole loaded world once per frame.
-        // A backlog still draining is a frame with work to do even when the version has not moved.
-        if (_representedVersion == _scene.Version && _representationBacklog.Count == 0)
+        // Every answer below — what is in view, what is still registered, what turned peripheral, what
+        // the view filter hides — comes from state that bumps its own version when it changes, so
+        // between bumps this pass can only reach the same conclusions it reached last frame. Skipping
+        // it matters because the removal sweep is over everything represented, which at a real view
+        // distance is the whole loaded world once per frame.
+        // A backlog still draining is a frame with work to do even when neither version has moved.
+        bool sceneChanged = _representedVersion != _scene.Version;
+        bool filterChanged = _representedFilterVersion != _viewCategories.Version;
+        if (!sceneChanged && !filterChanged && _representationBacklog.Count == 0)
         {
             return;
         }
 
-        if (_representedVersion != _scene.Version)
+        if (sceneChanged)
         {
             _representedVersion = _scene.Version;
 
             _representationBacklog.Clear();
-            foreach (SceneEntity entity in _scene.InView)
+            foreach (SceneEntity entity in _viewCategories.Visible)
             {
                 if (!_represented.Contains(entity))
                 {
@@ -208,12 +213,33 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
             });
         }
 
+        if (filterChanged)
+        {
+            _representedFilterVersion = _viewCategories.Version;
+
+            // Already represented: flip the mirrored flag in place, never rebuild.
+            foreach (SceneEntity entity in _represented)
+            {
+                entity.Visible = !_viewCategories.IsHidden(entity);
+            }
+
+            // Not yet represented and newly un-hidden: enters the ordinary budgeted backlog, same as
+            // any other entity newly in view.
+            foreach (SceneEntity entity in _viewCategories.Visible)
+            {
+                if (!_represented.Contains(entity) && !_representationBacklog.Contains(entity))
+                {
+                    _representationBacklog.Add(entity);
+                }
+            }
+        }
+
         RepresentationClock.Restart();
         int made = 0;
         while (made < _representationBacklog.Count)
         {
             SceneEntity entity = _representationBacklog[made++];
-            if (_scene.Contains(entity) && !_scene.IsPeripheral(entity) && _represented.Add(entity))
+            if (_scene.Contains(entity) && !_scene.IsPeripheral(entity) && !_viewCategories.IsHidden(entity) && _represented.Add(entity))
             {
                 entity.CreateRepresentation(_viewport);
             }
@@ -241,6 +267,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _represented.Clear();
         _representationBacklog.Clear();
         _representedVersion = -1;
+        _representedFilterVersion = -1;
         _environmentRenderer.Unload();
         _environmentVolumes.Unload();
     }
