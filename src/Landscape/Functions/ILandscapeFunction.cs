@@ -108,9 +108,11 @@ public interface ILandscapeVertexColorFunction : ILandscapeFunction
 
 /// <summary>
 /// Transforms a chunk's accumulated vertex light, sampled at the same grid as the height vertices.
-/// Starts at black each build, so a chunk nothing binds this on adds nothing — consumed in the shader
-/// as an additive term on top of the splatted albedo. The common case is adding a scaled color, but
-/// like height this is not restricted to addition.
+/// Starts at black each build, so a chunk nothing binds this on adds nothing. Vertex light is additive
+/// <b>linear</b> light reaching the surface, in the same units as the scene's ambient and direct light
+/// — 1.0 is roughly one unit of full sunlight. It is modulated by the surface albedo and is not
+/// attenuated by the scene's own lighting, so it stays visible at night. The common case is adding a
+/// scaled color, but like height this is not restricted to addition.
 /// </summary>
 public interface ILandscapeVertexLightFunction : ILandscapeFunction
 {

@@ -57,8 +57,10 @@ public sealed class LandscapeChunkOutput
 
     /// <summary>
     /// Row-major vertex light, <see cref="HeightResolution"/> squared — same grid as
-    /// <see cref="VertexColors"/>. Starts black each build; consumed by the shader as an additive term
-    /// over the splatted albedo.
+    /// <see cref="VertexColors"/>. Starts black each build. Additive <b>linear</b> light reaching the
+    /// surface, in the same units as the scene's ambient and direct light — 1.0 is roughly one unit of
+    /// full sunlight. Modulated by albedo and not attenuated by the scene's own lighting, so it stays
+    /// visible at night.
     /// </summary>
     public required Color[] VertexLight { get; init; }
 

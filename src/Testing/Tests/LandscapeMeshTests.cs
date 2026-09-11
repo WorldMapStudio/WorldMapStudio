@@ -91,4 +91,17 @@ public static class LandscapeMeshTests
 
         Assert.IsTrue(anySeen, "the hole must not have eaten every vertex");
     }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void Vertex_light_reaches_emission_not_albedo()
+    {
+        // Pins the fix for vertex light being summed into ALBEDO, where the scene's own light
+        // multiplied it instead of leaving it able to survive a dark scene.
+        string shader = LandscapeBatchMesh.SplatShaderCode;
+
+        Assert.IsFalse(shader.Contains("color += vertex_light"), "vertex light must not be summed into albedo");
+        Assert.IsTrue(shader.Contains("ALBEDO = color;"), "expected an albedo assignment with no light term");
+        Assert.IsTrue(shader.Contains("EMISSION = emission;") && shader.Contains("vertex_light"),
+            "expected vertex light to reach EMISSION");
+    }
 }
