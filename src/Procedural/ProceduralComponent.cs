@@ -137,6 +137,11 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
     {
         get
         {
+            if (BoundFunction is { OutputWithinNetwork: true })
+            {
+                return Network.Bounds();
+            }
+
             ProceduralBuildResult result = BuildOutput();
             if (result.Models.Count == 0 && result.Paint.Strokes.Count == 0)
             {
