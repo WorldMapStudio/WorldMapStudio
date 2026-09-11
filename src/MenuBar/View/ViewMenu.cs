@@ -16,7 +16,6 @@ public sealed class ViewMenu : IMainMenu
     private readonly ViewCategorySystem _viewCategories;
     private readonly ShortcutAction _grid;
     private readonly ShortcutAction _chunkEdges;
-    private readonly ShortcutAction _environmentLighting;
     private readonly ShortcutAction _environmentVolumes;
     private readonly List<(IViewCategory Category, ShortcutAction Shortcut)> _categoryShortcuts = [];
 
@@ -39,12 +38,6 @@ public sealed class ViewMenu : IMainMenu
             "Chunk Edges",
             new KeyboardShortcut(ImGuiKey.E, ShortcutModifiers.Alt),
             () => _view.ShowChunkEdges = !_view.ShowChunkEdges);
-        _environmentLighting = manager.Context.Shortcuts.Register(
-            "view.environment-lighting",
-            "View",
-            "Environment Lighting",
-            new KeyboardShortcut(ImGuiKey.M, ShortcutModifiers.Alt),
-            () => _view.UseEnvironmentLighting = !_view.UseEnvironmentLighting);
         _environmentVolumes = manager.Context.Shortcuts.Register(
             "view.environment-volumes",
             "View",
@@ -79,12 +72,6 @@ public sealed class ViewMenu : IMainMenu
             if (ImGui.MenuItem("Chunk Edges", _chunkEdges.ShortcutLabel, ref showChunkEdges))
             {
                 _view.ShowChunkEdges = showChunkEdges;
-            }
-
-            bool useEnvironmentLighting = _view.UseEnvironmentLighting;
-            if (ImGui.MenuItem("Environment Lighting", _environmentLighting.ShortcutLabel, ref useEnvironmentLighting))
-            {
-                _view.UseEnvironmentLighting = useEnvironmentLighting;
             }
 
             bool showEnvironmentVolumes = _view.ShowEnvironmentVolumes;

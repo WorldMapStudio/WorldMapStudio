@@ -10,8 +10,8 @@ namespace WorldMapStudio;
 /// <see cref="DirectionalLight3D"/> sun, and a set of camera-pinned model layers (skyboxes, stars).
 /// Owned and updated once per frame by <see cref="ViewportWindow"/>. With no sources loaded at all,
 /// <see cref="EnvironmentValues"/>'s own defaults still light the scene with a generic sun — only
-/// <see cref="ViewSettings.UseEnvironmentLighting"/> off falls back to the flat grey look the editor
-/// always used before this system existed.
+/// hiding <see cref="LightingViewCategory"/> falls back to the flat grey look the editor always used
+/// before this system existed.
 /// </summary>
 public sealed class EnvironmentRenderer
 {
@@ -37,7 +37,7 @@ public sealed class EnvironmentRenderer
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;
     private readonly EnvironmentSystem _environments;
-    private readonly ViewSettings _view;
+    private readonly ViewCategorySystem _viewCategories;
 
     private readonly ShaderMaterial _skyMaterial;
     private readonly DirectionalLight3D _sun;
@@ -49,13 +49,13 @@ public sealed class EnvironmentRenderer
 
     public Godot.Environment Environment { get; }
 
-    public EnvironmentRenderer(SubViewport viewport, Camera3D camera, AssetSystem assets, MeshMaterialSystem materials, EnvironmentSystem environments, ViewSettings view)
+    public EnvironmentRenderer(SubViewport viewport, Camera3D camera, AssetSystem assets, MeshMaterialSystem materials, EnvironmentSystem environments, ViewCategorySystem viewCategories)
     {
         _camera = camera;
         _assets = assets;
         _materials = materials;
         _environments = environments;
-        _view = view;
+        _viewCategories = viewCategories;
 
         _skyMaterial = new ShaderMaterial { Shader = SkyShader() };
         var sky = new Sky { SkyMaterial = _skyMaterial };
@@ -197,7 +197,7 @@ public sealed class EnvironmentRenderer
     {
         _skyLayerRoot.GlobalPosition = cameraPosition;
 
-        if (!_view.UseEnvironmentLighting)
+        if (_viewCategories.IsHidden(LightingViewCategory.CategoryId))
         {
             ApplyFlatDefault();
             _appliedVersion = -1;

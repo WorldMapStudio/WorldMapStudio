@@ -142,7 +142,7 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         _viewport.AddChild(_upAxisLine);
         owner.AddChild(_viewport);
 
-        _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _view);
+        _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _viewCategories);
         _camera.Environment = _environmentRenderer.Environment;
         _environmentVolumes = new EnvironmentVolumeGizmos(_viewport, _viewCategories, _view, context.Selection);
 
