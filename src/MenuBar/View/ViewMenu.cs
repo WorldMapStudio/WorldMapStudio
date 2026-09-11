@@ -1,20 +1,24 @@
+using System.Collections.Generic;
 using ImGuiNET;
 
 namespace WorldMapStudio;
 
 /// <summary>
 /// The "View" menu: toggles and settings for viewport display, such as the grid and streaming
-/// distance. Self-registers with <see cref="MenuBarManager"/>, sitting between Edit and Scene.
+/// distance, plus every registered <see cref="IViewCategory"/> as a per-type show/hide toggle.
+/// Self-registers with <see cref="MenuBarManager"/>, sitting between Edit and Scene.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
 public sealed class ViewMenu : IMainMenu
 {
     private readonly ViewSettings _view;
     private readonly EditorContext _context;
+    private readonly ViewCategorySystem _viewCategories;
     private readonly ShortcutAction _grid;
     private readonly ShortcutAction _chunkEdges;
     private readonly ShortcutAction _environmentLighting;
     private readonly ShortcutAction _environmentVolumes;
+    private readonly List<(IViewCategory Category, ShortcutAction Shortcut)> _categoryShortcuts = [];
 
     public float Priority => 0.6f;
 
@@ -22,6 +26,7 @@ public sealed class ViewMenu : IMainMenu
     {
         _view = manager.Context.View;
         _context = manager.Context;
+        _viewCategories = manager.Context.ViewCategories;
         _grid = manager.Context.Shortcuts.Register(
             "view.grid",
             "View",
@@ -46,6 +51,18 @@ public sealed class ViewMenu : IMainMenu
             "Environment Volumes",
             KeyboardShortcut.None,
             () => _view.ShowEnvironmentVolumes = !_view.ShowEnvironmentVolumes);
+
+        foreach (IViewCategory category in _viewCategories.All)
+        {
+            string id = category.Id;
+            ShortcutAction shortcut = manager.Context.Shortcuts.Register(
+                $"view.show.{id}",
+                "View",
+                category.DisplayName,
+                category.DefaultShortcut,
+                () => _viewCategories.SetHidden(id, !_viewCategories.IsHidden(id)));
+            _categoryShortcuts.Add((category, shortcut));
+        }
     }
 
     public void Draw()
@@ -99,6 +116,43 @@ public sealed class ViewMenu : IMainMenu
                 _view.TerrainBatchChunks = terrainBatchChunks;
                 _context.Streaming.ReloadTerrain();
             }
+
+            DrawCategories();
         });
+    }
+
+    // Every registered view category, drawn as a checkmarked toggle under its own Group heading, in
+    // the Priority order ViewCategorySystem.All already carries — this never names a category, the
+    // same way SpawnMenu never names a spawn factory.
+    private void DrawCategories()
+    {
+        if (_categoryShortcuts.Count == 0)
+        {
+            return;
+        }
+
+        ImGui.Separator();
+
+        string? lastGroup = null;
+        foreach ((IViewCategory category, ShortcutAction shortcut) in _categoryShortcuts)
+        {
+            if (category.Group != lastGroup)
+            {
+                lastGroup = category.Group;
+                ImGui.TextDisabled(category.Group);
+            }
+
+            bool shown = !_viewCategories.IsHidden(category.Id);
+            if (ImGui.MenuItem(category.DisplayName, shortcut.ShortcutLabel, ref shown))
+            {
+                _viewCategories.SetHidden(category.Id, !shown);
+            }
+        }
+
+        ImGui.Separator();
+        if (ImGui.MenuItem("Show All"))
+        {
+            _viewCategories.ShowAll();
+        }
     }
 }
