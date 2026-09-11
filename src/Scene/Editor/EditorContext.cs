@@ -92,6 +92,10 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Owns the saved prefab library: catalog rows plus their scene-entity templates.</summary>
     public PrefabSystem Prefabs { get; }
 
+    /// <summary>Registered view categories and which are hidden — the per-type viewport visibility
+    /// filter behind the "View" menu.</summary>
+    public ViewCategorySystem ViewCategories { get; }
+
     /// <summary>Streams scene entities in and out of the registry as the viewport focus moves.</summary>
     public StreamingSystem Streaming { get; }
 
@@ -179,6 +183,9 @@ public sealed partial class EditorContext : ISubsystemHost
         Procedural = new ProceduralSystem(this);
         Images = new ImageSystem(this);
         Prefabs = new PrefabSystem(this);
+
+        // After ModelFormats/Assets/Landscape/Procedural: a format-driven category source reads them.
+        ViewCategories = new ViewCategorySystem(this);
 
         // Built after Assets/Landscape/Procedural: the built-in component types capture them.
         ComponentTypes = new SceneComponentRegistry(this);
