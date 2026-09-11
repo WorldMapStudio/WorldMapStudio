@@ -189,8 +189,9 @@ public sealed class ProceduralModelPicker
     private static int NextFreeId(CatalogEntityRegistry catalog) => catalog.PeekNextId<ProceduralModel>();
 
     /// <summary>A single edge to start from, the same seed <c>ProceduralComponentType.Create</c> used
-    /// to give before models existed separately from components.</summary>
-    private static VertexNetwork DefaultNetwork()
+    /// to give before models existed separately from components. Also what <see cref="ProceduralModelFactory.Create"/>
+    /// seeds a script- or link-created model with, so every creation path starts from the same shape.</summary>
+    internal static VertexNetwork DefaultNetwork()
     {
         var network = new VertexNetwork();
         int a = network.AddVertex(new Vector3(-1.0f, 0.0f, 0.0f));
