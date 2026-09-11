@@ -108,6 +108,14 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
         Bump();
     }
 
+    /// <summary>Replaces the network wholesale, taking ownership without cloning. For load paths where
+    /// the caller's copy is freshly parsed and not shared with anything else.</summary>
+    public void LoadNetwork(VertexNetwork network)
+    {
+        _network = network;
+        Bump();
+    }
+
     /// <summary>
     /// Bumped by every authored-field setter and by <see cref="ReplaceNetwork"/>. What
     /// <see cref="ProceduralComponent"/> compares against to notice the model changed under it —
