@@ -62,6 +62,10 @@ public interface IProceduralFunction : ISubsystem
     /// the ground under the cursor rather than needing to be dragged down to it by hand.</summary>
     bool SnapToTerrainOnPlace => false;
 
+    /// <summary>Whether the built output stays inside the convex hull of the network's own vertices and
+    /// paints nothing, so bounds can be read off the network without a build.</summary>
+    bool OutputWithinNetwork => false;
+
     /// <summary>Adjusts a vertex world position as it is placed or moved — e.g. snapping it onto a fixed
     /// lattice. Identity by default. Applied by <see cref="NetworkEditTool"/> after
     /// <see cref="PlanarNetwork"/>/<see cref="SnapToTerrainOnPlace"/> have resolved where the vertex
