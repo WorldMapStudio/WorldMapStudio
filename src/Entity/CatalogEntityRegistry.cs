@@ -20,7 +20,7 @@ public sealed class CatalogEntityRegistry
     private readonly Dictionary<EntityId, CatalogEntity> _byId = [];
     private readonly Dictionary<Type, int> _highWaterMarks = [];
 
-    private Func<Type, ICatalogEntityFactory?>? _factoryLookup;
+    private Func<Type, IRecordIdSource?>? _factoryLookup;
 
     public IReadOnlyList<CatalogEntity> Entities => _entities;
 
@@ -39,9 +39,11 @@ public sealed class CatalogEntityRegistry
     /// Bound once by <see cref="EditorContext"/> after <see cref="DatabaseSystem"/> exists, since this
     /// registry is constructed first. Lets <see cref="AssignId{TEntity}"/> seed a type's high-water mark
     /// from storage rather than assuming the loaded set is everything — required once a catalog can be
-    /// lazily loaded, where most rows are never loaded at all.
+    /// lazily loaded, where most rows are never loaded at all. Typed against <see cref="IRecordIdSource"/>
+    /// rather than <see cref="ICatalogEntityFactory"/> so a lazy factory's type answers this exactly the
+    /// same way an eager one's does.
     /// </summary>
-    public void BindFactoryLookup(Func<Type, ICatalogEntityFactory?> lookup) => _factoryLookup = lookup;
+    public void BindFactoryLookup(Func<Type, IRecordIdSource?> lookup) => _factoryLookup = lookup;
 
     /// <summary>
     /// Gives a newly created entity the next free row id for its type, so other entities can

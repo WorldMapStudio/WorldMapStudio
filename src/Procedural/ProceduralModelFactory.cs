@@ -1,9 +1,14 @@
 namespace WorldMapStudio;
 
-/// <summary>Maps <see cref="ProceduralModel"/> to and from the Editor storage's <c>wms_procedural_models</c> table.</summary>
+/// <summary>
+/// Maps <see cref="ProceduralModel"/> to and from the Editor storage's <c>wms_procedural_models</c>
+/// table. Lazy rather than eager: a model is loaded because a placement needs it, resolved by the scan
+/// that loads that placement (<see cref="ProceduralComponentPersistence.LoadAsync"/>) through
+/// <see cref="EditorKeyedCatalogFactory{TEntity,TRecord}.LoadByIdAsync"/> rather than all at once.
+/// </summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class ProceduralModelFactory(EditorStorage storage)
-    : EditorCatalogFactory<ProceduralModel, ProceduralModelRecord>(storage)
+    : EditorLazyCatalogFactory<ProceduralModel, ProceduralModelRecord>(storage)
 {
     protected override string TableName => "wms_procedural_models";
 

@@ -25,7 +25,7 @@ public interface IKeyedRecord
 /// <see cref="ICatalogEntityFactory"/> or <see cref="ILazyCatalogEntityFactory"/> directly instead —
 /// that freedom is the point of factories.
 /// </summary>
-public abstract class EditorKeyedCatalogFactory<TEntity, TRecord> : IEntityFactory
+public abstract class EditorKeyedCatalogFactory<TEntity, TRecord> : IEntityFactory, IRecordIdSource
     where TEntity : CatalogEntity, IKeyedCatalogEntity
     where TRecord : class, IKeyedRecord, new()
 {
