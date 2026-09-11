@@ -1,4 +1,6 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace WorldMapStudio;
 
@@ -143,8 +145,20 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
     public override string DisplayName => Name;
 
     private int _cachedForRevision = -1;
+    private string _cachedJson = "";
     private string _cachedFingerprint = "";
     private int _cachedContentVersion;
+
+    /// <summary>The network serialized, cached against <see cref="Revision"/> — what the record write
+    /// stores and what <see cref="NetworkFingerprint"/> hashes.</summary>
+    public string NetworkJson
+    {
+        get
+        {
+            RefreshCacheIfStale();
+            return _cachedJson;
+        }
+    }
 
     /// <summary>Cached <see cref="VertexNetwork.Fingerprint"/> of <see cref="Network"/>, recomputed
     /// only when <see cref="Revision"/> has moved — the underlying hash is a JSON serialize plus
@@ -175,7 +189,8 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
             return;
         }
 
-        _cachedFingerprint = _network.Fingerprint();
+        _cachedJson = _network.Serialize();
+        _cachedFingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(_cachedJson))).ToLowerInvariant();
         _cachedContentVersion = HashCode.Combine(FunctionId, Parameters, Formats, Materials, _cachedFingerprint);
         _cachedForRevision = Revision;
     }

@@ -60,7 +60,7 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
         record.Parameters = entity.Parameters;
         record.Formats = entity.Formats;
         record.Materials = entity.Materials;
-        record.NetworkJson = entity.Network.Serialize();
+        record.NetworkJson = entity.NetworkJson;
     }
 
     /// <summary>A page of matches by exact id or a name substring — never materializes a network, unlike
