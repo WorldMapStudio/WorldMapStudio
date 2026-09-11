@@ -388,14 +388,9 @@ public sealed class ImagePicker
         _onCreated(image);
     }
 
-    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId"/> would hand out next, without
-    /// adding anything to the catalog — the form pre-fills it but lets the user type another.</summary>
-    private static int NextFreeId(CatalogEntityRegistry catalog)
-    {
-        var probe = new PaintImage();
-        catalog.AssignId(probe);
-        return probe.RecordId ?? 1;
-    }
+    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId{TEntity}"/> would hand out next —
+    /// the form pre-fills it but lets the user type another.</summary>
+    private static int NextFreeId(CatalogEntityRegistry catalog) => catalog.PeekNextId<PaintImage>();
 
     // long multiplication first so a user typing an absurd chunk count cannot overflow int before the
     // clamp gets a chance to catch it.

@@ -126,12 +126,7 @@ public sealed class ImageDisplayLayerPicker
         _onCreated(layer);
     }
 
-    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId"/> would hand out next, without
-    /// adding anything to the catalog — the form pre-fills it but lets the user type another.</summary>
-    private static int NextFreeId(CatalogEntityRegistry catalog)
-    {
-        var probe = new ImageDisplayLayer();
-        catalog.AssignId(probe);
-        return probe.RecordId ?? 1;
-    }
+    /// <summary>Peeks the id <see cref="CatalogEntityRegistry.AssignId{TEntity}"/> would hand out next —
+    /// the form pre-fills it but lets the user type another.</summary>
+    private static int NextFreeId(CatalogEntityRegistry catalog) => catalog.PeekNextId<ImageDisplayLayer>();
 }

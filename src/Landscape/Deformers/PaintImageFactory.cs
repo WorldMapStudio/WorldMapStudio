@@ -132,6 +132,12 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         return entities;
     }
 
+    public async Task<int> MaxRecordIdAsync()
+    {
+        await using EditorDbContext context = _storage.CreateContext();
+        return await context.Images.MaxAsync(row => (int?)row.Id).ConfigureAwait(false) ?? 0;
+    }
+
     public Action Stage(DbContext context, IEntity entity)
     {
         var db = (EditorDbContext)context;
