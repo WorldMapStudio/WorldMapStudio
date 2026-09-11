@@ -25,13 +25,15 @@ public interface ISceneBoundsProvider
     Aabb LocalBounds { get; }
 
     /// <summary>
-    /// Whether <see cref="LocalBounds"/> means "the whole map" rather than a place on it — a global
-    /// light being the case this exists for. Such a component needs real, enormous bounds so streaming
-    /// keeps it loaded wherever the viewport goes, but those bounds say nothing about <em>where</em>
-    /// anything is, so they must never be what puts a chunk on the map. See
+    /// Whether <see cref="LocalBounds"/> should count toward which chunks the owning entity puts on the
+    /// map. False for either of two reasons: bounds that mean "the whole map" rather than a place on
+    /// it — a global light, which still needs real, enormous bounds so streaming keeps it loaded
+    /// wherever the viewport goes, but those bounds say nothing about <em>where</em> anything is; or
+    /// bounds that mean somewhere in particular but produce no terrain — a path, whose geometry is real
+    /// and local but is written to the world database or a DBC, never an ADT. See
     /// <see cref="SceneEntity.LocalChunkBounds"/>, which is what chunk ownership is decided from.
     /// </summary>
-    bool IsMapSpanning => false;
+    bool ContributesChunkOwnership => true;
 }
 
 public interface ISceneNodeComponent
