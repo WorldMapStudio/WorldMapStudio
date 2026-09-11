@@ -179,4 +179,29 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
         _cachedContentVersion = HashCode.Combine(FunctionId, Parameters, Formats, Materials, _cachedFingerprint);
         _cachedForRevision = Revision;
     }
+
+    // Rough per-element cost of a NetworkVertex/NetworkEdge/NetworkFace record plus its share of list
+    // overhead — close enough for a residency budget, not a claim about actual managed heap size.
+    private const int VertexByteSize = 32;
+    private const int EdgeByteSize = 16;
+    private const int FaceBaseByteSize = 16;
+    private const int FaceVertexByteSize = 4;
+
+    /// <summary>Approximate resident memory cost of <see cref="Network"/> — vertex/edge/face counts
+    /// times their struct sizes, not a serialize. What <see cref="ProceduralSystem"/>'s eviction sweep
+    /// sums against its byte budget.</summary>
+    public long ApproximateByteSize
+    {
+        get
+        {
+            long size = (long)_network.Vertices.Count * VertexByteSize;
+            size += (long)_network.Edges.Count * EdgeByteSize;
+            foreach (NetworkFace face in _network.Faces)
+            {
+                size += FaceBaseByteSize + ((long)face.Vertices.Count * FaceVertexByteSize);
+            }
+
+            return size;
+        }
+    }
 }

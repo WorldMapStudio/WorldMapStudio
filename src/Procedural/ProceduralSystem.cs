@@ -38,6 +38,14 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     private Task<IReadOnlyList<CatalogEntity>>? _pendingLoad;
     private List<int> _pendingLoadBatch = [];
 
+    // Eviction bookkeeping, the same shape ImageResidencySystem uses for chunks: a generation counter
+    // bumped once per sweep, recorded against every model a loaded placement wants, so the backstop
+    // pass can order candidates by how long they have sat unwanted instead of by load order.
+    private readonly Dictionary<int, int> _lastWantedGeneration = [];
+    private readonly Dictionary<int, int> _retainCounts = [];
+    private int _lastEvictionScanVersion = -1;
+    private int _evictionGeneration;
+
     public ProceduralSystem(EditorContext context)
     {
         Context = context;
@@ -132,6 +140,140 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         model.RecordId is int id
             ? Context.Scene.Entities.Where(entity => entity.Component<ProceduralComponent>()?.ModelId == id)
             : [];
+
+    /// <summary>Total resident model bytes (see <see cref="ProceduralModel.ApproximateByteSize"/>) the
+    /// eviction sweep tries to stay under, once every currently-placed model is accounted for. A
+    /// judgment-call default, like <see cref="ImageResidencySystem.BudgetBytes"/>.</summary>
+    public long BudgetBytes { get; set; } = 256L * 1024 * 1024;
+
+    /// <summary>
+    /// Keeps a model resident regardless of placement, pinning, or budget pressure — for a window
+    /// drawing it that isn't itself a placement (see <see cref="ICatalogBrowser"/>). Dispose the
+    /// returned token to release the hold. Reference-counted, so two windows retaining the same model
+    /// only release it once both let go.
+    /// </summary>
+    public IDisposable Retain(int id)
+    {
+        _retainCounts[id] = _retainCounts.GetValueOrDefault(id) + 1;
+        return new RetainToken(this, id);
+    }
+
+    private void Release(int id)
+    {
+        if (!_retainCounts.TryGetValue(id, out int count))
+        {
+            return;
+        }
+
+        if (count <= 1)
+        {
+            _retainCounts.Remove(id);
+        }
+        else
+        {
+            _retainCounts[id] = count - 1;
+        }
+    }
+
+    private sealed class RetainToken(ProceduralSystem system, int id) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            system.Release(id);
+        }
+    }
+
+    private bool IsPinned(ProceduralModel model)
+    {
+        foreach (IEntity pinned in Context.EditSessions.Active.Pinned)
+        {
+            if (ReferenceEquals(pinned, model))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Drops a resident model nothing places, pins, or retains, then — only if what remains is still
+    /// over <see cref="BudgetBytes"/> — trims the least-recently-wanted of what remains too, even a
+    /// model a live placement currently names. That placement does not break: losing its model from the
+    /// registry is exactly what <see cref="ReportDangling"/> and <see cref="RequestLoad"/> already
+    /// handle, the same "may reload again the moment it is still wanted" trade <see cref="ImageResidencySystem"/>
+    /// makes for a chunk.
+    ///
+    /// Gated the same way <see cref="ImageResidencySystem.Update"/> is: only once a scan has landed, and
+    /// only once per landed scan, since nothing about what is placed can have changed in between.
+    /// </summary>
+    private void EvictUnusedModels()
+    {
+        StreamingSystem streaming = Context.Streaming;
+        if (!streaming.Reconciled || streaming.ScanVersion == _lastEvictionScanVersion)
+        {
+            return;
+        }
+
+        _lastEvictionScanVersion = streaming.ScanVersion;
+        _evictionGeneration++;
+
+        var placed = new HashSet<int>();
+        foreach (SceneEntity entity in Context.Scene.Entities)
+        {
+            if (entity.Component<ProceduralComponent>()?.ModelId is int id)
+            {
+                placed.Add(id);
+                _lastWantedGeneration[id] = _evictionGeneration;
+            }
+        }
+
+        var evicted = new List<int>();
+        foreach (ProceduralModel model in Models.ToList())
+        {
+            if (model.RecordId is not int id || placed.Contains(id) || _retainCounts.ContainsKey(id) || IsPinned(model))
+            {
+                continue;
+            }
+
+            Context.Catalog.Remove(model);
+            evicted.Add(id);
+        }
+
+        long total = Models.Sum(model => model.ApproximateByteSize);
+        if (total > BudgetBytes)
+        {
+            List<ProceduralModel> candidates = Models
+                .Where(model => model.RecordId is int id && !_retainCounts.ContainsKey(id) && !IsPinned(model))
+                .OrderBy(model => _lastWantedGeneration.GetValueOrDefault(model.RecordId ?? 0, -1))
+                .ToList();
+
+            foreach (ProceduralModel model in candidates)
+            {
+                if (total <= BudgetBytes)
+                {
+                    break;
+                }
+
+                total -= model.ApproximateByteSize;
+                Context.Catalog.Remove(model);
+                evicted.Add(model.RecordId!.Value);
+            }
+        }
+
+        foreach (int id in evicted)
+        {
+            _lastWantedGeneration.Remove(id);
+        }
+    }
 
     /// <summary>Whether <paramref name="id"/> is queued or being resolved by a batch <see cref="RequestLoad"/>
     /// kicked off — <see cref="ReportDangling"/> withholds its warning while this is true, since the id
@@ -254,6 +396,10 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         _knownMissingIds.Clear();
         _pendingLoad = null;
         _pendingLoadBatch = [];
+        _lastWantedGeneration.Clear();
+        _retainCounts.Clear();
+        _lastEvictionScanVersion = -1;
+        _evictionGeneration = 0;
         Version++;
     }
 
@@ -272,8 +418,10 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     public void Update()
     {
         // Pumped unconditionally, ahead of the tick guard below, so a pending load is always polled
-        // regardless of whether anything else changed this frame.
+        // regardless of whether anything else changed this frame. Eviction is its own gate (landed-scan
+        // version), independent of this tick too — see EvictUnusedModels.
         PumpPendingLoad();
+        EvictUnusedModels();
 
         var tick = (Context.Catalog.Version, Context.Scene.Version, ProceduralModel.RevisionTick);
         if (tick == _lastUpdateTick)
