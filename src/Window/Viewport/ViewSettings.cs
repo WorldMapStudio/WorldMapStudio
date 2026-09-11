@@ -15,12 +15,6 @@ public sealed class ViewSettings
     /// </summary>
     public bool ShowChunkEdges { get; set; } = true;
 
-    /// <summary>Whether the viewport applies the blended <see cref="EnvironmentValues"/> (sky, sun,
-    /// fog) or stays at the flat grey look the editor always used before <see cref="EnvironmentSystem"/>
-    /// existed. On by default; turning it off is a one-click fallback to that flat look for
-    /// terrain/asset authoring where an accurate scene light is a distraction.</summary>
-    public bool UseEnvironmentLighting { get; set; } = true;
-
     /// <summary>Draws each loaded <see cref="IEnvironmentVolume"/> source's inner/outer spheres.</summary>
     public bool ShowEnvironmentVolumes { get; set; } = true;
 
