@@ -589,7 +589,7 @@ public static class LandscapeBatchMesh
         public static readonly StringName ShowChunkEdges = "show_chunk_edges";
     }
 
-    private const string SplatShaderCode = """
+    internal const string SplatShaderCode = """
 shader_type spatial;
 render_mode cull_back, diffuse_burley;
 
@@ -707,16 +707,22 @@ void fragment() {
     }
 
     color *= COLOR.rgb;
-    color += vertex_light;
+
+    // Baked vertex light is light, not pigment: it must add to what reaches the surface rather than
+    // to the surface's own colour, so it survives a dark scene and isn't scaled up by a bright one.
+    // EMISSION is exactly that — added after lighting — and is still tinted by the albedo under it.
+    vec3 emission = color * vertex_light;
 
     if (show_chunk_edges) {
         vec2 toEdge = min(UV, vec2(1.0) - UV);
         vec2 aa = fwidth(UV) * 1.5;
         float edge = 1.0 - clamp(min(toEdge.x / aa.x, toEdge.y / aa.y), 0.0, 1.0);
         color = mix(color, chunk_edge_color, edge * 0.8);
+        emission *= 1.0 - edge;
     }
 
     ALBEDO = color;
+    EMISSION = emission;
     ROUGHNESS = 0.9;
 
     float spec_alpha = texture(slot_albedo, vec3(tiled, slot_layer(slot_entry(0)))).a;
