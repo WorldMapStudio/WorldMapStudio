@@ -22,6 +22,7 @@ public sealed class OutlineWindow : Window
     private readonly SceneEntityRegistry _scene;
     private readonly SelectionSystem _selection;
     private readonly EditSessionManager _sessions;
+    private readonly ViewCategorySystem _viewCategories;
     private SceneEntity[] _dragged = [];
 
     private readonly List<SceneEntity> _listed = [];
@@ -41,6 +42,7 @@ public sealed class OutlineWindow : Window
         _scene = manager.Context.Scene;
         _selection = manager.Context.Selection;
         _sessions = manager.Context.EditSessions;
+        _viewCategories = manager.Context.ViewCategories;
     }
 
     protected override void DrawContent()
@@ -279,7 +281,21 @@ public sealed class OutlineWindow : Window
             | (hasChildren ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.Leaf)
             | (_selection.IsSelected(entity) ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None);
 
+        // Greyed rather than left out or disabled: the row must stay clickable, since the outline is
+        // how a hidden entity (a light with lighting off, say) stays reachable at all.
+        IViewCategory? hidingCategory = HidingCategory(entity);
+        if (hidingCategory != null)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]);
+        }
+
         ImGui.TreeNodeEx(Label(entity), flags);
+
+        if (hidingCategory != null)
+        {
+            ImGui.PopStyleColor();
+        }
+
         DrawDragSource(entity);
         DrawParentDropTarget(entity);
 
@@ -299,10 +315,46 @@ public sealed class OutlineWindow : Window
             }
         }
 
+        DrawVisibilityToggle(entity, hidingCategory);
+
         if (indent > 0.0f)
         {
             ImGui.Unindent(indent);
         }
+    }
+
+    // The category currently hiding this entity, or null when none is. Drawn after IsItemClicked has
+    // already read the tree node as the "last item", so it cannot disturb row selection.
+    private void DrawVisibilityToggle(SceneEntity entity, IViewCategory? hidingCategory)
+    {
+        IViewCategory? ownCategory = hidingCategory ?? _viewCategories.All.FirstOrDefault(category => category.Includes(entity));
+        if (ownCategory == null)
+        {
+            return;
+        }
+
+        bool hidden = hidingCategory != null;
+        ImGui.SameLine();
+        if (ImGui.SmallButton($"{(hidden ? "○" : "●")}##vis{entity.Id.Value}"))
+        {
+            _viewCategories.SetHidden(ownCategory.Id, !hidden);
+        }
+    }
+
+    // The first hidden category (in priority order) that includes this entity, or null when none is
+    // — the union rule ViewCategorySystem.IsHidden(SceneEntity) itself applies, but this also needs to
+    // know *which* category to hand back to DrawVisibilityToggle.
+    private IViewCategory? HidingCategory(SceneEntity entity)
+    {
+        foreach (IViewCategory category in _viewCategories.All)
+        {
+            if (_viewCategories.IsHidden(category.Id) && category.Includes(entity))
+            {
+                return category;
+            }
+        }
+
+        return null;
     }
 
     // A plain loop rather than Any(_visible.Contains): this runs for every listed entity on every
