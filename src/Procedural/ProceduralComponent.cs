@@ -67,6 +67,22 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
             }
 
             _modelId = value;
+
+            // Guarded on Owner rather than firing unconditionally: a persister sets ModelId via this
+            // same setter while constructing a component for a scan, before the component is ever
+            // attached to an entity (see ProceduralComponentPersistence.LoadAsync) — at that instant the
+            // model may be sitting unresolved for a few more lines pending AttachModel, or (for an
+            // offline scan) may never be meant to touch the live registry at all. Requesting here would
+            // needlessly re-query the one case, and wrongly publish into the live registry for the
+            // other. Once the component is owned, this covers a script or inspector rebind naming an id
+            // outside a scan — ProceduralSystem.Update's dangling check is the remaining safety net for
+            // everything else (e.g. an undone delete that reuses the component instance without ever
+            // calling this setter).
+            if (value is int id && Owner != null)
+            {
+                _system.RequestLoad(id);
+            }
+
             Owner?.RefreshRepresentation();
         }
     }
