@@ -27,10 +27,12 @@ namespace WorldMapStudio;
 [Subsystem(nameof(EditorStorage))]
 public sealed class PaintImageFactory : ICatalogEntityFactory
 {
-    // Above this many resident bytes, an image loads its coordinate manifest only and relies on
-    // ImageResidencySystem to bring chunks in as a streamed-in placement needs them, instead of paying
-    // for every chunk up front. Below it, an image loads fully and instantly, exactly as it did before
-    // residency existed — and stays the common case, since a default-sized image is one chunk.
+    // One allowance spent across the whole load, not a per-image threshold — a per-image check lets
+    // every image whose own resident set is under the line load eagerly regardless of how many there
+    // are, so the eager total scales with image count instead of staying bounded. Charged in ascending
+    // size order (see LoadAllAsync) so the common case — a handful of small, default-sized images —
+    // still loads instantly, and only once those are covered does a larger image start eating into what
+    // is left; an image that would blow the whole budget by itself starts lazy no matter its position.
     private const long EagerLoadBudgetBytes = 64L * 1024 * 1024;
 
     private readonly EditorStorage _storage;
@@ -79,7 +81,7 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
 
         var diskStore = new ImageDiskStore();
         var entities = new List<PaintImage>();
-        var eagerImageIds = new List<int>();
+        var candidates = new List<(int ImageId, long Bytes)>();
         foreach (PaintImageRecord header in headers)
         {
             var entity = new PaintImage { RecordId = header.Id, Name = header.Name };
@@ -98,10 +100,23 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
             entity.IsSaved = true;
             entities.Add(entity);
 
-            if ((long)coords.Count * entity.ChunkByteSize <= EagerLoadBudgetBytes)
+            candidates.Add((header.Id, (long)coords.Count * entity.ChunkByteSize));
+        }
+
+        // Ascending, so the allowance is spent on small images first — the common case — rather than
+        // being exhausted by whichever large image happens to load first.
+        var eagerImageIds = new List<int>();
+        long remaining = EagerLoadBudgetBytes;
+        foreach ((int imageId, long bytes) in candidates.OrderBy(candidate => candidate.Bytes))
+        {
+            // Ascending order means nothing later fits either, once one doesn't.
+            if (bytes > remaining)
             {
-                eagerImageIds.Add(header.Id);
+                break;
             }
+
+            eagerImageIds.Add(imageId);
+            remaining -= bytes;
         }
 
         foreach (PaintImage entity in entities.Where(entity => entity.IsDiskBacked && eagerImageIds.Contains(entity.RecordId ?? 0)))
