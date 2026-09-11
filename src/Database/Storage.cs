@@ -212,7 +212,18 @@ public abstract class Storage : ISubsystem
     {
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using DbContext context = createContext();
+        await StageAndSaveAsync(context, saves, deletes).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// The staging + save half of <see cref="CommitAsync(Func{DbContext}, IReadOnlyList{IEntity}, IReadOnlyList{IEntity})"/>,
+    /// without acquiring the write lock or managing the context's lifetime — for a caller that already
+    /// holds both because it is folding this commit into a larger shared transaction alongside other
+    /// writes (see <see cref="EditorStorage.CommitTransactionAsync"/>). A plain <see cref="CommitAsync(IReadOnlyList{IEntity}, IReadOnlyList{IEntity})"/>
+    /// call is still the right choice when this is the only write in the transaction.
+    /// </summary>
+    protected async Task StageAndSaveAsync(DbContext context, IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes)
+    {
         foreach (IEntityFactory factory in saves.Select(FactoryFor).OfType<IEntityFactory>().Distinct())
         {
             await factory.PrepareBatchAsync(context, saves).ConfigureAwait(false);
@@ -232,7 +243,8 @@ public abstract class Storage : ISubsystem
             FactoryFor(entity)?.StageDelete(context, entity);
         }
 
-        // A single SaveChanges wraps all staged inserts/updates/deletes in one transaction.
+        // A single SaveChanges wraps all staged inserts/updates/deletes in one transaction — the
+        // context's ambient one when the caller already began one, an implicit one otherwise.
         await context.SaveChangesAsync().ConfigureAwait(false);
 
         foreach (Action writeBack in writeBacks)

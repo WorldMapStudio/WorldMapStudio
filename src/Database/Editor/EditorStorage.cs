@@ -73,6 +73,36 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public override Task CommitAsync(IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
         CommitAsync(CreateContext, saves, deletes);
 
+    /// <summary>
+    /// Opens one context and one transaction, runs <paramref name="body"/> against them, then commits —
+    /// for a caller that needs several separate <see cref="EditorStorage"/> writes (an entity commit,
+    /// image chunks, chunk changes, a tracking row) to land or fail together, instead of paying one
+    /// transaction floor per call. The ADT importer's per-tile write is the motivating case.
+    ///
+    /// Inside <paramref name="body"/>, use only the <c>*WithinTransactionAsync</c> overloads (or
+    /// <see cref="CommitEntitiesWithinTransactionAsync"/>) — the plain public methods each acquire the
+    /// write lock and open their own context/transaction, which would deadlock or land outside this one.
+    /// </summary>
+    public async Task CommitTransactionAsync(Func<EditorDbContext, Task> body)
+    {
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
+            await context.Database.BeginTransactionAsync().ConfigureAwait(false);
+
+        await body(context).ConfigureAwait(false);
+
+        await transaction.CommitAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Stages and saves an entity commit against an already-open context — see
+    /// <see cref="CommitTransactionAsync"/>. Multiple <c>SaveChangesAsync</c> calls against one context
+    /// inside its manually-begun transaction all land in that one transaction; only its own commit
+    /// finalizes them.</summary>
+    public Task CommitEntitiesWithinTransactionAsync(EditorDbContext context, IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
+        StageAndSaveAsync(context, saves, deletes);
+
     // How many rows go into one INSERT … ON DUPLICATE KEY UPDATE. A whole-map commit stamps tens of
     // thousands of chunks; at three parameters a row this stays far under the wire-protocol limit.
     private const int ChunkChangeRowsPerStatement = 1000;
@@ -89,15 +119,26 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             return;
         }
 
-        var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        await UpsertChunkChangesCoreAsync(context, null, chunks).ConfigureAwait(false);
+    }
 
+    /// <summary>Runs within an already-open context and transaction — see <see cref="CommitTransactionAsync"/>.
+    /// Does not take the write lock or open the connection itself.</summary>
+    public Task UpsertChunkChangesWithinTransactionAsync(
+        EditorDbContext context, DbTransaction transaction, IReadOnlyCollection<(int Map, int X, int Y)> chunks) =>
+        chunks.Count == 0 ? Task.CompletedTask : UpsertChunkChangesCoreAsync(context, transaction, chunks);
+
+    private async Task UpsertChunkChangesCoreAsync(
+        EditorDbContext context, DbTransaction? transaction, IReadOnlyCollection<(int Map, int X, int Y)> chunks)
+    {
+        var clock = Stopwatch.StartNew();
         (string tableName, string mapColumn, string xColumn, string yColumn, string timeColumn) =
             ChunkChangeColumns(context);
 
         DbConnection connection = context.Database.GetDbConnection();
-        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
 
         DateTime now = DateTime.UtcNow;
         List<(int Map, int X, int Y)> all = chunks.ToList();
@@ -107,6 +148,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             int count = Math.Min(ChunkChangeRowsPerStatement, all.Count - start);
             await using DbCommand command = connection.CreateCommand();
             command.CommandTimeout = 60;
+            command.Transaction = transaction;
 
             var sql = new StringBuilder(
                 $"INSERT INTO `{tableName}` (`{mapColumn}`, `{xColumn}`, `{yColumn}`, `{timeColumn}`) VALUES ");
@@ -493,18 +535,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public async Task UpsertImageChunksAsync(
         IReadOnlyDictionary<PaintImage, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)>> writes)
     {
-        foreach ((PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) in writes)
-        {
-            if (chunks.Count > 0 && image.IsDiskBacked)
-            {
-                await new ImageDiskStore().WriteChunksAsync(image, chunks, Array.Empty<ImageChunkCoord>()).ConfigureAwait(false);
-            }
-        }
-
-        List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)> databaseWrites = writes
-            .Where(pair => pair.Value.Count > 0 && !pair.Key.IsDiskBacked)
-            .Select(pair => (pair.Key, pair.Value))
-            .ToList();
+        List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)> databaseWrites =
+            await WriteDiskImagesAndSplitAsync(writes).ConfigureAwait(false);
         if (databaseWrites.Count == 0)
         {
             return;
@@ -513,12 +545,58 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
 
+        int totalChunks = await UpsertImageChunksCoreAsync(context, null, databaseWrites).ConfigureAwait(false);
+        GD.Print($"[ImageChunks] Upserted {totalChunks} chunk(s) across {databaseWrites.Count} image(s) in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    /// <summary>Runs within an already-open context and transaction — see <see cref="CommitTransactionAsync"/>.
+    /// Does not take the write lock or open the connection itself.</summary>
+    public async Task UpsertImageChunksWithinTransactionAsync(
+        EditorDbContext context, DbTransaction transaction,
+        IReadOnlyDictionary<PaintImage, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)>> writes)
+    {
+        List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)> databaseWrites =
+            await WriteDiskImagesAndSplitAsync(writes).ConfigureAwait(false);
+        if (databaseWrites.Count == 0)
+        {
+            return;
+        }
+
+        var clock = Stopwatch.StartNew();
+        int totalChunks = await UpsertImageChunksCoreAsync(context, transaction, databaseWrites).ConfigureAwait(false);
+        GD.Print($"[ImageChunks] Upserted {totalChunks} chunk(s) across {databaseWrites.Count} image(s) in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    /// <summary>Writes every disk-backed image's chunks (not transactional with the database — see the
+    /// disk-backed-PaintImages note) and returns only the database-backed writes left to upsert.</summary>
+    private static async Task<List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)>> WriteDiskImagesAndSplitAsync(
+        IReadOnlyDictionary<PaintImage, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)>> writes)
+    {
+        foreach ((PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) in writes)
+        {
+            if (chunks.Count > 0 && image.IsDiskBacked)
+            {
+                await new ImageDiskStore().WriteChunksAsync(image, chunks, Array.Empty<ImageChunkCoord>()).ConfigureAwait(false);
+            }
+        }
+
+        return writes
+            .Where(pair => pair.Value.Count > 0 && !pair.Key.IsDiskBacked)
+            .Select(pair => (pair.Key, pair.Value))
+            .ToList();
+    }
+
+    private static async Task<int> UpsertImageChunksCoreAsync(
+        EditorDbContext context,
+        DbTransaction? transaction,
+        List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)> databaseWrites)
+    {
         (string table, string idColumn, string xColumn, string yColumn, string formatColumn, string pixelsColumn) =
             ImageChunkColumns(context);
 
         DbConnection connection = context.Database.GetDbConnection();
-        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
 
         int totalChunks = 0;
         foreach ((PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) in databaseWrites)
@@ -531,6 +609,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
                 int count = Math.Min(ImageChunkRowsPerStatement, chunks.Count - start);
                 await using DbCommand command = connection.CreateCommand();
                 command.CommandTimeout = 120;
+                command.Transaction = transaction;
 
                 var sql = new StringBuilder(
                     $"INSERT INTO `{table}` (`{idColumn}`, `{xColumn}`, `{yColumn}`, `{formatColumn}`, `{pixelsColumn}`) VALUES ");
@@ -554,7 +633,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             totalChunks += chunks.Count;
         }
 
-        GD.Print($"[ImageChunks] Upserted {totalChunks} chunk(s) across {databaseWrites.Count} image(s) in {clock.ElapsedMilliseconds}ms.");
+        return totalChunks;
     }
 
     private static (string Table, string Id, string X, string Y, string Format, string Pixels) ImageChunkColumns(EditorDbContext context)
