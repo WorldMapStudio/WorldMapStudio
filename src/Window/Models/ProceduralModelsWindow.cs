@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading.Tasks;
 using ImGuiNET;
 
 namespace WorldMapStudio;
@@ -24,6 +25,13 @@ public sealed class ProceduralModelsWindow : Window
     private readonly ProceduralModelFieldEditor _fields;
     private readonly ProceduralModelPicker _picker;
 
+    // Stored placements — not loaded ones — are what makes Delete safe: a model whose only placements
+    // are streamed out has zero loaded uses but still has rows referencing it in storage. Queried once
+    // per model when its row is expanded, not every frame, and invalidated whenever the catalog or
+    // scene changes (a create, delete, or commit can all move this count).
+    private readonly Dictionary<int, int> _storedPlacementCounts = [];
+    private (int Catalog, int Scene) _storedPlacementCountsFor = (-1, -1);
+
     public ProceduralModelsWindow(WindowManager manager)
         : base("Procedural Models", startOpen: false, defaultSize: new Vector2(560.0f, 560.0f))
     {
@@ -37,6 +45,13 @@ public sealed class ProceduralModelsWindow : Window
 
     protected override void DrawContent()
     {
+        var versions = (_context.Catalog.Version, _context.Scene.Version);
+        if (versions != _storedPlacementCountsFor)
+        {
+            _storedPlacementCountsFor = versions;
+            _storedPlacementCounts.Clear();
+        }
+
         if (ImGui.Button("Add model"))
         {
             _picker.OpenCreate(_context.EditSessions, _context.Catalog, _ => { });
@@ -47,8 +62,8 @@ public sealed class ProceduralModelsWindow : Window
         foreach (ProceduralModel model in Models.Models.OrderBy(m => m.Name, System.StringComparer.OrdinalIgnoreCase).ToList())
         {
             ImGui.PushID(model.Id.Value.GetHashCode());
-            int uses = Models.UsageCount(model.RecordId ?? -1);
-            string header = uses > 0 ? $"{model.Name} ({uses} uses)##header" : $"{model.Name}##header";
+            int loaded = Models.UsageCount(model.RecordId ?? -1);
+            string header = loaded > 0 ? $"{model.Name} ({loaded} loaded placements)##header" : $"{model.Name}##header";
             if (ImGui.CollapsingHeader(header))
             {
                 ImGui.TextDisabled($"Id #{model.RecordId}");
@@ -56,7 +71,7 @@ public sealed class ProceduralModelsWindow : Window
 
                 _fields.Draw(_context.EditSessions, model);
 
-                DrawFooter(model, uses);
+                DrawFooter(model, loaded, StoredPlacementCount(model));
             }
 
             ImGui.PopID();
@@ -64,6 +79,33 @@ public sealed class ProceduralModelsWindow : Window
 
         _fields.DrawModals();
         _picker.Draw();
+    }
+
+    /// <summary>Every stored placement referencing this model, regardless of whether it is currently
+    /// loaded — what actually makes deleting the model safe. Queried once per model per catalog/scene
+    /// version and cached; see <see cref="_storedPlacementCounts"/>.</summary>
+    private int StoredPlacementCount(ProceduralModel model)
+    {
+        if (model.RecordId is not int id)
+        {
+            return 0;
+        }
+
+        if (_storedPlacementCounts.TryGetValue(id, out int cached))
+        {
+            return cached;
+        }
+
+        int count = BlockingWork.Run(() => CountStoredPlacementsAsync(id));
+        _storedPlacementCounts[id] = count;
+        return count;
+    }
+
+    private async Task<int> CountStoredPlacementsAsync(int modelId)
+    {
+        EditorStorage storage = _context.Database.Storages.OfType<EditorStorage>().First();
+        var rows = await storage.ReferencingPlacementBoundsAsync(typeof(ProceduralModel), modelId).ConfigureAwait(false);
+        return rows.Count;
     }
 
     private void DrawName(ProceduralModel entity, string current, System.Action<string> set)
@@ -77,7 +119,7 @@ public sealed class ProceduralModelsWindow : Window
         _tracker.Track(_context.EditSessions, entity, "name", value, set);
     }
 
-    private void DrawFooter(ProceduralModel model, int uses)
+    private void DrawFooter(ProceduralModel model, int loaded, int stored)
     {
         ImGui.Spacing();
         if (ImGui.SmallButton("Duplicate"))
@@ -86,21 +128,23 @@ public sealed class ProceduralModelsWindow : Window
         }
 
         ImGui.SameLine();
-        if (uses > 0)
+        if (stored > 0)
         {
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.SmallButton("Delete") && uses == 0)
+        if (ImGui.SmallButton("Delete") && stored == 0)
         {
             Delete(model);
         }
 
-        if (uses > 0)
+        if (stored > 0)
         {
             ImGui.EndDisabled();
             ImGui.SameLine();
-            ImGui.TextDisabled($"in use by {uses} entities");
+            ImGui.TextDisabled(loaded == stored
+                ? $"in use by {stored} placements"
+                : $"in use by {stored} placements ({loaded} loaded)");
         }
     }
 
