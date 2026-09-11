@@ -126,7 +126,10 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
             foreach (ISceneEntityFactory factory in storage.SceneFactories)
             {
-                SceneEntityScan scan = await factory.ScanAsync(map, region, Nothing).ConfigureAwait(false);
+                // Not publishing: this result belongs to the caller, not the live editor — see
+                // SceneEntityScanCatalog.Publishing. Each entity's own resolved models ride on its
+                // components' attachments instead.
+                SceneEntityScan scan = await factory.ScanAsync(map, region, Nothing, publishing: false).ConfigureAwait(false);
                 result.AddRange(scan.Built);
             }
         }

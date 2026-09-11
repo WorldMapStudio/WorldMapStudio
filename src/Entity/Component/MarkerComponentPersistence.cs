@@ -38,7 +38,7 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneMarkerComponentRecord> rows = await context.Set<SceneMarkerComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

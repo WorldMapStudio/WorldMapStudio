@@ -66,7 +66,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneImageComponentRecord> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))

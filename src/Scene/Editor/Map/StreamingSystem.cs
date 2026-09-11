@@ -47,7 +47,7 @@ public sealed class StreamingSystem : IWorldParticipant
     // an entity created in the editor is loaded but has no row for a scan to find.
     private readonly HashSet<SceneEntity> _present = [];
 
-    private Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)>? _pendingScan;
+    private Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen, List<CatalogEntity> Catalog)>? _pendingScan;
     private MapId _scanMap;
     private Aabb _scanView;
     private Vector3 _lastFocus;
@@ -272,7 +272,7 @@ public sealed class StreamingSystem : IWorldParticipant
             return;
         }
 
-        Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)> scan = _pendingScan;
+        Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen, List<CatalogEntity> Catalog)> scan = _pendingScan;
         _pendingScan = null;
 
         if (!scan.IsCompletedSuccessfully)
@@ -283,7 +283,7 @@ public sealed class StreamingSystem : IWorldParticipant
 
         double elapsed = DiagnosticLog.MillisecondsSince(_scanClock);
         long reconcileClock = DiagnosticLog.Start();
-        Reconcile(scan.Result.Built, scan.Result.Seen);
+        Reconcile(scan.Result.Built, scan.Result.Seen, scan.Result.Catalog);
         DiagnosticLog.Log(
             $"done: {elapsed:F0}ms scan + {DiagnosticLog.MillisecondsSince(reconcileClock):F0}ms reconcile, "
             + $"{scan.Result.Built.Count} built of {scan.Result.Seen.Count} in region");
@@ -317,12 +317,13 @@ public sealed class StreamingSystem : IWorldParticipant
 
     // Stored entities are loaded over the wider region, because they are what derived data is built
     // from; loaders produce what the user sees, so they get the view region.
-    private async Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen)> ScanAsync(
+    private async Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen, List<CatalogEntity> Catalog)> ScanAsync(
         MapId map, Aabb view, Aabb load, Dictionary<Type, HashSet<long>> loadedKeys)
     {
         using IDisposable scope = DiagnosticLog.Scope($"scan {ScanVersion + 1}");
         var built = new List<SceneEntity>();
         var seen = new List<(Type Type, long Key)>();
+        var catalog = new List<CatalogEntity>();
         foreach (Storage storage in _context.Database.Storages)
         {
             // One reader for the whole storage rather than one per factory: re-acquiring per factory
@@ -338,11 +339,12 @@ public sealed class StreamingSystem : IWorldParticipant
                 using IDisposable factoryScope = DiagnosticLog.Scope(factory.GetType().Name);
                 long factoryClock = DiagnosticLog.Start();
                 HashSet<long> known = loadedKeys.TryGetValue(factory.EntityType, out HashSet<long>? set) ? set : [];
-                SceneEntityScan scanned = await factory.ScanAsync(map, load, known).ConfigureAwait(false);
+                SceneEntityScan scanned = await factory.ScanAsync(map, load, known, publishing: true).ConfigureAwait(false);
                 DiagnosticLog.Log(
                     $"  {factory.GetType().Name}: {DiagnosticLog.MillisecondsSince(factoryClock):F0}ms, "
                     + $"{scanned.Built.Count} built of {scanned.Keys.Count} in region");
                 built.AddRange(scanned.Built);
+                catalog.AddRange(scanned.Catalog);
                 foreach (long key in scanned.Keys)
                 {
                     seen.Add((factory.EntityType, key));
@@ -365,11 +367,21 @@ public sealed class StreamingSystem : IWorldParticipant
             }
         }
 
-        return (built, seen);
+        return (built, seen, catalog);
     }
 
-    private void Reconcile(List<SceneEntity> built, List<(Type Type, long Key)> seen)
+    private void Reconcile(List<SceneEntity> built, List<(Type Type, long Key)> seen, List<CatalogEntity> catalog)
     {
+        // Published before Scene.Add below, so a placement is never observed with an unresolved model —
+        // see ProceduralComponent.Model and SceneEntityScanCatalog.Publishing.
+        foreach (CatalogEntity entity in catalog)
+        {
+            if (!_context.Catalog.Contains(entity))
+            {
+                _context.Catalog.Add(entity);
+            }
+        }
+
         // Index entities already in the scene that carry a persistent key, so a scan never duplicates
         // one that is already loaded — including one this session created and committed, whose row
         // the scan is seeing for the first time.
@@ -400,6 +412,9 @@ public sealed class StreamingSystem : IWorldParticipant
             }
             else
             {
+                // The registry publish above already covers this entity's model, if it named one; the
+                // attachment would only ever resurrect a stale copy from here on.
+                entity.Component<ProceduralComponent>()?.ClearAttachment();
                 _context.Scene.Add(entity);
                 loaded[id] = entity;
                 _present.Add(entity);

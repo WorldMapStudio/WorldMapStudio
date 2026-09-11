@@ -90,7 +90,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
 
-    public async Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded)
+    public async Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded, bool publishing)
     {
         Vector3 min = region.Position;
         Vector3 max = region.End;
@@ -122,7 +122,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         int[] wanted = parentById.Keys.Where(id => !loaded.Contains(id)).ToArray();
         if (wanted.Length == 0)
         {
-            return new SceneEntityScan([], keys);
+            return new SceneEntityScan([], keys, []);
         }
 
         clock = DiagnosticLog.Start();
@@ -134,17 +134,18 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
         Dictionary<int, SceneEntity> entities = rows.ToDictionary(row => row.Id, ToEntity);
 
+        var catalog = new SceneEntityScanCatalog(publishing);
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
         {
             using IDisposable scope = DiagnosticLog.Scope(persistence.GetType().Name);
             clock = DiagnosticLog.Start();
-            await persistence.LoadAsync(context, entities, wanted).ConfigureAwait(false);
+            await persistence.LoadAsync(context, entities, wanted, catalog).ConfigureAwait(false);
             DiagnosticLog.Log($"    {persistence.GetType().Name}: {DiagnosticLog.MillisecondsSince(clock):F0}ms");
         }
 
         List<SceneEntity> result = entities.Values.ToList();
         LinkParents(result);
-        return new SceneEntityScan(result, keys);
+        return new SceneEntityScan(result, keys, catalog.Loaded);
     }
 
     public Action Stage(DbContext context, IEntity entity)

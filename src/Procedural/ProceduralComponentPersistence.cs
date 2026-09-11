@@ -38,6 +38,11 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
     /// </summary>
     private ProceduralSystem Procedural => _storage.Context.Procedural;
 
+    // Resolved by concrete type off the storage's subsystem list rather than a facet — a facet keyed
+    // on ICatalogEntityFactory would stop finding it the moment ProceduralModelFactory becomes lazy.
+    private ProceduralModelFactory? _modelFactory;
+    private ProceduralModelFactory ModelFactory => _modelFactory ??= _storage.Subsystems.OfType<ProceduralModelFactory>().First();
+
     public float Priority => 0.0f;
 
     public string TypeId => ProceduralComponent.Kind;
@@ -55,12 +60,43 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         });
     }
 
-    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids)
+    public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
         List<SceneProceduralComponentRecord> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))
             .ToListAsync()
             .ConfigureAwait(false);
+
+        var wantedIds = new HashSet<int>();
+        foreach (SceneProceduralComponentRecord row in rows)
+        {
+            if (row.ModelId is int id)
+            {
+                wantedIds.Add(id);
+            }
+        }
+
+        // A publishing scan lets the registry own the instance a live placement resolves to — re-reading
+        // an already-resident model's 145 KiB network here would pay its parse cost again for nothing.
+        if (catalog.Publishing)
+        {
+            wantedIds.ExceptWith(Procedural.LoadedModelIds);
+        }
+
+        // One instance per id shared by every component in this scan that names it — resolving per
+        // component would silently fork a shared model into one copy per placement.
+        var resolved = new Dictionary<int, ProceduralModel>();
+        if (wantedIds.Count > 0)
+        {
+            foreach (CatalogEntity entity in await ModelFactory.LoadByIdAsync(context, wantedIds).ConfigureAwait(false))
+            {
+                if (entity is ProceduralModel model && model.RecordId is int id)
+                {
+                    resolved[id] = model;
+                    catalog.Add(model);
+                }
+            }
+        }
 
         foreach (SceneProceduralComponentRecord row in rows)
         {
@@ -70,6 +106,11 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
             }
 
             var mesh = new ProceduralComponent(Procedural) { ModelId = row.ModelId };
+            if (row.ModelId is int modelId && resolved.TryGetValue(modelId, out ProceduralModel? model))
+            {
+                mesh.AttachModel(model);
+            }
+
             entity.LoadComponent(mesh);
         }
     }

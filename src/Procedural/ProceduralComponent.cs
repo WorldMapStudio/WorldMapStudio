@@ -29,6 +29,11 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
     private readonly ProceduralSystem _system;
     private int? _modelId;
 
+    // Set by the scan that resolved this component's model, for an entity outside the live scene — an
+    // offline ScanSceneAsync result, a landscape build's placement list, an export run. Never read
+    // while the registry already has an answer; see Model.
+    private ProceduralModel? _attached;
+
     // What the representation was last built from. Compared by ProceduralSystem.Update against
     // the live (ModelId, Model.Revision) pair every frame, so a model edited from a different entity
     // (or a window, or a script) still rebuilds this placement.
@@ -66,8 +71,27 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
         }
     }
 
-    /// <summary>The bound model, or null if <see cref="ModelId"/> is unset or dangling.</summary>
-    public ProceduralModel? Model => _system.FindModel(_modelId);
+    /// <summary>
+    /// The bound model, or null if <see cref="ModelId"/> is unset or dangling. The registry is checked
+    /// first, so a live placement always resolves to the same instance every other placement, window,
+    /// undo or script edits — the attachment (see <see cref="AttachModel"/>) is only ever the answer for
+    /// an entity that is not in the live scene.
+    /// </summary>
+    public ProceduralModel? Model => _system.FindModel(_modelId) ?? _attached;
+
+    /// <summary>
+    /// Sets the model an offline scan resolved for this component — see <see cref="SceneEntityScanCatalog"/>.
+    /// The instance is owned by whatever scanned it and is never written to; a live placement never
+    /// reads it, since <see cref="Model"/> checks the registry first.
+    /// </summary>
+    public void AttachModel(ProceduralModel model) => _attached = model;
+
+    /// <summary>
+    /// Called on every entity <see cref="StreamingSystem.Reconcile"/> or <see cref="PrefabSystem.LoadLibrary"/>
+    /// adds to the live scene, so a model the registry has since evicted can never be resurrected by a
+    /// stale attachment left over from the scan that loaded this placement.
+    /// </summary>
+    public void ClearAttachment() => _attached = null;
 
     /// <summary>The bound model's network, or an empty one while unbound.</summary>
     public VertexNetwork Network => Model?.Network ?? EmptyNetwork;

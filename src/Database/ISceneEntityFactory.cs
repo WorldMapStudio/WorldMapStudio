@@ -33,6 +33,11 @@ public interface ISceneEntityFactory : IEntityFactory
     /// <paramref name="loaded"/> is the keys of this factory's entities streaming already holds. The
     /// factory must not build those, but must still report them in <see cref="SceneEntityScan.Keys"/>.
     /// Callers with nothing loaded pass an empty set.
+    ///
+    /// <paramref name="publishing"/> says whether this scan's result is headed for
+    /// <see cref="CatalogEntityRegistry"/> (streaming, the prefab library) or belongs only to the
+    /// caller (an offline <see cref="DatabaseSystem.ScanSceneAsync"/> result) — see
+    /// <see cref="SceneEntityScanCatalog.Publishing"/> for what that changes.
     /// </summary>
-    Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded);
+    Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded, bool publishing);
 }

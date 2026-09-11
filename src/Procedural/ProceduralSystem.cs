@@ -48,6 +48,12 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     /// read — see <see cref="Index"/>.</summary>
     public IReadOnlyList<ProceduralModel> Models => Index().Models;
 
+    /// <summary>Record ids of every currently loaded model, off the same published snapshot
+    /// <see cref="Models"/> reads. What a publishing scan (<see cref="StreamingSystem"/>,
+    /// <see cref="PrefabSystem"/>) filters against in <see cref="ProceduralComponentPersistence.LoadAsync"/>
+    /// so it never re-reads an already-resident model's network.</summary>
+    public IReadOnlyCollection<int> LoadedModelIds => Index().ById.Keys;
+
     public IProceduralFunction? Find(string id) =>
         id.Length > 0 && _byId.TryGetValue(id, out IProceduralFunction? function) ? function : null;
 
