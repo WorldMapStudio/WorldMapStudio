@@ -247,6 +247,78 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             Column(nameof(ChunkChangeRecord.LastEditedUtc)));
     }
 
+    // How many rows go into one INSERT … ON DUPLICATE KEY UPDATE here. Two bigint columns, so this
+    // sits above the chunk-change batch size and well under the wire-protocol limit.
+    private const int LongPairRowsPerStatement = 2000;
+
+    /// <summary>
+    /// Batched upsert for a table keyed on one <see langword="long"/> column with one
+    /// <see langword="long"/> value column — the shape a caller-owned ledger record takes when all it
+    /// needs is "assign this value to this key". One INSERT … ON DUPLICATE KEY UPDATE per
+    /// <see cref="LongPairRowsPerStatement"/> rows instead of a read-then-write round trip per pair.
+    /// <typeparamref name="TRecord"/> stays whatever the caller's own entity type is — this storage
+    /// only needs its table and column names, read off <paramref name="context"/>'s model so a naming
+    /// convention cannot desync the hand-written SQL from the record.
+    /// </summary>
+    public async Task UpsertLongPairsAsync<TRecord>(
+        IReadOnlyCollection<(long Key, long Value)> pairs,
+        string keyPropertyName,
+        string valuePropertyName)
+        where TRecord : class
+    {
+        if (pairs.Count == 0)
+        {
+            return;
+        }
+
+        var clock = Stopwatch.StartNew();
+        using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+
+        (string table, string keyColumn, string valueColumn) =
+            LongPairColumns<TRecord>(context, keyPropertyName, valuePropertyName);
+
+        DbConnection connection = context.Database.GetDbConnection();
+        await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+
+        List<(long Key, long Value)> all = pairs as List<(long, long)> ?? pairs.ToList();
+
+        for (int start = 0; start < all.Count; start += LongPairRowsPerStatement)
+        {
+            int count = Math.Min(LongPairRowsPerStatement, all.Count - start);
+            await using DbCommand command = connection.CreateCommand();
+            command.CommandTimeout = 60;
+
+            var sql = new StringBuilder($"INSERT INTO `{table}` (`{keyColumn}`, `{valueColumn}`) VALUES ");
+            for (int i = 0; i < count; i++)
+            {
+                (long key, long value) = all[start + i];
+                sql.Append(i == 0 ? "(" : ",(").Append($"@k{i},@v{i})");
+                AddParameter(command, $"@k{i}", key);
+                AddParameter(command, $"@v{i}", value);
+            }
+
+            sql.Append($" ON DUPLICATE KEY UPDATE `{valueColumn}` = VALUES(`{valueColumn}`)");
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        GD.Print($"[LongPairs] Upserted {all.Count} row(s) into {table} in {clock.ElapsedMilliseconds}ms.");
+    }
+
+    private static (string Table, string Key, string Value) LongPairColumns<TRecord>(
+        EditorDbContext context,
+        string keyPropertyName,
+        string valuePropertyName)
+        where TRecord : class
+    {
+        IEntityType type = context.Model.FindEntityType(typeof(TRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        string Column(string property) => type.FindProperty(property)!.GetColumnName(table)!;
+
+        return (type.GetTableName()!, Column(keyPropertyName), Column(valuePropertyName));
+    }
+
     private static void AddParameter(DbCommand command, string name, object value)
     {
         DbParameter parameter = command.CreateParameter();
@@ -409,21 +481,34 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     /// one is upserted into the chunk table in batches, each buffer encoded the same way
     /// <see cref="PaintImageFactory"/> encodes a staged chunk.
     /// </summary>
-    public async Task UpsertImageChunksAsync(PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks)
+    public Task UpsertImageChunksAsync(PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) =>
+        UpsertImageChunksAsync(new Dictionary<PaintImage, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)>> { [image] = chunks });
+
+    /// <summary>
+    /// The same upsert as the single-image overload, but every database-backed image in
+    /// <paramref name="writes"/> lands through one context, one lock acquisition and one transaction —
+    /// a bulk producer touching several images for what is conceptually one unit of work (a tile, a
+    /// region) pays for one round trip instead of one per image.
+    /// </summary>
+    public async Task UpsertImageChunksAsync(
+        IReadOnlyDictionary<PaintImage, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)>> writes)
     {
-        if (chunks.Count == 0)
+        foreach ((PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) in writes)
+        {
+            if (chunks.Count > 0 && image.IsDiskBacked)
+            {
+                await new ImageDiskStore().WriteChunksAsync(image, chunks, Array.Empty<ImageChunkCoord>()).ConfigureAwait(false);
+            }
+        }
+
+        List<(PaintImage Image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> Chunks)> databaseWrites = writes
+            .Where(pair => pair.Value.Count > 0 && !pair.Key.IsDiskBacked)
+            .Select(pair => (pair.Key, pair.Value))
+            .ToList();
+        if (databaseWrites.Count == 0)
         {
             return;
         }
-
-        if (image.IsDiskBacked)
-        {
-            await new ImageDiskStore().WriteChunksAsync(image, chunks, Array.Empty<ImageChunkCoord>()).ConfigureAwait(false);
-            return;
-        }
-
-        int imageId = image.RecordId
-            ?? throw new InvalidOperationException("Image has no record id — its header must be saved before chunks are written.");
 
         var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
@@ -435,32 +520,41 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         DbConnection connection = context.Database.GetDbConnection();
         await context.Database.OpenConnectionAsync().ConfigureAwait(false);
 
-        for (int start = 0; start < chunks.Count; start += ImageChunkRowsPerStatement)
+        int totalChunks = 0;
+        foreach ((PaintImage image, IReadOnlyList<(ImageChunkCoord Coord, byte[] Pixels)> chunks) in databaseWrites)
         {
-            int count = Math.Min(ImageChunkRowsPerStatement, chunks.Count - start);
-            await using DbCommand command = connection.CreateCommand();
-            command.CommandTimeout = 120;
+            int imageId = image.RecordId
+                ?? throw new InvalidOperationException("Image has no record id — its header must be saved before chunks are written.");
 
-            var sql = new StringBuilder(
-                $"INSERT INTO `{table}` (`{idColumn}`, `{xColumn}`, `{yColumn}`, `{formatColumn}`, `{pixelsColumn}`) VALUES ");
-            for (int i = 0; i < count; i++)
+            for (int start = 0; start < chunks.Count; start += ImageChunkRowsPerStatement)
             {
-                (ImageChunkCoord coord, byte[] pixels) = chunks[start + i];
-                (byte format, byte[] bytes) = ImageChunkCodec.Encode(pixels);
-                sql.Append(i == 0 ? "(" : ",(").Append($"@i{i},@x{i},@y{i},@f{i},@p{i})");
-                AddParameter(command, $"@i{i}", imageId);
-                AddParameter(command, $"@x{i}", coord.X);
-                AddParameter(command, $"@y{i}", coord.Y);
-                AddParameter(command, $"@f{i}", format);
-                AddParameter(command, $"@p{i}", bytes);
+                int count = Math.Min(ImageChunkRowsPerStatement, chunks.Count - start);
+                await using DbCommand command = connection.CreateCommand();
+                command.CommandTimeout = 120;
+
+                var sql = new StringBuilder(
+                    $"INSERT INTO `{table}` (`{idColumn}`, `{xColumn}`, `{yColumn}`, `{formatColumn}`, `{pixelsColumn}`) VALUES ");
+                for (int i = 0; i < count; i++)
+                {
+                    (ImageChunkCoord coord, byte[] pixels) = chunks[start + i];
+                    (byte format, byte[] bytes) = ImageChunkCodec.Encode(pixels);
+                    sql.Append(i == 0 ? "(" : ",(").Append($"@i{i},@x{i},@y{i},@f{i},@p{i})");
+                    AddParameter(command, $"@i{i}", imageId);
+                    AddParameter(command, $"@x{i}", coord.X);
+                    AddParameter(command, $"@y{i}", coord.Y);
+                    AddParameter(command, $"@f{i}", format);
+                    AddParameter(command, $"@p{i}", bytes);
+                }
+
+                sql.Append($" ON DUPLICATE KEY UPDATE `{formatColumn}` = VALUES(`{formatColumn}`), `{pixelsColumn}` = VALUES(`{pixelsColumn}`)");
+                command.CommandText = sql.ToString();
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
 
-            sql.Append($" ON DUPLICATE KEY UPDATE `{formatColumn}` = VALUES(`{formatColumn}`), `{pixelsColumn}` = VALUES(`{pixelsColumn}`)");
-            command.CommandText = sql.ToString();
-            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            totalChunks += chunks.Count;
         }
 
-        GD.Print($"[ImageChunks] Upserted {chunks.Count} chunk(s) for image {imageId} in {clock.ElapsedMilliseconds}ms.");
+        GD.Print($"[ImageChunks] Upserted {totalChunks} chunk(s) across {databaseWrites.Count} image(s) in {clock.ElapsedMilliseconds}ms.");
     }
 
     private static (string Table, string Id, string X, string Y, string Format, string Pixels) ImageChunkColumns(EditorDbContext context)
