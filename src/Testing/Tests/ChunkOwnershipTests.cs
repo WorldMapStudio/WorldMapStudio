@@ -17,9 +17,9 @@ public static class ChunkOwnershipTests
 
         public Aabb LocalBounds { get; } = bounds;
 
-        public bool IsMapSpanning { get; } = mapSpanning;
+        public bool ContributesChunkOwnership { get; } = !mapSpanning;
 
-        public override SceneComponent Clone() => new BoxComponent(LocalBounds, IsMapSpanning);
+        public override SceneComponent Clone() => new BoxComponent(LocalBounds, !ContributesChunkOwnership);
     }
 
     private static readonly Aabb Local = new(new Vector3(-8.0f, -1.0f, -8.0f), new Vector3(16.0f, 2.0f, 16.0f));

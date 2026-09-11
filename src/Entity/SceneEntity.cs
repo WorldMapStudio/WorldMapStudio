@@ -167,8 +167,9 @@ public class SceneEntity : Entity
 
     /// <summary>
     /// The entity's extent for deciding which chunks it occupies: <see cref="EffectiveLocalBounds"/>
-    /// with every <see cref="ISceneBoundsProvider.IsMapSpanning"/> component left out. Null when the
-    /// entity claims nowhere in particular — an entity carrying only a global light, say.
+    /// with every component whose <see cref="ISceneBoundsProvider.ContributesChunkOwnership"/> is false
+    /// left out. Null when the entity claims nowhere in particular — an entity carrying only a global
+    /// light, say.
     ///
     /// Separate from <see cref="LocalBounds"/> because the two answer different questions. Streaming
     /// asks "should this be loaded here", and a global light must answer yes everywhere; chunk
@@ -188,7 +189,7 @@ public class SceneEntity : Entity
             }
 
             Aabb? bounds = null;
-            foreach (ISceneBoundsProvider provider in providers.Where(provider => !provider.IsMapSpanning))
+            foreach (ISceneBoundsProvider provider in providers.Where(provider => provider.ContributesChunkOwnership))
             {
                 bounds = bounds is { } merged ? merged.Merge(provider.LocalBounds) : provider.LocalBounds;
             }
