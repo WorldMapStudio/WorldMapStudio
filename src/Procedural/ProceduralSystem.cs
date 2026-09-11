@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 
 namespace WorldMapStudio;
@@ -27,6 +28,15 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     private sealed record CatalogIndex(int Version, IReadOnlyList<ProceduralModel> Models, Dictionary<int, ProceduralModel> ById);
 
     private CatalogIndex _index = new(-1, [], []);
+
+    // A model id neither the registry nor any attachment resolves, but which is not (yet) proven
+    // dangling — an undo of a delete, a paste, a script-created placement, or an inspector rebind can
+    // all name an id no scan ever loaded. Resolved off-thread in one batch per frame rather than one
+    // query per placement.
+    private readonly HashSet<int> _pendingLoadIds = [];
+    private readonly HashSet<int> _knownMissingIds = [];
+    private Task<IReadOnlyList<CatalogEntity>>? _pendingLoad;
+    private List<int> _pendingLoadBatch = [];
 
     public ProceduralSystem(EditorContext context)
     {
@@ -123,6 +133,105 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
             ? Context.Scene.Entities.Where(entity => entity.Component<ProceduralComponent>()?.ModelId == id)
             : [];
 
+    /// <summary>Whether <paramref name="id"/> is queued or being resolved by a batch <see cref="RequestLoad"/>
+    /// kicked off — <see cref="ReportDangling"/> withholds its warning while this is true, since the id
+    /// may simply not have arrived yet rather than being genuinely gone.</summary>
+    public bool IsLoadPending(int id) => _pendingLoadIds.Contains(id);
+
+    /// <summary>
+    /// Queues a model id a scan did not resolve for the next batch load — the gap left by
+    /// <see cref="CatalogEntityRegistry"/> and every <see cref="ProceduralComponent"/> attachment both
+    /// answering null for it. Called by <see cref="ProceduralComponent.ModelId"/>'s setter and by
+    /// <see cref="ReportDangling"/>. A no-op once the id already resolves, is already queued, or already
+    /// came back empty from an earlier batch — that last case is what keeps a genuinely deleted model
+    /// from being re-queried every frame forever.
+    /// </summary>
+    public void RequestLoad(int id)
+    {
+        if (_knownMissingIds.Contains(id) || FindModel(id) != null)
+        {
+            return;
+        }
+
+        _pendingLoadIds.Add(id);
+    }
+
+    /// <summary>Resolves in-flight and newly queued pending ids. Runs every <see cref="Update"/> tick,
+    /// unconditionally — a pending load must be pumped even on a frame the outer tick guard would
+    /// otherwise skip, since nothing else would ever notice it landed.</summary>
+    private void PumpPendingLoad()
+    {
+        if (_pendingLoad is { IsCompleted: true } completed)
+        {
+            _pendingLoad = null;
+            List<int> batch = _pendingLoadBatch;
+            _pendingLoadBatch = [];
+
+            var found = new HashSet<int>();
+            if (completed.IsCompletedSuccessfully)
+            {
+                foreach (CatalogEntity entity in completed.Result)
+                {
+                    if (entity is ProceduralModel model && model.RecordId is int id)
+                    {
+                        if (!Context.Catalog.Contains(model))
+                        {
+                            Context.Catalog.Add(model);
+                        }
+
+                        found.Add(id);
+                    }
+                }
+            }
+            else
+            {
+                GD.PushError($"[Procedural] Pending model load failed: {completed.Exception?.GetBaseException().Message}");
+            }
+
+            foreach (int id in batch)
+            {
+                _pendingLoadIds.Remove(id);
+                if (!found.Contains(id))
+                {
+                    _knownMissingIds.Add(id);
+                }
+            }
+
+            if (found.Count > 0)
+            {
+                RefreshPlacements(found);
+            }
+        }
+
+        if (_pendingLoad == null && _pendingLoadIds.Count > 0)
+        {
+            _pendingLoadBatch = _pendingLoadIds.ToList();
+            _pendingLoad = LoadPendingBatchAsync(_pendingLoadBatch);
+        }
+    }
+
+    private async Task<IReadOnlyList<CatalogEntity>> LoadPendingBatchAsync(IReadOnlyCollection<int> ids)
+    {
+        EditorStorage storage = Context.Database.Storages.OfType<EditorStorage>().First();
+        ProceduralModelFactory factory = storage.Subsystems.OfType<ProceduralModelFactory>().First();
+
+        using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = storage.CreateContext();
+        return await factory.LoadByIdAsync(context, ids).ConfigureAwait(false);
+    }
+
+    private void RefreshPlacements(HashSet<int> modelIds)
+    {
+        foreach (SceneEntity entity in Context.Scene.Entities)
+        {
+            if (entity.Component<ProceduralComponent>() is { ModelId: int id } component
+                && modelIds.Contains(id) && entity.IsRepresented)
+            {
+                entity.RefreshRepresentation();
+            }
+        }
+    }
+
     // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
     // registered catalog type before anything that resolves against one.
     float IWorldParticipant.LoadPriority => 3f;
@@ -141,6 +250,10 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
 
         _lastUpdateTick = (-1, -1, -1);
         _index = new CatalogIndex(-1, [], []);
+        _pendingLoadIds.Clear();
+        _knownMissingIds.Clear();
+        _pendingLoad = null;
+        _pendingLoadBatch = [];
         Version++;
     }
 
@@ -158,6 +271,10 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     /// </summary>
     public void Update()
     {
+        // Pumped unconditionally, ahead of the tick guard below, so a pending load is always polled
+        // regardless of whether anything else changed this frame.
+        PumpPendingLoad();
+
         var tick = (Context.Catalog.Version, Context.Scene.Version, ProceduralModel.RevisionTick);
         if (tick == _lastUpdateTick)
         {
@@ -193,11 +310,20 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
     /// <summary>Surfaces a placement whose <see cref="ProceduralComponent.ModelId"/> no longer
     /// resolves — e.g. the model was removed by an undo, a script, or a failed load — through
     /// <see cref="ProblemSystem"/> rather than throwing. One scope per entity, so a fixed reference
-    /// clears its own report the next time this runs.</summary>
+    /// clears its own report the next time this runs. Withholds the warning while a load for the id is
+    /// pending (see <see cref="RequestLoad"/>) — reported early would be a false positive for a
+    /// placement that only hasn't heard back yet.</summary>
     private void ReportDangling(SceneEntity entity, ProceduralComponent component)
     {
         string scope = $"procedural-mesh:{entity.Id.Value}";
         if (component.ModelId is not int id || component.Model != null)
+        {
+            Context.Problems.Replace(scope, []);
+            return;
+        }
+
+        RequestLoad(id);
+        if (IsLoadPending(id))
         {
             Context.Problems.Replace(scope, []);
             return;
