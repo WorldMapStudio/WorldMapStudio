@@ -21,6 +21,11 @@ public sealed partial class AssetSystem : ISubsystemHost
     private readonly object _modelLock = new();
     private readonly Dictionary<string, ModelAsset> _modelCache = new();
     private readonly Dictionary<string, Task<ModelAsset?>> _pendingModelLoads = new();
+
+    /// <summary>Paths that no loader could produce a model for. Cached alongside the successes so a
+    /// caller that asks again every rebuild costs one dictionary lookup instead of another walk over
+    /// every loader and every enabled source.</summary>
+    private readonly HashSet<string> _missingModels = new();
     private int _modelCacheGeneration;
 
     private readonly object _assetIndexLock = new();
@@ -258,6 +263,11 @@ public sealed partial class AssetSystem : ISubsystemHost
             {
                 return cached;
             }
+
+            if (_missingModels.Contains(path))
+            {
+                return null;
+            }
         }
 
         foreach (IModelLoader loader in ModelLoaders.Where(loader => loader.CanLoad(path)))
@@ -268,7 +278,7 @@ public sealed partial class AssetSystem : ISubsystemHost
             }
         }
 
-        return null;
+        return Cache(path, (ModelAsset?)null);
     }
 
     public ModelAsset? LoadModelAsset(AssetRef asset) =>
@@ -289,6 +299,13 @@ public sealed partial class AssetSystem : ISubsystemHost
             if (_modelCache.TryGetValue(path, out ModelAsset? cached))
             {
                 return Task.FromResult<ModelAsset?>(cached);
+            }
+
+            // A completed task, so a caller polling with IsCompletedSuccessfully settles on "no model"
+            // instead of scheduling a fresh load for a path already known to have none.
+            if (_missingModels.Contains(path))
+            {
+                return Task.FromResult<ModelAsset?>(null);
             }
 
             if (_pendingModelLoads.TryGetValue(path, out Task<ModelAsset?>? pending))
@@ -315,6 +332,7 @@ public sealed partial class AssetSystem : ISubsystemHost
         {
             _modelCache.Clear();
             _pendingModelLoads.Clear();
+            _missingModels.Clear();
             _modelCacheGeneration++;
         }
 
@@ -373,16 +391,20 @@ public sealed partial class AssetSystem : ISubsystemHost
 
     private ModelAsset? Cache(string key, ModelAsset? model, int? generation = null)
     {
-        if (model != null)
+        lock (_modelLock)
         {
-            lock (_modelLock)
+            if (generation.HasValue && generation.Value != _modelCacheGeneration)
             {
-                if (generation.HasValue && generation.Value != _modelCacheGeneration)
-                {
-                    return model;
-                }
+                return model;
+            }
 
+            if (model != null)
+            {
                 _modelCache[key] = model;
+            }
+            else
+            {
+                _missingModels.Add(key);
             }
         }
 
