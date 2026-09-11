@@ -194,6 +194,13 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     private IEnumerable<Type> CatalogEntityTypes() =>
         Storages.SelectMany(storage => storage.CatalogFactories).Select(factory => factory.EntityType).Distinct();
 
+    /// <summary>Every distinct <see cref="ILazyCatalogEntityFactory.EntityType"/> registered across
+    /// every storage. A lazy factory never bulk-loads, so this plays no part in
+    /// <see cref="IWorldParticipant.LoadWorld(PhaseTimings)"/> — but whatever it opened on demand still
+    /// has to leave <see cref="CatalogEntityRegistry"/> on world unload, same as an eager catalog.</summary>
+    private IEnumerable<Type> LazyCatalogEntityTypes() =>
+        Storages.SelectMany(storage => storage.LazyCatalogFactories).Select(factory => factory.EntityType).Distinct();
+
     // Loads before anything that resolves against a catalog (landscape channels, mesh material
     // presets, ...), and — since WorldLifecycle unloads in exact reverse — unloads only after every
     // other participant's UnloadWorld has already dropped whatever referenced them.
@@ -219,6 +226,11 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     void IWorldParticipant.UnloadWorld()
     {
         foreach (Type entityType in CatalogEntityTypes())
+        {
+            _context.Catalog.RemoveAll(entityType, IsPinned);
+        }
+
+        foreach (Type entityType in LazyCatalogEntityTypes())
         {
             _context.Catalog.RemoveAll(entityType, IsPinned);
         }
