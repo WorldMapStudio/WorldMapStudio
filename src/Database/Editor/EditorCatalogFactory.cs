@@ -17,14 +17,19 @@ public interface IKeyedRecord
 /// staging protocol is identical for every such catalog, so a concrete factory supplies only the
 /// mapping: which table, where the key lives on the entity, and how a row and an entity convert.
 ///
+/// Deliberately has no bulk load — that is what separates <see cref="EditorCatalogFactory{TEntity,TRecord}"/>
+/// (eager) from <see cref="EditorLazyCatalogFactory{TEntity,TRecord}"/> (loaded on demand); this base is
+/// everything both share.
+///
 /// A catalog that spans several tables, or lives in tables we do not control, implements
-/// <see cref="ICatalogEntityFactory"/> directly instead — that freedom is the point of factories.
+/// <see cref="ICatalogEntityFactory"/> or <see cref="ILazyCatalogEntityFactory"/> directly instead —
+/// that freedom is the point of factories.
 /// </summary>
-public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFactory
+public abstract class EditorKeyedCatalogFactory<TEntity, TRecord> : IEntityFactory
     where TEntity : CatalogEntity, IKeyedCatalogEntity
     where TRecord : class, IKeyedRecord, new()
 {
-    protected EditorCatalogFactory(EditorStorage storage)
+    protected EditorKeyedCatalogFactory(EditorStorage storage)
     {
         Storage = storage;
     }
@@ -54,10 +59,20 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
         });
     }
 
-    public async Task<IReadOnlyList<CatalogEntity>> LoadAllAsync()
+    /// <summary>Loads exactly the rows named by <paramref name="ids"/>, mapped the same way a bulk load
+    /// would. Takes the caller's context rather than creating one, so it runs inside whatever
+    /// transaction and reader lock the caller already holds — the scan that resolves a lazily-loaded
+    /// reference this way is already inside both.</summary>
+    public async Task<IReadOnlyList<CatalogEntity>> LoadByIdAsync(EditorDbContext context, IReadOnlyCollection<int> ids)
     {
-        await using EditorDbContext context = Storage.CreateContext();
-        List<TRecord> rows = await context.Set<TRecord>().AsNoTracking().ToListAsync().ConfigureAwait(false);
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        List<TRecord> rows = await context.Set<TRecord>().AsNoTracking()
+            .Where(row => ids.Contains(row.Id)).ToListAsync().ConfigureAwait(false);
+
         return rows.Select(row =>
         {
             TEntity entity = ToEntity(row);
@@ -66,6 +81,8 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
         }).ToList();
     }
 
+    /// <summary>The highest row id stored for this type, or 0 if none. What
+    /// <see cref="CatalogEntityRegistry.AssignId{TEntity}"/> seeds its high-water mark from.</summary>
     public async Task<int> MaxRecordIdAsync()
     {
         await using EditorDbContext context = Storage.CreateContext();
@@ -108,4 +125,44 @@ public abstract class EditorCatalogFactory<TEntity, TRecord> : ICatalogEntityFac
     protected abstract TEntity ToEntity(TRecord record);
 
     protected abstract void WriteRecord(TEntity entity, TRecord record);
+}
+
+/// <summary>
+/// A <see cref="EditorKeyedCatalogFactory{TEntity,TRecord}"/> whose table is small enough to load
+/// whole. Every catalog that used to derive directly from the combined base keeps deriving from this
+/// one instead — the split only matters to a catalog that chooses <see cref="EditorLazyCatalogFactory{TEntity,TRecord}"/>.
+/// </summary>
+public abstract class EditorCatalogFactory<TEntity, TRecord> : EditorKeyedCatalogFactory<TEntity, TRecord>, ICatalogEntityFactory
+    where TEntity : CatalogEntity, IKeyedCatalogEntity
+    where TRecord : class, IKeyedRecord, new()
+{
+    protected EditorCatalogFactory(EditorStorage storage) : base(storage)
+    {
+    }
+
+    public async Task<IReadOnlyList<CatalogEntity>> LoadAllAsync()
+    {
+        await using EditorDbContext context = Storage.CreateContext();
+        List<TRecord> rows = await context.Set<TRecord>().AsNoTracking().ToListAsync().ConfigureAwait(false);
+        return rows.Select(row =>
+        {
+            TEntity entity = ToEntity(row);
+            entity.IsSaved = true;
+            return (CatalogEntity)entity;
+        }).ToList();
+    }
+}
+
+/// <summary>
+/// A <see cref="EditorKeyedCatalogFactory{TEntity,TRecord}"/> for a table too large to load whole. Adds
+/// nothing over the shared base but the marker interface — see <see cref="ILazyCatalogEntityFactory"/>
+/// for why "load everything up front" deliberately has no equivalent here.
+/// </summary>
+public abstract class EditorLazyCatalogFactory<TEntity, TRecord> : EditorKeyedCatalogFactory<TEntity, TRecord>, ILazyCatalogEntityFactory
+    where TEntity : CatalogEntity, IKeyedCatalogEntity
+    where TRecord : class, IKeyedRecord, new()
+{
+    protected EditorLazyCatalogFactory(EditorStorage storage) : base(storage)
+    {
+    }
 }
