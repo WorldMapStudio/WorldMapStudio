@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -25,11 +26,14 @@ public sealed class OutlineWindow : Window
 
     private readonly List<SceneEntity> _listed = [];
     private readonly HashSet<SceneEntity> _visible = [];
+    private readonly HashSet<SceneEntity> _keep = [];
     private readonly List<(SceneEntity Entity, int Depth)> _rows = [];
     private int _listedVersion = -1;
     private int _rowsListedVersion = -1;
     private int _rowsHierarchyVersion = -1;
     private bool _rowsDirty = true;
+    private string _filter = string.Empty;
+    private string[] _filterTokens = [];
 
     public OutlineWindow(WindowManager manager)
         : base("Outline", defaultSize: new Vector2(240, 400))
@@ -41,6 +45,8 @@ public sealed class OutlineWindow : Window
 
     protected override void DrawContent()
     {
+        DrawFilter();
+
         IReadOnlyList<SceneEntity> entities = Listed();
         if (entities.Count == 0)
         {
@@ -49,6 +55,12 @@ public sealed class OutlineWindow : Window
         }
 
         Flatten();
+
+        if (_rows.Count == 0)
+        {
+            ImGui.TextDisabled("Nothing matches the filter.");
+            return;
+        }
 
         // Rows are flattened first and drawn through a clipper rather than recursed into directly:
         // ImGui pays a tree node's per-item cost whether or not the row is on screen, and an imported
@@ -70,6 +82,16 @@ public sealed class OutlineWindow : Window
         }
 
         DrawRootDropTarget();
+    }
+
+    private void DrawFilter()
+    {
+        ImGui.SetNextItemWidth(-1.0f);
+        if (ImGui.InputTextWithHint("##filter", "Filter by name...", ref _filter, 128))
+        {
+            _filterTokens = _filter.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            _rowsDirty = true;
+        }
     }
 
     // What the outline lists, rebuilt only when the registry says its membership moved — neither what
@@ -102,7 +124,7 @@ public sealed class OutlineWindow : Window
     // what is on screen, so at a real view distance rewalking it per frame costs more than drawing the
     // tree ever did. Only three things can change the answer — what is loaded (the registry version),
     // how entities are parented (the hierarchy version) and which nodes the user has folded open
-    // (_rowsDirty, set by DrawEntity when a node toggles).
+    // (_rowsDirty, set when a node toggles or the filter text changes).
     private void Flatten()
     {
         if (!_rowsDirty && _rowsListedVersion == _listedVersion && _rowsHierarchyVersion == SceneEntity.HierarchyVersion)
@@ -115,6 +137,21 @@ public sealed class OutlineWindow : Window
         _rowsHierarchyVersion = SceneEntity.HierarchyVersion;
 
         _rows.Clear();
+
+        if (_filterTokens.Length > 0)
+        {
+            BuildKeepSet();
+            foreach (SceneEntity entity in _listed)
+            {
+                if (_keep.Contains(entity) && (entity.Parent == null || !_visible.Contains(entity.Parent)))
+                {
+                    FlattenFiltered(entity, 0);
+                }
+            }
+
+            return;
+        }
+
         foreach (SceneEntity entity in _listed)
         {
             // A listed entity is either a root here or reached below as some visible parent's child,
@@ -144,6 +181,64 @@ public sealed class OutlineWindow : Window
         }
     }
 
+    // Every match plus its visible ancestors, so a filtered tree still shows where a match lives
+    // instead of just the leaf that matched.
+    private void BuildKeepSet()
+    {
+        _keep.Clear();
+        foreach (SceneEntity entity in _listed)
+        {
+            if (!MatchesFilter(entity))
+            {
+                continue;
+            }
+
+            for (SceneEntity? current = entity; current != null && _visible.Contains(current) && _keep.Add(current); current = current.Parent)
+            {
+            }
+        }
+    }
+
+    private bool MatchesFilter(SceneEntity entity)
+    {
+        foreach (string token in _filterTokens)
+        {
+            if (entity.DisplayName.IndexOf(token, StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    // Filtered rows always descend into kept children regardless of fold state — the filter's whole
+    // point is to surface matches the user hasn't expanded to yet.
+    private void FlattenFiltered(SceneEntity entity, int depth)
+    {
+        _rows.Add((entity, depth));
+        foreach (SceneEntity child in entity.Children)
+        {
+            if (_keep.Contains(child))
+            {
+                FlattenFiltered(child, depth + 1);
+            }
+        }
+    }
+
+    private bool HasKeptChildren(SceneEntity entity)
+    {
+        foreach (SceneEntity child in entity.Children)
+        {
+            if (_keep.Contains(child))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private void DrawEntity(SceneEntity entity, int depth)
     {
         // Depth is drawn as an explicit indent, and the node pushes neither an id nor an indent of its
@@ -156,10 +251,17 @@ public sealed class OutlineWindow : Window
             ImGui.Indent(indent);
         }
 
+        bool filtering = _filterTokens.Length > 0;
+        bool hasChildren = filtering ? HasKeptChildren(entity) : HasVisibleChildren(entity);
+        if (filtering && hasChildren)
+        {
+            ImGui.SetNextItemOpen(true, ImGuiCond.Always);
+        }
+
         ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags.OpenOnArrow
             | ImGuiTreeNodeFlags.SpanAvailWidth
             | ImGuiTreeNodeFlags.NoTreePushOnOpen
-            | (HasVisibleChildren(entity) ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.Leaf)
+            | (hasChildren ? ImGuiTreeNodeFlags.DefaultOpen : ImGuiTreeNodeFlags.Leaf)
             | (_selection.IsSelected(entity) ? ImGuiTreeNodeFlags.Selected : ImGuiTreeNodeFlags.None);
 
         ImGui.TreeNodeEx(Label(entity), flags);
