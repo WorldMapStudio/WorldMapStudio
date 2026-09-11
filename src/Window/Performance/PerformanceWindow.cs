@@ -82,6 +82,28 @@ public sealed class PerformanceWindow : Window
         DrawRenderStats();
         ImGui.Separator();
 
+        if (ImGui.BeginTabBar("PerformanceTabs"))
+        {
+            DrawTab("Trace", DrawTraceTab);
+            DrawTab("Last Load", DrawLastLoadTab);
+            ImGui.EndTabBar();
+        }
+    }
+
+    private static void DrawTab(string label, Action draw)
+    {
+        if (!ImGui.BeginTabItem(label))
+        {
+            return;
+        }
+
+        ImGui.Spacing();
+        draw();
+        ImGui.EndTabItem();
+    }
+
+    private void DrawTraceTab()
+    {
         DrawDiagnosticLog();
         ImGui.Separator();
 
@@ -94,6 +116,35 @@ public sealed class PerformanceWindow : Window
         DrawTraceControls();
         DrawTraceStatus();
     }
+
+    // Startup and every world reload run the same load ("Loading Catalogs" and the rest), off any
+    // trace or the SQL/scan log toggle above — this is the one place that answers "what took so long"
+    // without having to reproduce it under a trace first.
+    private static void DrawLastLoadTab()
+    {
+        if (WorldLifecycle.LastLoad is not { } report)
+        {
+            ImGui.TextColored(MutedColor, "No world load recorded yet this session.");
+            return;
+        }
+
+        TimeSpan ago = DateTime.UtcNow - report.CompletedUtc;
+        ImGui.TextColored(OkColor, $"{report.WallSeconds:F1}s wall, {FormatAgo(ago)} ago");
+        ImGui.Spacing();
+
+        if (ImGui.BeginChild("LastLoadLines", NVector2.Zero, true))
+        {
+            foreach (string line in report.Lines)
+            {
+                ImGui.TextUnformatted(line);
+            }
+        }
+
+        ImGui.EndChild();
+    }
+
+    private static string FormatAgo(TimeSpan ago) =>
+        ago.TotalSeconds < 1.0 ? "just now" : ago.TotalMinutes < 1.0 ? $"{ago.TotalSeconds:F0}s" : $"{ago.TotalMinutes:F0}m";
 
     // These come from Godot's own RenderingServer accounting, not a dotnet-trace capture — so unlike
     // CPU sampling, they see cost that lands on the native rendering thread (e.g. draw submission for
