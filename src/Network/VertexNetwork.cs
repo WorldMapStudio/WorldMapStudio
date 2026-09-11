@@ -825,6 +825,59 @@ public sealed class VertexNetwork
 
     public bool HasBranches() => BuildAdjacency().Values.Any(neighbours => neighbours.Count > 2);
 
+    /// <summary>Every vertex of degree 1 — the open ends of an unbranched chain. Empty for a closed
+    /// loop, which has none.</summary>
+    public IReadOnlyList<int> Endpoints()
+    {
+        Dictionary<int, List<int>> adjacency = BuildAdjacency();
+        return _vertices.Where(vertex => adjacency[vertex.Id].Count == 1).Select(vertex => vertex.Id).ToList();
+    }
+
+    /// <summary>
+    /// Walks the single unbranched chain (or closed loop) this network forms, starting at
+    /// <paramref name="startId"/> and stepping first toward <paramref name="secondId"/>. Null unless the
+    /// network is exactly one connected, unbranched run of edges — <see cref="ConnectedGraphCount"/> is
+    /// 1 and <see cref="HasBranches"/> is false — containing both ids joined by an edge; the same walk
+    /// serves an open chain (stops at the far endpoint) and a closed loop (stops back at
+    /// <paramref name="startId"/>, not repeated in the result).
+    /// </summary>
+    public IReadOnlyList<int>? OrderedChainFrom(int startId, int secondId)
+    {
+        if (startId == secondId || Vertex(startId) == null || Vertex(secondId) == null || !HasEdge(startId, secondId))
+        {
+            return null;
+        }
+
+        if (ConnectedGraphCount() != 1 || HasBranches())
+        {
+            return null;
+        }
+
+        Dictionary<int, List<int>> adjacency = BuildAdjacency();
+        var order = new List<int> { startId };
+        int previous = startId;
+        int current = secondId;
+        while (true)
+        {
+            order.Add(current);
+            if (current == startId)
+            {
+                order.RemoveAt(order.Count - 1);
+                return order;
+            }
+
+            List<int> neighbours = adjacency[current];
+            if (neighbours.Count == 1)
+            {
+                return order;
+            }
+
+            int next = neighbours[0] == previous ? neighbours[1] : neighbours[0];
+            previous = current;
+            current = next;
+        }
+    }
+
     /// <summary>Checks this network's topology against a consumer's requirements — e.g. a procedural
     /// mesh function that only knows how to build along a single, unbranched run of edges.</summary>
     public IReadOnlyList<string> ValidateFor(string displayName, NetworkCapabilities capabilities)
