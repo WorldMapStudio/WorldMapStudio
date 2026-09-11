@@ -33,6 +33,11 @@ public sealed class BatchRun
     /// while the run writes it from a worker.</summary>
     public BatchStatus Status() => _session.Status();
 
+    /// <summary>Whether any phase has been measured yet — cheap enough to poll every frame, unlike
+    /// <see cref="Timings"/>, which sorts and formats the whole table under the same lock the run's
+    /// worker threads take to record a phase.</summary>
+    public bool HasTimings => !_session.Timings.IsEmpty;
+
     /// <summary>Where this run's wall clock went, as log-ready lines. Readable while the run is still
     /// going, so a multi-minute batch can be asked what it is spending its time on without waiting for
     /// it to finish.</summary>

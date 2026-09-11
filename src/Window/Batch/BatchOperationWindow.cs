@@ -21,6 +21,12 @@ public sealed class BatchOperationWindow : Window
 
     private const string ProgressPopupId = "Batch Progress";
 
+    /// <summary>How often per-frame UI work that is otherwise cheap to skip — re-checking settings for
+    /// a change, re-formatting the phase timing table — actually runs. Both are user- or
+    /// worker-paced, not frame-paced, so a sub-second delay before either is reflected is
+    /// imperceptible.</summary>
+    private static readonly TimeSpan UiThrottleInterval = TimeSpan.FromMilliseconds(500.0);
+
     private static readonly NVector4 FaultedColor = new(1.0f, 0.45f, 0.40f, 1.0f);
     private static readonly NVector4 CompletedColor = new(0.42f, 0.85f, 0.46f, 1.0f);
     private static readonly NVector4 MutedColor = new(0.60f, 0.60f, 0.60f, 1.0f);
@@ -30,6 +36,7 @@ public sealed class BatchOperationWindow : Window
     private string? _selectedId;
     private string _lastSavedSettingsJson = "";
     private string? _lastSavedSettingsId;
+    private DateTime _lastSettingsCheckUtc;
 
     private BatchRun? _running;
     private bool _popupOpenRequested;
@@ -148,9 +155,20 @@ public sealed class BatchOperationWindow : Window
     }
 
     /// <summary>Writes the operation's fields back to <see cref="BatchState"/> when they actually
-    /// change, rather than once per frame.</summary>
+    /// change, rather than once per frame. Checked at most twice a second rather than every frame — a
+    /// settings edit is user-input driven, so the delay before it is noticed here is imperceptible, and
+    /// this is what keeps <see cref="IBatchOperation.SaveSettings"/> from rebuilding a fresh JSON tree
+    /// every frame just to compare it against the last one.</summary>
     private void PersistSettingsIfChanged(IBatchOperation operation)
     {
+        DateTime now = DateTime.UtcNow;
+        if (_lastSavedSettingsId == operation.Id && now - _lastSettingsCheckUtc < UiThrottleInterval)
+        {
+            return;
+        }
+
+        _lastSettingsCheckUtc = now;
+
         string json = operation.SaveSettings().ToJsonString();
         if (_lastSavedSettingsId == operation.Id && json == _lastSavedSettingsJson)
         {
@@ -340,12 +358,18 @@ public sealed class BatchOperationWindow : Window
         ImGui.ProgressBar(fraction, new NVector2(-1.0f, 0.0f), overlay);
     }
 
+    private IReadOnlyList<string> _cachedTimingLines = [];
+    private long? _cachedTimingsRunId;
+    private DateTime _cachedTimingsAtUtc;
+
     /// <summary>The run's phase breakdown, live. Collapsed by default — it answers "why is this taking
-    /// so long", which is a question only asked once a run is already long.</summary>
-    private static void DrawTimings(BatchRun run)
+    /// so long", which is a question only asked once a run is already long. <see cref="BatchRun.Timings"/>
+    /// sorts and formats the whole table under the same lock the run's worker threads take to record a
+    /// phase, so it is only called while this section is actually expanded, and then at most twice a
+    /// second rather than once a frame.</summary>
+    private void DrawTimings(BatchRun run)
     {
-        IReadOnlyList<string> lines = run.Timings();
-        if (lines.Count == 0)
+        if (!run.HasTimings)
         {
             return;
         }
@@ -355,7 +379,15 @@ public sealed class BatchOperationWindow : Window
             return;
         }
 
-        foreach (string line in lines)
+        DateTime now = DateTime.UtcNow;
+        if (_cachedTimingsRunId != run.Id || now - _cachedTimingsAtUtc >= UiThrottleInterval)
+        {
+            _cachedTimingLines = run.Timings();
+            _cachedTimingsRunId = run.Id;
+            _cachedTimingsAtUtc = now;
+        }
+
+        foreach (string line in _cachedTimingLines)
         {
             ImGui.TextUnformatted(line);
         }
