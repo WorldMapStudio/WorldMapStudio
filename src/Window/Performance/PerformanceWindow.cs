@@ -158,6 +158,10 @@ public sealed class PerformanceWindow : Window
         double objects = Performance.GetMonitor(Performance.Monitor.RenderTotalObjectsInFrame);
         double primitives = Performance.GetMonitor(Performance.Monitor.RenderTotalPrimitivesInFrame);
         ImGui.Text($"Draw calls: {drawCalls:F0}   Objects: {objects:F0}   Primitives: {primitives:F0}");
+
+        double videoMemMb = Performance.GetMonitor(Performance.Monitor.RenderVideoMemUsed) / (1024.0 * 1024.0);
+        double ramMb = System.Environment.WorkingSet / (1024.0 * 1024.0);
+        ImGui.Text($"Video memory: {videoMemMb:F1} MB   RAM: {ramMb:F1} MB");
     }
 
     private void DrawToolStatus()
