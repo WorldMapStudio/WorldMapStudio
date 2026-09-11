@@ -64,6 +64,12 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 {
     private readonly EditorStorage _storage;
 
+    // Set by PrepareBatchAsync, consumed by Stage: a high-water mark handed out sequentially to every
+    // new entity in the current commit, so Pomelo can batch their inserts into one multi-row statement
+    // instead of one INSERT + SELECT LAST_INSERT_ID() per row (see .local/adt-import-perf.md §6.3 — a
+    // client-assigned, ValueGeneratedNever key is what makes EF's own batching kick in).
+    private int _nextId;
+
     public SceneEntityFactory(EditorStorage storage)
     {
         _storage = storage;
@@ -81,11 +87,27 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         {
             entity.ToTable("wms_scene_entities");
             entity.HasKey(record => record.Id);
+            entity.Property(record => record.Id).ValueGeneratedNever();
             entity.HasOne(record => record.Parent)
                 .WithMany()
                 .HasForeignKey(record => record.ParentId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
+    }
+
+    public async Task PrepareBatchAsync(DbContext context, IReadOnlyList<IEntity> saves)
+    {
+        bool needsIds = saves.Any(entity => Handles(entity) && ((SceneEntity)entity).RecordId is null);
+        if (!needsIds)
+        {
+            return;
+        }
+
+        var db = (EditorDbContext)context;
+        _nextId = await db.SceneEntities.AsNoTracking()
+            .Select(record => (int?)record.Id)
+            .MaxAsync()
+            .ConfigureAwait(false) ?? 0;
     }
 
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
@@ -157,6 +179,14 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
         if (scene.RecordId is int id)
         {
             record.Id = id;
+        }
+        else
+        {
+            // Client-assigned, like the record.Id ValueGeneratedNever() above expects — see
+            // PrepareBatchAsync. scene.RecordId itself stays null until the write-back below runs:
+            // component persistences key off it to decide new-vs-existing (EditorComponentPersistenceHelpers.StageRow),
+            // and setting it early would flip them onto their slower existing-row path.
+            record.Id = ++_nextId;
         }
 
         WriteRecord(scene, record);

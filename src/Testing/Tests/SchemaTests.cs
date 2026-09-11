@@ -35,7 +35,9 @@ public static class SchemaTests
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.Column("ParentId")?.Nullable == true, "ParentId should be nullable for root entities");
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
-        Assert.IsTrue(entities.Column("Id")!.AutoIncrement, "Id should be detected as auto-increment");
+        // Id is ValueGeneratedNever(): SceneEntityFactory assigns it client-side (a MAX(Id)-seeded
+        // high-water mark) so Pomelo can batch inserts, even though the live column stays AUTO_INCREMENT.
+        Assert.IsFalse(entities.Column("Id")!.AutoIncrement, "Id is client-assigned, not database-generated");
     }
 
     [EditorTest(Category = "Schema")]

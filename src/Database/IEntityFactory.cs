@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
@@ -26,6 +28,15 @@ public interface IEntityFactory : ISubsystem
 
     /// <summary>Stages a delete of the entity, or does nothing if it was never persisted.</summary>
     void StageDelete(DbContext context, IEntity entity);
+
+    /// <summary>
+    /// Runs once per commit, before any of this factory's entities are staged, for a batch-wide fact
+    /// a factory needs — e.g. a high-water mark for ids it will hand out itself in <see cref="Stage"/>,
+    /// fetched once instead of once per entity. <paramref name="saves"/> is every entity in the commit,
+    /// not just this factory's; a factory that needs this filters with <see cref="Handles"/> itself.
+    /// Most factories don't need this.
+    /// </summary>
+    Task PrepareBatchAsync(DbContext context, IReadOnlyList<IEntity> saves) => Task.CompletedTask;
 
     /// <summary>
     /// Declares this factory's table(s) into the storage's EF model, for a factory whose storage uses

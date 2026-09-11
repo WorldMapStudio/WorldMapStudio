@@ -213,6 +213,11 @@ public abstract class Storage : ISubsystem
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using DbContext context = createContext();
 
+        foreach (IEntityFactory factory in saves.Select(FactoryFor).OfType<IEntityFactory>().Distinct())
+        {
+            await factory.PrepareBatchAsync(context, saves).ConfigureAwait(false);
+        }
+
         var writeBacks = new List<Action>();
         foreach (IEntity entity in saves)
         {
