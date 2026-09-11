@@ -32,6 +32,8 @@ internal sealed class BatchStatusHolder
     private string _step = "";
     private float? _progress;
     private string _message = "";
+    private string[] _logSnapshot = [];
+    private bool _logDirty;
 
     public void Step(string step)
     {
@@ -66,14 +68,26 @@ internal sealed class BatchStatusHolder
             {
                 _log.Dequeue();
             }
+
+            _logDirty = true;
         }
     }
 
+    /// <summary>Rebuilds the log array only when <see cref="Log"/> actually added a line since the last
+    /// call — a batch logs a handful of times a second at most, far slower than the every-frame poll
+    /// this feeds, so most calls hand back the same array rather than paying for a fresh
+    /// <see cref="LogCapacity"/>-element copy every frame.</summary>
     public BatchStatus Snapshot()
     {
         lock (_lock)
         {
-            return new BatchStatus(_step, _progress, _message, _log.ToArray());
+            if (_logDirty)
+            {
+                _logSnapshot = _log.ToArray();
+                _logDirty = false;
+            }
+
+            return new BatchStatus(_step, _progress, _message, _logSnapshot);
         }
     }
 }
