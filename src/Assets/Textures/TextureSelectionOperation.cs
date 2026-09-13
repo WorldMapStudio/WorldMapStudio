@@ -14,8 +14,6 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
 
     private const float CardWidth = 160.0f;
     private const float ThumbnailSize = 128.0f;
-    private const float LabelHeight = 44.0f;
-    private const float Padding = 6.0f;
 
     private string _filter = "";
     private List<AssetRef>? _textures;
@@ -94,105 +92,21 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
     private bool DrawTextureGrid(TextureSelectionContext context)
     {
         List<AssetRef> visible = FilteredTextures().ToList();
-        bool clicked = false;
+        AssetCardGrid.CardClick? click = AssetCardGrid.Draw(
+            "TextureAssetGrid",
+            BodySize,
+            visible,
+            CardWidth,
+            ThumbnailSize,
+            texture => texture.Path == context.CurrentPath,
+            (texture, min, max) => DrawPreview(context, texture, min, max));
 
-        ImGui.BeginChild("TextureAssetGrid", BodySize, true, ImGuiWindowFlags.None);
-        if (visible.Count == 0)
-        {
-            ImGui.TextDisabled("No textures match the filter.");
-            ImGui.EndChild();
-            return false;
-        }
-
-        float available = ImGui.GetContentRegionAvail().X;
-        float spacing = ImGui.GetStyle().ItemSpacing.X;
-        float cardHeight = ThumbnailSize + LabelHeight + Padding * 2.0f;
-        float rowStep = cardHeight + spacing;
-        int columns = System.Math.Max(1, (int)((available + spacing) / (CardWidth + spacing)));
-        int rows = (visible.Count + columns - 1) / columns;
-
-        float startY = ImGui.GetCursorPosY();
-        float scrollY = ImGui.GetScrollY();
-        float windowHeight = ImGui.GetWindowHeight();
-        int firstRow = System.Math.Clamp((int)(scrollY / rowStep), 0, rows - 1);
-        int lastRow = System.Math.Clamp((int)((scrollY + windowHeight) / rowStep) + 1, firstRow, rows - 1);
-
-        ImGui.SetCursorPosY(startY + firstRow * rowStep);
-        for (int row = firstRow; row <= lastRow; row++)
-        {
-            for (int column = 0; column < columns; column++)
-            {
-                int index = row * columns + column;
-                if (index >= visible.Count)
-                {
-                    break;
-                }
-
-                if (column > 0)
-                {
-                    ImGui.SameLine();
-                }
-
-                clicked |= DrawTextureCard(context, visible[index]);
-            }
-        }
-
-        ImGui.SetCursorPosY(startY + rows * rowStep);
-        ImGui.EndChild();
-        return clicked;
-    }
-
-    private bool DrawTextureCard(TextureSelectionContext context, AssetRef texture)
-    {
-        var size = new Vector2(CardWidth, ThumbnailSize + LabelHeight + Padding * 2.0f);
-        Vector2 origin = ImGui.GetCursorScreenPos();
-
-        ImGui.PushID(texture.Path);
-        bool clicked = ImGui.InvisibleButton("##texture", size);
-        bool hovered = ImGui.IsItemHovered();
-        bool selected = texture.Path == context.CurrentPath;
-
-        ImDrawListPtr draw = ImGui.GetWindowDrawList();
-        draw.AddRectFilled(origin, origin + size, ImGui.GetColorU32(hovered ? ImGuiCol.FrameBgHovered : ImGuiCol.FrameBg), 4.0f);
-
-        float thumbnailX = origin.X + (CardWidth - ThumbnailSize) * 0.5f;
-        Vector2 thumbnailMin = new(thumbnailX, origin.Y + Padding);
-        Vector2 thumbnailMax = thumbnailMin + new Vector2(ThumbnailSize, ThumbnailSize);
-        DrawPreview(context, texture, thumbnailMin, thumbnailMax);
-
-        draw.AddRect(
-            origin,
-            origin + size,
-            ImGui.GetColorU32(selected ? ImGuiCol.ButtonActive : ImGuiCol.Border),
-            4.0f,
-            ImDrawFlags.None,
-            selected ? 2.0f : 1.0f);
-
-        Vector2 labelMin = new(origin.X + Padding, thumbnailMax.Y + Padding);
-        Vector2 labelMax = new(origin.X + CardWidth - Padding, origin.Y + size.Y);
-        draw.PushClipRect(labelMin, labelMax, true);
-        DrawCenteredText(draw, labelMin, labelMax.X, ImGui.GetColorU32(ImGuiCol.Text), texture.DisplayName);
-        DrawCenteredText(
-            draw,
-            labelMin + new Vector2(0.0f, ImGui.GetTextLineHeight()),
-            labelMax.X,
-            ImGui.GetColorU32(ImGuiCol.TextDisabled),
-            texture.SourceName);
-        draw.PopClipRect();
-
-        if (hovered)
-        {
-            ImGui.SetTooltip(texture.FullPath);
-        }
-
-        ImGui.PopID();
-
-        if (!clicked)
+        if (click == null)
         {
             return false;
         }
 
-        context.Select(texture.Path);
+        context.Select(click.Value.Asset.Path);
         return true;
     }
 
@@ -210,14 +124,6 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         string label = preview.IsCompleted ? "Failed" : "Loading";
         Vector2 textSize = ImGui.CalcTextSize(label);
         draw.AddText((min + max) * 0.5f - textSize * 0.5f, ImGui.GetColorU32(ImGuiCol.TextDisabled), label);
-    }
-
-    private static void DrawCenteredText(ImDrawListPtr draw, Vector2 lineMin, float lineMaxX, uint color, string text)
-    {
-        Vector2 textSize = ImGui.CalcTextSize(text);
-        float available = lineMaxX - lineMin.X;
-        float x = lineMin.X + System.Math.Max(0.0f, (available - textSize.X) * 0.5f);
-        draw.AddText(new Vector2(x, lineMin.Y), color, text);
     }
 
     private Task<Texture2D?> PreviewTask(TextureSelectionContext context, AssetRef texture)
