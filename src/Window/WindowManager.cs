@@ -48,6 +48,12 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
         }
     }
 
+    /// <summary>Opens and focuses the Catalog Browser at <paramref name="catalogName"/>/<paramref name="key"/> —
+    /// what a <see cref="CatalogReferenceField"/> falls back to when drawn somewhere with no
+    /// <c>navigate</c> callback of its own (an inspector window, rather than the browser itself).</summary>
+    public bool OpenCatalogEntry(string catalogName, string key) =>
+        Windows.OfType<CatalogBrowserWindow>().FirstOrDefault()?.Open(catalogName, key) ?? false;
+
     public void Draw()
     {
         foreach (Window window in Windows)

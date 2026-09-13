@@ -196,16 +196,34 @@ public sealed class CatalogBrowserWindow : Window
         _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
     }
 
-    private void Open(ICatalogBrowser catalog, string key)
+    /// <summary>Opens and focuses this window at <paramref name="catalogName"/>/<paramref name="key"/> —
+    /// the entry point a reference field falls back to when it has no <c>navigate</c> callback of its
+    /// own (an inspector window, rather than this browser's own <see cref="DrawFields"/> call). False
+    /// if no such catalog is registered or the key doesn't resolve.</summary>
+    public bool Open(string catalogName, string key)
+    {
+        ICatalogBrowser? catalog = _catalogs.FirstOrDefault(c => c.CatalogName == catalogName);
+        if (catalog is null)
+        {
+            return false;
+        }
+
+        IsOpen = true;
+        ImGui.SetWindowFocus(Title);
+        return Open(catalog, key);
+    }
+
+    private bool Open(ICatalogBrowser catalog, string key)
     {
         CatalogEntity? entity = BlockingWork.Run(() => catalog.OpenAsync(_context, key));
         if (entity is null)
         {
             _status = $"'{key}' not found in {catalog.CatalogName}.";
-            return;
+            return false;
         }
 
         NavigateTo(catalog, entity);
+        return true;
     }
 
     // Deliberately never touches CatalogEntityRegistry. A catalog entity is exactly as much a "real"
