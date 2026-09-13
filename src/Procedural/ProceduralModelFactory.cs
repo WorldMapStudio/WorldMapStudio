@@ -82,7 +82,7 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
             .ToListAsync().ConfigureAwait(false);
 
         return rows.Select(record => new CatalogSearchResult(
-            record.Id.ToString(), $"{record.Id}: {record.Name} ({record.FunctionId})")).ToList();
+            record.Id.ToString(), $"{record.Name} ({record.FunctionId})")).ToList();
     }
 
     public async Task<CatalogEntity?> OpenAsync(EditorContext context, string key)

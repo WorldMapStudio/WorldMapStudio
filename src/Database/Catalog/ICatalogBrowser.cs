@@ -4,9 +4,14 @@ using System.Threading.Tasks;
 
 namespace WorldMapStudio;
 
-/// <summary>One search hit: a string key (whatever <see cref="ICatalogBrowser.OpenAsync"/> takes)
-/// plus a label to show in the results list.</summary>
-public sealed record CatalogSearchResult(string Key, string Label);
+/// <summary>One search hit: a string key (whatever <see cref="ICatalogBrowser.OpenAsync"/> takes) plus
+/// the display text for it (empty when the row has nothing better than its id).</summary>
+public sealed record CatalogSearchResult(string Key, string Text)
+{
+    /// <summary>"key: text", or just the key when <see cref="Text"/> is empty — what the results
+    /// list and the picker popup show.</summary>
+    public string Label => Text.Length == 0 ? Key : $"{Key}: {Text}";
+}
 
 /// <summary>
 /// Makes a catalog browsable in <see cref="CatalogBrowserWindow"/> — one generic "currently editing a
