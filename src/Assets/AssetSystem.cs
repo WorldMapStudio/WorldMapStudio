@@ -22,6 +22,17 @@ public sealed partial class AssetSystem : ISubsystemHost
     private readonly Dictionary<string, ModelAsset> _modelCache = new();
     private readonly Dictionary<string, Task<ModelAsset?>> _pendingModelLoads = new();
 
+    // CPU-side decoded images, never touching the GPU - see LoadImageAsync's own doc comment. Bounded by
+    // estimated byte size rather than entry count: character-section and armor textures are small, but
+    // there are many of them.
+    private const long ImageCacheBudgetBytes = 96L * 1024 * 1024;
+    private const long ResizedImageCacheBudgetBytes = 48L * 1024 * 1024;
+    private readonly object _imageLock = new();
+    private readonly BoundedImageCache<string> _imageCache = new(ImageCacheBudgetBytes);
+    private readonly Dictionary<string, Task<Image?>> _pendingImageLoads = new();
+    private readonly object _resizedImageLock = new();
+    private readonly BoundedImageCache<(string Path, Vector2I Size)> _resizedImageCache = new(ResizedImageCacheBudgetBytes);
+
     /// <summary>Paths that no loader could produce a model for. Cached alongside the successes so a
     /// caller that asks again every rebuild costs one dictionary lookup instead of another walk over
     /// every loader and every enabled source.</summary>
@@ -244,6 +255,212 @@ public sealed partial class AssetSystem : ISubsystemHost
             _textureCache.Remove(path);
             _pendingTextureLoads.Remove(path);
         }
+    }
+
+    /// <summary>
+    /// Seeds the texture cache with an already-built <see cref="Texture2D"/> under <paramref name="path"/>,
+    /// so the next <see cref="LoadTextureAssetAsync(string)"/> for that path resolves synchronously to it
+    /// instead of loading again. The counterpart of <see cref="EvictTexture"/> - for a caller that already
+    /// composited or otherwise built a texture off the main thread's own image cache (see
+    /// <see cref="LoadImageAsync"/>) and wants the ordinary path-typed material pipeline
+    /// (<c>M2Material.Texture</c>) to pick it up with no second load.
+    /// </summary>
+    public void AddTexture(string path, Texture2D texture)
+    {
+        lock (_textureLock)
+        {
+            _textureCache[path] = texture;
+        }
+    }
+
+    /// <summary>
+    /// The decoded CPU-side <see cref="Image"/> a texture loader produced for <paramref name="path"/>,
+    /// from its own path-keyed cache - never goes through <see cref="Texture2D.GetImage"/>, so a caller
+    /// compositing many of these (the plugin's own character texture compositor) can run on any number of
+    /// worker threads without stalling the rendering device the way a GPU readback would. Same
+    /// pending-task de-duplication as <see cref="LoadTextureAssetAsync(string)"/>.
+    ///
+    /// The returned image is shared and cached - callers must not mutate it in place
+    /// (<c>Convert</c>/<c>Resize</c> included); work on <see cref="Image.Duplicate"/> instead, or use
+    /// <see cref="LoadResizedImageAsync"/> which already does this.
+    /// </summary>
+    public Task<Image?> LoadImageAsync(string path)
+    {
+        if (path.Length == 0)
+        {
+            return Task.FromResult<Image?>(null);
+        }
+
+        lock (_imageLock)
+        {
+            if (_imageCache.TryGet(path, out Image? cached))
+            {
+                return Task.FromResult(cached);
+            }
+
+            if (_pendingImageLoads.TryGetValue(path, out Task<Image?>? pending))
+            {
+                return pending;
+            }
+
+            Task<Image?> task = ScheduleImageLoad(path);
+            _pendingImageLoads[path] = task;
+            _ = task.ContinueWith(_ =>
+            {
+                lock (_imageLock)
+                {
+                    _pendingImageLoads.Remove(path);
+                }
+            }, TaskScheduler.Default);
+            return task;
+        }
+    }
+
+    /// <summary>
+    /// The image <see cref="LoadImageAsync"/> would produce for <paramref name="path"/>, converted to
+    /// RGBA8 and resized to <paramref name="size"/>, from a cache keyed by both - the same armor texture
+    /// always lands in the same composited region, so repeated candidates (e.g. every dress-up thumbnail
+    /// for one outfit) don't pay for <see cref="Image.Resize"/> again. The conversion/resize runs on a
+    /// duplicate of the cached raw image, never mutating it; the resized result, once cached, is handed
+    /// out directly since every consumer (<c>Image.BlendRect</c>) only reads from it.
+    /// </summary>
+    public async Task<Image?> LoadResizedImageAsync(string path, Vector2I size)
+    {
+        if (path.Length == 0)
+        {
+            return null;
+        }
+
+        (string, Vector2I) key = (path, size);
+        lock (_resizedImageLock)
+        {
+            if (_resizedImageCache.TryGet(key, out Image? cached))
+            {
+                return cached;
+            }
+        }
+
+        if (await LoadImageAsync(path).ConfigureAwait(false) is not { } source)
+        {
+            return null;
+        }
+
+        Image resized = (Image)source.Duplicate();
+        if (resized.GetFormat() != Image.Format.Rgba8)
+        {
+            resized.Convert(Image.Format.Rgba8);
+        }
+
+        if (resized.GetWidth() != size.X || resized.GetHeight() != size.Y)
+        {
+            resized.Resize(size.X, size.Y);
+        }
+
+        lock (_resizedImageLock)
+        {
+            // A concurrent caller may have raced this one to the same key - both results are equivalent,
+            // so whichever got here first wins rather than overwriting.
+            if (!_resizedImageCache.TryGet(key, out Image? existing))
+            {
+                _resizedImageCache.Set(key, resized);
+                existing = resized;
+            }
+
+            return existing;
+        }
+    }
+
+    private Task<Image?> ScheduleImageLoad(string path)
+    {
+        var completion = new TaskCompletionSource<Image?>();
+        WorkQueue.Schedule("Load Image", async work =>
+        {
+            try
+            {
+                work.Step(path);
+                Image? image = await LoadTextureImageAsync(work, path).ConfigureAwait(false);
+                if (image != null)
+                {
+                    lock (_imageLock)
+                    {
+                        _imageCache.Set(path, image);
+                    }
+                }
+
+                completion.SetResult(image);
+            }
+            catch (System.Exception e)
+            {
+                completion.SetException(e);
+                throw;
+            }
+        });
+        return completion.Task;
+    }
+
+    /// <summary>A path-keyed LRU store of decoded images bounded by estimated byte size rather than entry
+    /// count - see <see cref="AssetSystem"/>'s own image cache fields for why. Not thread-safe on its
+    /// own; every call site takes its own lock around it, the same shape <c>_textureLock</c> already
+    /// establishes for the GPU texture cache.</summary>
+    private sealed class BoundedImageCache<TKey> where TKey : notnull
+    {
+        private readonly long _maxBytes;
+        private readonly Dictionary<TKey, Image> _entries = new();
+        private readonly LinkedList<TKey> _lru = new();
+        private readonly Dictionary<TKey, LinkedListNode<TKey>> _lruNodes = new();
+        private long _bytes;
+
+        public BoundedImageCache(long maxBytes) => _maxBytes = maxBytes;
+
+        public bool TryGet(TKey key, out Image? image)
+        {
+            if (_entries.TryGetValue(key, out image))
+            {
+                Touch(key);
+                return true;
+            }
+
+            return false;
+        }
+
+        public void Set(TKey key, Image image)
+        {
+            if (_entries.TryGetValue(key, out Image? existing))
+            {
+                _bytes -= EstimateBytes(existing);
+            }
+
+            _entries[key] = image;
+            _bytes += EstimateBytes(image);
+            Touch(key);
+            EvictIfNeeded();
+        }
+
+        private void Touch(TKey key)
+        {
+            if (_lruNodes.TryGetValue(key, out LinkedListNode<TKey>? node))
+            {
+                _lru.Remove(node);
+            }
+
+            _lruNodes[key] = _lru.AddFirst(key);
+        }
+
+        private void EvictIfNeeded()
+        {
+            while (_bytes > _maxBytes && _lru.Last != null)
+            {
+                TKey oldest = _lru.Last.Value;
+                _lru.RemoveLast();
+                _lruNodes.Remove(oldest);
+                if (_entries.Remove(oldest, out Image? removed))
+                {
+                    _bytes -= EstimateBytes(removed);
+                }
+            }
+        }
+
+        private static long EstimateBytes(Image image) => (long)image.GetWidth() * image.GetHeight() * 4;
     }
 
     public void ClearTextureCache()
