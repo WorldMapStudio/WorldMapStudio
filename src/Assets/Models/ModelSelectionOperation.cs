@@ -25,14 +25,12 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
     private List<AssetRef>? _filteredSourceModels;
     private string _filteredForFilter = "";
     private ModelPreviewRenderer? _preview;
-    private ModelThumbnailCache? _thumbnails;
     private bool _gridView = true;
     private float _thumbnailSize = 128.0f;
 
     public ModalOperationState Draw(ModelSelectionContext context)
     {
         _preview ??= new ModelPreviewRenderer(context.Assets, context.Materials, context.PreviewOwner);
-        _thumbnails ??= new ModelThumbnailCache(context.Assets, context.Materials, context.PreviewOwner);
         if (_previewPath.Length == 0)
         {
             _previewPath = context.CurrentPath;
@@ -119,8 +117,6 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
     {
         _preview?.Dispose();
         _preview = null;
-        _thumbnails?.Dispose();
-        _thumbnails = null;
         _previewPath = "";
     }
 
@@ -198,7 +194,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         }
 
         RefreshFilteredModels();
-        _thumbnails!.BeginFrame();
+        context.Assets.ModelThumbnails.BeginFrame();
 
         int totalCount = _models.Count;
         if (totalCount > LargeSetThreshold && _filter.Trim().Length < MinFilterLengthForLargeSets)
@@ -206,7 +202,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
             ImGui.BeginChild("ModelAssetGrid", gridSize, true, ImGuiWindowFlags.None);
             ImGui.TextDisabled($"{totalCount} models. Type at least {MinFilterLengthForLargeSets} characters to filter.");
             ImGui.EndChild();
-            _thumbnails.Update();
+            context.Assets.ModelThumbnails.Update();
             return false;
         }
 
@@ -218,9 +214,9 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
             cardWidth,
             _thumbnailSize,
             asset => asset.Path == _previewPath,
-            DrawModelThumbnail);
+            (asset, min, max) => DrawModelThumbnail(context, asset, min, max));
 
-        _thumbnails.Update();
+        context.Assets.ModelThumbnails.Update();
 
         if (click == null)
         {
@@ -237,10 +233,10 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         return true;
     }
 
-    private void DrawModelThumbnail(AssetRef asset, Vector2 min, Vector2 max)
+    private static void DrawModelThumbnail(ModelSelectionContext context, AssetRef asset, Vector2 min, Vector2 max)
     {
         ImDrawListPtr draw = ImGui.GetWindowDrawList();
-        IntPtr textureId = _thumbnails!.TextureId(asset.Path, out bool failed);
+        IntPtr textureId = context.Assets.ModelThumbnails.TextureId(asset.Path, out bool failed);
         if (textureId != IntPtr.Zero)
         {
             draw.AddImage(textureId, min, max);
