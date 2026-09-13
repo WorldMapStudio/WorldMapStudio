@@ -33,7 +33,10 @@ internal sealed class CatalogReferenceField
 
     private readonly CatalogEntityPicker _picker = new();
 
-    public void Draw(EditorContext context, CatalogReference reference, Action<string, string> navigate)
+    /// <paramref name="navigate"/> is null for a site with no browser to hand navigation off to (an
+    /// inspector window, rather than <see cref="CatalogBrowserWindow"/>'s own <c>DrawFields</c> call) —
+    /// Open and New then fall back to opening and focusing the Catalog Browser itself.
+    public void Draw(EditorContext context, CatalogReference reference, Action<string, string>? navigate)
     {
         ICatalogBrowser? target = context.ReferenceLabels.FindCatalog(reference.TargetCatalog);
 
@@ -44,7 +47,7 @@ internal sealed class CatalogReferenceField
             ImGui.SameLine();
             if (ImGui.SmallButton($"Open##{reference.Label}"))
             {
-                navigate(reference.TargetCatalog, reference.Key!);
+                NavigateTo(context, reference.TargetCatalog, reference.Key!, navigate);
             }
         }
 
@@ -101,7 +104,7 @@ internal sealed class CatalogReferenceField
     // wiring that building a linked row otherwise does by hand. Assign is a second, separate undo step
     // on top of Create's own.
     private static void TryCreateAndAssign(EditorContext context, ICatalogBrowser target, CatalogReference reference,
-        Action<string, string> navigate)
+        Action<string, string>? navigate)
     {
         string? key = BlockingWork.Run(() => target.SuggestKeyAsync());
         if (key is null)
@@ -119,6 +122,18 @@ internal sealed class CatalogReferenceField
         }
 
         reference.Assign(key);
-        navigate(reference.TargetCatalog, key);
+        NavigateTo(context, reference.TargetCatalog, key, navigate);
+    }
+
+    private static void NavigateTo(EditorContext context, string catalogName, string key, Action<string, string>? navigate)
+    {
+        if (navigate is not null)
+        {
+            navigate(catalogName, key);
+        }
+        else
+        {
+            context.MenuBarManager.WindowManager.OpenCatalogEntry(catalogName, key);
+        }
     }
 }
