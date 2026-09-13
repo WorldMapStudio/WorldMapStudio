@@ -43,11 +43,12 @@ public sealed class CatalogReferenceLabels
     private readonly Dictionary<string, CatalogCache> _catalogs = new();
 
     // Keyed by entity identity rather than owned by it, so a field-drawing site (a ThinDbcCatalog
-    // subclass instance, typically) can get the same widget back every frame without every
-    // ICatalogBrowser.DrawFields implementation growing its own picker field — see
-    // CatalogFieldDrawing.DrawLink. A ConditionalWeakTable rather than a plain Dictionary so closing an
-    // entity lets it (and its widgets) be collected instead of pinned here forever.
-    private readonly ConditionalWeakTable<CatalogEntity, Dictionary<string, CatalogReferenceField>> _fields = new();
+    // subclass instance, typically, but also a scene-entity inspector — a reference field is as much a
+    // SceneEntity's business as a CatalogEntity's, e.g. CreatureSpawn.TemplateEntry) can get the same
+    // widget back every frame without every DrawFields implementation growing its own picker field —
+    // see CatalogFieldDrawing.DrawLink. A ConditionalWeakTable rather than a plain Dictionary so closing
+    // an entity lets it (and its widgets) be collected instead of pinned here forever.
+    private readonly ConditionalWeakTable<Entity, Dictionary<string, CatalogReferenceField>> _fields = new();
 
     private EditSession? _lastSession;
     private int _lastRevision = -1;
@@ -63,7 +64,7 @@ public sealed class CatalogReferenceLabels
     /// <summary>The persistent <see cref="CatalogReferenceField"/> for one (entity, label) reference
     /// site, created on first use. Persistent because the widget's own picker popup needs to still be
     /// open on the frame after the one that opened it.</summary>
-    internal CatalogReferenceField FieldFor(CatalogEntity entity, string label)
+    internal CatalogReferenceField FieldFor(Entity entity, string label)
     {
         Dictionary<string, CatalogReferenceField> perEntity = _fields.GetValue(entity, _ => new());
         if (!perEntity.TryGetValue(label, out CatalogReferenceField? field))
