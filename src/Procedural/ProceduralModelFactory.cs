@@ -85,6 +85,42 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
             record.Id.ToString(), $"{record.Name} ({record.FunctionId})")).ToList();
     }
 
+    public async Task<IReadOnlyDictionary<string, string>> DescribeAsync(EditorContext context, IReadOnlyCollection<string> keys)
+    {
+        var result = new Dictionary<string, string>();
+        var remaining = new List<int>();
+
+        foreach (string key in keys)
+        {
+            if (!int.TryParse(key, out int id))
+            {
+                continue;
+            }
+
+            if (context.Catalog.OfType<ProceduralModel>().FirstOrDefault(model => model.RecordId == id) is { } open)
+            {
+                result[key] = $"{open.Name} ({open.FunctionId})";
+            }
+            else
+            {
+                remaining.Add(id);
+            }
+        }
+
+        if (remaining.Count > 0)
+        {
+            await using EditorDbContext db = Storage.CreateContext();
+            List<ProceduralModelRecord> rows = await db.Set<ProceduralModelRecord>().AsNoTracking()
+                .Where(record => remaining.Contains(record.Id)).ToListAsync().ConfigureAwait(false);
+            foreach (ProceduralModelRecord record in rows)
+            {
+                result[record.Id.ToString()] = $"{record.Name} ({record.FunctionId})";
+            }
+        }
+
+        return result;
+    }
+
     public async Task<CatalogEntity?> OpenAsync(EditorContext context, string key)
     {
         if (!int.TryParse(key, out int id))

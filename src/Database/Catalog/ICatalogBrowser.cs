@@ -38,6 +38,13 @@ public interface ICatalogBrowser : IEntityFactory
     /// some reasonable default page) — never materializes a full <see cref="CatalogEntity"/>.</summary>
     Task<IReadOnlyList<CatalogSearchResult>> SearchAsync(string filter);
 
+    /// <summary>Display text for each key that exists; a key absent from the result means no such row.
+    /// Registry-first, like <see cref="OpenAsync"/>, so a row open for editing shows its unsaved text
+    /// rather than what's on disk. For rendering a reference field's "id: text" without opening the
+    /// target catalog — batched, so a sheet with dozens of links costs one call per catalog, not one
+    /// per link.</summary>
+    Task<IReadOnlyDictionary<string, string>> DescribeAsync(EditorContext context, IReadOnlyCollection<string> keys);
+
     /// <summary>
     /// Opens the entity for <paramref name="key"/>: if one matching <see cref="Handles"/> is already in
     /// <see cref="CatalogEntityRegistry"/>, returns it as-is; otherwise loads it (whole-catalog lookup or
