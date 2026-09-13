@@ -89,7 +89,9 @@ internal sealed class CatalogReferenceField
         switch (state)
         {
             case CatalogReferenceLabels.LabelState.Resolved:
-                ImGui.TextDisabled(text.Length == 0 ? "(none)" : text);
+                // Distinct from the empty-key "(none)" above: this row exists (the key resolved) but
+                // has nothing better than its id — a real reference, just to an unnamed row.
+                ImGui.TextDisabled(text.Length == 0 ? "(unnamed)" : text);
                 return true;
             case CatalogReferenceLabels.LabelState.Missing:
                 ImGui.TextColored(MissingColor, "(missing)");
