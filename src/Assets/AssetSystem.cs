@@ -32,6 +32,8 @@ public sealed partial class AssetSystem : ISubsystemHost
     private AssetIndex? _assetIndexCache;
     private Task<AssetIndex>? _assetIndexTask;
 
+    private ModelThumbnailCache? _modelThumbnails;
+
     public AssetSystem(EditorContext context)
     {
         _context = context;
@@ -39,6 +41,12 @@ public sealed partial class AssetSystem : ISubsystemHost
     }
 
     public EditorContext Context => _context;
+
+    /// <summary>Shared baked-thumbnail cache and offscreen baker for every picker that wants a 3D model
+    /// thumbnail (the model browser grid, the dress-up item picker) - one LRU and one viewport for the
+    /// whole session, keyed only by model path, so a model already baked for one picker shows instantly
+    /// in another. Session-lifetime like <see cref="_modelCache"/>; never disposed.</summary>
+    public ModelThumbnailCache ModelThumbnails => _modelThumbnails ??= new ModelThumbnailCache(this, _context.MeshMaterials, _context.Root);
 
     public IEnumerable<IAssetProvider> Providers => Subsystems.OfType<IAssetProvider>();
     public IEnumerable<ITextureLoader> TextureLoaders => Subsystems.OfType<ITextureLoader>();
