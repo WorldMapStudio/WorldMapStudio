@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 
@@ -41,7 +42,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         DrawList();
         ImGui.EndChild();
 
-        ImGui.TextDisabled(_selectedKey.Length == 0 ? "Selected: (none)" : $"Selected: {_selectedKey}");
+        ImGui.TextDisabled(_selectedKey.Length == 0 ? "Selected: (none)" : $"Selected: {SelectedLabel()}");
 
         ImGui.Separator();
         if (ImGui.Button("Clear", new Vector2(120, 0)))
@@ -92,6 +93,11 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
             }
         }
     }
+
+    // The current results page already carries the label for anything selected from it; falls back to
+    // the bare key for a pre-existing selection (the field's current value) that isn't on this page.
+    private string SelectedLabel() =>
+        _results?.FirstOrDefault(result => result.Key == _selectedKey) is { } match ? match.Label : _selectedKey;
 
     private void RunSearch(CatalogEntityPickerContext context)
     {

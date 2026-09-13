@@ -121,14 +121,15 @@ public sealed class CatalogBrowserWindow : Window
             return;
         }
 
-        if (!ImGui.BeginTable("CatalogBrowserResults", 2,
+        if (!ImGui.BeginTable("CatalogBrowserResults", 3,
                 ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY,
                 new NVector2(0.0f, 160.0f)))
         {
             return;
         }
 
-        ImGui.TableSetupColumn("Result");
+        ImGui.TableSetupColumn("ID", ImGuiTableColumnFlags.WidthFixed, 70.0f);
+        ImGui.TableSetupColumn("Name");
         ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 50.0f);
         ImGui.TableHeadersRow();
 
@@ -138,7 +139,10 @@ public sealed class CatalogBrowserWindow : Window
             ImGui.TableNextRow();
 
             ImGui.TableNextColumn();
-            ImGui.Text(result.Label);
+            ImGui.Text(result.Key);
+
+            ImGui.TableNextColumn();
+            ImGui.Text(result.Text);
 
             ImGui.TableNextColumn();
             if (ImGui.SmallButton("Open"))
