@@ -61,6 +61,7 @@ public sealed class Editor : IScene
         // fires any registered wms.events handlers for what changed since last frame.
         _context.Scripting.Update();
         _context.Shortcuts.Update();
+        _context.ReferenceLabels.Flush();
 
         ImGuiEx.MainMenuBar(() =>
         {
