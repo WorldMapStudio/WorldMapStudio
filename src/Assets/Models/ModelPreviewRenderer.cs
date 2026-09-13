@@ -146,7 +146,7 @@ public sealed class ModelPreviewRenderer : IDisposable
         ClearModel();
         _modelNode = model.Instantiate(_materials);
         _viewport.AddChild(_modelNode);
-        Frame(model.LocalBounds);
+        ModelCameraFraming.Frame(_camera, model.LocalBounds);
     }
 
     private void ClearModel()
@@ -158,15 +158,6 @@ public sealed class ModelPreviewRenderer : IDisposable
         }
 
         _loadedKey = "";
-    }
-
-    private void Frame(Aabb bounds)
-    {
-        Vector3 center = bounds.Position + bounds.Size * 0.5f;
-        float radius = Math.Max(0.75f, bounds.Size.Length() * 0.5f);
-        Vector3 direction = new Vector3(1.0f, 0.65f, 1.0f).Normalized();
-        _camera.GlobalPosition = center + direction * radius * 2.6f;
-        _camera.LookAt(center, Vector3.Up);
     }
 
     private static void Overlay(NVector2 size, string text)
