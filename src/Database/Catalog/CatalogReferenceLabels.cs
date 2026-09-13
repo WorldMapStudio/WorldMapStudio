@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
 namespace WorldMapStudio;
@@ -41,6 +42,13 @@ public sealed class CatalogReferenceLabels
     private readonly EditorContext _context;
     private readonly Dictionary<string, CatalogCache> _catalogs = new();
 
+    // Keyed by entity identity rather than owned by it, so a field-drawing site (a ThinDbcCatalog
+    // subclass instance, typically) can get the same widget back every frame without every
+    // ICatalogBrowser.DrawFields implementation growing its own picker field — see
+    // CatalogFieldDrawing.DrawLink. A ConditionalWeakTable rather than a plain Dictionary so closing an
+    // entity lets it (and its widgets) be collected instead of pinned here forever.
+    private readonly ConditionalWeakTable<CatalogEntity, Dictionary<string, CatalogReferenceField>> _fields = new();
+
     private EditSession? _lastSession;
     private int _lastRevision = -1;
 
@@ -51,6 +59,21 @@ public sealed class CatalogReferenceLabels
     public ICatalogBrowser? FindCatalog(string catalogName) =>
         _context.Database.Storages.SelectMany(storage => storage.CatalogBrowsers)
             .FirstOrDefault(browser => browser.CatalogName == catalogName);
+
+    /// <summary>The persistent <see cref="CatalogReferenceField"/> for one (entity, label) reference
+    /// site, created on first use. Persistent because the widget's own picker popup needs to still be
+    /// open on the frame after the one that opened it.</summary>
+    internal CatalogReferenceField FieldFor(CatalogEntity entity, string label)
+    {
+        Dictionary<string, CatalogReferenceField> perEntity = _fields.GetValue(entity, _ => new());
+        if (!perEntity.TryGetValue(label, out CatalogReferenceField? field))
+        {
+            field = new CatalogReferenceField();
+            perEntity[label] = field;
+        }
+
+        return field;
+    }
 
     /// <summary>Cached display text for <paramref name="key"/> in <paramref name="catalogName"/>. A
     /// miss returns <see cref="LabelState.Pending"/> and queues the key for the next <see cref="Flush"/>.

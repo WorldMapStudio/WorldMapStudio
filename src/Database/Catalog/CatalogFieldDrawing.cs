@@ -12,10 +12,9 @@ namespace WorldMapStudio;
 /// </summary>
 internal static class CatalogFieldDrawing
 {
-    // Drawn as a plain id field plus an Open link rather than a searchable Pick widget: the common
-    // case this is used for is a lazily-loaded catalog (never loaded whole), so there is no in-memory
-    // list to pick from — CatalogBrowserWindow's own search box is the tool for finding an id you don't
-    // already know. A "Pick" widget elsewhere for a small, eagerly loaded catalog can still be cheap.
+    // The numeric input stays here (an int field's drag/type/undo behaviour is this method's own
+    // business); everything after it — display text, Open, New, Load — is the one shared
+    // CatalogReferenceField widget every reference field uses, regardless of how it stores its key.
     public static void DrawLink<TEntity>(
         EditorContext context, FieldEditTracker tracker, TEntity entity, string label, int current,
         Action<int> set, string targetCatalogName, Action<string, string> navigate)
@@ -30,55 +29,25 @@ internal static class CatalogFieldDrawing
 
         tracker.Track(context.EditSessions, entity, label, current, set);
 
-        if (current != 0)
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"Open##{label}"))
-            {
-                navigate(targetCatalogName, current.ToString());
-            }
-        }
-        else if (FindBrowser(context, targetCatalogName) is { } target)
-        {
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"New##{label}"))
-            {
-                CreateLinked(context, entity, label, set, targetCatalogName, target, navigate);
-            }
-        }
+        var reference = new CatalogReference(label, targetCatalogName, current == 0 ? null : current.ToString(),
+            after => AssignInt(context, entity, label, set, current, after));
+
+        context.ReferenceLabels.FieldFor(entity, label).Draw(context, reference, navigate);
     }
 
-    private static ICatalogBrowser? FindBrowser(EditorContext context, string catalogName) =>
-        context.Database.Storages.SelectMany(storage => storage.CatalogBrowsers)
-            .FirstOrDefault(browser => browser.CatalogName == catalogName);
-
-    // Creates a fresh row in the linked catalog, points this field at it as one further undo step on
-    // top of the create, and jumps there — the cross-catalog FK wiring that building a linked row
-    // otherwise does by hand.
-    private static void CreateLinked<TEntity>(
-        EditorContext context, TEntity entity, string label, Action<int> set,
-        string targetCatalogName, ICatalogBrowser target, Action<string, string> navigate)
+    private static void AssignInt<TEntity>(EditorContext context, TEntity entity, string label, Action<int> set,
+        int before, string? after)
         where TEntity : CatalogEntity
     {
-        string? key = BlockingWork.Run(() => target.SuggestKeyAsync());
-        if (key is null || !int.TryParse(key, out int newId))
+        int value = after is null ? 0 : int.Parse(after);
+        if (value == before)
         {
             return;
         }
 
-        try
-        {
-            target.Create(context, key);
-        }
-        catch (InvalidOperationException)
-        {
-            return;
-        }
-
-        var link = new SetFieldCommand<int>(entity, label, set, 0, newId);
-        link.Apply();
-        context.EditSessions.Record(link);
-        navigate(targetCatalogName, key);
+        var command = new SetFieldCommand<int>(entity, label, set, before, value);
+        command.Apply();
+        context.EditSessions.Record(command);
     }
 
     public static void DrawText<TEntity>(
