@@ -68,7 +68,7 @@ internal sealed class CatalogReferenceField
         {
             if (target is not null)
             {
-                _picker.Browse(target, reference.Key ?? string.Empty,
+                _picker.Browse(context, target, reference.Key ?? string.Empty,
                     selected => reference.Assign(selected.Length == 0 ? null : selected));
             }
         }

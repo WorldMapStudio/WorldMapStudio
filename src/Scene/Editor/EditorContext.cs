@@ -67,6 +67,10 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Cached display text for catalog reference fields — see <see cref="CatalogReferenceLabels"/>.</summary>
     public CatalogReferenceLabels ReferenceLabels { get; }
 
+    /// <summary>Which <see cref="ICatalogSearchView"/> is available and preferred per catalog — see
+    /// <see cref="CatalogSearchViews"/>.</summary>
+    public CatalogSearchViews CatalogSearchViews { get; }
+
     /// <summary>The known maps and which one is currently open.</summary>
     public MapSystem Maps { get; }
 
@@ -169,6 +173,7 @@ public sealed partial class EditorContext : ISubsystemHost
         MeshMaterials = new MeshMaterialSystem(this);
         Database = new DatabaseSystem(this);
         ReferenceLabels = new CatalogReferenceLabels(this);
+        CatalogSearchViews = new CatalogSearchViews(this);
 
         // Bound here rather than injected, because the catalog registry is constructed before the
         // database that owns each type's factory. Lets AssignId seed a type's high-water mark from

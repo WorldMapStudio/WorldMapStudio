@@ -107,6 +107,11 @@ public abstract class Storage : ISubsystem
     /// naming a specific storage.</summary>
     public virtual IEnumerable<ICatalogBrowser> CatalogBrowsers => Facet<ICatalogBrowser>();
 
+    /// <summary>Extra ways to search a catalog's results — see <see cref="ICatalogSearchView"/>.
+    /// Storage-agnostic like <see cref="CatalogBrowsers"/>: a view can serve catalogs hosted by any
+    /// storage, not just its own.</summary>
+    public virtual IEnumerable<ICatalogSearchView> CatalogSearchViews => Facet<ICatalogSearchView>();
+
     /// <summary>Scene-entity factories creatable by script and UI through one shared method — see
     /// <see cref="ISpawnFactory"/>. Storage-agnostic, like <see cref="CatalogBrowsers"/>.</summary>
     public virtual IEnumerable<ISpawnFactory> Spawners => Facet<ISpawnFactory>();
