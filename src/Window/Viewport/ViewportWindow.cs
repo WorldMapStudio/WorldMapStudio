@@ -17,7 +17,7 @@ namespace WorldMapStudio;
 /// interaction to the active <see cref="ITool"/> from the shared <see cref="ToolSystem"/>.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
-public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersistentWindow
+public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutPersistentWindow, ISubsystemHost
 {
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.V, ShortcutModifiers.Alt);
 
@@ -156,7 +156,13 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
 
         _flyCamera.LookAt(GVector3.Zero);
         _flyCamera.ApplyTo(_camera);
+
+        InitializeSubsystems();
     }
+
+    /// <summary>Every self-registered <see cref="IViewportOverlay"/>, drawn once per frame in
+    /// <see cref="DrawContent"/> — see that interface's own doc comment for when.</summary>
+    private IEnumerable<IViewportOverlay> Overlays => Subsystems.OfType<IViewportOverlay>();
 
     // Backs off along the current view direction so the target is framed rather than sat inside.
     private void LookAt(GVector3 target)
@@ -402,9 +408,22 @@ public sealed class ViewportWindow : Window, IWorldParticipant, ILayoutPersisten
         }
 
         UpdateAxisLineColors();
+        DrawOverlays(imageMin, imageSize);
         tool?.UpdateViewport(new ViewportContext(
             _camera, imageMin, imageSize, hovered, _flyCamera.IsFlying,
             pick.RayOrigin, pick.RayDir, pick.TerrainHit, pick.TerrainPoint));
+    }
+
+    // Built once per frame and handed to every registered overlay, so a frame with several of them
+    // still pays ViewportProjector's own "two marshalled Godot calls" cost once, not once per overlay.
+    private void DrawOverlays(NVector2 imageMin, NVector2 imageSize)
+    {
+        var projector = new ViewportProjector(_camera, imageMin, imageSize);
+        ImDrawListPtr drawList = ImGui.GetWindowDrawList();
+        foreach (IViewportOverlay overlay in Overlays)
+        {
+            overlay.Draw(projector, drawList, _camera);
+        }
     }
 
     // The mouse pick ray for a frame and what it found: shared out to the active tool so a single
