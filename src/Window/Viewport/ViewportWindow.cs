@@ -80,9 +80,15 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
     private float? _gridScaleChunkSize;
     private (SignedAxis X, SignedAxis Y, SignedAxis Z)? _axisLineColorsFor;
 
+    /// <summary>Lets a subsystem hosted here (an <see cref="IViewportOverlay"/>, so far) reach shared
+    /// systems — subsystem constructors only ever receive their direct parent, the same reasoning
+    /// <c>CataStorage.Context</c> documents for its own factories.</summary>
+    public EditorContext Context { get; }
+
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))
     {
         EditorContext context = manager.Context;
+        Context = context;
         Node owner = context.Root;
         _flyCamera = new FlyCamera(owner, DefaultCameraPosition);
         _view = context.View;
