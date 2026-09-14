@@ -97,11 +97,11 @@ internal sealed class CatalogFieldSheet
         }
     }
 
-    public void Link(string label, int current, Action<int> set, string targetCatalogName)
+    public void Link(string label, int current, Action<int> set, string targetCatalogName, Func<int, bool>? isEmpty = null)
     {
         if (_filter.Field(label))
         {
-            CatalogFieldDrawing.DrawLink(_context, _tracker, _entity, label, current, set, targetCatalogName, _navigate);
+            CatalogFieldDrawing.DrawLink(_context, _tracker, _entity, label, current, set, targetCatalogName, _navigate, isEmpty);
         }
     }
 

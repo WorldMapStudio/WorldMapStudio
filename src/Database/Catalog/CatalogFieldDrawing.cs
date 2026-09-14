@@ -15,9 +15,12 @@ internal static class CatalogFieldDrawing
     // The numeric input stays here (an int field's drag/type/undo behaviour is this method's own
     // business); everything after it — display text, Open, New, Load — is the one shared
     // CatalogReferenceField widget every reference field uses, regardless of how it stores its key.
+    // isEmpty decides only whether the current value displays as "(none)"/dead-link vs. a resolvable
+    // key — a table using -1 as well as 0 for "no reference" (WoWMapStudio.Cata's spell visual kits)
+    // passes its own predicate; every other caller keeps the plain current == 0 rule.
     public static void DrawLink<TEntity>(
         EditorContext context, FieldEditTracker tracker, TEntity entity, string label, int current,
-        Action<int> set, string targetCatalogName, Action<string, string> navigate)
+        Action<int> set, string targetCatalogName, Action<string, string> navigate, Func<int, bool>? isEmpty = null)
         where TEntity : CatalogEntity
     {
         int value = current;
@@ -29,7 +32,8 @@ internal static class CatalogFieldDrawing
 
         tracker.Track(context.EditSessions, entity, label, current, set);
 
-        var reference = new CatalogReference(label, targetCatalogName, current == 0 ? null : current.ToString(),
+        bool empty = isEmpty is null ? current == 0 : isEmpty(current);
+        var reference = new CatalogReference(label, targetCatalogName, empty ? null : current.ToString(),
             after => AssignInt(context, entity, label, set, current, after));
 
         context.ReferenceLabels.FieldFor(entity, label).Draw(context, reference, navigate);
