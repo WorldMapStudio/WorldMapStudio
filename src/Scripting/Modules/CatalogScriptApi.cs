@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace WorldMapStudio;
@@ -47,4 +48,32 @@ public sealed class CatalogScriptApi : IScriptModule
             .Select(type => type.Name)
             .Distinct()
             .ToArray();
+
+    /// <summary>Every <see cref="ICatalogSearchView"/> available for a catalog (by
+    /// <see cref="ICatalogBrowser.CatalogName"/>), highest priority first — what
+    /// <see cref="SetView"/> accepts.</summary>
+    [ScriptFunction]
+    public string[] Views(string catalogName) =>
+        _context.CatalogSearchViews.For(Browser(catalogName)).Select(view => view.ViewName).ToArray();
+
+    /// <summary>Switches a catalog's search view — the same preference
+    /// <c>CatalogBrowserWindow</c>'s own view toggle sets, shared with every Load popup for that
+    /// catalog. Lets a script (and so an LLM) drive the UI toward a gallery view exactly as a user
+    /// clicking the toggle would.</summary>
+    [ScriptFunction]
+    public void SetView(string catalogName, string viewName)
+    {
+        ICatalogBrowser catalog = Browser(catalogName);
+        IReadOnlyList<ICatalogSearchView> views = _context.CatalogSearchViews.For(catalog);
+        ICatalogSearchView view = views.FirstOrDefault(candidate => candidate.ViewName == viewName)
+            ?? throw new InvalidOperationException(
+                $"No view named '{viewName}' for catalog '{catalogName}'. Known: {string.Join(", ", views.Select(v => v.ViewName))}.");
+
+        _context.CatalogSearchViews.SetPreferred(catalog, view);
+    }
+
+    private ICatalogBrowser Browser(string catalogName) =>
+        _context.Database.Storages.SelectMany(storage => storage.CatalogBrowsers)
+            .FirstOrDefault(browser => browser.CatalogName == catalogName)
+            ?? throw new InvalidOperationException($"No catalog named '{catalogName}'.");
 }
