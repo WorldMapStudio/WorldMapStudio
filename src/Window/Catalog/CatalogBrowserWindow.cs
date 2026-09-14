@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Nodes;
 using ImGuiNET;
 using NVector2 = System.Numerics.Vector2;
 
@@ -18,9 +19,14 @@ namespace WorldMapStudio;
 /// a catalog's search page, or one open entity — never both, and never more than one entity at a time.
 /// Opening something (a search result, or a link another catalog drew) navigates there and pushes the
 /// view you left onto <see cref="_history"/>, so Back is a literal "go to what I was just looking at".
+///
+/// The search page itself is drawn by whichever <see cref="ICatalogSearchView"/> the catalog is
+/// currently showing (<see cref="EditorContext.CatalogSearchViews"/>) — this window only ever draws the
+/// chrome around it: Back, the catalog combo, the view toggle (hidden when a catalog has only one view),
+/// <see cref="ICatalogBrowser.DrawCreate"/>, and navigation-level status.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
-public sealed class CatalogBrowserWindow : Window
+public sealed class CatalogBrowserWindow : Window, ILayoutPersistentWindow
 {
     public override string? Category => "Catalogs";
 
@@ -33,10 +39,12 @@ public sealed class CatalogBrowserWindow : Window
 
     private ICatalogBrowser? _current;
     private CatalogEntity? _openEntity;
-    private string _query = string.Empty;
     private string _fieldFilter = string.Empty;
-    private IReadOnlyList<CatalogSearchResult> _results = [];
     private string? _status;
+
+    private ICatalogSearchViewSession? _session;
+    private ICatalogBrowser? _sessionCatalog;
+    private ICatalogSearchView? _sessionView;
 
     public CatalogBrowserWindow(WindowManager manager)
         : base("Catalog Browser", startOpen: false, defaultSize: new NVector2(700.0f, 620.0f))
@@ -45,6 +53,45 @@ public sealed class CatalogBrowserWindow : Window
         _catalogs = _context.Database.Storages.SelectMany(storage => storage.CatalogBrowsers)
             .OrderBy(catalog => catalog.CatalogName).ToList();
         _current = _catalogs.FirstOrDefault();
+    }
+
+    // The view toggle is per-catalog and shared with every Load popup for that catalog (see
+    // CatalogSearchViews.SetPreferred) — only the preference dictionary itself is this window's to
+    // persist, since it's the one ILayoutPersistentWindow in the picture.
+    JsonObject? ILayoutPersistentWindow.CaptureLayoutState()
+    {
+        IReadOnlyDictionary<string, string> preferred = _context.CatalogSearchViews.Snapshot();
+        if (preferred.Count == 0)
+        {
+            return null;
+        }
+
+        var searchViews = new JsonObject();
+        foreach ((string catalogName, string viewName) in preferred)
+        {
+            searchViews[catalogName] = viewName;
+        }
+
+        return new JsonObject { ["searchViews"] = searchViews };
+    }
+
+    void ILayoutPersistentWindow.RestoreLayoutState(JsonObject state)
+    {
+        if (state["searchViews"] is not JsonObject searchViews)
+        {
+            return;
+        }
+
+        var preferred = new Dictionary<string, string>();
+        foreach ((string catalogName, JsonNode? value) in searchViews)
+        {
+            if (value?.GetValue<string>() is { Length: > 0 } viewName)
+            {
+                preferred[catalogName] = viewName;
+            }
+        }
+
+        _context.CatalogSearchViews.Restore(preferred);
     }
 
     protected override void DrawContent()
@@ -99,15 +146,8 @@ public sealed class CatalogBrowserWindow : Window
 
     private void DrawSearch(ICatalogBrowser catalog)
     {
-        ImGui.SetNextItemWidth(-80.0f);
-        bool searched = ImGui.InputTextWithHint("##query", "Search...", ref _query, 128);
-        ImGui.SameLine();
-        searched |= ImGui.Button("Search");
-
-        if (searched)
-        {
-            Search(catalog);
-        }
+        ICatalogSearchView view = DrawViewToggle(catalog);
+        EnsureSession(catalog, view);
 
         catalog.DrawCreate(_context, entity => NavigateTo(catalog, entity));
 
@@ -116,44 +156,55 @@ public sealed class CatalogBrowserWindow : Window
             ImGui.TextDisabled(_status);
         }
 
-        if (_results.Count == 0)
+        _session!.Draw(ImGui.GetContentRegionAvail());
+    }
+
+    // Drawn only when a catalog has more than one view — a catalog with just List looks exactly as it
+    // did before views existed.
+    private ICatalogSearchView DrawViewToggle(ICatalogBrowser catalog)
+    {
+        IReadOnlyList<ICatalogSearchView> views = _context.CatalogSearchViews.For(catalog);
+        ICatalogSearchView current = _context.CatalogSearchViews.Preferred(catalog);
+        if (views.Count <= 1)
         {
-            return;
+            return current;
         }
 
-        if (!ImGui.BeginTable("CatalogBrowserResults", 3,
-                ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.ScrollY,
-                new NVector2(0.0f, 160.0f)))
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextDisabled("View:");
+        foreach (ICatalogSearchView candidate in views)
         {
-            return;
-        }
-
-        ImGui.TableSetupColumn("ID", ImGuiTableColumnFlags.WidthFixed, 70.0f);
-        ImGui.TableSetupColumn("Name");
-        ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 50.0f);
-        ImGui.TableHeadersRow();
-
-        foreach (CatalogSearchResult result in _results)
-        {
-            ImGui.PushID(result.Key);
-            ImGui.TableNextRow();
-
-            ImGui.TableNextColumn();
-            ImGui.Text(result.Key);
-
-            ImGui.TableNextColumn();
-            ImGui.Text(result.Text);
-
-            ImGui.TableNextColumn();
-            if (ImGui.SmallButton("Open"))
+            ImGui.SameLine();
+            bool selected = candidate == current;
+            if (ImGui.RadioButton(candidate.ViewName, selected) && !selected)
             {
-                Open(catalog, result.Key);
+                _context.CatalogSearchViews.SetPreferred(catalog, candidate);
+                current = candidate;
             }
-
-            ImGui.PopID();
         }
 
-        ImGui.EndTable();
+        return current;
+    }
+
+    private void EnsureSession(ICatalogBrowser catalog, ICatalogSearchView view)
+    {
+        if (_session is not null && _sessionCatalog == catalog && _sessionView == view)
+        {
+            return;
+        }
+
+        string filter = _sessionCatalog == catalog ? _session?.Filter ?? string.Empty : string.Empty;
+        _session?.Dispose();
+
+        var host = new CatalogSearchViewHost(
+            _context, catalog, CatalogSearchPurpose.Browse, filter,
+            SelectedKey: static () => string.Empty,
+            Highlight: static _ => { },
+            Activate: key => Open(catalog, key));
+
+        _session = view.CreateSession(host);
+        _sessionCatalog = catalog;
+        _sessionView = view;
     }
 
     private void DrawEntity(ICatalogBrowser catalog, CatalogEntity entity)
@@ -192,12 +243,6 @@ public sealed class CatalogBrowserWindow : Window
         }
 
         Open(target, key);
-    }
-
-    private void Search(ICatalogBrowser catalog)
-    {
-        _results = BlockingWork.Run(() => catalog.SearchAsync(_query));
-        _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
     }
 
     /// <summary>Opens and focuses this window at <paramref name="catalogName"/>/<paramref name="key"/> —
@@ -269,8 +314,6 @@ public sealed class CatalogBrowserWindow : Window
     {
         if (catalog != _current)
         {
-            _query = string.Empty;
-            _results = [];
             _status = null;
         }
 

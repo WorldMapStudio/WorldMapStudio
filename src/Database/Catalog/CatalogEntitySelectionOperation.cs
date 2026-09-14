@@ -1,48 +1,50 @@
+using System;
 using System.Collections.Generic;
-using System.Linq;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
 /// <summary>
-/// Search-as-you-type body of <see cref="CatalogEntityPicker"/>'s popup, against whichever
-/// <see cref="ICatalogBrowser"/> the context names — the <see cref="ICatalogBrowser.SearchAsync"/>
-/// analogue of <c>ModelSelectionOperation</c>'s asset listing. Runs one <see cref="BlockingWork"/>
-/// search per filter change (cheap and untracked by <see cref="ICatalogBrowser.SearchAsync"/>'s own
-/// contract), the same blocking-search shape <c>CatalogBrowserWindow</c> already uses.
+/// Body of <see cref="CatalogEntityPicker"/>'s popup: chrome (title, view toggle, Clear/Select/Cancel
+/// footer) around whichever <see cref="ICatalogSearchView"/> session the catalog is currently showing —
+/// the <see cref="CatalogSearchPurpose.Pick"/> counterpart of <c>CatalogBrowserWindow</c>'s own
+/// chrome-around-a-session shape.
 /// </summary>
 public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEntityPickerContext>
 {
-    private static readonly Vector2 BodySize = new(460, 320);
+    // Selected label + separator + Clear/Select/Cancel row, reserved out of the session's own drawing
+    // area so the footer never gets pushed off a small (List-sized) popup.
+    private const float FooterHeight = 76.0f;
 
-    private string _filter = "";
+    private ICatalogSearchView? _view;
+    private ICatalogSearchViewSession? _session;
     private string _selectedKey = "";
-    private IReadOnlyList<CatalogSearchResult>? _results;
-    private bool _searched;
+    private bool _confirmRequested;
 
     public ModalOperationState Draw(CatalogEntityPickerContext context)
     {
-        if (!_searched)
-        {
-            _selectedKey = context.CurrentKey;
-            RunSearch(context);
-        }
+        EnsureSession(context);
 
         ImGui.Text($"Select {context.Catalog.CatalogName}");
         ImGui.Separator();
 
-        ImGui.SetNextItemWidth(BodySize.X);
-        if (ImGui.InputTextWithHint("##filter", "Search...", ref _filter, 128))
+        DrawViewToggle(context);
+
+        Vector2 available = ImGui.GetContentRegionAvail();
+        var sessionAvailable = new Vector2(available.X, MathF.Max(120.0f, available.Y - FooterHeight));
+
+        _confirmRequested = false;
+        _session!.Draw(sessionAvailable);
+
+        if (_confirmRequested)
         {
-            RunSearch(context);
+            context.Select(_selectedKey);
+            return ModalOperationState.Confirmed;
         }
 
-        ImGui.BeginChild("CatalogEntityPickerList", BodySize, true, ImGuiWindowFlags.None);
-        DrawList();
-        ImGui.EndChild();
-
-        ImGui.TextDisabled(_selectedKey.Length == 0 ? "Selected: (none)" : $"Selected: {SelectedLabel()}");
+        string label = _selectedKey.Length == 0 ? "(none)" : _session.LabelFor(_selectedKey) ?? _selectedKey;
+        ImGui.TextDisabled($"Selected: {label}");
 
         ImGui.Separator();
         if (ImGui.Button("Clear", new Vector2(120, 0)))
@@ -71,37 +73,64 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         return ModalOperationState.Running;
     }
 
-    private void DrawList()
+    public void OnClose() => _session?.Dispose();
+
+    // Hidden with one view, matching CatalogBrowserWindow's own toggle.
+    private void DrawViewToggle(CatalogEntityPickerContext context)
     {
-        if (_results == null)
+        IReadOnlyList<ICatalogSearchView> views = context.Context.CatalogSearchViews.For(context.Catalog);
+        if (views.Count <= 1)
         {
-            ImGui.TextDisabled("Searching...");
             return;
         }
 
-        if (_results.Count == 0)
+        for (int i = 0; i < views.Count; i++)
         {
-            ImGui.TextDisabled("No matches.");
-            return;
-        }
-
-        foreach (CatalogSearchResult result in _results)
-        {
-            if (ImGui.Selectable($"{result.Label}##{result.Key}", result.Key == _selectedKey))
+            ICatalogSearchView candidate = views[i];
+            if (i > 0)
             {
-                _selectedKey = result.Key;
+                ImGui.SameLine();
+            }
+
+            bool selected = candidate == _view;
+            if (ImGui.RadioButton(candidate.ViewName, selected) && !selected)
+            {
+                context.Context.CatalogSearchViews.SetPreferred(context.Catalog, candidate);
+                SwitchView(context, candidate);
             }
         }
     }
 
-    // The current results page already carries the label for anything selected from it; falls back to
-    // the bare key for a pre-existing selection (the field's current value) that isn't on this page.
-    private string SelectedLabel() =>
-        _results?.FirstOrDefault(result => result.Key == _selectedKey) is { } match ? match.Label : _selectedKey;
-
-    private void RunSearch(CatalogEntityPickerContext context)
+    private void EnsureSession(CatalogEntityPickerContext context)
     {
-        _searched = true;
-        _results = BlockingWork.Run(() => context.Catalog.SearchAsync(_filter));
+        if (_session is not null)
+        {
+            return;
+        }
+
+        _selectedKey = context.CurrentKey;
+        SwitchView(context, context.Context.CatalogSearchViews.Preferred(context.Catalog));
+    }
+
+    // Grows or shrinks the popup to match the new view's own preferred size — the reason
+    // CatalogEntityPicker's own ModalOperator is resizable rather than auto-fit.
+    private void SwitchView(CatalogEntityPickerContext context, ICatalogSearchView view)
+    {
+        string filter = _session?.Filter ?? string.Empty;
+        _session?.Dispose();
+
+        var host = new CatalogSearchViewHost(
+            context.Context, context.Catalog, CatalogSearchPurpose.Pick, filter,
+            SelectedKey: () => _selectedKey,
+            Highlight: key => _selectedKey = key,
+            Activate: key =>
+            {
+                _selectedKey = key;
+                _confirmRequested = true;
+            });
+
+        _view = view;
+        _session = view.CreateSession(host);
+        ImGui.SetWindowSize(view.PreferredPickerSize);
     }
 }
