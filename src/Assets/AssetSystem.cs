@@ -274,6 +274,20 @@ public sealed partial class AssetSystem : ISubsystemHost
     }
 
     /// <summary>
+    /// Whether <paramref name="path"/> is already sitting in the texture cache. For a caller compositing
+    /// into a path it doesn't own outright (a synthetic path a live world spawn or another preview might
+    /// already be using) — check this before loading, then evict only afterward if it wasn't already
+    /// there, so an entry someone else still depends on is never pulled out from under them.
+    /// </summary>
+    public bool IsTextureCached(string path)
+    {
+        lock (_textureLock)
+        {
+            return _textureCache.ContainsKey(path);
+        }
+    }
+
+    /// <summary>
     /// The decoded CPU-side <see cref="Image"/> a texture loader produced for <paramref name="path"/>,
     /// from its own path-keyed cache - never goes through <see cref="Texture2D.GetImage"/>, so a caller
     /// compositing many of these (the plugin's own character texture compositor) can run on any number of
