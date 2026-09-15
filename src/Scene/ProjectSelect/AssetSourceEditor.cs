@@ -57,7 +57,7 @@ public sealed class AssetSourceEditor
 
                 if (AssetSourceId.Validate(source.Id, sources, source) is { } idError)
                 {
-                    ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), idError);
+                    ImGuiEx.TextColored(CommonColors.Error, idError);
                 }
 
                 if (AssetSourceTypeRegistry.Find(source.Type) is { } definition)

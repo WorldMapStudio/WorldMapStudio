@@ -45,16 +45,14 @@ public sealed class LandscapeTerrainBatchInspector : EntityInspector<LandscapeTe
                      .ThenBy(pair => pair.Key.X)
                      .Select(pair => (pair.Key, pair.Value)))
         {
-            Vector4 colour = output.Layers.Count > limit
-                ? new Vector4(1.0f, 0.45f, 0.4f, 1.0f)
-                : new Vector4(0.42f, 0.85f, 0.46f, 1.0f);
+            StyleColor colour = output.Layers.Count > limit ? CommonColors.Error : CommonColors.Success;
 
             if (!ImGui.TreeNode($"Chunk {coord}##{coord.X}_{coord.Y}"))
             {
                 continue;
             }
 
-            ImGui.TextColored(colour, $"{output.Layers.Count} / {limit} texture slots");
+            ImGuiEx.TextColored(colour, $"{output.Layers.Count} / {limit} texture slots");
             for (int i = 0; i < output.Layers.Count; i++)
             {
                 LandscapeChunkLayer layer = output.Layers[i];

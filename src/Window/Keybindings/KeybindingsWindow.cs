@@ -36,7 +36,7 @@ public sealed class KeybindingsWindow : Window
         if (_capturing is { } action)
         {
             ImGui.SameLine();
-            ImGui.TextColored(new Vector4(0.45f, 0.75f, 1.0f, 1.0f), $"Press keys for {action.Name}");
+            ImGuiEx.TextColored(CommonColors.Accent, $"Press keys for {action.Name}");
 
             if (ImGui.IsKeyPressed(ImGuiKey.Escape, false))
             {
@@ -79,7 +79,7 @@ public sealed class KeybindingsWindow : Window
             ShortcutAction[] conflicts = _shortcuts.ConflictsFor(rowAction).ToArray();
             if (conflicts.Length > 0)
             {
-                ImGui.TextColored(new Vector4(1.0f, 0.55f, 0.35f, 1.0f), conflicts[0].Name);
+                ImGuiEx.TextColored(CommonColors.Warning, conflicts[0].Name);
             }
             else
             {

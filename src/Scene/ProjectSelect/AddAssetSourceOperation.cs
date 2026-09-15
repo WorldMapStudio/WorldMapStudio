@@ -50,7 +50,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
 
         if (_error != null)
         {
-            ImGui.TextColored(new Vector4(1f, 0.4f, 0.4f, 1f), _error);
+            ImGuiEx.TextColored(CommonColors.Error, _error);
         }
 
         ImGui.Separator();
