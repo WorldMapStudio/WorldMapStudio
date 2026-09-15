@@ -78,7 +78,7 @@ public sealed partial class GodotImGui : Node
             io.NativePtr->IniFilename = null;
         }
 
-        ImGui.StyleColorsDark();
+        EditorStyle.Initialize();
         RebuildFontAtlas();
 
         _renderer = new ImGuiRenderer();
@@ -165,6 +165,7 @@ public sealed partial class GodotImGui : Node
         io.DeltaTime = delta > 0.0 ? (float)delta : 1.0f / 60.0f;
 
         _input.Update(io);
+        EditorStyle.ApplyPending(ImGui.GetStyle());
         ImGui.NewFrame();
         _frameBegun = true;
     }
