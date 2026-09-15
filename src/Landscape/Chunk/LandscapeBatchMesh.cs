@@ -135,7 +135,7 @@ public static class LandscapeBatchMesh
         Mesh.ArrayFormat customFlags =
             (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift) |
             (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift) |
-            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbaHalf << (int)Mesh.ArrayFormat.FormatCustom2Shift);
+            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbaFloat << (int)Mesh.ArrayFormat.FormatCustom2Shift);
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, flags: customFlags);
