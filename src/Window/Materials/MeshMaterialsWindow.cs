@@ -43,10 +43,8 @@ public sealed class MeshMaterialsWindow : Window
 
         foreach (MeshMaterialIssue issue in Materials.Validate())
         {
-            Vector4 color = issue.Severity == MeshMaterialIssueSeverity.Error
-                ? new Vector4(1.0f, 0.45f, 0.4f, 1.0f)
-                : new Vector4(1.0f, 0.72f, 0.22f, 1.0f);
-            ImGui.TextColored(color, issue.Message);
+            StyleColor color = issue.Severity == MeshMaterialIssueSeverity.Error ? CommonColors.Error : CommonColors.Warning;
+            ImGuiEx.TextColored(color, issue.Message);
         }
 
         foreach (MeshMaterialPreset preset in Materials.Presets.ToList())
@@ -60,7 +58,7 @@ public sealed class MeshMaterialsWindow : Window
                 IMeshMaterialType? type = Materials.Find(preset.TypeId);
                 if (type == null)
                 {
-                    ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded type provides '{preset.TypeId}'.");
+                    ImGuiEx.TextColored(CommonColors.Error, $"No loaded type provides '{preset.TypeId}'.");
                 }
                 else
                 {

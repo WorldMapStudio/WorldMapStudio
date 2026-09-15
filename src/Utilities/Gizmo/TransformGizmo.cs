@@ -41,14 +41,12 @@ public sealed class TransformGizmo
     // ~0.1 corresponds to roughly 6 degrees and is only reached by dragging far off-screen.
     private const float GrazingCosine = 0.1f;
 
-    private static readonly NVector4[] AxisColors =
-    [
-        new(0.91f, 0.24f, 0.28f, 1.0f), // X
-        new(0.49f, 0.78f, 0.16f, 1.0f), // Y
-        new(0.22f, 0.49f, 0.93f, 1.0f), // Z
-    ];
-
-    private static readonly NVector4 HighlightColor = new(1.0f, 0.79f, 0.11f, 1.0f);
+    private static NVector4 AxisColor(int index) => index switch
+    {
+        0 => GizmoColors.AxisX.Value,
+        1 => GizmoColors.AxisY.Value,
+        _ => GizmoColors.AxisZ.Value,
+    };
 
     private enum DragKind
     {
@@ -394,8 +392,8 @@ public sealed class TransformGizmo
         if (Operation != GizmoOperation.Scale)
         {
             // Central pivot dot, drawn last so it always caps the axes cleanly.
-            drawList.AddCircleFilled(center, 4.0f, ImGui.GetColorU32(new NVector4(0.92f, 0.92f, 0.92f, 1.0f)));
-            drawList.AddCircle(center, 4.0f, ImGui.GetColorU32(new NVector4(0.1f, 0.1f, 0.1f, 0.9f)), 0, 1.5f);
+            drawList.AddCircleFilled(center, 4.0f, GizmoColors.Pivot.U32);
+            drawList.AddCircle(center, 4.0f, GizmoColors.Outline.U32, 0, 1.5f);
         }
     }
 
@@ -407,7 +405,7 @@ public sealed class TransformGizmo
             bool hot = (_dragKind == DragKind.Plane && _activeAxis == k) ||
                        (_dragKind == DragKind.None && _hoverKind == DragKind.Plane && _hoverAxis == k);
             NVector2[] quad = PlaneQuad(camera, imageMin, origin, axes, worldScale, k);
-            NVector4 fill = hot ? HighlightColor : AxisColors[k];
+            NVector4 fill = hot ? GizmoColors.Highlight.Value : AxisColor(k);
             drawList.AddQuadFilled(quad[0], quad[1], quad[2], quad[3], ImGui.GetColorU32(fill with { W = hot ? 0.45f : 0.22f }));
             drawList.AddQuad(quad[0], quad[1], quad[2], quad[3], ImGui.GetColorU32(fill with { W = hot ? 1.0f : 0.7f }), 1.5f);
         }
@@ -424,7 +422,7 @@ public sealed class TransformGizmo
                 continue;
             }
 
-            NVector4 color = hot ? HighlightColor : AxisColors[i];
+            NVector4 color = hot ? GizmoColors.Highlight.Value : AxisColor(i);
             uint col = ImGui.GetColorU32(color);
 
             NVector2 dir = Normalize(tip - center);
@@ -445,7 +443,7 @@ public sealed class TransformGizmo
         {
             bool hot = (_dragKind == DragKind.Ring && _activeAxis == i) ||
                        (_dragKind == DragKind.None && _hoverKind == DragKind.Ring && _hoverAxis == i);
-            uint col = ImGui.GetColorU32(hot ? HighlightColor : AxisColors[i]);
+            uint col = ImGui.GetColorU32(hot ? GizmoColors.Highlight.Value : AxisColor(i));
 
             GVector3 u = axes[(i + 1) % 3];
             GVector3 v = axes[(i + 2) % 3];
@@ -492,7 +490,7 @@ public sealed class TransformGizmo
                 continue;
             }
 
-            NVector4 color = hot ? HighlightColor : AxisColors[i];
+            NVector4 color = hot ? GizmoColors.Highlight.Value : AxisColor(i);
             uint col = ImGui.GetColorU32(color);
             drawList.AddLine(center, tip, col, hot ? 4.0f : 3.0f);
             DrawSquare(drawList, tip, 7.0f, col);
@@ -500,7 +498,7 @@ public sealed class TransformGizmo
 
         bool uniformHot = (_dragKind == DragKind.ScaleUniform) ||
                           (_dragKind == DragKind.None && _hoverKind == DragKind.ScaleUniform);
-        DrawSquare(drawList, center, uniformHot ? 8.0f : 6.0f, ImGui.GetColorU32(uniformHot ? HighlightColor : new NVector4(0.92f, 0.92f, 0.92f, 1.0f)));
+        DrawSquare(drawList, center, uniformHot ? 8.0f : 6.0f, uniformHot ? GizmoColors.Highlight.U32 : GizmoColors.Pivot.U32);
     }
 
     private static void DrawSquare(ImDrawListPtr drawList, NVector2 center, float halfSize, uint color)
@@ -508,14 +506,14 @@ public sealed class TransformGizmo
         NVector2 min = center - new NVector2(halfSize, halfSize);
         NVector2 max = center + new NVector2(halfSize, halfSize);
         drawList.AddRectFilled(min, max, color);
-        drawList.AddRect(min, max, ImGui.GetColorU32(new NVector4(0.05f, 0.05f, 0.05f, 0.9f)), 0.0f, ImDrawFlags.None, 1.5f);
+        drawList.AddRect(min, max, GizmoColors.Outline.U32, 0.0f, ImDrawFlags.None, 1.5f);
     }
 
     private void DrawRotationSweep(ImDrawListPtr drawList, Camera3D camera, NVector2 imageMin, GVector3 origin, float worldScale, NVector2 center)
     {
         GVector3 startVec = new Basis(_dragAxisWorld, -_ringAccum) * _ringLastVec;
         GVector3 normal = _dragAxisWorld;
-        uint fill = ImGui.GetColorU32(HighlightColor with { W = 0.28f });
+        uint fill = ImGui.GetColorU32(GizmoColors.Highlight.Value with { W = 0.28f });
 
         int steps = Math.Max(1, (int)(Math.Abs(_ringAccum) / Mathf.Tau * RingSegments) + 1);
         NVector2 prev = center;
@@ -541,7 +539,7 @@ public sealed class TransformGizmo
         }
 
         string label = $"{Mathf.RadToDeg(_ringAccum):0.0}°";
-        drawList.AddText(center + new NVector2(12.0f, -20.0f), ImGui.GetColorU32(new NVector4(1, 1, 1, 1)), label);
+        drawList.AddText(center + new NVector2(12.0f, -20.0f), GizmoColors.AngleLabel.U32, label);
     }
 
     private NVector2[] PlaneQuad(Camera3D camera, NVector2 imageMin, GVector3 origin, Span<GVector3> axes, float worldScale, int normalAxis)

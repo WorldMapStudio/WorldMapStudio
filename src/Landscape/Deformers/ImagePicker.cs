@@ -135,7 +135,7 @@ public sealed class ImagePicker
             string? error = ValidationError();
             if (error != null)
             {
-                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), error);
+                ImGuiEx.TextColored(CommonColors.Error, error);
             }
 
             if (error != null)

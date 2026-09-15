@@ -239,7 +239,7 @@ public sealed class LandscapeWindow : Window
 
         foreach (string problem in _draft!.Validate())
         {
-            ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), problem);
+            ImGuiEx.TextColored(CommonColors.Error, problem);
         }
 
         LandscapeChangeCost cost = Landscape.CostOf(_draft);
@@ -248,7 +248,7 @@ public sealed class LandscapeWindow : Window
             string warning = cost == LandscapeChangeCost.Rebuild
                 ? "Applying this rebuilds every chunk in the map. Entities are untouched."
                 : "Applying this re-resolves every chunk, so layers may appear or disappear.";
-            ImGui.TextColored(new Vector4(1.0f, 0.72f, 0.22f, 1.0f), warning);
+            ImGuiEx.TextColored(CommonColors.Warning, warning);
         }
 
         bool valid = _draft.Validate().Count == 0;
@@ -730,7 +730,7 @@ public sealed class LandscapeWindow : Window
             }
             else if (write.Function.Length > 0)
             {
-                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded function provides '{write.Function}'.");
+                ImGuiEx.TextColored(CommonColors.Error, $"No loaded function provides '{write.Function}'.");
             }
 
             if (ImGui.SmallButton("Remove write"))
@@ -801,7 +801,7 @@ public sealed class LandscapeWindow : Window
             if (boundId.Length > 0)
             {
                 // The binding is kept, not cleared: the plugin providing it may simply not be loaded.
-                ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"No loaded function provides '{boundId}'.");
+                ImGuiEx.TextColored(CommonColors.Error, $"No loaded function provides '{boundId}'.");
             }
 
             ImGui.PopID();
@@ -1024,7 +1024,7 @@ public sealed class LandscapeWindow : Window
         LandscapeChannel? bound = Landscape.Catalog.Channels.FirstOrDefault(channel => channel.Name == binding.Channel);
         if (bound == null)
         {
-            ImGui.TextColored(new Vector4(1.0f, 0.45f, 0.4f, 1.0f), $"Channel '{binding.Channel}' does not exist on the open map.");
+            ImGuiEx.TextColored(CommonColors.Error, $"Channel '{binding.Channel}' does not exist on the open map.");
             return;
         }
 
