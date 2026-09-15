@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "name": "Sample",
+  "extends": "Dark",
+  "palette": {
+    "input": "#0F0F0F",
+    "recessed": "#151515",
+    "panel": "#242424",
+    "header": "#2F2F2F",
+    "dropdown": "#383838",
+    "hover": "#575757",
+    "border": "#0A0A0A",
+    "foreground": "#C0C0C0",
+    "muted": "#6F6F6F",
+    "primary": "#0070E0",
+    "success": "#1FE44B",
+    "warning": "#FFB800",
+    "error": "#EF3535"
+  },
+  "fonts": {
+    "ui": { "family": "Segoe UI", "weight": 400, "italic": false, "size": 15 },
+    "monospace": { "family": "Consolas", "weight": 400, "italic": false, "size": 14 }
+  },
+  "vars": {
+    "WindowPadding": [10, 10],
+    "WindowRounding": 0,
+    "WindowBorderSize": 1,
+    "WindowMinSize": [64, 64],
+    "WindowTitleAlign": [0, 0.5],
+    "ChildRounding": 4,
+    "ChildBorderSize": 1,
+    "PopupRounding": 4,
+    "PopupBorderSize": 1,
+    "FramePadding": [8, 5],
+    "FrameRounding": 4,
+    "FrameBorderSize": 0,
+    "ItemSpacing": [8, 6],
+    "ItemInnerSpacing": [6, 4],
+    "CellPadding": [8, 4],
+    "IndentSpacing": 18,
+    "ColumnsMinSpacing": 8,
+    "ScrollbarSize": 12,
+    "ScrollbarRounding": 6,
+    "GrabMinSize": 10,
+    "GrabRounding": 3,
+    "TabRounding": 4,
+    "TabBorderSize": 0,
+    "ButtonTextAlign": [0.5, 0.5],
+    "SelectableTextAlign": [0, 0.5],
+    "DisabledAlpha": 0.5
+  },
+  "colors": {
+    "Text": "$foreground",
+    "TextDisabled": "$muted",
+
+    "WindowBg": "$panel",
+    "ChildBg": "#00000000",
+    "PopupBg": { "ref": "$header", "alpha": 0.98 },
+    "Border": "$border",
+    "BorderShadow": "#00000000",
+
+    "FrameBg": "$input",
+    "FrameBgHovered": "#1A1A1A",
+    "FrameBgActive": "$input",
+
+    "TitleBg": "$recessed",
+    "TitleBgActive": "$recessed",
+    "TitleBgCollapsed": "$recessed",
+    "MenuBarBg": "$recessed",
+
+    "ScrollbarBg": "#00000000",
+    "ScrollbarGrab": "$dropdown",
+    "ScrollbarGrabHovered": "$hover",
+    "ScrollbarGrabActive": { "ref": "$hover", "lighten": 0.15 },
+
+    "CheckMark": { "ref": "$primary", "lighten": 0.15 },
+    "SliderGrab": "$primary",
+    "SliderGrabActive": { "ref": "$primary", "lighten": 0.2 },
+
+    "Button": "$dropdown",
+    "ButtonHovered": "$hover",
+    "ButtonActive": "#1A1A1A",
+
+    "Header": "$dropdown",
+    "HeaderHovered": "$hover",
+    "HeaderActive": { "ref": "$primary", "alpha": 0.85 },
+
+    "Separator": "$recessed",
+    "SeparatorHovered": { "ref": "$primary", "alpha": 0.7 },
+    "SeparatorActive": "$primary",
+
+    "ResizeGrip": "#00000000",
+    "ResizeGripHovered": "$hover",
+    "ResizeGripActive": "$primary",
+
+    "Tab": "$recessed",
+    "TabHovered": "$header",
+    "TabActive": "$panel",
+    "TabUnfocused": "$recessed",
+    "TabUnfocusedActive": { "ref": "$panel", "darken": 0.15 },
+
+    "DockingPreview": { "ref": "$primary", "alpha": 0.5 },
+    "DockingEmptyBg": "$input",
+
+    "PlotLines": "$foreground",
+    "PlotLinesHovered": "$primary",
+    "PlotHistogram": "$primary",
+    "PlotHistogramHovered": { "ref": "$primary", "lighten": 0.2 },
+
+    "TableHeaderBg": "$header",
+    "TableBorderStrong": "$input",
+    "TableBorderLight": "#1C1C1C",
+    "TableRowBg": "#00000000",
+    "TableRowBgAlt": "#FFFFFF06",
+
+    "TextSelectedBg": { "ref": "$primary", "alpha": 0.45 },
+    "DragDropTarget": "$warning",
+    "NavHighlight": "$primary",
+    "NavWindowingHighlight": "#FFFFFFB3",
+    "NavWindowingDimBg": "#0000008C",
+    "ModalWindowDimBg": "#00000099"
+  },
+  "tokens": {
+    "text.error": "$error",
+    "text.warning": "$warning",
+    "text.success": "$success",
+    "text.accent": { "ref": "$primary", "lighten": 0.25 },
+    "gizmo.axis.x": "#C92600",
+    "gizmo.axis.y": "#67A800",
+    "gizmo.axis.z": "#2C7FED",
+    "gizmo.highlight": "#FFE000"
+  }
+}
