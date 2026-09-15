@@ -88,6 +88,18 @@ public sealed class ViewScriptApi : IScriptModule
     public void SetChunkEdges(bool shown) => _view.ShowChunkEdges = shown;
 
     [ScriptProperty]
+    public bool TerrainVertexColor => _view.ShowTerrainVertexColor;
+
+    [ScriptFunction]
+    public void SetTerrainVertexColor(bool shown) => _view.ShowTerrainVertexColor = shown;
+
+    [ScriptProperty]
+    public bool TerrainVertexLight => _view.ShowTerrainVertexLight;
+
+    [ScriptFunction]
+    public void SetTerrainVertexLight(bool shown) => _view.ShowTerrainVertexLight = shown;
+
+    [ScriptProperty]
     public bool EnvironmentVolumes => _view.ShowEnvironmentVolumes;
 
     [ScriptFunction]

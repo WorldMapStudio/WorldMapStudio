@@ -15,6 +15,12 @@ public sealed class ViewSettings
     /// </summary>
     public bool ShowChunkEdges { get; set; } = true;
 
+    /// <summary>Applies the terrain's baked vertex color. Off shows the textures untinted.</summary>
+    public bool ShowTerrainVertexColor { get; set; } = true;
+
+    /// <summary>Applies the terrain's baked vertex light. Off leaves only scene lighting.</summary>
+    public bool ShowTerrainVertexLight { get; set; } = true;
+
     /// <summary>Draws each loaded <see cref="IEnvironmentVolume"/> source's inner/outer spheres.</summary>
     public bool ShowEnvironmentVolumes { get; set; } = true;
 

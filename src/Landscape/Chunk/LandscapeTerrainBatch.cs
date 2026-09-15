@@ -134,7 +134,6 @@ public sealed class LandscapeTerrainBatch : SceneEntity, IDerivedEntity
     // StringName, and material disposal runs at streaming rates.
     private static readonly StringName SlotAlphaParam = "slot_alpha";
     private static readonly StringName SlotMapParam = "slot_map";
-    private static readonly StringName ShowChunkEdgesParam = "show_chunk_edges";
 
     /// <summary>Frees a batch material with its per-batch alpha array and slot-map texture. The albedo
     /// and height arrays come from <see cref="LandscapeBatchMesh"/>'s shared caches and must outlive
@@ -154,12 +153,13 @@ public sealed class LandscapeTerrainBatch : SceneEntity, IDerivedEntity
         material.Dispose();
     }
 
-    /// <summary>Toggles the chunk border overlay on this batch's existing material.</summary>
-    public void SetChunkEdgesVisible(bool visible)
+    /// <summary>Pushes <see cref="LandscapeBatchMesh"/>'s current display toggles (chunk edges, vertex
+    /// color, vertex light) onto this batch's existing material.</summary>
+    public void ApplyDisplayToggles()
     {
         if (Node?.GetChildOrNull<MeshInstance3D>(0) is { MaterialOverride: ShaderMaterial material })
         {
-            material.SetShaderParameter(ShowChunkEdgesParam, visible);
+            LandscapeBatchMesh.ApplyDisplayToggles(material);
         }
     }
 
