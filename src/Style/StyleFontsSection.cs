@@ -6,7 +6,7 @@ namespace WorldMapStudio;
 /// <summary>One font slot's setting, e.g. the "ui" or "monospace" entry under a style's
 /// <c>"fonts"</c> object. <see cref="File"/> and <see cref="Family"/> are mutually exclusive modes;
 /// neither set means "use ImGui's built-in default font".</summary>
-public sealed class StyleFontSlotValue
+public sealed record StyleFontSlotValue
 {
     public string? Family { get; init; }
     public int? Weight { get; init; }

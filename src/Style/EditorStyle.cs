@@ -57,6 +57,7 @@ public static partial class EditorStyle
     public static ResolvedStyle Active { get; private set; } = null!;
     public static string ActiveName { get; private set; } = "Dark";
     public static int Generation { get; private set; }
+    public static string UserStylesDirectory => _userStylesDir;
 
     /// <summary>Color/var/token resolution problems plus font load problems from the last atlas
     /// rebuild (see <see cref="ReportFontProblems"/>) — everything the Style Editor's Problems tab shows.</summary>
