@@ -104,4 +104,16 @@ public static class LandscapeMeshTests
         Assert.IsTrue(shader.Contains("EMISSION = emission;") && shader.Contains("vertex_light"),
             "expected vertex light to reach EMISSION");
     }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void Vertex_color_is_carried_as_a_float_custom_channel()
+    {
+        // Pins the fix for vertex color being clamped through Godot's 8-bit COLOR attribute, which
+        // destroyed the brightening half of MCCV's 0-2 multiplier range.
+        string shader = LandscapeBatchMesh.SplatShaderCode;
+
+        Assert.IsTrue(shader.Contains("CUSTOM2"), "vertex color must travel through a custom channel");
+        Assert.IsFalse(shader.Contains("color *= COLOR.rgb"), "COLOR is 8-bit unorm and clamps values above 1.0");
+        Assert.IsTrue(shader.Contains("color *= vertex_color"), "expected vertex color to multiply albedo");
+    }
 }

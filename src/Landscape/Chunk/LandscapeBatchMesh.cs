@@ -69,7 +69,7 @@ public static class LandscapeBatchMesh
         var vertices = new Vector3[totalVerts];
         var normals = new Vector3[totalVerts];
         var uvs = new Vector2[totalVerts];
-        var colors = new Color[totalVerts];
+        var vertexColor = new float[totalVerts * 4];
         var light = new float[totalVerts * 3];
         var chunkIndex = new float[totalVerts];
         var indices = new int[maxIndices];
@@ -93,7 +93,12 @@ public static class LandscapeBatchMesh
                     vertices[v] = new Vector3(offsetX + (x * step), output.HeightAt(x, y), offsetZ + (y * step));
                     uvs[v] = new Vector2((float)x / quads, (float)y / quads);
                     normals[v] = NormalAt(output, x, y, step);
-                    colors[v] = output.VertexColorAt(x, y);
+
+                    Color tint = output.VertexColorAt(x, y);
+                    vertexColor[v * 4] = tint.R;
+                    vertexColor[(v * 4) + 1] = tint.G;
+                    vertexColor[(v * 4) + 2] = tint.B;
+                    vertexColor[(v * 4) + 3] = 1.0f;
 
                     Color glow = output.VertexLightAt(x, y);
                     light[v * 3] = glow.R;
@@ -122,14 +127,15 @@ public static class LandscapeBatchMesh
         arrays[(int)Mesh.ArrayType.Vertex] = vertices;
         arrays[(int)Mesh.ArrayType.Normal] = normals;
         arrays[(int)Mesh.ArrayType.TexUV] = uvs;
-        arrays[(int)Mesh.ArrayType.Color] = colors;
         arrays[(int)Mesh.ArrayType.Custom0] = light;
         arrays[(int)Mesh.ArrayType.Custom1] = chunkIndex;
+        arrays[(int)Mesh.ArrayType.Custom2] = vertexColor;
         arrays[(int)Mesh.ArrayType.Index] = indices;
 
         Mesh.ArrayFormat customFlags =
             (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbFloat << (int)Mesh.ArrayFormat.FormatCustom0Shift) |
-            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift);
+            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RFloat << (int)Mesh.ArrayFormat.FormatCustom1Shift) |
+            (Mesh.ArrayFormat)((long)Mesh.ArrayCustomFormat.RgbaHalf << (int)Mesh.ArrayFormat.FormatCustom2Shift);
 
         var mesh = new ArrayMesh();
         mesh.AddSurfaceFromArrays(Mesh.PrimitiveType.Triangles, arrays, flags: customFlags);
@@ -630,16 +636,19 @@ global uniform float wms_terrain_specular_intensity = 1.0;
 
 """ + EnvironmentShaderLibrary.FogFunctionCode + """
 
-// CUSTOM0 (vertex light) and CUSTOM1 (this chunk's index inside the batch) are vertex-stage built-ins
-// only, so both need a varying to reach fragment(). chunk_index is flat: it is constant per chunk and
-// must not be interpolated across the seam between two chunks in one surface.
+// CUSTOM0 (vertex light), CUSTOM1 (this chunk's index inside the batch) and CUSTOM2 (vertex color, a
+// 0-4 multiplier that must survive above 1.0 to brighten — see show_vertex_color below) are
+// vertex-stage built-ins only, so each needs a varying to reach fragment(). chunk_index is flat: it is
+// constant per chunk and must not be interpolated across the seam between two chunks in one surface.
 varying vec3 vertex_light;
+varying vec3 vertex_color;
 varying vec3 world_pos;
 varying flat float chunk_index;
 
 void vertex() {
     vertex_light = CUSTOM0.rgb;
     chunk_index = CUSTOM1.x;
+    vertex_color = CUSTOM2.rgb;
     world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 }
 
@@ -725,7 +734,7 @@ void fragment() {
     }
 
     if (show_vertex_color) {
-        color *= COLOR.rgb;
+        color *= vertex_color;
     }
 
     // Baked vertex light is light, not pigment: it must add to what reaches the surface rather than
