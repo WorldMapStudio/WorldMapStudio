@@ -110,6 +110,10 @@ public sealed class ChannelVertexLightAdd : ILandscapeVertexLightFunction
 /// (e.g. a painted <see cref="PaintImage"/>) rather than one fixed tint masked by a scalar. Weighted
 /// by the source channel's own alpha, or by <see cref="Mask"/> when one is bound — useful when the
 /// source is RGB with no alpha of its own to weigh by.
+///
+/// <see cref="Exponent"/> and <see cref="Scale"/> decode the source as an encoded multiplier stored in
+/// a byte image — <c>pow(sampled.rgb, Exponent) * Scale</c> before it is blended in. Their defaults
+/// (1, 1) leave a plain painted color unchanged.
 /// </summary>
 public sealed class ChannelVertexColorPaint : ILandscapeVertexColorFunction
 {
@@ -125,21 +129,29 @@ public sealed class ChannelVertexColorPaint : ILandscapeVertexColorFunction
     public static readonly LandscapeParameter Strength =
         LandscapeParameter.Float("strength", "Strength", 1.0f, 0.0f, 1.0f, "Overall intensity of the paint.");
 
+    public static readonly LandscapeParameter Exponent =
+        LandscapeParameter.Float("exponent", "Exponent", 1.0f, 0.1f, 4.0f, "Power applied to the source RGB before painting.");
+
+    public static readonly LandscapeParameter Scale =
+        LandscapeParameter.Float("scale", "Scale", 1.0f, 0.0f, 8.0f, "Multiplier applied to the source RGB after the exponent.");
+
     public string Id => "builtin.vertex_color.channel_paint";
 
     public string DisplayName => "Channel Vertex Color Paint";
 
     public string Description => "Blends accumulated vertex color toward a color channel's own RGB(A).";
 
-    public int Version => 1;
+    public int Version => 2;
 
     public float MaxSampleRadius => 0.0f;
 
-    public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(Source, Mask, Strength);
+    public IReadOnlyList<LandscapeParameter> Parameters { get; } = LandscapeParameter.List(Source, Mask, Strength, Exponent, Scale);
 
     public void Evaluate(in LandscapeEvalContext context, Color[] colors)
     {
         float strength = Mathf.Clamp(context.Float(Strength), 0.0f, 1.0f);
+        float exponent = context.Float(Exponent);
+        float scale = context.Float(Scale);
         LandscapeChannelBinding mask = context.ChannelBinding(Mask);
         LandscapeChannelBinding source = context.ChannelBinding(Source);
         bool hasMask = !mask.IsEmpty;
@@ -159,9 +171,15 @@ public sealed class ChannelVertexColorPaint : ILandscapeVertexColorFunction
                     continue;
                 }
 
+                Color target = new Color(
+                    Mathf.Pow(sampled.R, exponent) * scale,
+                    Mathf.Pow(sampled.G, exponent) * scale,
+                    Mathf.Pow(sampled.B, exponent) * scale,
+                    sampled.A);
+
                 // Same accumulate-and-transform shape as ChannelVertexColorTint, just toward a color
-                // this build read from the channel instead of one fixed on the material.
-                colors[index] = colors[index].Lerp(sampled, weight);
+                // this build read (and decoded) from the channel instead of one fixed on the material.
+                colors[index] = colors[index].Lerp(target, weight);
             }
         }
     }
