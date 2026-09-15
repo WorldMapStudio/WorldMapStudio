@@ -102,33 +102,36 @@ public sealed class LogWindow : Window
             return;
         }
 
-        if (_visible.Count == 0)
+        using (ImGuiEx.PushFont(CommonFonts.Monospace))
         {
-            ImGui.TextDisabled(ConsoleLog.Entries.Count == 0 ? "No output yet." : "Nothing matches the filter.");
-        }
-        else if (_wrap)
-        {
-            for (int i = 0; i < _visible.Count; i++)
+            if (_visible.Count == 0)
             {
-                DrawRow(_visible[i], i);
+                ImGui.TextDisabled(ConsoleLog.Entries.Count == 0 ? "No output yet." : "Nothing matches the filter.");
             }
-        }
-        else
-        {
-            unsafe
+            else if (_wrap)
             {
-                var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
-                clipper.Begin(_visible.Count);
-                while (clipper.Step())
+                for (int i = 0; i < _visible.Count; i++)
                 {
-                    for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
-                    {
-                        DrawRow(_visible[i], i);
-                    }
+                    DrawRow(_visible[i], i);
                 }
+            }
+            else
+            {
+                unsafe
+                {
+                    var clipper = new ImGuiListClipperPtr(ImGuiNative.ImGuiListClipper_ImGuiListClipper());
+                    clipper.Begin(_visible.Count);
+                    while (clipper.Step())
+                    {
+                        for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+                        {
+                            DrawRow(_visible[i], i);
+                        }
+                    }
 
-                clipper.End();
-                clipper.Destroy();
+                    clipper.End();
+                    clipper.Destroy();
+                }
             }
         }
 

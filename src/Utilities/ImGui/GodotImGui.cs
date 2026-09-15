@@ -36,11 +36,10 @@ public sealed partial class GodotImGui : Node
     private ImGuiLayer _layer = null!;
     private ImGuiInput _input = null!;
     private ImGuiRenderer _renderer = null!;
-    private Texture2D _fontTexture = null!;
+    private readonly FontAtlasBuilder _fonts = new();
     private bool _frameBegun;
     private bool _initialized;
 
-    public float FontScale { get; set; } = 1.0f;
     public void AddLayout(Action layout)
     {
         _layouts.Add(layout);
@@ -79,7 +78,7 @@ public sealed partial class GodotImGui : Node
         }
 
         EditorStyle.Initialize();
-        RebuildFontAtlas();
+        _fonts.RebuildIfNeeded(this, io, EditorStyle.Active);
 
         _renderer = new ImGuiRenderer();
         _input = new ImGuiInput(this);
@@ -165,25 +164,8 @@ public sealed partial class GodotImGui : Node
         io.DeltaTime = delta > 0.0 ? (float)delta : 1.0f / 60.0f;
 
         _input.Update(io);
-        EditorStyle.ApplyPending(ImGui.GetStyle());
+        EditorStyle.ApplyPending(ImGui.GetStyle(), io, _fonts, this);
         ImGui.NewFrame();
         _frameBegun = true;
-    }
-
-    private unsafe void RebuildFontAtlas()
-    {
-        ImGuiIOPtr io = ImGui.GetIO();
-        io.Fonts.AddFontDefault();
-        io.Fonts.GetTexDataAsRGBA32(out byte* pixelData, out int width, out int height, out int bytesPerPixel);
-
-        byte[] pixels = new byte[width * height * bytesPerPixel];
-        Marshal.Copy((IntPtr)pixelData, pixels, 0, pixels.Length);
-
-        Image image = Image.CreateFromData(width, height, false, Image.Format.Rgba8, pixels);
-        _fontTexture = ImageTexture.CreateFromImage(image);
-        io.Fonts.SetTexID((IntPtr)_fontTexture.GetRid().Id);
-        io.Fonts.ClearTexData();
-
-        ImGui.GetStyle().ScaleAllSizes(FontScale);
     }
 }

@@ -76,10 +76,13 @@ public sealed class ScriptConsoleWindow : Window
     private void DrawHistory()
     {
         ImGui.BeginChild("##ScriptHistory", new NVector2(0, -32), true);
-        foreach (Entry entry in _history)
+        using (ImGuiEx.PushFont(CommonFonts.Monospace))
         {
-            ImGui.TextColored(new System.Numerics.Vector4(0.55f, 0.75f, 1.0f, 1.0f), $"> {entry.Input}");
-            ImGui.TextWrapped(entry.Output);
+            foreach (Entry entry in _history)
+            {
+                ImGuiEx.TextColored(CommonColors.Accent, $"> {entry.Input}");
+                ImGui.TextWrapped(entry.Output);
+            }
         }
 
         if (_scrollToBottom)

@@ -52,10 +52,25 @@ public static partial class EditorStyle
     private static int _appliedGeneration = -1;
     private static string? _pendingConflictName;
 
+    private static readonly List<StyleProblem> RuntimeProblems = [];
+
     public static ResolvedStyle Active { get; private set; } = null!;
     public static string ActiveName { get; private set; } = "Dark";
     public static int Generation { get; private set; }
-    public static IReadOnlyList<StyleProblem> Problems => Active.Problems;
+
+    /// <summary>Color/var/token resolution problems plus font load problems from the last atlas
+    /// rebuild (see <see cref="ReportFontProblems"/>) — everything the Style Editor's Problems tab shows.</summary>
+    public static IReadOnlyList<StyleProblem> Problems => RuntimeProblems.Count == 0
+        ? Active.Problems
+        : Active.Problems.Concat(RuntimeProblems).ToList();
+
+    /// <summary>Called by <see cref="FontAtlasBuilder"/> after every rebuild with whatever font slots
+    /// failed to load. Replaces the previous set — stale font problems from a since-fixed slot don't linger.</summary>
+    internal static void ReportFontProblems(IReadOnlyList<StyleProblem> problems)
+    {
+        RuntimeProblems.Clear();
+        RuntimeProblems.AddRange(problems);
+    }
 
     /// <summary>The active style's own values as loaded, mutated live by the Style Editor window and
     /// re-resolved into <see cref="Active"/> on every change — the editor is its own preview.</summary>
@@ -131,10 +146,13 @@ public static partial class EditorStyle
     }
 
     /// <summary>Called by <see cref="GodotImGui"/> once per frame, before <c>ImGui.NewFrame()</c> —
-    /// the only point it's legal to touch <c>ImGuiStyle</c> or rebuild the font atlas.</summary>
-    public static void ApplyPending(ImGuiStylePtr style)
+    /// the only point it's legal to touch <c>ImGuiStyle</c> or rebuild the font atlas.
+    /// <paramref name="fonts"/> diffs a font-only signature itself, so a color/var-only change here
+    /// never triggers an atlas rebuild.</summary>
+    public static void ApplyPending(ImGuiStylePtr style, ImGuiIOPtr io, FontAtlasBuilder fonts, GodotImGui owner)
     {
         CheckHotReload();
+        fonts.RebuildIfNeeded(owner, io, Active);
 
         if (_appliedGeneration == Generation)
         {
