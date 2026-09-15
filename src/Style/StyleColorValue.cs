@@ -70,6 +70,29 @@ public abstract class StyleColorValue
     private static float? ReadFloat(JsonNode? node) =>
         node is JsonValue value && value.TryGetValue(out float f) ? f : null;
 
+    /// <summary>Parses a code-declared default (see <see cref="StyleColor"/>) — same grammar as a
+    /// file value, but a bad literal here is a programmer error, so this throws instead of reporting
+    /// a <see cref="StyleProblem"/>.</summary>
+    public static StyleColorValue FromCode(string text)
+    {
+        if (text.StartsWith('#'))
+        {
+            if (!TryParseHex(text, out Vector4 color))
+            {
+                throw new ArgumentException($"Invalid hex color '{text}'.", nameof(text));
+            }
+
+            return new StyleColorLiteral(color);
+        }
+
+        if (text.StartsWith('$') || text.StartsWith('@'))
+        {
+            return new StyleColorReference(text, null, null, null);
+        }
+
+        throw new ArgumentException($"Invalid color literal '{text}' (expected #hex, $palette, or @ref).", nameof(text));
+    }
+
     public static bool TryParseHex(string text, out Vector4 color)
     {
         color = default;

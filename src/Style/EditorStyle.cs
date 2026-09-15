@@ -80,6 +80,7 @@ public static partial class EditorStyle
         Directory.CreateDirectory(_userStylesDir);
         _activeFilePath = Path.Combine(_userStylesDir, "active.json");
 
+        StyleTokenRegistry.EnsureDiscovered();
         LoadShipped();
         LoadUser();
 
@@ -160,7 +161,7 @@ public static partial class EditorStyle
 
     private static void RecomputeActive()
     {
-        Active = StyleResolver.Resolve(Working, LookupParentDocument);
+        Active = StyleResolver.Resolve(Working, LookupParentDocument, StyleTokenRegistry.ColorDefaults, StyleTokenRegistry.SizeDefaults);
         Generation++;
     }
 
