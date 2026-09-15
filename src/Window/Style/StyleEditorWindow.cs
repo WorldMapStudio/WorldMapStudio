@@ -68,13 +68,14 @@ public sealed partial class StyleEditorWindow : Window
         DrawHeader();
         ImGui.Separator();
 
+        bool readOnly = EditorStyle.IsActiveReadOnly;
         if (ImGui.BeginTabBar("StyleEditorTabs"))
         {
-            DrawTab("Palette", DrawPaletteTab);
-            DrawTab("Interface", DrawInterfaceTab);
-            DrawTab("Editor Colors", DrawTokensTab);
-            DrawTab("Sizes", DrawSizesTab);
-            DrawTab("Fonts", DrawFontsTab);
+            DrawTab("Palette", DrawPaletteTab, readOnly);
+            DrawTab("Interface", DrawInterfaceTab, readOnly);
+            DrawTab("Editor Colors", DrawTokensTab, readOnly);
+            DrawTab("Sizes", DrawSizesTab, readOnly);
+            DrawTab("Fonts", DrawFontsTab, readOnly);
             DrawTab(EditorStyle.Problems.Count > 0 ? $"Problems ({EditorStyle.Problems.Count})" : "Problems", DrawProblemsTab);
             DrawTab("Preview", DrawPreviewTab);
             ImGui.EndTabBar();
@@ -97,7 +98,7 @@ public sealed partial class StyleEditorWindow : Window
         }
     }
 
-    private static void DrawTab(string label, Action draw)
+    private static void DrawTab(string label, Action draw, bool disabled = false)
     {
         if (!ImGui.BeginTabItem(label))
         {
@@ -105,7 +106,16 @@ public sealed partial class StyleEditorWindow : Window
         }
 
         ImGui.Spacing();
+
+        if (disabled)
+        {
+            ImGuiEx.TextColored(CommonColors.Warning, "This style is read-only — use \"Save As...\" to edit a copy.");
+            ImGui.Spacing();
+        }
+
+        ImGui.BeginDisabled(disabled);
         draw();
+        ImGui.EndDisabled();
         ImGui.EndTabItem();
     }
 
