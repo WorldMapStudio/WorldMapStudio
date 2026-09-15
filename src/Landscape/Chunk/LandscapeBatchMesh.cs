@@ -37,6 +37,12 @@ public static class LandscapeBatchMesh
     /// <summary>Whether chunk borders are drawn on the terrain. Set from the view settings.</summary>
     public static bool ShowChunkEdges { get; set; } = true;
 
+    /// <summary>Whether baked vertex color tints the terrain. Set from the view settings.</summary>
+    public static bool ShowVertexColor { get; set; } = true;
+
+    /// <summary>Whether baked vertex light lights the terrain. Set from the view settings.</summary>
+    public static bool ShowVertexLight { get; set; } = true;
+
     /// <summary>
     /// One surface for the whole batch, built by concatenating each chunk's own vertex grid. Chunk
     /// positions are batch-local; UV stays chunk-local (the shader tiles and draws chunk edges from
@@ -222,7 +228,7 @@ public static class LandscapeBatchMesh
         material.SetShaderParameter(Names.BatchChunks, batchChunks);
         material.SetShaderParameter(Names.AlphaResolution, alphaResolution);
         material.SetShaderParameter(Names.Tiling, TextureTiling);
-        material.SetShaderParameter(Names.ShowChunkEdges, ShowChunkEdges);
+        ApplyDisplayToggles(material);
         material.SetShaderParameter(Names.BlendMode, (int)settings.TextureBlendMode);
 
         if (settings.TextureBlendMode == LandscapeTextureBlendMode.HeightBased)
@@ -572,6 +578,14 @@ public static class LandscapeBatchMesh
         255,
     ];
 
+    /// <summary>Writes the current view toggles onto a splat material.</summary>
+    public static void ApplyDisplayToggles(ShaderMaterial material)
+    {
+        material.SetShaderParameter(Names.ShowChunkEdges, ShowChunkEdges);
+        material.SetShaderParameter(Names.ShowVertexColor, ShowVertexColor);
+        material.SetShaderParameter(Names.ShowVertexLight, ShowVertexLight);
+    }
+
     private static Shader SplatShader() => _shader ??= new Shader { Code = SplatShaderCode };
 
     // Cached rather than converted per SetShaderParameter call: each conversion allocates a
@@ -587,6 +601,8 @@ public static class LandscapeBatchMesh
         public static readonly StringName BlendMode = "blend_mode";
         public static readonly StringName Tiling = "tiling";
         public static readonly StringName ShowChunkEdges = "show_chunk_edges";
+        public static readonly StringName ShowVertexColor = "show_vertex_color";
+        public static readonly StringName ShowVertexLight = "show_vertex_light";
     }
 
     internal const string SplatShaderCode = """
@@ -604,6 +620,8 @@ uniform int alpha_resolution = 64;
 uniform int blend_mode = 0; // LandscapeTextureBlendMode: 0 SequentialOver, 1 WeightedSum, 2 HeightBased
 uniform float tiling = 8.0;
 uniform bool show_chunk_edges = false;
+uniform bool show_vertex_color = true;
+uniform bool show_vertex_light = true;
 uniform vec3 chunk_edge_color : source_color = vec3(0.95, 0.75, 0.35);
 
 const float height_blend_sharpness = 8.0;
@@ -706,12 +724,14 @@ void fragment() {
         color = composite_sequential_over(tiled, UV);
     }
 
-    color *= COLOR.rgb;
+    if (show_vertex_color) {
+        color *= COLOR.rgb;
+    }
 
     // Baked vertex light is light, not pigment: it must add to what reaches the surface rather than
     // to the surface's own colour, so it survives a dark scene and isn't scaled up by a bright one.
     // EMISSION is exactly that — added after lighting — and is still tinted by the albedo under it.
-    vec3 emission = color * vertex_light;
+    vec3 emission = show_vertex_light ? color * vertex_light : vec3(0.0);
 
     if (show_chunk_edges) {
         vec2 toEdge = min(UV, vec2(1.0) - UV);

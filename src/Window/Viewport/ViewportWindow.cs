@@ -76,7 +76,7 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
     private readonly Dictionary<MapId, GVector3> _cameraByMap = [];
 
     private MapId _viewMap;
-    private bool _chunkEdgesShown = true;
+    private (bool ChunkEdges, bool VertexColor, bool VertexLight) _terrainDisplay = (true, true, true);
     private float? _gridScaleChunkSize;
     private (SignedAxis X, SignedAxis Y, SignedAxis Z)? _axisLineColorsFor;
 
@@ -397,7 +397,7 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
         _grid.Visible = _view.ShowGrid;
         _upAxisLine.Visible = _view.ShowGrid;
         UpdateGridScale();
-        UpdateChunkEdges();
+        UpdateTerrainDisplay();
 
         // Centred under the camera so the grid feels endless, and a hair below the ground plane:
         // flat terrain sits at exactly zero, and two coplanar surfaces fight for depth.
@@ -490,20 +490,24 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
         return _pointerPick;
     }
 
-    // Applies the view toggle to chunks already built. New ones pick it up from the static default
-    // when their material is made.
-    private void UpdateChunkEdges()
+    // Applies the terrain view toggles to batches already built. New ones pick them up from the
+    // static defaults when their material is made.
+    private void UpdateTerrainDisplay()
     {
         LandscapeBatchMesh.ShowChunkEdges = _view.ShowChunkEdges;
-        if (_chunkEdgesShown == _view.ShowChunkEdges)
+        LandscapeBatchMesh.ShowVertexColor = _view.ShowTerrainVertexColor;
+        LandscapeBatchMesh.ShowVertexLight = _view.ShowTerrainVertexLight;
+
+        var display = (_view.ShowChunkEdges, _view.ShowTerrainVertexColor, _view.ShowTerrainVertexLight);
+        if (_terrainDisplay == display)
         {
             return;
         }
 
-        _chunkEdgesShown = _view.ShowChunkEdges;
+        _terrainDisplay = display;
         foreach (SceneEntity entity in _scene.Entities)
         {
-            (entity as LandscapeTerrainBatch)?.SetChunkEdgesVisible(_chunkEdgesShown);
+            (entity as LandscapeTerrainBatch)?.ApplyDisplayToggles();
         }
     }
 

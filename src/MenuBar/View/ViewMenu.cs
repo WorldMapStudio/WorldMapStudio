@@ -16,6 +16,8 @@ public sealed class ViewMenu : IMainMenu
     private readonly ViewCategorySystem _viewCategories;
     private readonly ShortcutAction _grid;
     private readonly ShortcutAction _chunkEdges;
+    private readonly ShortcutAction _terrainVertexColor;
+    private readonly ShortcutAction _terrainVertexLight;
     private readonly ShortcutAction _environmentVolumes;
     private readonly List<(IViewCategory Category, ShortcutAction Shortcut)> _categoryShortcuts = [];
 
@@ -38,6 +40,18 @@ public sealed class ViewMenu : IMainMenu
             "Chunk Edges",
             new KeyboardShortcut(ImGuiKey.E, ShortcutModifiers.Alt),
             () => _view.ShowChunkEdges = !_view.ShowChunkEdges);
+        _terrainVertexColor = manager.Context.Shortcuts.Register(
+            "view.terrain-vertex-color",
+            "View",
+            "Terrain Vertex Color",
+            KeyboardShortcut.None,
+            () => _view.ShowTerrainVertexColor = !_view.ShowTerrainVertexColor);
+        _terrainVertexLight = manager.Context.Shortcuts.Register(
+            "view.terrain-vertex-light",
+            "View",
+            "Terrain Vertex Light",
+            KeyboardShortcut.None,
+            () => _view.ShowTerrainVertexLight = !_view.ShowTerrainVertexLight);
         _environmentVolumes = manager.Context.Shortcuts.Register(
             "view.environment-volumes",
             "View",
@@ -72,6 +86,18 @@ public sealed class ViewMenu : IMainMenu
             if (ImGui.MenuItem("Chunk Edges", _chunkEdges.ShortcutLabel, ref showChunkEdges))
             {
                 _view.ShowChunkEdges = showChunkEdges;
+            }
+
+            bool showVertexColor = _view.ShowTerrainVertexColor;
+            if (ImGui.MenuItem("Terrain Vertex Color", _terrainVertexColor.ShortcutLabel, ref showVertexColor))
+            {
+                _view.ShowTerrainVertexColor = showVertexColor;
+            }
+
+            bool showVertexLight = _view.ShowTerrainVertexLight;
+            if (ImGui.MenuItem("Terrain Vertex Light", _terrainVertexLight.ShortcutLabel, ref showVertexLight))
+            {
+                _view.ShowTerrainVertexLight = showVertexLight;
             }
 
             bool showEnvironmentVolumes = _view.ShowEnvironmentVolumes;
