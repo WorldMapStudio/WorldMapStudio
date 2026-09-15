@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "name": "Daybreak",
+  "extends": "Light",
+  "palette": {
+    "accent": "#2F7DE1",
+    "danger": "#D8483C"
+  },
+  "vars": {
+    "WindowRounding": 4,
+    "ChildRounding": 4,
+    "PopupRounding": 4,
+    "FrameRounding": 3,
+    "GrabRounding": 3,
+    "ScrollbarRounding": 6,
+    "FramePadding": [6, 4]
+  },
+  "colors": {
+    "Button": "$accent",
+    "ButtonHovered": { "ref": "$accent", "lighten": 0.1 },
+    "ButtonActive": { "ref": "$accent", "darken": 0.1 },
+    "Header": { "ref": "$accent", "alpha": 0.35 },
+    "HeaderHovered": { "ref": "$accent", "alpha": 0.55 },
+    "HeaderActive": "$accent",
+    "CheckMark": "$accent",
+    "SliderGrab": "$accent",
+    "SliderGrabActive": { "ref": "$accent", "darken": 0.1 },
+    "TabActive": { "ref": "$accent", "alpha": 0.5 },
+    "TabHovered": { "ref": "$accent", "alpha": 0.3 }
+  },
+  "tokens": {
+    "text.error": "$danger",
+    "text.accent": "$accent"
+  }
+}

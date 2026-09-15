@@ -140,5 +140,19 @@ public static class StyleModelTests
         Assert.IsTrue(NearlyEqual(new Vector4(1f, 0.45f, 0.4f, 1f), resolved.Tokens["text.error"]));
     }
 
+    [EditorTest(Category = "Style")]
+    public static void Shipped_styles_parse_and_resolve_without_problems()
+    {
+        foreach (string name in new[] { "Midnight", "Daybreak" })
+        {
+            string path = Godot.ProjectSettings.GlobalizePath($"res://styles/{name}.json");
+            StyleDocument doc = StyleDocument.Parse(System.IO.File.ReadAllText(path));
+            Assert.AreEqual(0, doc.Problems.Count, $"{name}.json had parse problems: {string.Join("; ", doc.Problems)}");
+
+            ResolvedStyle resolved = StyleResolver.Resolve(doc, _ => null);
+            Assert.AreEqual(0, resolved.Problems.Count, $"{name}.json had resolve problems: {string.Join("; ", resolved.Problems)}");
+        }
+    }
+
     private static bool NearlyEqual(Vector4 a, Vector4 b) => Vector4.Distance(a, b) < 0.001f;
 }

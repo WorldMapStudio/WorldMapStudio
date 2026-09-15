@@ -1,0 +1,184 @@
+---
+sidebar_position: 3
+---
+
+# Editor Style
+
+The editor's own look — ImGui colors, sizes, and fonts — is themeable through style files, editable
+live from the **Style Editor** window (`Alt+S`), hand-edited on disk with hot reload, or driven by
+scripts through `wms.style`.
+
+## Where Styles Live
+
+- Built-in roots: `Dark`, `Light`, `Classic` — synthesized from ImGui's own presets, not files. Every
+  style ultimately extends one of these.
+- Shipped styles: `res://styles/*.json`, read-only in the window. `Midnight` and `Daybreak` ship as
+  examples.
+- User styles: `user://styles/*.json`, editable and deletable.
+- The active style's name is stored in `user://styles/active.json`.
+
+A style file changed on disk is picked up automatically (checked roughly once a second). If the
+active style has unsaved edits when its file changes underneath it, the window shows a conflict
+banner instead of silently overwriting either side.
+
+## Three Layers Of Style Data
+
+1. **Palette** — named colors the style itself defines (`accent`, `danger`, ...). Nothing reads a
+   palette entry directly; it exists so changing one color in one place updates everything that
+   references it.
+2. **ImGui core** — every `ImGuiCol` entry, plus the numeric `ImGuiStyle` fields (rounding, padding,
+   spacing, border sizes, alpha) and font settings.
+3. **Semantic tokens** — the editor-level colors code actually asks for, like `text.error` or
+   `gizmo.axis.x`. Declared in code (see [Adding Tokens From Code](#adding-tokens-from-code) below)
+   and discovered automatically, so the Style Editor lists every token without any window or menu
+   naming it directly.
+
+## Style Files
+
+Style files are JSON, and sparse: a file stores only what it overrides, plus the name of the style
+it extends.
+
+```json
+{
+  "version": 1,
+  "name": "Midnight",
+  "extends": "Dark",
+  "palette": {
+    "accent": "#4A90E2",
+    "danger": "#FF7366"
+  },
+  "fonts": {
+    "scale": 1.0,
+    "ui": { "family": "Segoe UI", "weight": 400, "italic": false, "size": 15 },
+    "monospace": { "file": "C:/Fonts/JetBrainsMono-Regular.ttf", "size": 14 }
+  },
+  "vars": {
+    "WindowRounding": 4,
+    "FrameRounding": 3,
+    "FramePadding": [6, 4]
+  },
+  "colors": {
+    "Button": "$accent",
+    "ButtonHovered": { "ref": "$accent", "lighten": 0.1 },
+    "WindowBg": "#15171CFF"
+  },
+  "tokens": {
+    "text.error": "$danger"
+  },
+  "sizes": {
+    "gizmo.line-thickness": 2.0
+  }
+}
+```
+
+Any color value under `"colors"`, `"tokens"`, or a palette entry may be:
+
+| Value | Meaning |
+|---|---|
+| `"#RRGGBB"` / `"#RRGGBBAA"` | a literal color |
+| `"$accent"` | a reference to a palette entry |
+| `"@Button"` | a reference to another ImGui color |
+| `"@text.error"` | a reference to another semantic token |
+| `{ "ref": "$accent", "alpha": 0.6 }` | a reference with an alpha override (`"lighten"`/`"darken"` also work, 0..1) |
+
+References are what makes "change the accent once, the whole editor follows" work — and they can
+chain (a token can reference another token that references a palette entry).
+
+A numeric `"vars"` entry is either a plain number (`"WindowRounding": 4`) or an `[x, y]` pair
+(`"FramePadding": [6, 4]`) for the handful of `ImGuiStyle` fields that are a `Vector2`.
+
+Unknown keys anywhere in the file are kept on save and reported in the **Problems** tab rather than
+silently dropped — a file written by a newer build of the editor survives being loaded by an older
+one.
+
+## Resolution
+
+Activating a style walks its `extends` chain up to a built-in root, then merges palettes, vars,
+colors, and tokens **root-first**, so a child's values win over its parent's. Every reference is then
+resolved against that merged set.
+
+Resolution never throws. A style with a broken chain (a cycle, or `extends` naming a style that
+doesn't exist) falls back to `Dark` for the parts that are broken; a token or reference that doesn't
+resolve falls back to whatever value it inherits, or shows a problem. Every failure is recorded as a
+line in the **Problems** tab instead of taking the editor down.
+
+## Fonts
+
+Each font **slot** (`ui`, `monospace`, or one a plugin declares) picks one of three sources:
+
+- **Built-in default** — neither `family` nor `file` is set. This is what an empty style resolves to.
+- **System** — `family` (+ optional `weight`, `italic`) names an installed font, resolved through the
+  OS's own font service, so it's portable between machines that have the same family installed.
+- **File** — `file` is an absolute path to a `.ttf`/`.otf`/`.ttc` file. `.ttc` collections resolve to
+  the face whose name matches `family` when set via the window; a hand-written file value always
+  means face 0 unless you're driving it from a script with an explicit face.
+
+Every loaded font gets ImGui's own built-in font merged in as a fallback, so a font with sparse
+glyph coverage never renders tofu for basic ASCII. CFF-outline `.otf` files are marked unsupported in
+the picker — the bundled ImGui build's font rasterizer doesn't handle them.
+
+`"ui"` is special: it's the atlas's first font, which makes it ImGui's implicit default for
+everything drawn without pushing a font explicitly.
+
+## The Style Editor Window
+
+Open it with **Window > Style Editor** or `Alt+S`. It edits the active style's document directly —
+every change previews live, because the whole editor *is* the preview.
+
+- **Header** — pick the active style, **New**/**Duplicate**/**Rename**/**Delete**, **Open Folder**,
+  and **Save**/**Save As**/**Revert**. Built-in and shipped styles are read-only; editing one prompts
+  **Save As** to fork a copy.
+- **Palette** / **Interface** / **Editor Colors** — the same row for every color, wherever it lives: a
+  swatch, a source picker (literal, a palette entry, or a typed-in `$`/`@` reference), whether this
+  style overrides it, and a **Reset**. Hovering a swatch briefly flashes that color magenta
+  everywhere it's used, so you can find where a token actually shows up.
+- **Sizes** — every numeric `ImGuiStyle` field, plus any registered `StyleSize` tokens.
+- **Fonts** — global scale, then each slot's source/family/weight/italic/file/size, with a live
+  sample line.
+- **Problems** — every resolution and font-load problem for the active chain.
+- **Preview** — a fixed gallery of widget states (buttons, frames, tabs, a table, a tree, a plot) hard
+  to eyeball anywhere else in the editor.
+
+`Ctrl+Z` inside the window undoes the last edit — a small stack local to the window, separate from the
+world's own undo history, so theme tweaks never interleave with map edits.
+
+## Scripting: `wms.style`
+
+Everything the window does is reachable from script, which is what lets an LLM (or a macro) build a
+whole theme end-to-end:
+
+```js
+wms.style.create("Sunset", "Dark");
+wms.style.setPalette("accent", "#E8944A");
+wms.style.set("imgui.Button", "$accent");
+wms.style.set("var.WindowRounding", 6);
+wms.style.set("text.warning", { ref: "$accent", lighten: 0.15 });
+wms.style.save();
+```
+
+Ids are unified across kinds: an ImGui color is `"imgui.Button"`, a numeric `ImGuiStyle` field is
+`"var.FrameRounding"`, a font value is `"font.scale"` or `"font.ui.size"`, a palette entry is
+`"$accent"`, and a semantic token is addressed by its own id (`"text.error"`). `Get`/`Set` on an id
+that doesn't resolve to anything throws, so a script finds out immediately rather than silently
+writing to nowhere.
+
+See `List`, `Tokens`, `SystemFonts`, `FontVariants`, and `Problems` on the same module for everything
+readable without writing.
+
+## Adding Tokens From Code
+
+A new semantic color, font slot, or size lives in a `static class` marked `[StyleTokens]`:
+
+```csharp
+[StyleTokens]
+public static class CommonColors
+{
+    public static readonly StyleColor Error = new("text.error", "Text", "Error", "#FF7366");
+}
+```
+
+The class is discovered by reflection and its static constructor forced to run at startup, which
+registers every field — nothing else has to know the class exists for the token to show up in the
+Style Editor and in `wms.style.tokens()`. Read a token's live value with `.Value` (or `.U32` for a
+packed ImGui color); both are cached per style generation, so a call site costs about the same as
+today's hard-coded literal.

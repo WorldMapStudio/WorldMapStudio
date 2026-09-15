@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "name": "Midnight",
+  "extends": "Dark",
+  "palette": {
+    "accent": "#4A90E2",
+    "danger": "#FF7366"
+  },
+  "vars": {
+    "WindowRounding": 4,
+    "ChildRounding": 4,
+    "PopupRounding": 4,
+    "FrameRounding": 3,
+    "GrabRounding": 3,
+    "ScrollbarRounding": 6,
+    "FramePadding": [6, 4]
+  },
+  "colors": {
+    "WindowBg": "#15171CFF",
+    "ChildBg": "#1A1D24FF",
+    "PopupBg": "#1A1D24FA",
+    "FrameBg": "#20242CFF",
+    "FrameBgHovered": "#262B35FF",
+    "FrameBgActive": "#2C323DFF",
+    "TitleBgActive": "#1A1D24FF",
+    "Button": "$accent",
+    "ButtonHovered": { "ref": "$accent", "lighten": 0.1 },
+    "ButtonActive": { "ref": "$accent", "darken": 0.1 },
+    "Header": { "ref": "$accent", "alpha": 0.5 },
+    "HeaderHovered": { "ref": "$accent", "alpha": 0.7 },
+    "HeaderActive": "$accent",
+    "CheckMark": "$accent",
+    "SliderGrab": "$accent",
+    "SliderGrabActive": { "ref": "$accent", "lighten": 0.15 },
+    "TabActive": { "ref": "$accent", "alpha": 0.6 },
+    "TabHovered": { "ref": "$accent", "alpha": 0.4 }
+  },
+  "tokens": {
+    "text.error": "$danger",
+    "text.accent": "$accent"
+  }
+}
