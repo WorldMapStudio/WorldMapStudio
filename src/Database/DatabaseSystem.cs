@@ -243,7 +243,10 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     // uncommitted edit" check, applied to a catalog entity instead of a scene one. Untyped (rather than
     // generic over TEntity) on purpose: Func<in T> is contravariant, so this satisfies
     // RemoveAll<TEntity>'s Func<TEntity, bool> for whatever TEntity the caller asks for.
-    private bool IsPinned(CatalogEntity entity)
+    //
+    // Internal rather than private so EditorStorage.FindMapOnlyResourcesAsync can reuse it for its own
+    // "still live" guard instead of reimplementing the pinned check.
+    internal bool IsPinned(CatalogEntity entity)
     {
         foreach (IEntity pinned in _context.EditSessions.Active.Pinned)
         {

@@ -54,6 +54,14 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     /// a built-in one is. See <see cref="ISceneComponentPersistence"/>.</summary>
     public IEnumerable<ISceneComponentPersistence> ComponentPersistence => Facet<ISceneComponentPersistence>();
 
+    /// <summary>Registered owners of a map's contents, ordered by <see cref="ISubsystem.Priority"/> —
+    /// see <see cref="IMapScopedData"/>.</summary>
+    public IEnumerable<IMapScopedData> MapScopedData => Facet<IMapScopedData>();
+
+    /// <summary>Registered catalogs whose rows can be deleted along with the map that was their only
+    /// user — see <see cref="IMapOwnableResourceFactory"/>.</summary>
+    public IEnumerable<IMapOwnableResourceFactory> MapOwnableResourceFactories => Facet<IMapOwnableResourceFactory>();
+
     /// <summary>Opens a short-lived context for one unit of work against this storage.</summary>
     public EditorDbContext CreateContext() =>
         new(BuildOptions<EditorDbContext>(), ComponentPersistence.ToList(), EntityFactories.ToList(), TableConfigurations.ToList());
@@ -271,6 +279,212 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         using IDisposable read = await Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
         return await persistence.ReferencingBoundsAsync(context, resourceRecordId).ConfigureAwait(false);
+    }
+
+    // How long a map-scoped bulk statement is allowed to run — a map can carry hundreds of thousands
+    // of entities, and this covers both the delete and the read-only count run for the popup preview.
+    private const int MapScopedCommandTimeoutSeconds = 300;
+
+    /// <summary>Table and column name off the model for one property, so hand-written SQL can never
+    /// silently desync from what EF maps a record to. Shared by every raw-SQL helper below, and by a
+    /// <see cref="IMapOwnableResourceFactory"/>'s own batched id delete.</summary>
+    internal static (string Table, string Column) ResolveColumn<TRecord>(EditorDbContext context, string propertyName)
+        where TRecord : class
+    {
+        IEntityType type = context.Model.FindEntityType(typeof(TRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        return (type.GetTableName()!, type.FindProperty(propertyName)!.GetColumnName(table)!);
+    }
+
+    /// <summary>The table and id/map column names of <see cref="SceneEntityRecord"/> — what a
+    /// component's map-scoped delete joins against to find the map's entity ids.</summary>
+    private static (string Table, string Id, string Map) SceneEntityColumns(EditorDbContext context)
+    {
+        (string table, string mapColumn) = ResolveColumn<SceneEntityRecord>(context, nameof(SceneEntityRecord.MapId));
+        (_, string idColumn) = ResolveColumn<SceneEntityRecord>(context, nameof(SceneEntityRecord.Id));
+        return (table, idColumn, mapColumn);
+    }
+
+    // How many ids go into one batched delete statement's IN(...) list — see IMapOwnableResourceFactory.
+    private const int DeleteByIdsBatchSize = 1000;
+
+    /// <summary>
+    /// Deletes every row of <typeparamref name="TRecord"/> whose <paramref name="idPropertyName"/> is
+    /// one of <paramref name="ids"/>, batched at <see cref="DeleteByIdsBatchSize"/> ids per statement.
+    /// What a <see cref="IMapOwnableResourceFactory"/> uses for its own id list and, for a resource with
+    /// child rows (e.g. an image's chunks), for the child table too. Runs within an already-open
+    /// context and transaction; see <see cref="CommitTransactionAsync"/>.
+    /// </summary>
+    public async Task DeleteByIdsAsync<TRecord>(
+        EditorDbContext context, DbTransaction transaction, string idPropertyName, IReadOnlyCollection<int> ids)
+        where TRecord : class
+    {
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        (string table, string column) = ResolveColumn<TRecord>(context, idPropertyName);
+        List<int> all = ids as List<int> ?? ids.ToList();
+
+        for (int start = 0; start < all.Count; start += DeleteByIdsBatchSize)
+        {
+            int count = Math.Min(DeleteByIdsBatchSize, all.Count - start);
+            await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+            command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+            command.Transaction = transaction;
+
+            var sql = new StringBuilder($"DELETE FROM `{table}` WHERE `{column}` IN (");
+            for (int i = 0; i < count; i++)
+            {
+                sql.Append(i == 0 ? "@i0" : $",@i{i}");
+                AddParameter(command, $"@i{i}", all[start + i]);
+            }
+
+            sql.Append(')');
+            command.CommandText = sql.ToString();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Deletes every row of <typeparamref name="TRecord"/> whose <paramref name="mapPropertyName"/>
+    /// column equals <paramref name="map"/> — for a table keyed directly on the map, e.g. landscape
+    /// settings or a landscape catalog table. Runs within an already-open context and transaction; see
+    /// <see cref="CommitTransactionAsync"/>. See <see cref="IMapScopedData"/>.
+    /// </summary>
+    public async Task<int> DeleteWhereMapAsync<TRecord>(
+        EditorDbContext context, DbTransaction transaction, string mapPropertyName, MapId map)
+        where TRecord : class
+    {
+        (string table, string column) = ResolveColumn<TRecord>(context, mapPropertyName);
+        await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+        command.Transaction = transaction;
+        command.CommandText = $"DELETE FROM `{table}` WHERE `{column}` = @m";
+        AddParameter(command, "@m", map.Value);
+        return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Read-only count of what <see cref="DeleteWhereMapAsync{TRecord}"/> would delete — for
+    /// the delete popup's preview. <paramref name="context"/>'s connection does not need to be open
+    /// yet; this opens it if needed.</summary>
+    public async Task<int> CountWhereMapAsync<TRecord>(EditorDbContext context, string mapPropertyName, MapId map)
+        where TRecord : class
+    {
+        (string table, string column) = ResolveColumn<TRecord>(context, mapPropertyName);
+        if (context.Database.GetDbConnection().State != System.Data.ConnectionState.Open)
+        {
+            await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        }
+
+        await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+        command.CommandText = $"SELECT COUNT(*) FROM `{table}` WHERE `{column}` = @m";
+        AddParameter(command, "@m", map.Value);
+        return Convert.ToInt32(await command.ExecuteScalarAsync().ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// Deletes every row of <typeparamref name="TRecord"/> whose <paramref name="entityIdPropertyName"/>
+    /// names one of the map's scene entities — for a component table found only through its owning
+    /// entity. Runs within an already-open context and transaction; see <see cref="CommitTransactionAsync"/>.
+    /// See <see cref="IMapScopedData"/> and <see cref="ISceneComponentPersistence.DeleteForMapAsync"/>.
+    /// </summary>
+    public async Task<int> DeleteForMapEntitiesAsync<TRecord>(
+        EditorDbContext context, DbTransaction transaction, string entityIdPropertyName, MapId map)
+        where TRecord : class
+    {
+        (string table, string column) = ResolveColumn<TRecord>(context, entityIdPropertyName);
+        (string entityTable, string entityIdColumn, string entityMapColumn) = SceneEntityColumns(context);
+
+        await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+        command.Transaction = transaction;
+        command.CommandText =
+            $"DELETE FROM `{table}` WHERE `{column}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+        AddParameter(command, "@m", map.Value);
+        return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>Read-only count of what <see cref="DeleteForMapEntitiesAsync{TRecord}"/> would delete.
+    /// <paramref name="context"/>'s connection does not need to be open yet; this opens it if needed.</summary>
+    public async Task<int> CountForMapEntitiesAsync<TRecord>(EditorDbContext context, string entityIdPropertyName, MapId map)
+        where TRecord : class
+    {
+        (string table, string column) = ResolveColumn<TRecord>(context, entityIdPropertyName);
+        (string entityTable, string entityIdColumn, string entityMapColumn) = SceneEntityColumns(context);
+
+        if (context.Database.GetDbConnection().State != System.Data.ConnectionState.Open)
+        {
+            await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        }
+
+        await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+        command.CommandText =
+            $"SELECT COUNT(*) FROM `{table}` WHERE `{column}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+        AddParameter(command, "@m", map.Value);
+        return Convert.ToInt32(await command.ExecuteScalarAsync().ConfigureAwait(false));
+    }
+
+    /// <summary>
+    /// The resources each registered <see cref="IMapOwnableResourceFactory"/> owns that are referenced
+    /// only by <paramref name="map"/> — no other map, including the prefab library (-1) and an id with
+    /// no <c>wms_maps</c> row. A resource kind with no <see cref="IResourceReferencingPersistence"/> for
+    /// its type is left out entirely: nothing can prove it isn't used elsewhere. Must run before the
+    /// map's entities are deleted — see <see cref="IMapScopedData"/>.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<Type, IReadOnlyList<int>>> FindMapOnlyResourcesAsync(EditorDbContext context, MapId map)
+    {
+        var result = new Dictionary<Type, IReadOnlyList<int>>();
+
+        foreach (IMapOwnableResourceFactory resourceFactory in MapOwnableResourceFactories)
+        {
+            IResourceReferencingPersistence? persistence = ComponentPersistence
+                .OfType<IResourceReferencingPersistence>()
+                .FirstOrDefault(candidate => candidate.ReferencedResourceType == resourceFactory.ResourceType);
+            if (persistence == null)
+            {
+                continue;
+            }
+
+            IReadOnlyList<(int ResourceId, MapId Map)> references = await persistence.ReferencesAsync(context).ConfigureAwait(false);
+            ILookup<int, MapId> byResource = references.ToLookup(reference => reference.ResourceId, reference => reference.Map);
+
+            List<int> mapOnly = byResource
+                .Where(group => group.Contains(map) && group.All(referencingMap => referencingMap == map))
+                .Select(group => group.Key)
+                .Where(id => !IsResourceLive(resourceFactory.ResourceType, id))
+                .ToList();
+
+            result[resourceFactory.ResourceType] = mapOnly;
+        }
+
+        return result;
+    }
+
+    /// <summary>Whether a resource id is pinned by the active edit session, or loaded but not yet
+    /// saved — belt-and-braces guards against purging a resource the (already-clean) session still has
+    /// unsaved state for. See <see cref="IMapScopedData"/> §4's guard.</summary>
+    private bool IsResourceLive(Type resourceType, int recordId)
+    {
+        foreach (CatalogEntity entity in Context.Catalog.Entities)
+        {
+            if (!resourceType.IsInstanceOfType(entity)
+                || entity is not IKeyedCatalogEntity keyed
+                || keyed.RecordId != recordId)
+            {
+                continue;
+            }
+
+            if (Context.Database.IsPinned(entity) || !keyed.IsSaved)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Table and column names off the model, so a naming convention can never silently desync
