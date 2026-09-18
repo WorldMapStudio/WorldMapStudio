@@ -26,7 +26,9 @@ public sealed class TestRunnerWindow : Window
     private static readonly NVector4 NotRunColor = new(0.55f, 0.55f, 0.55f, 1.0f);
     private static readonly NVector4 MutedColor = new(0.60f, 0.60f, 0.60f, 1.0f);
 
-    private readonly TestRunner _runner;
+    private readonly EditorContext _context;
+
+    private TestRunner _runner => _context.Tests;
 
     private string _filter = "";
     private bool _showPassed = true;
@@ -36,7 +38,7 @@ public sealed class TestRunnerWindow : Window
     public TestRunnerWindow(WindowManager manager)
         : base("Test Runner", startOpen: false, defaultSize: new NVector2(720.0f, 560.0f))
     {
-        _runner = new TestRunner(manager.Context.Root);
+        _context = manager.Context;
     }
 
     protected override void DrawContent()

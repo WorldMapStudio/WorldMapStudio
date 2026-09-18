@@ -119,6 +119,13 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts the batch operations and runs one at a time behind <see cref="Operations"/>.</summary>
     public BatchSystem Batch { get; }
 
+    /// <summary>The in-editor test runner, shared by the Test Runner window and scripts. Discovery is
+    /// deferred to first use: many tests build their own context, and none of them should pay for it
+    /// (or recurse into it).</summary>
+    public TestRunner Tests => _tests.Value;
+
+    private readonly Lazy<TestRunner> _tests;
+
     /// <summary>Collects every <see cref="IWorldParticipant"/> and drives loading/unloading the
     /// project's data as one ordered operation, in both directions.</summary>
     public WorldLifecycle Lifecycle { get; }
@@ -154,6 +161,7 @@ public sealed partial class EditorContext : ISubsystemHost
     {
         Root = root;
         Project = project;
+        _tests = new Lazy<TestRunner>(() => new TestRunner(root));
         Shortcuts = new ShortcutSystem();
         Selection = new SelectionSystem();
         Clipboard = new SceneClipboard();
