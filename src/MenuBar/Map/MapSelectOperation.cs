@@ -107,7 +107,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         // Deferred out of the loop above: deleting mutates the map list the grid is walking.
         if (_pendingDelete != null)
         {
-            _cardError = maps.Delete(_pendingDelete);
+            maps.Delete(_pendingDelete, MapDeleteOptions.ContentsOnly, out _cardError);
             _pendingDelete = null;
         }
 
