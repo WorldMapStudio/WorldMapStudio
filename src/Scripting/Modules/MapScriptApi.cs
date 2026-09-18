@@ -64,8 +64,8 @@ public sealed class MapDescriptor
 [Subsystem(nameof(ScriptingSystem))]
 public sealed class MapScriptApi : IScriptModule
 {
+    private readonly EditorContext _context;
     private readonly MapSystem _maps;
-    private readonly IEnumerable<Window> _windows;
 
     public string Name => "map";
 
@@ -73,8 +73,8 @@ public sealed class MapScriptApi : IScriptModule
 
     public MapScriptApi(ScriptingSystem system)
     {
+        _context = system.Context;
         _maps = system.Context.Maps;
-        _windows = system.Context.MenuBarManager.WindowManager.Windows;
     }
 
     [ScriptProperty]
@@ -117,10 +117,12 @@ public sealed class MapScriptApi : IScriptModule
     }
 
     /// <summary>Opens the Map Properties window on a map — UI driving, so a script can bring the same
-    /// window a user would see to the front.</summary>
+    /// window a user would see to the front. Looked up lazily rather than cached at construction: this
+    /// module is built before <see cref="MenuBarManager"/> exists — see <see cref="EditorContext"/>'s
+    /// own constructor order.</summary>
     [ScriptFunction]
     public void ShowProperties(int id) =>
-        _windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(Find(id).Id);
+        _context.MenuBarManager.WindowManager.Windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(Find(id).Id);
 
     /// <summary>
     /// Deletes a map, its own contents (by default), and — for each named resource kind — the
