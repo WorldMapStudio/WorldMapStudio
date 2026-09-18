@@ -32,7 +32,7 @@ public partial class WorldMapStudioApp : Node3D
 		IScene? nextScene = _currentScene.Update();
 		if (nextScene == null)
 		{
-			GetTree().Quit();
+			GetTree().Quit(AppExit.Code);
 		}
 		else if (nextScene != _currentScene)
 		{
