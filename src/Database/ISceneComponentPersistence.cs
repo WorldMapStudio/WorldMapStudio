@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,4 +44,14 @@ public interface ISceneComponentPersistence : ISubsystem
 
     /// <summary>Stages a delete of this component for an entity being deleted outright.</summary>
     void StageDelete(EditorDbContext context, int entityId);
+
+    /// <summary>
+    /// Deletes this component's rows for every entity on <paramref name="map"/>. Runs inside the
+    /// delete transaction, with <paramref name="context"/>'s connection already open, and before the
+    /// entity rows themselves go — see <see cref="SceneEntityFactory"/>'s <see cref="IMapScopedData"/>
+    /// implementation, which is the only caller. Most implementations are one line calling
+    /// <see cref="EditorStorage.DeleteForMapEntitiesAsync{TRecord}"/>; one with a child table (an entry
+    /// list keyed on <c>EntityId</c>) deletes the child rows first.
+    /// </summary>
+    Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map);
 }

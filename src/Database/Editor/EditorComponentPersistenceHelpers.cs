@@ -1,4 +1,6 @@
+using System.Data.Common;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 using Microsoft.EntityFrameworkCore;
 
@@ -45,6 +47,13 @@ public static class EditorComponentPersistenceHelpers
         typeof(TRecord).GetProperty(EntityIdProperty)!.SetValue(row, entityId);
         set.Remove(row);
     }
+
+    /// <summary>Deletes a component's single-row-per-entity table for every entity on <paramref name="map"/>
+    /// — the one-line body most <see cref="ISceneComponentPersistence.DeleteForMapAsync"/> implementations
+    /// need. A component with a child table deletes that first, then calls this for its own table.</summary>
+    public static Task DeleteForMapAsync<TRecord>(EditorStorage storage, EditorDbContext context, DbTransaction transaction, MapId map)
+        where TRecord : class =>
+        storage.DeleteForMapEntitiesAsync<TRecord>(context, transaction, EntityIdProperty, map);
 
     /// <summary>A stored entity row as the id/map/world-bounds triple
     /// <see cref="IResourceReferencingPersistence.ReferencingBoundsAsync"/> returns.</summary>
