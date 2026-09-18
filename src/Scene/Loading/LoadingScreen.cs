@@ -44,7 +44,7 @@ public sealed class LoadingScreen : IScene
     private volatile string? _error;
     private volatile PendingConfirm? _confirm;
 
-    /// <param name="caption">Headline shown above the bar, e.g. "Opening Azeroth".</param>
+    /// <param name="caption">Headline shown above the bar, e.g. "Opening project".</param>
     /// <param name="work">The blocking phase. Runs on a background thread; reports progress by calling
     /// its first argument with a step name, and can block on its second argument to ask the user a
     /// yes/no question (see <see cref="Confirm"/>).</param>

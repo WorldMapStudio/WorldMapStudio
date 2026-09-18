@@ -503,16 +503,15 @@ public sealed class EnvironmentRenderer
     {
         if (node is GeometryInstance3D geometry)
         {
-            // Godot's DirectionalLight3D sun shadow-casts by default; Noggit's forward renderer has no
-            // shadow mapping at all, so a dome wrapped around the camera would otherwise shadow the
+            // Godot's DirectionalLight3D sun shadow-casts by default, but a plain sky dome has no
+            // shadow mapping to speak of, so a dome wrapped around the camera would otherwise shadow the
             // whole scene beneath it every frame.
             geometry.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
 
             if (geometry is MeshInstance3D { MaterialOverride: BaseMaterial3D material })
             {
                 // Sky is emissive, not lit: shading a dome with the very sun it depicts darkens it as
-                // the day turns. Noggit draws its skyboxes with the M2 "unlit" render state for the
-                // same reason.
+                // the day turns.
                 material.ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded;
 
                 // ...and "unfogged", likewise. The dome is fitted out near the far plane, but fog end

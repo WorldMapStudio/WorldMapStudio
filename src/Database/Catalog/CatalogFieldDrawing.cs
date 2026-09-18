@@ -16,8 +16,8 @@ internal static class CatalogFieldDrawing
     // business); everything after it — display text, Open, New, Load — is the one shared
     // CatalogReferenceField widget every reference field uses, regardless of how it stores its key.
     // isEmpty decides only whether the current value displays as "(none)"/dead-link vs. a resolvable
-    // key — a table using -1 as well as 0 for "no reference" (WoWMapStudio.Cata's spell visual kits)
-    // passes its own predicate; every other caller keeps the plain current == 0 rule.
+    // key — some tables use -1 as well as 0 for "no reference" and pass their own predicate; every
+    // other caller keeps the plain current == 0 rule.
     public static void DrawLink<TEntity>(
         EditorContext context, FieldEditTracker tracker, TEntity entity, string label, int current,
         Action<int> set, string targetCatalogName, Action<string, string> navigate, Func<int, bool>? isEmpty = null)

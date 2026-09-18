@@ -81,8 +81,8 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
     private (SignedAxis X, SignedAxis Y, SignedAxis Z)? _axisLineColorsFor;
 
     /// <summary>Lets a subsystem hosted here (an <see cref="IViewportOverlay"/>, so far) reach shared
-    /// systems — subsystem constructors only ever receive their direct parent, the same reasoning
-    /// <c>CataStorage.Context</c> documents for its own factories.</summary>
+    /// systems — subsystem constructors only ever receive their direct parent, so a hosted factory
+    /// needing broader access exposes its own storage's context the same way.</summary>
     public EditorContext Context { get; }
 
     public ViewportWindow(WindowManager manager) : base("Viewport", defaultSize: new NVector2(720, 480))

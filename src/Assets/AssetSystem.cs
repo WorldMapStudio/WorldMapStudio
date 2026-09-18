@@ -76,8 +76,8 @@ public sealed partial class AssetSystem : ISubsystemHost
 
     /// <summary>
     /// Same as <see cref="ListTextureAssets"/> and <see cref="ListModelAssets"/> combined, but runs off
-    /// the main thread. The first call against a given MPQ source opens and indexes every archive in
-    /// its patch chain, which can take several seconds on a full retail install, so callers on the
+    /// the main thread. The first call against a given archive-backed source opens and indexes every
+    /// archive it chains to, which can take several seconds on a large install, so callers on the
     /// render loop must not do this synchronously. Texture and model listings share one provider scan
     /// (and one cache) since they are both just different filters over the same underlying paths.
     /// </summary>
