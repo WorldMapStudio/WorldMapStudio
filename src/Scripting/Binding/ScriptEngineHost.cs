@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using Jint;
+using Jint.Constraints;
 using Jint.Native;
 using Jint.Native.Object;
 using Jint.Runtime;
@@ -40,7 +42,32 @@ public sealed class ScriptEngineHost
     /// </summary>
     private static readonly TimeSpan SettlementTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// Bounds one uninterrupted stretch of script. Jint resets its own time limit only when an
+    /// <c>Evaluate</c> begins, so a script that awaited for longer than the limit was killed the moment
+    /// it resumed — the clock was still running from its original call. This one is also reset by
+    /// <see cref="Update"/> before it resumes awaiting scripts, so the limit applies per frame of work.
+    /// </summary>
+    private sealed class RunBudget(TimeSpan limit) : Constraint
+    {
+        private readonly long _ticks = (long)(limit.TotalSeconds * Stopwatch.Frequency);
+
+        private long _deadline;
+
+        public override void Reset() => _deadline = Stopwatch.GetTimestamp() + _ticks;
+
+        public override void Check()
+        {
+            if (Stopwatch.GetTimestamp() > _deadline)
+            {
+                throw new TimeoutException();
+            }
+        }
+    }
+
     private readonly Engine _engine;
+
+    private readonly RunBudget _budget;
 
     // Requests from a non-main thread (the HTTP endpoint) — Jint's Engine is not thread-safe, so a
     // request can't call Evaluate directly from whatever thread accepted it. It enqueues here and
@@ -53,12 +80,14 @@ public sealed class ScriptEngineHost
     // pinning a caller (and its HTTP connection) indefinitely.
     private readonly List<(TaskCompletionSource<ScriptResult> Completion, DateTime Deadline)> _awaiting = new();
 
-    public ScriptEngineHost(IEnumerable<IScriptModule> modules)
+    /// <param name="timeout">How long one stretch of synchronous script may run. Five seconds when omitted.</param>
+    public ScriptEngineHost(IEnumerable<IScriptModule> modules, TimeSpan? timeout = null)
     {
+        _budget = new RunBudget(timeout ?? TimeSpan.FromSeconds(5));
         _engine = new Engine(options =>
         {
             options.SetTypeResolver(new TypeResolver { MemberFilter = ScriptReflection.IsVisible });
-            options.TimeoutInterval(TimeSpan.FromSeconds(5));
+            options.Constraint(_budget);
             options.MaxStatements(2_000_000);
 
             // Without this, a [ScriptFunction] returning Task/Task<T> crosses into JS as a wrapped CLR
@@ -111,6 +140,7 @@ public sealed class ScriptEngineHost
     /// </summary>
     public void Update()
     {
+        _budget.Reset();
         _engine.Advanced.ProcessTasks();
 
         while (_pending.TryDequeue(out (string Code, TaskCompletionSource<ScriptResult> Completion) item))
