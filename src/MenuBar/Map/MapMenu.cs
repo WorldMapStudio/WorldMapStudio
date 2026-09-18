@@ -1,3 +1,4 @@
+using System.Linq;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 
@@ -13,6 +14,7 @@ public sealed class MapMenu : IMainMenu
 {
     private readonly EditorContext _context;
     private readonly ShortcutAction _openMap;
+    private readonly ShortcutAction _properties;
 
     private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal;
     private readonly ModalOperator<StrayMapCleanupOperation, MapSystem> _strayCleanupModal;
@@ -30,6 +32,12 @@ public sealed class MapMenu : IMainMenu
             "Open Map",
             new KeyboardShortcut(ImGuiKey.M, ShortcutModifiers.Alt),
             Open);
+        _properties = _context.Shortcuts.Register(
+            "map.properties",
+            "Map",
+            "Map Properties",
+            KeyboardShortcut.None,
+            OpenProperties);
     }
 
     public void Draw()
@@ -42,6 +50,11 @@ public sealed class MapMenu : IMainMenu
             if (ImGui.MenuItem("Open Map…", _openMap.ShortcutLabel))
             {
                 Open();
+            }
+
+            if (ImGui.MenuItem("Map Properties…", _properties.ShortcutLabel))
+            {
+                OpenProperties();
             }
 
             ImGui.Separator();
@@ -72,4 +85,7 @@ public sealed class MapMenu : IMainMenu
         _context.Maps.CaptureThumbnail(_context.Maps.CurrentMap);
         _selectModal.Show();
     }
+
+    private void OpenProperties() =>
+        _context.MenuBarManager.WindowManager.Windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(_context.Maps.CurrentMap);
 }
