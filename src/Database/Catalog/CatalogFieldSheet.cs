@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace WorldMapStudio;
 
@@ -120,6 +121,17 @@ internal sealed class CatalogFieldSheet
         if (_filter.Field(label))
         {
             CatalogEnumField.DrawFlags(_context, _entity, label, current, set, enumType);
+        }
+    }
+
+    /// <summary>A checkbox-popup bitmask editor over options supplied at draw time (label plus the bit
+    /// each one sets); the column stays a raw <c>int</c>. For flag sets that data defines rather than an
+    /// enum type.</summary>
+    public void Flags(string label, int current, Action<int> set, IReadOnlyList<(string Label, int Bit)> options)
+    {
+        if (_filter.Field(label))
+        {
+            CatalogEnumField.DrawFlags(_context, _entity, label, current, set, options);
         }
     }
 
