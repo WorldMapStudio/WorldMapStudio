@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -25,7 +26,7 @@ namespace WorldMapStudio;
 /// resident chunks and relies on <see cref="ImageResidencySystem"/> to bring them in as needed.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
-public sealed class PaintImageFactory : ICatalogEntityFactory
+public sealed class PaintImageFactory : ICatalogEntityFactory, IMapOwnableResourceFactory
 {
     // One allowance spent across the whole load, not a per-image threshold — a per-image check lets
     // every image whose own resident set is under the line load eagerly regardless of how many there
@@ -299,5 +300,19 @@ public sealed class PaintImageFactory : ICatalogEntityFactory
         }
 
         image.IsSaved = false;
+    }
+
+    Type IMapOwnableResourceFactory.ResourceType => typeof(PaintImage);
+
+    string IMapOwnableResourceFactory.Label => "Images";
+
+    /// <summary>Deletes the header rows and every stored chunk of theirs — not just the resident coords
+    /// a staged <see cref="StageDelete"/> would know about, since these images are never loaded to
+    /// begin with. A disk-backed image has no <c>wms_image_chunks</c> rows and leaves its tile files on
+    /// disk untouched, exactly as <see cref="StageDelete"/> does.</summary>
+    async Task IMapOwnableResourceFactory.DeleteAsync(EditorDbContext context, DbTransaction transaction, IReadOnlyCollection<int> ids)
+    {
+        await _storage.DeleteByIdsAsync<ImageChunkRecord>(context, transaction, nameof(ImageChunkRecord.ImageId), ids).ConfigureAwait(false);
+        await _storage.DeleteByIdsAsync<PaintImageRecord>(context, transaction, nameof(PaintImageRecord.Id), ids).ConfigureAwait(false);
     }
 }

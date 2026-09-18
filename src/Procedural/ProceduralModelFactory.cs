@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using ImGuiNET;
@@ -20,7 +21,7 @@ namespace WorldMapStudio;
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class ProceduralModelFactory(EditorStorage storage)
-    : EditorLazyCatalogFactory<ProceduralModel, ProceduralModelRecord>(storage), ICatalogBrowser
+    : EditorLazyCatalogFactory<ProceduralModel, ProceduralModelRecord>(storage), ICatalogBrowser, IMapOwnableResourceFactory
 {
     private const uint NameMaxLength = 128;
     private const int SearchLimit = 50;
@@ -204,4 +205,14 @@ public sealed class ProceduralModelFactory(EditorStorage storage)
         context.EditSessions.Record(command);
         return entity;
     }
+
+    Type IMapOwnableResourceFactory.ResourceType => typeof(ProceduralModel);
+
+    string IMapOwnableResourceFactory.Label => "Procedural models";
+
+    /// <summary>Deletes model rows only — most of a deleted map's models were never loaded (the catalog
+    /// is lazy), and going through the staged <see cref="IEntity"/> path would force them all to load
+    /// just to remove them.</summary>
+    Task IMapOwnableResourceFactory.DeleteAsync(EditorDbContext context, DbTransaction transaction, IReadOnlyCollection<int> ids) =>
+        Storage.DeleteByIdsAsync<ProceduralModelRecord>(context, transaction, nameof(ProceduralModelRecord.Id), ids);
 }
