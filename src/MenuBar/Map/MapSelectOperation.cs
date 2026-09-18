@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
@@ -39,9 +40,16 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
     // Card context-menu state. Only one card's menu is open at a time, so one set of fields does.
     private string _renameBuffer = string.Empty;
-    private MapId? _confirmDelete;
-    private Map? _pendingDelete;
     private string? _cardError;
+
+    // Delete confirmation popup state. Only one card's delete can be in flight at a time.
+    private const string DeletePopupId = "Delete Map";
+    private Map? _deleteTarget;
+    private Task<MapContents>? _contentsTask;
+    private bool _deleteContents = true;
+    private readonly HashSet<Type> _deleteResources = [];
+    private string? _deleteError;
+    private bool _deleteModalOpen;
 
     /// <summary>The map the user picked, once the modal reports <see cref="ModalOperationState.Confirmed"/>.</summary>
     public Map? Selected { get; private set; }
@@ -104,12 +112,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             }
         });
 
-        // Deferred out of the loop above: deleting mutates the map list the grid is walking.
-        if (_pendingDelete != null)
-        {
-            maps.Delete(_pendingDelete, MapDeleteOptions.ContentsOnly, out _cardError);
-            _pendingDelete = null;
-        }
+        DrawDeleteConfirmPopup(maps);
 
         if (ImGui.Button("Close", new Vector2(120, 0)))
         {
@@ -257,7 +260,6 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         if (ImGui.IsWindowAppearing())
         {
             _renameBuffer = map.Name;
-            _confirmDelete = null;
             _cardError = null;
             ImGui.SetKeyboardFocusHere();
         }
@@ -280,40 +282,20 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         ImGui.Separator();
 
-        if (_confirmDelete == map.Id)
+        string? blocker = maps.DeleteBlocker(map);
+
+        ImGui.BeginDisabled(blocker != null);
+        if (ImGui.Button("Delete map…", new Vector2(206, 0)))
         {
-            ImGui.TextUnformatted($"Delete '{map.DisplayName}'?");
-            ImGui.TextDisabled("Entities placed in it keep their rows and their map id.");
-
-            if (ImGui.Button("Delete", new Vector2(100, 0)))
-            {
-                _pendingDelete = map;
-                ImGui.CloseCurrentPopup();
-            }
-
-            ImGui.SameLine();
-
-            if (ImGui.Button("Cancel", new Vector2(100, 0)))
-            {
-                _confirmDelete = null;
-            }
+            BeginDeleteConfirm(maps, map);
+            ImGui.CloseCurrentPopup();
         }
-        else
+
+        ImGui.EndDisabled();
+
+        if (blocker != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
         {
-            string? blocker = maps.DeleteBlocker(map);
-
-            ImGui.BeginDisabled(blocker != null);
-            if (ImGui.Button("Delete map", new Vector2(206, 0)))
-            {
-                _confirmDelete = map.Id;
-            }
-
-            ImGui.EndDisabled();
-
-            if (blocker != null && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            {
-                ImGui.SetTooltip(blocker);
-            }
+            ImGui.SetTooltip(blocker);
         }
 
         if (_cardError != null)
@@ -323,6 +305,131 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         ImGui.EndPopup();
         return true;
+    }
+
+    /// <summary>Opens the delete confirmation popup and kicks off its content count — see
+    /// <see cref="DrawDeleteConfirmPopup"/>. The count runs on a worker; the popup shows "Counting…"
+    /// until it lands, rather than blocking the UI thread for it.</summary>
+    private void BeginDeleteConfirm(MapSystem maps, Map map)
+    {
+        _deleteTarget = map;
+        _deleteContents = true;
+        _deleteResources.Clear();
+        _deleteError = null;
+        _contentsTask = maps.DescribeContentsAsync(map.Id);
+        _deleteModalOpen = true;
+        ImGui.OpenPopup(DeletePopupId);
+    }
+
+    /// <summary>
+    /// The delete confirmation: a "delete everything" checkbox (on by default) with the counted rows
+    /// underneath, and one checkbox per resource kind referenced only by this map — offered only while
+    /// "delete everything" is ticked, since otherwise the entities that would make them unused are
+    /// staying right where they are. Drawn every frame regardless of which card's context menu (if any)
+    /// is open, so it survives that popup closing.
+    /// </summary>
+    private void DrawDeleteConfirmPopup(MapSystem maps)
+    {
+        bool open = _deleteModalOpen;
+        ImGuiEx.PopupModal(DeletePopupId, true, ref open, ImGuiWindowFlags.AlwaysAutoResize, () =>
+        {
+            Map target = _deleteTarget!;
+            ImGui.TextUnformatted($"Delete '{target.DisplayName}'?");
+            ImGui.Spacing();
+
+            bool ready = _contentsTask is { IsCompleted: true };
+            if (!ready)
+            {
+                ImGui.TextDisabled("Counting…");
+            }
+            else if (_contentsTask!.IsFaulted)
+            {
+                ImGui.TextColored(ErrorColor, _contentsTask.Exception!.GetBaseException().Message);
+            }
+            else
+            {
+                DrawDeleteContents(_contentsTask.Result);
+            }
+
+            ImGui.Spacing();
+            ImGui.TextDisabled("This can't be undone.");
+
+            if (_deleteError != null)
+            {
+                ImGui.TextColored(ErrorColor, _deleteError);
+            }
+
+            ImGui.BeginDisabled(!ready || _contentsTask!.IsFaulted);
+            if (ImGui.Button("Delete", new Vector2(100, 0)))
+            {
+                var options = new MapDeleteOptions(_deleteContents, _deleteResources);
+                if (maps.Delete(target, options, out _deleteError) != null)
+                {
+                    _deleteModalOpen = false;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+
+            ImGui.EndDisabled();
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("Cancel", new Vector2(100, 0)))
+            {
+                _deleteModalOpen = false;
+                ImGui.CloseCurrentPopup();
+            }
+        });
+
+        _deleteModalOpen = open;
+    }
+
+    private void DrawDeleteContents(MapContents contents)
+    {
+        ImGui.Checkbox("Delete everything in this map", ref _deleteContents);
+
+        ImGui.Indent();
+        if (contents.Data.Count == 0)
+        {
+            ImGui.TextDisabled("Nothing to delete.");
+        }
+        else
+        {
+            foreach ((string label, int count) in contents.Data)
+            {
+                ImGui.TextDisabled($"{label}  {count:N0}");
+            }
+        }
+
+        ImGui.Unindent();
+
+        if (!_deleteContents)
+        {
+            ImGui.TextDisabled("Entities placed in it keep their rows and their map id.");
+            return;
+        }
+
+        if (contents.MapOnlyResources.Count == 0)
+        {
+            return;
+        }
+
+        ImGui.Spacing();
+        foreach ((Type resourceType, string label, int count) in contents.MapOnlyResources)
+        {
+            bool ticked = _deleteResources.Contains(resourceType);
+            if (ImGui.Checkbox($"Also delete {label.ToLowerInvariant()} only this map uses ({count:N0})", ref ticked))
+            {
+                if (ticked)
+                {
+                    _deleteResources.Add(resourceType);
+                }
+                else
+                {
+                    _deleteResources.Remove(resourceType);
+                }
+            }
+        }
     }
 
     // Every registered IMapPropertiesSection, e.g. WoW lighting's default-light picker — this class
