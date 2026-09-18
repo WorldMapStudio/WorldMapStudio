@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
@@ -140,6 +141,9 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneProceduralComponentRecord>(context, entityId);
 
+    public Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map) =>
+        EditorComponentPersistenceHelpers.DeleteForMapAsync<SceneProceduralComponentRecord>(_storage, context, transaction, map);
+
     public Type ReferencedResourceType => typeof(ProceduralModel);
 
     public async Task<IReadOnlyList<(int EntityId, MapId Map, Aabb Bounds)>> ReferencingBoundsAsync(
@@ -157,5 +161,21 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
             .ConfigureAwait(false);
 
         return rows.ConvertAll(EditorComponentPersistenceHelpers.ToMapBounds);
+    }
+
+    public async Task<IReadOnlyList<(int ResourceId, MapId Map)>> ReferencesAsync(EditorDbContext context)
+    {
+        List<(int, int)> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
+            .Where(record => record.ModelId != null)
+            .Join(
+                context.SceneEntities.AsNoTracking(),
+                record => record.EntityId,
+                entity => entity.Id,
+                (record, entity) => new ValueTuple<int, int>(record.ModelId!.Value, entity.MapId))
+            .Distinct()
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        return rows.ConvertAll(row => (row.Item1, new MapId(row.Item2)));
     }
 }

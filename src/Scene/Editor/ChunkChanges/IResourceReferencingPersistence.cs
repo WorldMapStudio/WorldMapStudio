@@ -28,4 +28,9 @@ public interface IResourceReferencingPersistence
     Task<IReadOnlyList<(int EntityId, MapId Map, Aabb Bounds)>> ReferencingBoundsAsync(
         EditorDbContext context,
         int resourceRecordId);
+
+    /// <summary>Every distinct (resource id, map) pair stored rows of this kind reference, across every
+    /// map — no map filter. What <see cref="EditorStorage.FindMapOnlyResourcesAsync"/> uses to tell a
+    /// resource used only by the map being deleted from one still referenced elsewhere.</summary>
+    Task<IReadOnlyList<(int ResourceId, MapId Map)>> ReferencesAsync(EditorDbContext context);
 }
