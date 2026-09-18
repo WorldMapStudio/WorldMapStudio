@@ -42,9 +42,9 @@ public sealed class CatalogReferenceLabels
     private readonly EditorContext _context;
     private readonly Dictionary<string, CatalogCache> _catalogs = new();
 
-    // Keyed by entity identity rather than owned by it, so a field-drawing site (a ThinDbcCatalog
-    // subclass instance, typically, but also a scene-entity inspector — a reference field is as much a
-    // SceneEntity's business as a CatalogEntity's, e.g. CreatureSpawn.TemplateEntry) can get the same
+    // Keyed by entity identity rather than owned by it, so a field-drawing site (a catalog's field
+    // sheet, typically, but also a scene-entity inspector — a reference field is as much a
+    // SceneEntity's business as a CatalogEntity's) can get the same
     // widget back every frame without every DrawFields implementation growing its own picker field —
     // see CatalogFieldDrawing.DrawLink. A ConditionalWeakTable rather than a plain Dictionary so closing
     // an entity lets it (and its widgets) be collected instead of pinned here forever.

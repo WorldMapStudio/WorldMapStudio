@@ -188,8 +188,8 @@ public sealed partial class EditorContext : ISubsystemHost
         // storage the first time it is needed instead of assuming the loaded set is everything. Both
         // facets are searched — a lazy factory's type needs this exactly as much as an eager one's,
         // since most of a lazy catalog's rows are never loaded at all. A lazy factory that does not
-        // happen to implement IRecordIdSource (most of the cata plugin's) simply isn't found here, and
-        // AssignId falls back to seeding from the loaded set alone, same as before this existed.
+        // happen to implement IRecordIdSource simply isn't found here, and AssignId falls back to
+        // seeding from the loaded set alone, same as before this existed.
         Catalog.BindFactoryLookup(entityType =>
             (IRecordIdSource?)Database.Storages.SelectMany(storage => storage.CatalogFactories)
                 .FirstOrDefault(factory => factory.EntityType == entityType)

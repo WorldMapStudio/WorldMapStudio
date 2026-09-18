@@ -42,7 +42,7 @@ public interface IEnvironmentSource
 
 /// <summary>
 /// Optional companion to <see cref="IEnvironmentSource"/> for a spherical source, so the viewport can
-/// draw and edit its radii the way Noggit draws light spheres.
+/// draw and edit its radii the way a level editor draws light spheres.
 /// </summary>
 public interface IEnvironmentVolume
 {
@@ -61,8 +61,8 @@ public interface IEnvironmentVolume
 public static class EnvironmentFalloff
 {
     /// <summary>
-    /// 1 inside <paramref name="inner"/>, 0 beyond <paramref name="outer"/>, linear between. Matches
-    /// how Noggit weights a light sphere. Degenerates to a hard step at <paramref name="outer"/> when
+    /// 1 inside <paramref name="inner"/>, 0 beyond <paramref name="outer"/>, linear between. A common
+    /// light-sphere falloff. Degenerates to a hard step at <paramref name="outer"/> when
     /// <paramref name="outer"/> does not exceed <paramref name="inner"/>, rather than dividing by zero.
     /// </summary>
     public static float Sphere(float distance, float inner, float outer)

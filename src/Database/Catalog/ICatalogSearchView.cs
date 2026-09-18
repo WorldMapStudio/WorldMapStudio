@@ -30,7 +30,7 @@ public sealed record CatalogSearchViewHost(
 /// <summary>
 /// One way to search and browse a catalog's rows — the list table every catalog gets by default
 /// (<see cref="CatalogListSearchView"/>), or a richer presentation a catalog opts into (a thumbnail
-/// gallery). Registered as a self-registering facet (<c>[Subsystem(nameof(CataStorage))]</c>, etc.) and
+/// gallery). Registered as a self-registering facet (<c>[Subsystem(nameof(SomeStorage))]</c>, etc.) and
 /// collected through <see cref="Storage.CatalogSearchViews"/> / <see cref="CatalogSearchViews"/>, the
 /// same pattern <see cref="ICatalogBrowser"/> itself uses — a catalog never lists its own views, and a
 /// view declares which catalogs it supports rather than being named by them.

@@ -143,17 +143,17 @@ public static class EnvironmentTests
     {
         var under = new EnvironmentValues
         {
-            Floats = new Dictionary<string, float> { ["wow.glow"] = 0.2f },
+            Floats = new Dictionary<string, float> { ["test.glow"] = 0.2f },
         };
         var over = new EnvironmentValues
         {
-            Floats = new Dictionary<string, float> { ["wow.glow"] = 1.0f, ["wow.cloud"] = 0.6f },
+            Floats = new Dictionary<string, float> { ["test.glow"] = 1.0f, ["test.cloud"] = 0.6f },
         };
 
         IReadOnlyDictionary<string, float> blended = EnvironmentValues.Blend(under, over, 0.5f).Floats;
 
-        Assert.AreApproximatelyEqual(0.6, blended["wow.glow"]);
-        Assert.AreApproximatelyEqual(0.6, blended["wow.cloud"], message: "a key present on only one side should pass through unchanged");
+        Assert.AreApproximatelyEqual(0.6, blended["test.glow"]);
+        Assert.AreApproximatelyEqual(0.6, blended["test.cloud"], message: "a key present on only one side should pass through unchanged");
     }
 
     [EditorTest(Category = "Environment")]

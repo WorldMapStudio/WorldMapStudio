@@ -66,7 +66,7 @@ public sealed class ProceduralModel : CatalogEntity, IKeyedCatalogEntity
 
     /// <summary>
     /// Serialized <see cref="ProceduralFormats"/>: which <see cref="IModelFormat"/> each of the bound
-    /// function's declared outputs authors, e.g. "wow.format.wmo" for a plugin-defined format. An
+    /// function's declared outputs authors, e.g. "plugin.format.x" for a plugin-defined format. An
     /// output missing from this map defers to its slot's first supported format, or the plain
     /// authorable mesh format if the slot does not care.
     /// </summary>

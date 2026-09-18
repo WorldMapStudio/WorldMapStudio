@@ -41,8 +41,8 @@ public sealed partial class EditorDbContext : DbContext
 
     protected override void OnModelCreating(ModelBuilder model)
     {
-        // Every table, built-in or plugin, core or cata — declared entirely by its self-registered
-        // owner, in whichever of the three seams fits what that owner already is. See the class doc.
+        // Every table, built-in or plugin — declared entirely by its self-registered owner, in
+        // whichever of the three seams fits what that owner already is. See the class doc.
         foreach (ITableConfiguration configuration in _tableConfigurations)
         {
             configuration.Configure(model);
