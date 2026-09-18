@@ -31,6 +31,8 @@ public sealed class TestRunnerWindow : Window
     private TestRunner _runner => _context.Tests;
 
     private string _filter = "";
+    private string _parsedFilterText = "";
+    private TestFilter _parsedFilter = TestFilter.All;
     private bool _showPassed = true;
     private bool _showSkipped = true;
     private bool _onlyFailures;
@@ -43,6 +45,12 @@ public sealed class TestRunnerWindow : Window
 
     protected override void DrawContent()
     {
+        if (_filter != _parsedFilterText)
+        {
+            _parsedFilter = TestFilter.Parse(_filter);
+            _parsedFilterText = _filter;
+        }
+
         TestResultView[] results = _runner.Snapshot();
         TestRunSummary summary = _runner.Summarize();
 
@@ -89,7 +97,7 @@ public sealed class TestRunnerWindow : Window
 
         // Filters row.
         ImGui.PushItemWidth(220.0f);
-        ImGui.InputTextWithHint("##filter", "Filter by name or category...", ref _filter, 128);
+        ImGui.InputTextWithHint("##filter", "Filter by name or category (* for glob)...", ref _filter, 128);
         ImGui.PopItemWidth();
         ImGui.SameLine();
         ImGui.Checkbox("Passed", ref _showPassed);
@@ -315,9 +323,7 @@ public sealed class TestRunnerWindow : Window
 
     private bool IsVisible(TestResultView r)
     {
-        if (_filter.Length > 0 &&
-            r.Name.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0 &&
-            r.Category.IndexOf(_filter, StringComparison.OrdinalIgnoreCase) < 0)
+        if (!_parsedFilter.Matches(r.Id))
         {
             return false;
         }
