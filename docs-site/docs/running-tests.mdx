@@ -1,0 +1,57 @@
+---
+sidebar_position: 4
+---
+
+# Running Tests From Scripts
+
+In-editor tests (methods marked `[EditorTest]`) run from the **Test Runner** window (`Alt+J`) and from
+scripts through `wms.tests`. Both drive the same runner, so a run started by a script shows up live in
+the window, and a run started in the window can be read back by a script.
+
+## `wms.tests`
+
+| Call | Returns |
+|---|---|
+| `List(filter?)` | The discovered tests: `Id`, `Name`, `Category`, `Thread`, `Skip`. |
+| `Run(filter?)` | A run id. Throws if a run is already in progress or nothing matched. |
+| `Status(runId)` | `Id`, `State`, `IsRunning`, `RunningId`, `Total`, `Passed`, `Failed`, `Errored`, `Skipped`, `NotRun`, `DurationMs`, `AllGreen`. Counts cover only that run's tests. |
+| `Wait(runId, timeoutMs?)` | A promise for the same status, resolved when the run finishes or after `timeoutMs` (at most 45 s). It never cancels the run. |
+| `Results(runId, onlyFailures?)` | Each test's `Id`, `Name`, `Category`, `Outcome`, `DurationMs`, `Message`, `Details` (the stack trace) and `Logs`. |
+| `Cancel(runId)` | Stops the run after the test that is executing. |
+| `Rediscover()` | Re-scans for tests and returns how many there are. Throws while a run is in progress. |
+
+`filter` matches a test's id, `Category.Name`, as a case-insensitive substring, or as a glob over the
+whole id when it contains `*` or `?`. Leaving it out selects every test.
+
+A full run takes longer than a script may wait for a single promise (60 s), so `Run` returns an id
+instead of a promise. Start the run, then loop on `Wait`:
+
+```js
+var id = wms.tests.Run("Landscape*");
+(async function () {
+    var s;
+    do { s = await wms.tests.Wait(id, 30000); } while (s.IsRunning);
+    return s.AllGreen ? "green" : wms.tests.Results(id, true).length + " failing";
+})()
+```
+
+A run is only `AllGreen` when it finished, nothing failed or errored, and every test in it ran, so a
+cancelled run is never green.
+
+## Choosing The Script Port
+
+The script HTTP endpoint listens on port 8765. Pass `--script-port <n>` after `--` on the command line
+to use another, for example to run an automated editor beside one that is already open:
+
+```
+godot . -- --project path/to/project.json --script-port 9001
+```
+
+`GET /health` answers `{ "ok": true, "ready": true, "project": "...", "pid": 1234 }`. `ready` is false
+while a world reload is in progress, and `pid` says which process answered.
+
+## Closing The Editor
+
+`wms.editor.Quit(exitCode?, force?)` closes the editor the way **File → Exit** does and ends the process
+with `exitCode` (0 by default). It returns at once, so the caller still gets its reply. It refuses while
+an edit session has unsaved changes or a batch is running, unless `force` is true.
