@@ -18,6 +18,16 @@
     <IntermediateOutputPath>$(GodotProjectDir).godot\mono\temp\obj\DebugOptimized\</IntermediateOutputPath>
   </PropertyGroup>
 
+  <!--
+  Builds core with every plugin glob excluded, to prove core carries no compile-time dependency on a
+  plugin. Separate obj/bin slots for the same reason as the Optimized switch above: the Godot editor
+  always loads the Debug bin slot, so a core-only build must not overwrite it.
+  -->
+  <PropertyGroup Condition=" '$(WmsCoreOnly)' == 'true' ">
+    <IntermediateOutputPath>$(GodotProjectDir).godot\mono\temp\obj\CoreOnly\</IntermediateOutputPath>
+    <OutputPath>$(GodotProjectDir).godot\mono\temp\bin\CoreOnly\</OutputPath>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="ImGui.NET.Branches.Docking" Version="1.88.0" />
     <PackageReference Include="Jint" Version="4.15.3" />
@@ -27,9 +37,11 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="analyzer\WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Remove="analyzer\**" />
+  </ItemGroup>
+  <ItemGroup Condition=" '$(WmsCoreOnly)' != 'true' ">
     <Compile Include=".local\Plugins\**\*.cs" />
     <Compile Include="Plugins\**\*.cs" />
     <Compile Include="..\WorldMapStudioPlugins\**\*.cs" />
-    <Compile Remove="analyzer\**" />
   </ItemGroup>
 </Project>
