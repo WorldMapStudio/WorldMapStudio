@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 
 namespace WorldMapStudio;
@@ -44,5 +45,23 @@ public sealed class EditorScriptApi : IScriptModule
         {
             await Task.Delay(PollMilliseconds).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Closes the editor the way File &gt; Exit does — saving the window layout first — and ends the
+    /// process with <paramref name="exitCode"/>. Returns at once; the editor goes down a frame later,
+    /// so the caller still gets its reply. Throws with the blocker (a dirty edit session, a running
+    /// batch) unless <paramref name="force"/> is set, which quits regardless.
+    /// </summary>
+    [ScriptFunction]
+    public void Quit(int exitCode = 0, bool force = false)
+    {
+        if (!force && _context.Operations.Blocker is { } blocker)
+        {
+            throw new InvalidOperationException(blocker);
+        }
+
+        AppExit.Code = exitCode;
+        _context.MenuBarManager.FileMenuManager.RequestExit();
     }
 }
