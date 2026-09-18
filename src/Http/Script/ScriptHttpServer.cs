@@ -30,12 +30,19 @@ public sealed class ScriptHttpServer
 {
     private readonly HttpListener _listener = new();
     private readonly ScriptEngineHost _engine;
+    private readonly Func<bool> _isReady;
+    private readonly string _project;
 
     public int Port { get; }
 
-    public ScriptHttpServer(ScriptEngineHost engine, int port = 8765)
+    /// <param name="isReady">Reported by <c>/health</c> as <c>ready</c>; a caller polling for the editor
+    /// to come up waits on it. Always true when omitted.</param>
+    /// <param name="project">Reported by <c>/health</c>, so a caller can tell which editor answered.</param>
+    public ScriptHttpServer(ScriptEngineHost engine, int port = 8765, Func<bool>? isReady = null, string project = "")
     {
         _engine = engine;
+        _isReady = isReady ?? (() => true);
+        _project = project;
         Port = port;
         _listener.Prefixes.Add($"http://127.0.0.1:{port}/");
     }
@@ -82,7 +89,13 @@ public sealed class ScriptHttpServer
             switch (context.Request.HttpMethod, path)
             {
                 case ("GET", "/health"):
-                    await WriteJson(context, 200, "{\"ok\":true}").ConfigureAwait(false);
+                    await WriteJson(context, 200, JsonSerializer.Serialize(new
+                    {
+                        ok = true,
+                        ready = _isReady(),
+                        project = _project,
+                        pid = System.Environment.ProcessId,
+                    })).ConfigureAwait(false);
                     break;
 
                 case ("GET", "/types"):

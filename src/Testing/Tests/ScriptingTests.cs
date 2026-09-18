@@ -528,6 +528,39 @@ public static class ScriptingTests
         Assert.IsTrue(body.Contains("\"ok\":true"), body);
     }
 
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Http_health_reports_readiness_project_and_pid()
+    {
+        bool ready = false;
+        var server = new ScriptHttpServer(
+            new ScriptEngineHost([]), port: 18768, isReady: () => ready, project: "Fixture Project");
+        server.Start();
+
+        using var client = new HttpClient();
+        string notReady = await client.GetStringAsync("http://127.0.0.1:18768/health");
+        ready = true;
+        string nowReady = await client.GetStringAsync("http://127.0.0.1:18768/health");
+
+        Assert.IsTrue(notReady.Contains("\"ready\":false"), notReady);
+        Assert.IsTrue(nowReady.Contains("\"ready\":true"), nowReady);
+        Assert.IsTrue(nowReady.Contains("\"project\":\"Fixture Project\""), nowReady);
+        Assert.IsTrue(nowReady.Contains($"\"pid\":{System.Environment.ProcessId}"), nowReady);
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Command_line_reads_both_flag_forms()
+    {
+        string[] spaced = ["--project", "a.json", "--script-port", "9000"];
+        string[] joined = ["--project=b.json", "--script-port=9001"];
+
+        Assert.AreEqual("a.json", CommandLine.Value(spaced, "--project"));
+        Assert.AreEqual("9000", CommandLine.Value(spaced, "--script-port"));
+        Assert.AreEqual("b.json", CommandLine.Value(joined, "--project"));
+        Assert.AreEqual("9001", CommandLine.Value(joined, "--script-port"));
+        Assert.IsNull(CommandLine.Value(joined, "--missing"));
+        Assert.IsNull(CommandLine.Value(["--project"], "--project"), "a flag with no value after it has none");
+    }
+
     // Runs `action` while a background loop pumps ScriptEngineHost.Update() every 10ms — needed
     // because /run's response only completes once Update() dequeues and evaluates it, the same
     // reason the async-bridge tests above poll Update() themselves rather than blocking on the Task.

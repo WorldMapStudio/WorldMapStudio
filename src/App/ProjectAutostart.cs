@@ -21,7 +21,7 @@ public static class ProjectAutostart
     /// proceed to the main menu as usual.</summary>
     public static IScene? Resolve(Node3D root)
     {
-        string? configPath = ConfigPathFromArgs(OS.GetCmdlineUserArgs());
+        string? configPath = CommandLine.Value(Flag);
         if (configPath == null)
         {
             return null;
@@ -37,24 +37,5 @@ public static class ProjectAutostart
             GD.PushError($"[ProjectAutostart] Failed to open '{configPath}': {e}");
             return new StartupErrorScene($"Could not open project config '{configPath}'", e.Message);
         }
-    }
-
-    private static string? ConfigPathFromArgs(string[] args)
-    {
-        for (int i = 0; i < args.Length; i++)
-        {
-            string arg = args[i];
-            if (arg.StartsWith(Flag + "=", StringComparison.Ordinal))
-            {
-                return arg[(Flag.Length + 1)..];
-            }
-
-            if (arg == Flag && i + 1 < args.Length)
-            {
-                return args[i + 1];
-            }
-        }
-
-        return null;
     }
 }

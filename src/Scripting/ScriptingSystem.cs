@@ -52,8 +52,33 @@ public sealed partial class ScriptingSystem : ISubsystemHost
         _events = Modules.OfType<EventsScriptApi>().FirstOrDefault();
         ScriptTypeDeclarationWriter.Write(Modules);
 
-        Http = new ScriptHttpServer(Engine);
+        Http = new ScriptHttpServer(
+            Engine,
+            ResolvePort(),
+            () => !Context.IsReloading && Context.PendingReloadReason == null,
+            Context.Project.Name);
         Http.Start();
+    }
+
+    private const string PortFlag = "--script-port";
+
+    private const int DefaultPort = 8765;
+
+    private static int ResolvePort()
+    {
+        string? value = CommandLine.Value(PortFlag);
+        if (value == null)
+        {
+            return DefaultPort;
+        }
+
+        if (int.TryParse(value, out int port) && port is > 0 and <= 65535)
+        {
+            return port;
+        }
+
+        Godot.GD.PushError($"[Scripting] Ignoring {PortFlag} '{value}': expected a port from 1 to 65535. Using {DefaultPort}.");
+        return DefaultPort;
     }
 
     /// <summary>
