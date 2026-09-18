@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -17,8 +18,11 @@ public sealed class SceneMarkerComponentRecord
 [Subsystem(nameof(EditorStorage))]
 public sealed class MarkerComponentPersistence : ISceneComponentPersistence
 {
+    private readonly EditorStorage _storage;
+
     public MarkerComponentPersistence(EditorStorage storage)
     {
+        _storage = storage;
     }
 
     public float Priority => 0.0f;
@@ -78,4 +82,7 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
 
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneMarkerComponentRecord>(context, entityId);
+
+    public Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map) =>
+        EditorComponentPersistenceHelpers.DeleteForMapAsync<SceneMarkerComponentRecord>(_storage, context, transaction, map);
 }

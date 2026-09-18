@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -40,8 +41,11 @@ public sealed class SceneTerrainValueChannelRecord
 [Subsystem(nameof(EditorStorage))]
 public sealed class TerrainValueComponentPersistence : ISceneComponentPersistence
 {
+    private readonly EditorStorage _storage;
+
     public TerrainValueComponentPersistence(EditorStorage storage)
     {
+        _storage = storage;
     }
 
     public float Priority => 0.0f;
@@ -146,6 +150,14 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
 
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneTerrainValueComponentRecord>(context, entityId);
+
+    public async Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map)
+    {
+        await _storage.DeleteForMapEntitiesAsync<SceneTerrainValueChannelRecord>(context, transaction, nameof(SceneTerrainValueChannelRecord.EntityId), map)
+            .ConfigureAwait(false);
+        await _storage.DeleteForMapEntitiesAsync<SceneTerrainValueComponentRecord>(context, transaction, nameof(SceneTerrainValueComponentRecord.EntityId), map)
+            .ConfigureAwait(false);
+    }
 
     private static void StageChannels(
         EditorDbContext context,

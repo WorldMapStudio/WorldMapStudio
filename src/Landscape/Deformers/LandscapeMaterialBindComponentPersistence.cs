@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -30,8 +31,11 @@ public sealed class SceneLandscapeMaterialBindEntryRecord
 [Subsystem(nameof(EditorStorage))]
 public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentPersistence
 {
+    private readonly EditorStorage _storage;
+
     public LandscapeMaterialBindComponentPersistence(EditorStorage storage)
     {
+        _storage = storage;
     }
 
     public float Priority => 0.0f;
@@ -122,6 +126,14 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
 
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneLandscapeMaterialBindComponentRecord>(context, entityId);
+
+    public async Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map)
+    {
+        await _storage.DeleteForMapEntitiesAsync<SceneLandscapeMaterialBindEntryRecord>(context, transaction, nameof(SceneLandscapeMaterialBindEntryRecord.EntityId), map)
+            .ConfigureAwait(false);
+        await _storage.DeleteForMapEntitiesAsync<SceneLandscapeMaterialBindComponentRecord>(context, transaction, nameof(SceneLandscapeMaterialBindComponentRecord.EntityId), map)
+            .ConfigureAwait(false);
+    }
 
     private static void StageEntries(
         EditorDbContext context,

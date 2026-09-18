@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -21,11 +22,13 @@ public sealed class SceneModelRendererComponentRecord
 [Subsystem(nameof(EditorStorage))]
 public sealed class ModelRendererComponentPersistence : ISceneComponentPersistence
 {
+    private readonly EditorStorage _storage;
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;
 
     public ModelRendererComponentPersistence(EditorStorage storage)
     {
+        _storage = storage;
         _assets = storage.Assets;
         _materials = storage.MeshMaterials;
     }
@@ -92,4 +95,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
 
     public void StageDelete(EditorDbContext context, int entityId) =>
         EditorComponentPersistenceHelpers.StageDelete<SceneModelRendererComponentRecord>(context, entityId);
+
+    public Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map) =>
+        EditorComponentPersistenceHelpers.DeleteForMapAsync<SceneModelRendererComponentRecord>(_storage, context, transaction, map);
 }
