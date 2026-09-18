@@ -305,6 +305,36 @@ public static class ScriptingTests
     }
 
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static async Task Engine_time_limit_restarts_when_an_awaiting_script_resumes()
+    {
+        var host = new ScriptEngineHost([new TimeFixtureModule(), new FixtureModule([])], timeout: TimeSpan.FromMilliseconds(500));
+        host.Evaluate("""
+            var outcome = 'pending';
+            (async function () {
+                await wms.time.Wait(700);
+                var sum = 0;
+                for (var i = 0; i < 3000; i++) { sum += wms.fixture.Add(i, 1); }
+                outcome = 'done';
+            })();
+            """);
+
+        // Nothing calls Evaluate while the script sleeps: an Evaluate would restart the limit itself
+        // and hide the case, which is a script that resumes long after the call that started it.
+        await Task.Delay(900);
+        host.Update();
+
+        Assert.AreEqual("done", host.Evaluate("outcome"), "the clock must not keep running while a script awaits");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
+    public static void Engine_still_stops_a_runaway_loop()
+    {
+        var host = new ScriptEngineHost([], timeout: TimeSpan.FromMilliseconds(200));
+
+        Assert.IsTrue(host.Evaluate("while (true) {}").StartsWith("Error:"), "a synchronous infinite loop must hit the time limit");
+    }
+
+    [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
     public static async Task Time_wait_resolves_after_the_engine_is_pumped()
     {
         var host = new ScriptEngineHost([new TimeFixtureModule()]);
