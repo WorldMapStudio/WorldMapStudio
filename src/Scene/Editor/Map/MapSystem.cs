@@ -229,6 +229,12 @@ public sealed class MapSystem : IWorldParticipant
     /// none, in which case a delete removes just the map row, as it always used to.</summary>
     private EditorStorage? EditorContentsStorage => _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
 
+    /// <summary>Every registered <see cref="IMapOwnableResourceFactory"/>'s type and label — what
+    /// <see cref="MapScriptApi"/> matches a script's resource name strings against.</summary>
+    public IReadOnlyList<(Type ResourceType, string Label)> ResourceKinds() =>
+        EditorContentsStorage?.MapOwnableResourceFactories.Select(factory => (factory.ResourceType, factory.Label)).ToList()
+        ?? [];
+
     /// <summary>
     /// What deleting <paramref name="map"/> would remove: one row per non-empty <see cref="IMapScopedData"/>
     /// owner, and one row per resource kind referenced only by this map. Read-only — computing the
