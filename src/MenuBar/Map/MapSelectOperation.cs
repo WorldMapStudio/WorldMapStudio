@@ -10,7 +10,8 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// The map picker: a filterable grid of cards (preview thumbnail + name + id) where clicking a card
-/// enters that map and right-clicking one renames or deletes it. Creating a map swaps the same grid
+/// enters that map and right-clicking one renames it, deletes it, or opens its Map Properties window.
+/// Creating a map swaps the same grid
 /// for a small inline form, so adding a map and opening it are one dialog rather than two — a freshly
 /// created map is entered straight away.
 /// </summary>
@@ -270,7 +271,11 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             }
         }
 
-        DrawPropertiesSections(map);
+        if (ImGui.Button("Properties…"))
+        {
+            _context.MenuBarManager.WindowManager.Windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(map.Id);
+            ImGui.CloseCurrentPopup();
+        }
 
         ImGui.Separator();
 
@@ -297,20 +302,5 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         ImGui.EndPopup();
         return true;
-    }
-
-    // Every registered IMapPropertiesSection, e.g. WoW lighting's default-light picker — this class
-    // draws the heading and lets the section draw its own fields, without knowing what any of them
-    // configure. Sections decide for themselves how much to offer for a map that isn't the open one:
-    // only its entities are actually loaded to edit, so most will disable editing there.
-    private void DrawPropertiesSections(Map map)
-    {
-        bool isCurrent = map.Id == _context.Maps.CurrentMap;
-        foreach (IMapPropertiesSection section in _context.MapProperties.All)
-        {
-            ImGui.Separator();
-            ImGui.TextDisabled(section.Label);
-            section.Draw(_context, map, isCurrent);
-        }
     }
 }
