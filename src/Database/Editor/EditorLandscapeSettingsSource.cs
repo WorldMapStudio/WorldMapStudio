@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Data.Common;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 
@@ -14,7 +17,7 @@ public sealed partial class EditorDbContext
 /// map-wide rebuild, not an undoable edit.
 /// </summary>
 [Subsystem(nameof(EditorStorage))]
-public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, ITableConfiguration
+public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, ITableConfiguration, IMapScopedData
 {
     private readonly EditorStorage _storage;
 
@@ -23,7 +26,20 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, IT
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
+    // Keyed directly on MapId, not through an entity — see IMapScopedData's priority convention.
+    public float Priority => 1.0f;
+
+    string IMapScopedData.Label => "Landscape settings";
+
+    Task<int> IMapScopedData.CountAsync(EditorDbContext context, MapId map) =>
+        _storage.CountWhereMapAsync<LandscapeSettingsRecord>(context, nameof(LandscapeSettingsRecord.MapId), map);
+
+    async Task<IReadOnlySet<int>> IMapScopedData.MapIdsAsync(EditorDbContext context) =>
+        (await context.LandscapeSettings.AsNoTracking().Select(record => record.MapId).Distinct().ToListAsync().ConfigureAwait(false))
+            .ToHashSet();
+
+    Task IMapScopedData.DeleteAsync(EditorDbContext context, DbTransaction transaction, MapId map) =>
+        _storage.DeleteWhereMapAsync<LandscapeSettingsRecord>(context, transaction, nameof(LandscapeSettingsRecord.MapId), map);
 
     public bool CanEdit => true;
 

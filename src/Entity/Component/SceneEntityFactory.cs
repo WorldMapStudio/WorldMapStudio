@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
@@ -60,7 +61,7 @@ public sealed partial class EditorDbContext
 }
 
 [Subsystem(nameof(EditorStorage))]
-public sealed class SceneEntityFactory : ISceneEntityFactory
+public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
 {
     private readonly EditorStorage _storage;
 
@@ -219,6 +220,29 @@ public sealed class SceneEntityFactory : ISceneEntityFactory
 
             db.SceneEntities.Remove(new SceneEntityRecord { Id = id });
         }
+    }
+
+    string IMapScopedData.Label => "Scene entities";
+
+    Task<int> IMapScopedData.CountAsync(EditorDbContext context, MapId map) =>
+        _storage.CountWhereMapAsync<SceneEntityRecord>(context, nameof(SceneEntityRecord.MapId), map);
+
+    async Task<IReadOnlySet<int>> IMapScopedData.MapIdsAsync(EditorDbContext context) =>
+        (await context.SceneEntities.AsNoTracking().Select(record => record.MapId).Distinct().ToListAsync().ConfigureAwait(false))
+            .ToHashSet();
+
+    /// <summary>Fans every component persister's own map-scoped delete out first — mirroring
+    /// <see cref="StageDelete(DbContext, IEntity)"/> — then deletes the entity rows themselves. Runs
+    /// last among <see cref="IMapScopedData"/> owners of priority 0 or lower, so every owner that finds
+    /// its rows through these entities still can.</summary>
+    async Task IMapScopedData.DeleteAsync(EditorDbContext context, DbTransaction transaction, MapId map)
+    {
+        foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
+        {
+            await persistence.DeleteForMapAsync(context, transaction, map).ConfigureAwait(false);
+        }
+
+        await _storage.DeleteWhereMapAsync<SceneEntityRecord>(context, transaction, nameof(SceneEntityRecord.MapId), map).ConfigureAwait(false);
     }
 
     private static SceneEntity ToEntity(SceneEntityRecord record)
