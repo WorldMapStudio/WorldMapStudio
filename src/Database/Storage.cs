@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
-using WorldMapStudio.Cata;
 
 namespace WorldMapStudio;
 
@@ -210,8 +209,7 @@ public abstract class Storage : ISubsystem
     /// Shared body for a concrete storage's <see cref="CommitAsync(IReadOnlyList{IEntity}, IReadOnlyList{IEntity})"/>
     /// override: opens a context via <paramref name="createContext"/> under the write lock, stages every
     /// save/delete through <see cref="FactoryFor"/>, saves once, then runs the write-backs the factories
-    /// queued. <see cref="EditorStorage"/> and <see cref="CataStorage"/> differ only in which concrete
-    /// <see cref="DbContext"/> type they open.
+    /// queued. Concrete storages differ only in which concrete <see cref="DbContext"/> type they open.
     /// </summary>
     protected async Task CommitAsync(Func<DbContext> createContext, IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes)
     {
