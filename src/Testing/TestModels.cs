@@ -59,6 +59,19 @@ public readonly record struct TestResultView(
     public bool HasDetails => Message.Length > 0 || Details.Length > 0 || Logs.Length > 0;
 }
 
+/// <summary>One run's state at an instant: its work item's lifecycle plus counts over only its own tests.</summary>
+public readonly record struct TestRunStatus(
+    long Id,
+    WorkState State,
+    string RunningId,
+    TestRunSummary Summary)
+{
+    public bool IsRunning => State is WorkState.Queued or WorkState.Executing;
+
+    /// <summary>Finished, nothing failed, and every test in the run actually ran (a cancelled run is not green).</summary>
+    public bool AllGreen => !IsRunning && Summary.AllGreen && Summary.NotRun == 0;
+}
+
 /// <summary>Aggregate counts for a completed or in-progress run.</summary>
 public readonly record struct TestRunSummary(
     int Total,

@@ -28,12 +28,31 @@ public sealed class TestRunner
         public string[] Logs = Array.Empty<string>();
     }
 
+    private sealed class RunRecord
+    {
+        public RunRecord(long id, List<TestCase> cases)
+        {
+            Id = id;
+            Cases = cases;
+        }
+
+        public long Id { get; }
+        public List<TestCase> Cases { get; }
+
+        // Null only between the run being claimed and its work item being scheduled.
+        public WorkHandle? Handle { get; set; }
+
+        public bool IsActive => Handle is null || Handle.State is WorkState.Queued or WorkState.Executing;
+    }
+
     private readonly object _lock = new();
     private readonly Node? _editorRoot;
     private readonly List<TestCase> _cases;
     private readonly Dictionary<string, MutableResult> _results;
+    private readonly Dictionary<long, RunRecord> _runs = new();
 
-    private WorkHandle? _runHandle;
+    private RunRecord? _current;
+    private long _nextRunId = 1;
     private string _runningId = "";
 
     public TestRunner(Node? editorRoot, IReadOnlyList<TestCase>? cases = null)
@@ -49,7 +68,13 @@ public sealed class TestRunner
     /// <summary>True while a run is in flight.</summary>
     public bool IsRunning
     {
-        get { lock (_lock) { return _runHandle is { State: WorkState.Queued or WorkState.Executing }; } }
+        get { lock (_lock) { return _current is { IsActive: true }; } }
+    }
+
+    /// <summary>Id of the most recent run, or 0 if none has started.</summary>
+    public long CurrentRunId
+    {
+        get { lock (_lock) { return _current?.Id ?? 0; } }
     }
 
     /// <summary>Id of the test currently executing, or empty.</summary>
@@ -87,22 +112,44 @@ public sealed class TestRunner
     public void RunFailed() =>
         Run(_cases.Where(c => SnapshotOutcome(c.Id) is TestOutcome.Failed or TestOutcome.Errored));
 
-    /// <summary>Runs a specific set of tests (e.g. the currently filtered subset).</summary>
-    public void Run(IEnumerable<TestCase> cases)
-    {
-        if (IsRunning)
-        {
-            return;
-        }
+    /// <summary>Runs a specific set of tests (e.g. the currently filtered subset). Does nothing when
+    /// it cannot start; use <see cref="TryRun"/> to learn why.</summary>
+    public void Run(IEnumerable<TestCase> cases) => TryRun(cases, out _);
 
-        List<TestCase> toRun = cases.ToList();
-        if (toRun.Count == 0)
+    /// <summary>The discovered tests whose id matches <paramref name="filter"/> — see <see cref="TestFilter"/>.
+    /// A null or empty filter selects everything.</summary>
+    public IReadOnlyList<TestCase> Select(string? filter)
+    {
+        TestFilter parsed = TestFilter.Parse(filter);
+        lock (_lock)
         {
-            return;
+            return _cases.Where(c => parsed.Matches(c.Id)).ToList();
         }
+    }
+
+    /// <summary>
+    /// Starts a run over <paramref name="cases"/> and returns its id, or null with the reason in
+    /// <paramref name="blocker"/> when nothing started (a run already in progress, or no tests).
+    /// </summary>
+    public long? TryRun(IEnumerable<TestCase> cases, out string? blocker)
+    {
+        List<TestCase> toRun = cases.ToList();
+        RunRecord run;
 
         lock (_lock)
         {
+            if (_current is { IsActive: true })
+            {
+                blocker = "a test run is already in progress";
+                return null;
+            }
+
+            if (toRun.Count == 0)
+            {
+                blocker = "no tests matched";
+                return null;
+            }
+
             foreach (TestCase c in toRun)
             {
                 MutableResult r = _results[c.Id];
@@ -112,6 +159,10 @@ public sealed class TestRunner
                 r.Details = "";
                 r.Logs = Array.Empty<string>();
             }
+
+            run = new RunRecord(_nextRunId++, toRun);
+            _runs[run.Id] = run;
+            _current = run;
         }
 
         // The whole suite is one work item that starts on the main thread; each test switches to its
@@ -119,8 +170,11 @@ public sealed class TestRunner
         WorkHandle handle = WorkQueue.Schedule("Editor Tests", ctx => RunLoop(ctx, toRun), WorkThread.Main);
         lock (_lock)
         {
-            _runHandle = handle;
+            run.Handle = handle;
         }
+
+        blocker = null;
+        return run.Id;
     }
 
     /// <summary>Requests the in-flight run to stop after the current test.</summary>
@@ -128,7 +182,45 @@ public sealed class TestRunner
     {
         lock (_lock)
         {
-            _runHandle?.Cancel();
+            _current?.Handle?.Cancel();
+        }
+    }
+
+    /// <summary>Requests one specific run to stop, if it is the one in flight.</summary>
+    public void Stop(long runId)
+    {
+        lock (_lock)
+        {
+            if (_current is { } current && current.Id == runId)
+            {
+                current.Handle?.Cancel();
+            }
+        }
+    }
+
+    /// <summary>The run's state and counts over only its own tests, or null for an unknown id.</summary>
+    public TestRunStatus? Status(long runId)
+    {
+        lock (_lock)
+        {
+            if (!_runs.TryGetValue(runId, out RunRecord? run))
+            {
+                return null;
+            }
+
+            WorkState state = run.Handle?.State ?? WorkState.Queued;
+            string runningId = _current == run ? _runningId : "";
+            return new TestRunStatus(run.Id, state, runningId, SummarizeLocked(run.Cases));
+        }
+    }
+
+    /// <summary>Latest result of each test in the run, in the run's order, or null for an unknown id.
+    /// A test that a later run has since re-run shows that later result.</summary>
+    public TestResultView[]? Results(long runId)
+    {
+        lock (_lock)
+        {
+            return _runs.TryGetValue(runId, out RunRecord? run) ? ViewsLocked(run.Cases) : null;
         }
     }
 
@@ -205,42 +297,60 @@ public sealed class TestRunner
     {
         lock (_lock)
         {
-            TestResultView[] views = new TestResultView[_cases.Count];
-            for (int i = 0; i < _cases.Count; i++)
-            {
-                TestCase c = _cases[i];
-                MutableResult r = _results[c.Id];
-                TestOutcome outcome = c.Id == _runningId ? TestOutcome.Running : r.Outcome;
-                views[i] = new TestResultView(
-                    c.Id, c.Name, c.Category, c.Thread, outcome,
-                    r.DurationMs, r.Message, r.Details, r.Logs);
-            }
-            return views;
+            return ViewsLocked(_cases);
         }
     }
 
-    /// <summary>Aggregate counts across all tests.</summary>
+    /// <summary>Aggregate counts across all tests, including any that no run has touched.</summary>
     public TestRunSummary Summarize()
     {
         lock (_lock)
         {
-            int passed = 0, failed = 0, errored = 0, skipped = 0, notRun = 0;
-            double duration = 0;
-            foreach (TestCase c in _cases)
-            {
-                MutableResult r = _results[c.Id];
-                duration += r.DurationMs;
-                switch (r.Outcome)
-                {
-                    case TestOutcome.Passed: passed++; break;
-                    case TestOutcome.Failed: failed++; break;
-                    case TestOutcome.Errored: errored++; break;
-                    case TestOutcome.Skipped: skipped++; break;
-                    default: notRun++; break;
-                }
-            }
-            return new TestRunSummary(_cases.Count, passed, failed, errored, skipped, notRun, duration);
+            return SummarizeLocked(_cases);
         }
+    }
+
+    private TestResultView[] ViewsLocked(List<TestCase> cases)
+    {
+        List<TestResultView> views = new(cases.Count);
+        foreach (TestCase c in cases)
+        {
+            if (!_results.TryGetValue(c.Id, out MutableResult? r))
+            {
+                continue; // dropped by a rediscover since the run was started
+            }
+
+            TestOutcome outcome = c.Id == _runningId ? TestOutcome.Running : r.Outcome;
+            views.Add(new TestResultView(
+                c.Id, c.Name, c.Category, c.Thread, outcome,
+                r.DurationMs, r.Message, r.Details, r.Logs));
+        }
+        return views.ToArray();
+    }
+
+    private TestRunSummary SummarizeLocked(List<TestCase> cases)
+    {
+        int total = 0, passed = 0, failed = 0, errored = 0, skipped = 0, notRun = 0;
+        double duration = 0;
+        foreach (TestCase c in cases)
+        {
+            if (!_results.TryGetValue(c.Id, out MutableResult? r))
+            {
+                continue;
+            }
+
+            total++;
+            duration += r.DurationMs;
+            switch (r.Outcome)
+            {
+                case TestOutcome.Passed: passed++; break;
+                case TestOutcome.Failed: failed++; break;
+                case TestOutcome.Errored: errored++; break;
+                case TestOutcome.Skipped: skipped++; break;
+                default: notRun++; break;
+            }
+        }
+        return new TestRunSummary(total, passed, failed, errored, skipped, notRun, duration);
     }
 
     private void SetRunning(string id)
