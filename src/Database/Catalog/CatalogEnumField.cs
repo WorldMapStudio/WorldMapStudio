@@ -40,6 +40,27 @@ internal sealed class EnumChoices
         Ordered = ordered.OrderBy(entry => unchecked((uint)entry.Value)).ToArray();
     }
 
+    private EnumChoices(IReadOnlyList<(string Label, int Bit)> flagOptions)
+    {
+        IsFlags = true;
+
+        var byValue = new Dictionary<int, string>();
+        var ordered = new List<(int Value, string Name)>();
+        foreach ((string label, int bit) in flagOptions)
+        {
+            if (byValue.ContainsKey(bit))
+            {
+                continue;
+            }
+
+            byValue[bit] = label;
+            ordered.Add((bit, label));
+        }
+
+        ByValue = byValue;
+        Ordered = ordered.OrderBy(entry => unchecked((uint)entry.Value)).ToArray();
+    }
+
     public bool IsFlags { get; }
 
     public IReadOnlyList<(int Value, string Name)> Ordered { get; }
@@ -58,6 +79,10 @@ internal sealed class EnumChoices
             return choices;
         }
     }
+
+    /// <summary>Choices for a flags field whose bits are only known at runtime. Not cached — the caller
+    /// owns when the option list changes.</summary>
+    public static EnumChoices ForFlags(IReadOnlyList<(string Label, int Bit)> options) => new(options);
 
     /// <summary>A short human label for <paramref name="value"/> — the member name, or for a flags enum
     /// the set bits joined by <c>|</c> with any leftover as hex.</summary>
@@ -120,6 +145,15 @@ internal static class CatalogEnumField
         }
     }
 
+    public static void DrawFlags(EditorContext context, CatalogEntity entity, string label, int current,
+        Action<int> set, IReadOnlyList<(string Label, int Bit)> options)
+    {
+        if (DrawFlagsPicker(label, current, EnumChoices.ForFlags(options), out int next))
+        {
+            Record(context, entity, label, current, next, set);
+        }
+    }
+
     /// <summary>A searchable dropdown over <paramref name="enumType"/>, with a raw-int box alongside for
     /// values the enum doesn't name. Returns true (and <paramref name="picked"/>) when the value changed.</summary>
     public static bool DrawEnumPicker(string label, int current, Type enumType, out int picked)
@@ -177,9 +211,11 @@ internal static class CatalogEnumField
 
     /// <summary>A decoded summary button that opens a checkbox popup, plus a raw-int box. Returns true
     /// (and <paramref name="next"/>) when a bit was toggled or the raw value edited.</summary>
-    public static bool DrawFlagsPicker(string label, int current, Type enumType, out int next)
+    public static bool DrawFlagsPicker(string label, int current, Type enumType, out int next) =>
+        DrawFlagsPicker(label, current, EnumChoices.For(enumType), out next);
+
+    private static bool DrawFlagsPicker(string label, int current, EnumChoices choices, out int next)
     {
-        EnumChoices choices = EnumChoices.For(enumType);
         string popupId = $"flags_{label}";
         next = current;
         bool changed = false;
