@@ -15,6 +15,7 @@ public sealed class MapMenu : IMainMenu
     private readonly ShortcutAction _openMap;
 
     private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal;
+    private readonly ModalOperator<StrayMapCleanupOperation, MapSystem> _strayCleanupModal;
 
     public float Priority => 0.85f;
 
@@ -22,6 +23,7 @@ public sealed class MapMenu : IMainMenu
     {
         _context = manager.Context;
         _selectModal = new("SelectMap", () => new MapSelectOperation(_context), new Vector2(700, 0));
+        _strayCleanupModal = new("StrayMapCleanup", () => new StrayMapCleanupOperation());
         _openMap = _context.Shortcuts.Register(
             "map.open",
             "Map",
@@ -41,6 +43,13 @@ public sealed class MapMenu : IMainMenu
             {
                 Open();
             }
+
+            ImGui.Separator();
+
+            if (ImGui.MenuItem("Clean up deleted maps' data…"))
+            {
+                _strayCleanupModal.Show();
+            }
         });
     }
 
@@ -54,6 +63,8 @@ public sealed class MapMenu : IMainMenu
         {
             _context.Maps.Enter(map);
         }
+
+        _strayCleanupModal.Draw(_context.Maps, true, ImGuiWindowFlags.None);
     }
 
     private void Open()
