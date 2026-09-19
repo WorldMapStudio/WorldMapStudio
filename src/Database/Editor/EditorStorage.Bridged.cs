@@ -45,6 +45,8 @@ public sealed partial class EditorStorage
 
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
+        await using Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction =
+            await context.Database.BeginTransactionAsync().ConfigureAwait(false);
 
         foreach (BridgedEntity removal in removals)
         {
@@ -85,7 +87,7 @@ public sealed partial class EditorStorage
             }
 
             Attachments.StageComponents(context, entity, identity);
-            Action tagsWriteBack = Attachments.StageTags(context, entity, id);
+            Action tagsWriteBack = await Attachments.StageTagsTolerantAsync(context, entity, id).ConfigureAwait(false);
             result.WriteBacks.Add(() =>
             {
                 entity.RecordId = id;
@@ -94,6 +96,7 @@ public sealed partial class EditorStorage
         }
 
         await context.SaveChangesAsync().ConfigureAwait(false);
+        await transaction.CommitAsync().ConfigureAwait(false);
         return result;
     }
 }

@@ -79,6 +79,37 @@ public sealed class EntityAttachments(EditorStorage storage)
         return () => entity.PersistedTags = staged;
     }
 
+    /// <summary>
+    /// <see cref="StageTags"/> for an entity whose tags may already have been deleted underneath it — a
+    /// bridged entity is committed after the tag catalog, and deleting a tag cascades its links away.
+    /// Removals run as deletes that tolerate a row already being gone, immediately, so the caller must
+    /// hold a transaction open.
+    /// </summary>
+    public async Task<Action> StageTagsTolerantAsync(EditorDbContext context, SceneEntity entity, int entityId)
+    {
+        EntityTagSet staged = entity.Tags;
+        EntityTagSet persisted = entity.PersistedTags;
+
+        foreach (int tagId in staged)
+        {
+            if (!persisted.Contains(tagId))
+            {
+                context.EntityTags.Add(new EntityTagRecord { EntityId = entityId, TagId = tagId });
+            }
+        }
+
+        int[] removed = persisted.Ids.ToArray().Where(tagId => !staged.Contains(tagId)).ToArray();
+        if (removed.Length > 0)
+        {
+            await context.EntityTags
+                .Where(record => record.EntityId == entityId && removed.Contains(record.TagId))
+                .ExecuteDeleteAsync()
+                .ConfigureAwait(false);
+        }
+
+        return () => entity.PersistedTags = staged;
+    }
+
     /// <summary>Stages every component kind's rows for the entity.</summary>
     public void StageComponents(EditorDbContext context, SceneEntity entity, EntityRecord identity)
     {
