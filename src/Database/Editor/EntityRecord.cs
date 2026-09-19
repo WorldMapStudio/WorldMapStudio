@@ -23,7 +23,7 @@ public sealed partial class EditorDbContext
     public DbSet<EntityRecord> Entities => Set<EntityRecord>();
 }
 
-/// <summary>Declares the <c>wms_entities</c> table.</summary>
+/// <summary>Declares the <c>wms_entities</c> table and the <c>wms_entity_tags</c> rows hanging off it.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class EntityTableConfiguration : ITableConfiguration
 {
@@ -45,6 +45,21 @@ public sealed class EntityTableConfiguration : ITableConfiguration
 
             // Null pairs (native rows) never collide in a unique index.
             entity.HasIndex(record => new { record.Source, record.SourceKey }).IsUnique();
+        });
+
+        model.Entity<EntityTagRecord>(entity =>
+        {
+            entity.ToTable("wms_entity_tags");
+            entity.HasKey(record => new { record.EntityId, record.TagId });
+            entity.HasOne<EntityRecord>()
+                .WithMany()
+                .HasForeignKey(record => record.EntityId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<TagDefinitionRecord>()
+                .WithMany()
+                .HasForeignKey(record => record.TagId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(record => record.TagId);
         });
     }
 }

@@ -27,6 +27,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public EditorStorage(DatabaseSystem database)
     {
         _database = database;
+        Attachments = new EntityAttachments(this);
         InitializeSubsystems();
     }
 
@@ -38,6 +39,9 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     /// <summary>The id source for every new <c>wms_entities</c> row, native or bridged.</summary>
     public EntityIdAllocator EntityIds { get; } = new();
+
+    /// <summary>Loads and stages the tags and components an entity carries, whichever table owns it.</summary>
+    public EntityAttachments Attachments { get; }
 
     // Default to an editor-managed dolt instance so a new project works out of the box. Exposed
     // statically so project settings (created before any Storage instance exists) can seed the same
