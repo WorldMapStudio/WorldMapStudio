@@ -23,19 +23,22 @@ public sealed class PaintScriptApi : IScriptModule
         _context = system.Context;
     }
 
-    private PaintBrush Brush => _context.Tools.PaintToolFactory.Brush;
+    private PaintToolFactory Factory => _context.Tools.PaintToolFactory;
 
     /// <summary>The brush the Paint tool draws with.</summary>
     [ScriptProperty]
-    public PaintBrushDescriptor CurrentBrush => Describe(Brush);
+    public PaintBrushDescriptor CurrentBrush => new(Factory.Brush, Factory.Options);
 
-    /// <summary>Changes the fields named in <paramref name="options"/> (<c>Radius</c>, <c>Opacity</c>,
-    /// <c>Color</c> as [r, g, b] in 0-1, <c>Erase</c>, <c>PaintOnObject</c>) and returns the brush.</summary>
+    /// <summary>Changes the fields named in <paramref name="options"/> and returns the brush: the shared brush
+    /// fields (<c>Radius</c>, <c>Strength</c>, <c>Hardness</c>, <c>Spacing</c>, <c>AirbrushRate</c>,
+    /// <c>Spray</c>, <c>SprayCount</c>, <c>SprayScatter</c>, <c>Invert</c>; <c>Opacity</c> and <c>Erase</c> are
+    /// accepted for <c>Strength</c> and <c>Invert</c>), plus <c>Color</c> as [r, g, b] in 0-1 and
+    /// <c>PaintOnObject</c>.</summary>
     [ScriptFunction]
     public PaintBrushDescriptor SetBrush(object? options)
     {
-        Apply(Brush, options);
-        return Describe(Brush);
+        Apply(Factory.Brush, Factory.Options, options);
+        return CurrentBrush;
     }
 
     /// <summary>
@@ -62,23 +65,19 @@ public sealed class PaintScriptApi : IScriptModule
 
     private bool Run(SceneEntity entity, ImageComponent target, List<Vector3> world, object? options)
     {
-        PaintBrush brush = Brush.Clone();
-        Apply(brush, options);
+        Brush brush = Factory.Brush.Clone();
+        ImagePaintOptions paint = Factory.Options.Clone();
+        Apply(brush, paint, options);
 
-        var stroke = new PaintStroke(brush, _context.EditSessions, _context.Landscape);
-        if (!stroke.Begin(target))
+        var stroke = new BrushStroke(brush, new ImagePaintTarget(target, paint, _context.Landscape), _context.EditSessions);
+        if (!stroke.Begin())
         {
             throw new InvalidOperationException("The entity's image component is not bound to an image.");
         }
 
-        Transform3D inverse = entity.Transform.AffineInverse();
         foreach (Vector3 point in world)
         {
-            Vector3 local = inverse * point;
-            if (PaintStroke.Contains(target, local))
-            {
-                stroke.StampTo(local);
-            }
+            stroke.MoveTo(point);
         }
 
         return stroke.Finish(record: true);
@@ -113,29 +112,15 @@ public sealed class PaintScriptApi : IScriptModule
         return result;
     }
 
-    private static void Apply(PaintBrush brush, object? options)
+    private static void Apply(Brush brush, ImagePaintOptions paint, object? options)
     {
-        if (ScriptJson.AsMap(options) is not { } map)
-        {
-            return;
-        }
-
-        foreach ((string key, object? value) in map)
+        BrushScriptOptions.Apply(brush, options, (key, value) =>
         {
             switch (key.ToLowerInvariant())
             {
-                case "radius":
-                    brush.Radius = (float)ToDouble(value);
-                    break;
-                case "opacity":
-                    brush.Opacity = (float)ToDouble(value);
-                    break;
-                case "erase":
-                    brush.Erase = Convert.ToBoolean(value, CultureInfo.InvariantCulture);
-                    break;
                 case "paintonobject":
-                    brush.PaintOnObject = Convert.ToBoolean(value, CultureInfo.InvariantCulture);
-                    break;
+                    paint.PaintOnObject = BrushScriptOptions.ToBool(value);
+                    return true;
                 case "color":
                     double[] rgb = (value as IEnumerable)?.Cast<object?>().Select(ToDouble).ToArray() ?? [];
                     if (rgb.Length != 3)
@@ -143,34 +128,32 @@ public sealed class PaintScriptApi : IScriptModule
                         throw new ArgumentException("Color must be [r, g, b] in 0-1.");
                     }
 
-                    brush.Color = new Color((float)rgb[0], (float)rgb[1], (float)rgb[2]);
-                    break;
+                    paint.Color = new Color((float)rgb[0], (float)rgb[1], (float)rgb[2]);
+                    return true;
                 default:
-                    throw new ArgumentException($"Unknown brush option '{key}'.");
+                    return false;
             }
-        }
+        });
     }
 
-    private static double ToDouble(object? value) => Convert.ToDouble(value, CultureInfo.InvariantCulture);
-
-    private static PaintBrushDescriptor Describe(PaintBrush brush) => new(brush);
+    private static double ToDouble(object? value) => BrushScriptOptions.ToDouble(value);
 }
 
-/// <summary>The paint brush as <c>wms.paint</c> reports it.</summary>
-public sealed class PaintBrushDescriptor
+/// <summary>The paint brush as <c>wms.paint</c> reports it: the shared brush fields plus the image options.
+/// <c>Opacity</c> and <c>Erase</c> mirror <c>Strength</c> and <c>Invert</c>.</summary>
+public sealed class PaintBrushDescriptor : BrushDescriptor
 {
-    public PaintBrushDescriptor(PaintBrush brush)
+    public PaintBrushDescriptor(Brush brush, ImagePaintOptions options)
+        : base(brush)
     {
-        Radius = brush.Radius;
-        Opacity = brush.Opacity;
-        Color = [brush.Color.R, brush.Color.G, brush.Color.B];
-        Erase = brush.Erase;
-        PaintOnObject = brush.PaintOnObject;
+        Opacity = brush.Strength;
+        Erase = brush.Invert;
+        Color = [options.Color.R, options.Color.G, options.Color.B];
+        PaintOnObject = options.PaintOnObject;
     }
 
-    [ScriptProperty] public double Radius { get; }
     [ScriptProperty] public double Opacity { get; }
-    [ScriptProperty] public double[] Color { get; }
     [ScriptProperty] public bool Erase { get; }
+    [ScriptProperty] public double[] Color { get; }
     [ScriptProperty] public bool PaintOnObject { get; }
 }

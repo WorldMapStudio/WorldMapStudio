@@ -91,6 +91,52 @@ public static class PaintScriptApiTests
         Assert.AreEqual("4", rig.Host.Evaluate("wms.paint.CurrentBrush.Radius.toString()"));
     }
 
+    [EditorTest(Category = "Paint Script", Thread = TestThread.Main)]
+    public static void A_reference_stroke_matches_dabs_laid_at_the_legacy_spacing()
+    {
+        Rig rig = NewRig();
+        rig.Host.Evaluate(Stroke("[[-20, 0], [20, 0]]", "{ Radius: 4, Opacity: 0.35 }"));
+
+        var expected = new PaintImage();
+        expected.ConfigureNew(Size, Size, chunkSize: 16);
+        float radius = 4.0f / Size;
+        for (int i = 0; i <= 40; i++)
+        {
+            expected.Paint(((-20.0f + i) / Size) + 0.5f, 0.5f, radius, radius, 0.35f, erase: false);
+        }
+
+        Assert.IsTrue(rig.Image.CopyPixels().SequenceEqual(expected.CopyPixels()),
+            "a stroke should lay a dab at the start and one per quarter radius of travel");
+    }
+
+    [EditorTest(Category = "Paint Script", Thread = TestThread.Main)]
+    public static void Hardness_keeps_full_weight_inside_the_inner_radius()
+    {
+        Rig rig = NewRig();
+        rig.Host.Evaluate($"wms.paint.Dab(wms.fixture.Target(), 0, 0, {{ Radius: 10, Strength: 0.5, Hardness: 1 }})");
+
+        byte[] pixels = rig.Image.CopyPixels();
+        byte centre = pixels[(32 * Size) + 32];
+        Assert.IsTrue(centre > 0);
+        Assert.AreEqual(centre, pixels[(32 * Size) + 40], "a hard brush is flat out to its rim");
+        Assert.AreEqual((byte)0, pixels[(32 * Size) + 44]);
+
+        Rig soft = NewRig();
+        soft.Host.Evaluate($"wms.paint.Dab(wms.fixture.Target(), 0, 0, {{ Radius: 10, Strength: 0.5 }})");
+        Assert.IsTrue(soft.Image.CopyPixels()[(32 * Size) + 40] < centre);
+    }
+
+    [EditorTest(Category = "Paint Script", Thread = TestThread.Main)]
+    public static void Legacy_option_names_still_apply_to_the_shared_brush()
+    {
+        Rig rig = NewRig();
+        rig.Host.Evaluate("wms.paint.SetBrush({ Opacity: 0.6, Erase: true })");
+
+        Assert.AreEqual("0.6", rig.Host.Evaluate("wms.paint.CurrentBrush.Strength.toString()").Substring(0, 3));
+        Assert.AreEqual("true", rig.Host.Evaluate("wms.paint.CurrentBrush.Invert.toString()"));
+        Assert.AreEqual("true", rig.Host.Evaluate("wms.paint.CurrentBrush.Erase.toString()"));
+    }
+
     private static string Stroke(string points, string? options = null) =>
         $"wms.paint.Stroke(wms.fixture.Target(), {points}{(options == null ? "" : ", " + options)}).toString()";
 
