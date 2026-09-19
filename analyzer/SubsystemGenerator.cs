@@ -32,6 +32,7 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
     private const string ISubsystemMetadataName = "WorldMapStudio.ISubsystem";
     private const string ISubsystemQualifiedName = "global::WorldMapStudio.ISubsystem";
     private const string ISubsystemHostMetadataName = "WorldMapStudio.ISubsystemHost";
+    private const string ISubsystemHostQualifiedName = "global::WorldMapStudio.ISubsystemHost";
 
     private static readonly SymbolDisplayFormat QualifiedFormat =
         SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
@@ -299,7 +300,8 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.Append(AccessibilityKeyword(parent.DeclaredAccessibility)).Append("partial class ").AppendLine(parent.Name);
+        sb.Append(AccessibilityKeyword(parent.DeclaredAccessibility)).Append("partial class ").Append(parent.Name)
+            .Append(" : ").AppendLine(ISubsystemHostQualifiedName);
         sb.AppendLine("{");
 
         foreach (var subsystem in subsystems)
