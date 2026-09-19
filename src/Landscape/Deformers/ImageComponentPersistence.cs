@@ -33,7 +33,7 @@ public sealed class SceneImageComponentRecord
     /// is the default an older row loads as.</summary>
     public ImageWriteMode WriteMode { get; set; } = ImageWriteMode.Max;
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -93,7 +93,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         ImageComponent? image = entity.Component<ImageComponent>();
         if (image == null)
@@ -133,10 +133,10 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         EditorDbContext context,
         int resourceRecordId)
     {
-        List<SceneEntityRecord> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()
+        List<MapEntityRecord> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()
             .Where(record => record.ImageId == resourceRecordId)
             .Join(
-                context.SceneEntities.AsNoTracking(),
+                context.MapEntities.AsNoTracking(),
                 record => record.EntityId,
                 entity => entity.Id,
                 (record, entity) => entity)
@@ -151,7 +151,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         List<(int, int)> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()
             .Where(record => record.ImageId != null)
             .Join(
-                context.SceneEntities.AsNoTracking(),
+                context.MapEntities.AsNoTracking(),
                 record => record.EntityId,
                 entity => entity.Id,
                 (record, entity) => new ValueTuple<int, int>(record.ImageId!.Value, entity.MapId))

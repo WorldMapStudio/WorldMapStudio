@@ -17,7 +17,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.Resize(32, 32);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var target = new ImageComponent(context.Images) { ImageId = image.RecordId };
         entity.AddComponent(target);
         int beforeVersion = target.ContentVersion;
@@ -382,7 +382,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -409,7 +409,7 @@ public static class ImageTests
         EditorContext context = NewContext("__wms_image_chunks_needed_miss_test__");
         PaintImage image = NewImage(context, id: 1);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -460,7 +460,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(64, 64, chunkSize: 16); // a 4x4 grid of chunks
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -504,7 +504,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(64, 64, chunkSize: 16);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -693,7 +693,7 @@ public static class ImageTests
         var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.Object };
         context.Catalog.Add(layer);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId };
         entity.AddComponent(component);
         context.Scene.Add(entity);
@@ -853,7 +853,7 @@ public static class ImageTests
     public static void Images_keep_authored_height_but_only_yaw_rotation()
     {
         EditorContext context = NewContext("__wms_image_transform_test__");
-        var target = new SceneEntity();
+        var target = new MapSceneEntity();
         target.AddComponent(new ImageComponent(context.Images));
         target.Transform = new Transform3D(
             Basis.FromEuler(new Vector3(0.35f, 0.7f, -0.2f)),
@@ -1073,8 +1073,8 @@ public static class ImageTests
         var layer = new ImageDisplayLayer { RecordId = 1, DisplayMode = ImageDisplayMode.None };
         context.Catalog.Add(layer);
 
-        var entityA = new SceneEntity();
-        var entityB = new SceneEntity();
+        var entityA = new MapSceneEntity();
+        var entityB = new MapSceneEntity();
         entityA.AddComponent(new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId });
         entityB.AddComponent(new ImageComponent(context.Images) { ImageId = image.RecordId, DisplayLayerId = layer.RecordId });
         context.Scene.Add(entityA);
@@ -1133,7 +1133,7 @@ public static class ImageTests
         var catalog = new LandscapeCatalog([channel], [baseLayer, paintLayer], [material], functions);
         EditorContext context = NewContext("__wms_image_rasterize_test__");
         PaintImage image = NewImage(context, id: 1);
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var target = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -1165,7 +1165,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(256, 256, chunkSize: 256); // exactly one chunk, like a default image
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -1199,8 +1199,8 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(256, 256, chunkSize: 256);
 
-        var entityA = new SceneEntity();
-        var entityB = new SceneEntity();
+        var entityA = new MapSceneEntity();
+        var entityB = new MapSceneEntity();
         var a = new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = 512.0f, WorldSizeZ = 512.0f };
         var b = new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = 512.0f, WorldSizeZ = 512.0f };
         entityA.AddComponent(a);
@@ -1225,7 +1225,7 @@ public static class ImageTests
         image.ConfigureNew(256, 256, chunkSize: 16);
         image.Paint(4.0f / 256.0f, 4.0f / 256.0f, 2.0f / 256.0f, 2.0f / 256.0f, 1.0f, erase: false);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var component = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -1267,7 +1267,7 @@ public static class ImageTests
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(1024, 1024, chunkSize: 64);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var target = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -1507,7 +1507,7 @@ public static class ImageTests
 
         LandscapeChunkOutput BuildWith(ImageWriteMode mode)
         {
-            var entity = new SceneEntity();
+            var entity = new MapSceneEntity();
             var target = new ImageComponent(context.Images)
             {
                 ImageId = image.RecordId,

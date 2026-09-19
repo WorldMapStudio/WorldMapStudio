@@ -28,7 +28,7 @@ public static class ChunkOwnershipTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void A_local_component_owns_the_chunks_it_covers()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new BoxComponent(Local, mapSpanning: false));
 
         Assert.AreEqual(Local, entity.LocalChunkBounds);
@@ -39,7 +39,7 @@ public static class ChunkOwnershipTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void A_map_spanning_component_does_not_widen_what_an_entity_owns()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new BoxComponent(Global, mapSpanning: true));
         entity.AddComponent(new BoxComponent(Local, mapSpanning: false));
 
@@ -50,7 +50,7 @@ public static class ChunkOwnershipTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void An_entity_that_is_only_map_spanning_owns_nothing()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new BoxComponent(Global, mapSpanning: true));
 
         Assert.IsNull(entity.LocalChunkBounds);
@@ -62,7 +62,7 @@ public static class ChunkOwnershipTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void An_entity_with_no_bounds_components_still_owns_its_own_spot()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
 
         Assert.AreEqual(entity.EffectiveLocalBounds, entity.LocalChunkBounds);
     }

@@ -570,8 +570,8 @@ public static class ProceduralMeshTests
         ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
-        var entityA = new SceneEntity();
-        var entityB = new SceneEntity();
+        var entityA = new MapSceneEntity();
+        var entityB = new MapSceneEntity();
         var componentA = new ProceduralComponent(system) { ModelId = model.RecordId };
         var componentB = new ProceduralComponent(system) { ModelId = model.RecordId };
         entityA.AddComponent(componentA);
@@ -602,8 +602,8 @@ public static class ProceduralMeshTests
         ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
-        var entityA = new SceneEntity();
-        var entityB = new SceneEntity();
+        var entityA = new MapSceneEntity();
+        var entityB = new MapSceneEntity();
         entityA.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
         entityB.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
         context.Scene.Add(entityA);
@@ -635,8 +635,8 @@ public static class ProceduralMeshTests
         ProceduralSystem system = context.Procedural;
         ProceduralModel model = NewTubeModel(context, id: 1);
 
-        var entityA = new SceneEntity { Map = new MapId(1) };
-        var entityB = new SceneEntity { Map = new MapId(1) };
+        var entityA = new MapSceneEntity { Map = new MapId(1) };
+        var entityB = new MapSceneEntity { Map = new MapId(1) };
         var componentA = new ProceduralComponent(system) { ModelId = model.RecordId };
         entityA.AddComponent(componentA);
         entityB.AddComponent(new ProceduralComponent(system) { ModelId = model.RecordId });
@@ -665,7 +665,7 @@ public static class ProceduralMeshTests
     {
         EditorContext context = NewContext("__wms_procedural_model_dangling_test__");
         var component = new ProceduralComponent(context.Procedural) { ModelId = 999 };
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(component);
 
         Node3D node = component.BuildNode();

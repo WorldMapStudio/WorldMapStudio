@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
-public sealed class SceneEntityRecord
+public sealed class MapEntityRecord
 {
     public int Id { get; set; }
 
@@ -53,11 +53,11 @@ public sealed class SceneEntityRecord
 /// this partial class for why a table's DbSet lives beside its owner instead of being centrally listed.</summary>
 public sealed partial class EditorDbContext
 {
-    public DbSet<SceneEntityRecord> SceneEntities => Set<SceneEntityRecord>();
+    public DbSet<MapEntityRecord> MapEntities => Set<MapEntityRecord>();
 }
 
 [Subsystem(nameof(EditorStorage))]
-public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
+public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
 {
     private readonly EditorStorage _storage;
 
@@ -66,7 +66,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
     // instead of one INSERT + SELECT LAST_INSERT_ID() per row.
     private int _nextId;
 
-    public SceneEntityFactory(EditorStorage storage)
+    public MapSceneEntityFactory(EditorStorage storage)
     {
         _storage = storage;
     }
@@ -77,7 +77,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
 
     public void Configure(ModelBuilder model)
     {
-        model.Entity<SceneEntityRecord>(entity =>
+        model.Entity<MapEntityRecord>(entity =>
         {
             entity.ToTable("wms_scene_entities");
             entity.HasKey(record => record.Id);
@@ -97,7 +97,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         }
 
         var db = (EditorDbContext)context;
-        _nextId = await db.SceneEntities.AsNoTracking()
+        _nextId = await db.MapEntities.AsNoTracking()
             .Select(record => (int?)record.Id)
             .MaxAsync()
             .ConfigureAwait(false) ?? 0;
@@ -113,7 +113,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         await using EditorDbContext context = _storage.CreateContext();
 
         long clock = DiagnosticLog.Start();
-        List<int> inRegion = await context.SceneEntities.AsNoTracking()
+        List<int> inRegion = await context.MapEntities.AsNoTracking()
             .Where(record => record.MapId == map.Value
                 && record.MinX <= max.X && record.MaxX >= min.X
                 && record.MinY <= max.Y && record.MaxY >= min.Y
@@ -131,7 +131,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         }
 
         clock = DiagnosticLog.Start();
-        List<SceneEntityRecord> rows = await context.SceneEntities.AsNoTracking()
+        List<MapEntityRecord> rows = await context.MapEntities.AsNoTracking()
             .Where(record => wanted.Contains(record.Id))
             .ToListAsync()
             .ConfigureAwait(false);
@@ -156,7 +156,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         var db = (EditorDbContext)context;
         var scene = (SceneEntity)entity;
 
-        var record = new SceneEntityRecord();
+        var record = new MapEntityRecord();
         if (scene.RecordId is int id)
         {
             record.Id = id;
@@ -173,11 +173,11 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         WriteRecord(scene, record);
         if (scene.RecordId is null)
         {
-            db.SceneEntities.Add(record);
+            db.MapEntities.Add(record);
         }
         else
         {
-            db.SceneEntities.Update(record);
+            db.MapEntities.Update(record);
         }
 
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
@@ -198,17 +198,17 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
                 persistence.StageDelete(db, id);
             }
 
-            db.SceneEntities.Remove(new SceneEntityRecord { Id = id });
+            db.MapEntities.Remove(new MapEntityRecord { Id = id });
         }
     }
 
     string IMapScopedData.Label => "Scene entities";
 
     Task<int> IMapScopedData.CountAsync(EditorDbContext context, MapId map) =>
-        _storage.CountWhereMapAsync<SceneEntityRecord>(context, nameof(SceneEntityRecord.MapId), map);
+        _storage.CountWhereMapAsync<MapEntityRecord>(context, nameof(MapEntityRecord.MapId), map);
 
     async Task<IReadOnlySet<int>> IMapScopedData.MapIdsAsync(EditorDbContext context) =>
-        (await context.SceneEntities.AsNoTracking().Select(record => record.MapId).Distinct().ToListAsync().ConfigureAwait(false))
+        (await context.MapEntities.AsNoTracking().Select(record => record.MapId).Distinct().ToListAsync().ConfigureAwait(false))
             .ToHashSet();
 
     /// <summary>Fans every component persister's own map-scoped delete out first — mirroring
@@ -222,12 +222,12 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
             await persistence.DeleteForMapAsync(context, transaction, map).ConfigureAwait(false);
         }
 
-        await _storage.DeleteWhereMapAsync<SceneEntityRecord>(context, transaction, nameof(SceneEntityRecord.MapId), map).ConfigureAwait(false);
+        await _storage.DeleteWhereMapAsync<MapEntityRecord>(context, transaction, nameof(MapEntityRecord.MapId), map).ConfigureAwait(false);
     }
 
-    private static SceneEntity ToEntity(SceneEntityRecord record)
+    private static SceneEntity ToEntity(MapEntityRecord record)
     {
-        var entity = new SceneEntity
+        var entity = new MapSceneEntity
         {
             RecordId = record.Id,
             Map = new MapId(record.MapId),
@@ -241,7 +241,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         return entity;
     }
 
-    private static void WriteRecord(SceneEntity entity, SceneEntityRecord record)
+    private static void WriteRecord(SceneEntity entity, MapEntityRecord record)
     {
         Transform3D transform = entity.Transform;
         Quaternion rotation = transform.Basis.GetRotationQuaternion();

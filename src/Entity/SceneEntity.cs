@@ -7,9 +7,11 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// An entity placed in a map: it has a world transform and bounds, and owns its Godot
-/// representation in the viewport. Streamed in and out as the user moves around the map.
+/// representation in the viewport. Streamed in and out as the user moves around the map. Knows nothing
+/// about which table stores it — <see cref="MapSceneEntity"/> is the editor-authored kind, and a
+/// plugin derives its own for entities stored elsewhere.
 /// </summary>
-public class SceneEntity : Entity
+public abstract class SceneEntity : Entity
 {
     private Transform3D _transform = Transform3D.Identity;
 
@@ -28,10 +30,13 @@ public class SceneEntity : Entity
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
     protected Node3D? Node { get; private set; }
 
-    /// <summary>The map this entity lives in. Streaming loads and unloads entities per map.</summary>
+    /// <summary>The editor map this instance is loaded into, which is what streaming scopes by. On a
+    /// <see cref="MapSceneEntity"/> it is also the persisted owner; on an entity stored elsewhere it is
+    /// only the map it was scanned for.</summary>
     public MapId Map { get; set; } = new(0);
 
-    /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
+    /// <summary>Primary key of this entity's row in the editor's entity table; null until it first has
+    /// editor-side data committed.</summary>
     public int? RecordId { get; set; }
 
     [ScriptProperty(Mutable = true)]
@@ -252,22 +257,13 @@ public class SceneEntity : Entity
     }
 
     /// <summary>
-    /// An independent duplicate: fresh identity, no persisted record, and its own deep
-    /// copy of every component. Used by copy/paste, which must not depend on the original entity still
-    /// being loaded — once cloned, nothing here references the source, so streaming unloading (or even
-    /// deleting) the original afterwards has no effect on the clone.
+    /// An independent duplicate: fresh identity, no persisted record, and its own deep copy of everything
+    /// the editor owns on it. Null for entity kinds that can't be duplicated. Used by copy/paste and
+    /// prefabs, which must not depend on the original entity still being loaded — once cloned, nothing
+    /// here references the source, so streaming unloading (or even deleting) the original afterwards
+    /// has no effect on the clone.
     /// </summary>
-    public SceneEntity Clone()
-    {
-        var clone = new SceneEntity { Name = Name, Map = Map };
-        foreach (SceneComponent component in Components)
-        {
-            clone.AddComponent(component.Clone());
-        }
-
-        clone.Transform = Transform;
-        return clone;
-    }
+    public virtual SceneEntity? Clone() => null;
 
     public T? Component<T>() where T : SceneComponent =>
         Components.OfType<T>().FirstOrDefault();

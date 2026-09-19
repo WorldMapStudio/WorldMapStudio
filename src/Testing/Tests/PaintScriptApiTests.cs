@@ -147,7 +147,7 @@ public static class PaintScriptApiTests
         image.ConfigureNew(Size, Size, chunkSize: 16);
         context.Catalog.Add(image);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new ImageComponent(context.Images) { ImageId = image.RecordId, WorldSizeX = Size, WorldSizeZ = Size });
         context.Scene.Add(entity);
 

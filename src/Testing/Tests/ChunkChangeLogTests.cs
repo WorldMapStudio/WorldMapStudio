@@ -50,7 +50,7 @@ public static class ChunkChangeLogTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Undone_edit_does_not_report_a_committed_chunk_change()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var history = new UndoHistory();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
@@ -66,7 +66,7 @@ public static class ChunkChangeLogTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Moving_back_to_the_start_reports_no_chunk_change()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var history = new UndoHistory();
         Transform3D a = Transform3D.Identity;
         Transform3D b = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
@@ -84,7 +84,7 @@ public static class ChunkChangeLogTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Moving_once_reports_the_original_and_final_spans()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
         entity.Transform = after;
@@ -102,7 +102,7 @@ public static class ChunkChangeLogTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Uncommitted_entities_are_ignored_by_the_commit_reducer()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         Transform3D before = Transform3D.Identity;
         Transform3D after = new(Basis.Identity, new Vector3(64.0f, 0.0f, 0.0f));
         entity.Transform = after;
@@ -141,7 +141,7 @@ public static class ChunkChangeLogTests
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void A_non_catalog_edit_marks_no_map()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var command = new TransformEntitiesCommand([entity], [Transform3D.Identity], [Transform3D.Identity]);
 
         Assert.AreEqual(0, ChunkChangeLog.CatalogChangedMaps([command], _ => true).Count);
@@ -156,7 +156,7 @@ public static class ChunkChangeLogTests
     public static void A_shared_resource_edit_keeps_its_fan_out_when_the_resource_committed()
     {
         var model = new ProceduralModel { RecordId = 5 };
-        var placement = new SceneEntity { Transform = new Transform3D(Basis.Identity, new Vector3(200.0f, 0.0f, 200.0f)) };
+        var placement = new MapSceneEntity { Transform = new Transform3D(Basis.Identity, new Vector3(200.0f, 0.0f, 200.0f)) };
         ChunkChangeSnapshot before = ChunkChangeSnapshot.Capture(placement);
         placement.Transform = new Transform3D(Basis.Identity, new Vector3(600.0f, 0.0f, 200.0f));
         ChunkChangeSnapshot after = ChunkChangeSnapshot.Capture(placement);

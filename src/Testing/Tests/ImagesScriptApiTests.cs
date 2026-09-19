@@ -26,7 +26,7 @@ public static class ImagesScriptApiTests
         Assert.AreEqual("Mask", host.Evaluate("wms.images.List().filter(i => i.Name == 'Mask')[0].Name"));
         Assert.AreEqual("Database", host.Evaluate("wms.images.List().filter(i => i.Name == 'Mask')[0].StorageKind"));
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new ImageComponent(context.Images) { ImageId = id, WorldSizeX = Size, WorldSizeZ = Size });
         context.Scene.Add(entity);
         fixture.Entity = entity;
@@ -56,7 +56,7 @@ public static class ImagesScriptApiTests
         (EditorContext context, ScriptEngineHost host, Fixture fixture) = NewRig();
         int id = int.Parse(host.Evaluate($"wms.images.Create({{ name: 'Source', width: {Size}, height: {Size}, chunkSize: 16 }}).Id.toString()"));
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new ImageComponent(context.Images) { ImageId = id, WorldSizeX = Size, WorldSizeZ = Size });
         context.Scene.Add(entity);
         fixture.Entity = entity;

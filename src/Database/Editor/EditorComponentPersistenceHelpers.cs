@@ -57,7 +57,7 @@ public static class EditorComponentPersistenceHelpers
 
     /// <summary>A stored entity row as the id/map/world-bounds triple
     /// <see cref="IResourceReferencingPersistence.ReferencingBoundsAsync"/> returns.</summary>
-    public static (int EntityId, MapId Map, Aabb Bounds) ToMapBounds(SceneEntityRecord entity) => (
+    public static (int EntityId, MapId Map, Aabb Bounds) ToMapBounds(MapEntityRecord entity) => (
         entity.Id,
         new MapId(entity.MapId),
         new Aabb(

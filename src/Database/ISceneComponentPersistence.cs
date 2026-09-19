@@ -40,7 +40,7 @@ public interface ISceneComponentPersistence : ISubsystem
     /// it no longer carries one. <paramref name="entityRow"/> is the entity's just-staged row, needed
     /// only for EF navigation fixup when the entity has no id yet.
     /// </summary>
-    void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow);
+    void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow);
 
     /// <summary>Stages a delete of this component for an entity being deleted outright.</summary>
     void StageDelete(EditorDbContext context, int entityId);
@@ -48,7 +48,7 @@ public interface ISceneComponentPersistence : ISubsystem
     /// <summary>
     /// Deletes this component's rows for every entity on <paramref name="map"/>. Runs inside the
     /// delete transaction, with <paramref name="context"/>'s connection already open, and before the
-    /// entity rows themselves go — see <see cref="SceneEntityFactory"/>'s <see cref="IMapScopedData"/>
+    /// entity rows themselves go — see <see cref="MapSceneEntityFactory"/>'s <see cref="IMapScopedData"/>
     /// implementation, which is the only caller. Most implementations are one line calling
     /// <see cref="EditorStorage.DeleteForMapEntitiesAsync{TRecord}"/>; one with a child table (an entry
     /// list keyed on <c>EntityId</c>) deletes the child rows first.

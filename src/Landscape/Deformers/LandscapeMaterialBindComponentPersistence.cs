@@ -12,7 +12,7 @@ public sealed class SceneLandscapeMaterialBindComponentRecord
 
     public int Priority { get; set; }
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 public sealed class SceneLandscapeMaterialBindEntryRecord
@@ -99,7 +99,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         LandscapeMaterialBindComponent? bind = entity.Component<LandscapeMaterialBindComponent>();
         if (bind == null)

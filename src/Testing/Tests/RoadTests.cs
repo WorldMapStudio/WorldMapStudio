@@ -286,7 +286,7 @@ public static class RoadTests
             new LandscapeMaterialBinding(fixture.ShoulderLayer.RecordId, fixture.ShoulderMaterial.RecordId),
         ]);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(road);
         entity.AddComponent(bind);
         entity.Transform = transform;

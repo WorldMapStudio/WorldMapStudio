@@ -26,7 +26,7 @@ public sealed class SceneStampComponentRecord
 
     public double ColorA { get; set; } = 1.0;
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -77,7 +77,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         StampComponent? stamp = entity.Component<StampComponent>();
         if (stamp == null)

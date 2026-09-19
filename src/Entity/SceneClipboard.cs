@@ -77,16 +77,28 @@ public sealed class SceneClipboard : IWorldParticipant
         return new Vector3(bounds.Position.X + bounds.Size.X * 0.5f, bounds.Position.Y, bounds.Position.Z + bounds.Size.Z * 0.5f);
     }
 
+    // Entities that can't be duplicated (Clone returns null) are left out and reported.
     private static IReadOnlyList<SceneEntity> CloneBatch(IReadOnlyList<SceneEntity> source, MapId? map)
     {
-        var clones = new SceneEntity[source.Count];
-        for (int i = 0; i < clones.Length; i++)
+        var clones = new List<SceneEntity>(source.Count);
+        foreach (SceneEntity entity in source)
         {
-            clones[i] = source[i].Clone();
+            if (entity.Clone() is not { } clone)
+            {
+                continue;
+            }
+
             if (map is { } target)
             {
-                clones[i].Map = target;
+                clone.Map = target;
             }
+
+            clones.Add(clone);
+        }
+
+        if (clones.Count < source.Count)
+        {
+            GD.PushWarning($"[Clipboard] Skipped {source.Count - clones.Count} of {source.Count} entities that can't be duplicated.");
         }
 
         return clones;

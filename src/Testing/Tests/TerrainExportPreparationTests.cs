@@ -75,7 +75,7 @@ public static class TerrainExportPreparationTests
 
         Assert.AreEqual(0, image.ChunkCount, "nothing resident");
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var painter = new ImageComponent(context.Images)
         {
             ImageId = image.RecordId,
@@ -159,7 +159,7 @@ public static class TerrainExportPreparationTests
         var bind = new LandscapeMaterialBindComponent();
         bind.ReplaceBindings([new LandscapeMaterialBinding(centreLayer.RecordId, centreMaterial.RecordId)]);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(road);
         entity.AddComponent(bind);
         entity.Transform = new Transform3D(Basis.Identity, new Vector3(32.0f, 0.0f, 32.0f));

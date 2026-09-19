@@ -23,7 +23,7 @@ public sealed class LandscapeCatalogMapData : IMapScopedData
         _storage = storage;
     }
 
-    // Keyed directly on MapId, not through an entity — runs after SceneEntityFactory (priority 0),
+    // Keyed directly on MapId, not through an entity — runs after MapSceneEntityFactory (priority 0),
     // though nothing here actually depends on the entities being gone yet.
     public float Priority => 1.0f;
 

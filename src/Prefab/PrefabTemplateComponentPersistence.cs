@@ -12,7 +12,7 @@ public sealed class ScenePrefabTemplateComponentRecord
 
     public int PrefabId { get; set; }
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -56,7 +56,7 @@ public sealed class PrefabTemplateComponentPersistence : ISceneComponentPersiste
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         PrefabTemplateComponent? template = entity.Component<PrefabTemplateComponent>();
         if (template == null)
