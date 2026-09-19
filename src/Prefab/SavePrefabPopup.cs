@@ -13,17 +13,15 @@ public sealed class SavePrefabPopup
     private const string PopupId = "Save as Prefab";
 
     private readonly PrefabSystem _prefabs;
-    private readonly EditSessionManager _sessions;
 
     private bool _openRequested;
     private bool _active;
     private SceneEntity? _source;
     private string _name = "Prefab";
 
-    public SavePrefabPopup(PrefabSystem prefabs, EditSessionManager sessions)
+    public SavePrefabPopup(PrefabSystem prefabs)
     {
         _prefabs = prefabs;
-        _sessions = sessions;
     }
 
     public void Open(SceneEntity source)
@@ -79,8 +77,6 @@ public sealed class SavePrefabPopup
             return;
         }
 
-        IEditCommand command = _prefabs.BuildSaveCommand(_source, _name);
-        command.Apply();
-        _sessions.Record(command);
+        _prefabs.Save(_source, _name);
     }
 }
