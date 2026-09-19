@@ -2,9 +2,14 @@ using ImGuiNET;
 
 namespace WorldMapStudio;
 
+[Subsystem(nameof(AppSystems))]
 public sealed class FileSystemAssetSourceDefinition : IAssetSourceDefinition
 {
     private const uint PathMaxLength = 512;
+
+    public FileSystemAssetSourceDefinition(AppSystems app)
+    {
+    }
 
     public string Type => AssetSourceType.FileSystem;
 

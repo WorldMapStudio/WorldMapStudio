@@ -13,6 +13,9 @@ namespace WorldMapStudio;
 /// applied to field initializers instead of a scanned interface). Each <see cref="StyleColor"/>/
 /// <see cref="StyleFont"/>/<see cref="StyleSize"/> registers itself as its declaring class
 /// initializes, so this never names a token class directly.
+///
+/// This deliberately scans instead of using <c>[Subsystem]</c>: a token is a static field, not an
+/// instance, and the scan only exists to force the declaring class's static constructor.
 /// </summary>
 public static class StyleTokenRegistry
 {

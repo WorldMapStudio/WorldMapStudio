@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using Godot;
 
 namespace WorldMapStudio;
 
@@ -17,30 +15,9 @@ public static class AssetSourceTypeRegistry
 
     public static string Label(string type) => Find(type)?.Label ?? type;
 
-    private static IReadOnlyList<IAssetSourceDefinition> Discover()
-    {
-        var definitions = new List<IAssetSourceDefinition>();
-        foreach (Type type in AssemblyTypes.SafeGetTypes(typeof(AssetSourceTypeRegistry).Assembly))
-        {
-            if (type.IsAbstract || !typeof(IAssetSourceDefinition).IsAssignableFrom(type) || type.GetConstructor(Type.EmptyTypes) == null)
-            {
-                continue;
-            }
-
-            try
-            {
-                definitions.Add((IAssetSourceDefinition)Activator.CreateInstance(type)!);
-            }
-            catch (Exception e)
-            {
-                GD.PushError($"[Assets] Failed to register asset source type '{type.FullName}': {e.Message}");
-            }
-        }
-
-        return definitions
-            .GroupBy(definition => definition.Type, StringComparer.OrdinalIgnoreCase)
-            .Select(group => group.First())
+    private static IReadOnlyList<IAssetSourceDefinition> Discover() =>
+        AppSystems.Instance.Subsystems
+            .OfType<IAssetSourceDefinition>()
             .OrderBy(definition => definition.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-    }
 }

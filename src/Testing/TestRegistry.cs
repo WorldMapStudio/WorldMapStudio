@@ -14,6 +14,10 @@ namespace WorldMapStudio;
 ///
 /// Supported signatures (static or instance, instance needs a public parameterless ctor):
 /// <c>void M()</c>, <c>void M(TestContext)</c>, <c>Task M()</c>, <c>Task M(TestContext)</c>.
+///
+/// This deliberately scans instead of using <c>[Subsystem]</c>: it finds methods by attribute across
+/// several signatures rather than types with one constructor shape, and tests are not nodes in the
+/// running editor's subsystem tree.
 /// </summary>
 public static class TestRegistry
 {

@@ -1,6 +1,6 @@
 namespace WorldMapStudio;
 
-public interface IAssetSourceDefinition
+public interface IAssetSourceDefinition : ISubsystem
 {
     public string Type { get; }
 

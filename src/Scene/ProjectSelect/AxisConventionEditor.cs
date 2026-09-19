@@ -43,7 +43,7 @@ public static class AxisConventionEditor
 
     private static bool DrawPresetRow(AxisConvention convention)
     {
-        IAxisConventionPreset[] presets = AxisConventionPresets.Instance.Presets.ToArray();
+        IAxisConventionPreset[] presets = AppSystems.Instance.AxisConventionPresets.Presets.ToArray();
         if (presets.Length == 0)
         {
             return false;
