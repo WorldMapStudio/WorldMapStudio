@@ -47,7 +47,7 @@ public abstract class EditorKeyedCatalogFactory<TEntity, TRecord> : IEntityFacto
 
     public bool Handles(IEntity entity) => entity is TEntity;
 
-    public void Configure(ModelBuilder model)
+    public virtual void Configure(ModelBuilder model)
     {
         model.Entity<TRecord>(entity =>
         {
