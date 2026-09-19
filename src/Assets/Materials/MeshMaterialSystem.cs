@@ -93,6 +93,37 @@ public sealed partial class MeshMaterialSystem : ISubsystemHost, IWorldParticipa
         Version++;
     }
 
+    /// <summary>The creation of a preset, not yet applied. A null <paramref name="name"/> takes the next
+    /// free "Material N". Identified now, so a slot binding created in the same session can reference it.</summary>
+    public CreateCatalogEntityCommand BuildCreatePresetCommand(string? name, string typeId, out MeshMaterialPreset preset)
+    {
+        preset = new MeshMaterialPreset
+        {
+            Name = name ?? UniqueName("Material", Presets.Select(existing => existing.Name)),
+            TypeId = typeId,
+        };
+
+        Context.Catalog.AssignId(preset);
+        return new CreateCatalogEntityCommand(Context.Catalog, preset);
+    }
+
+    /// <summary>The deletion of <paramref name="preset"/>, not yet applied.</summary>
+    public DeleteCatalogEntityCommand BuildDeletePresetCommand(MeshMaterialPreset preset) =>
+        new(Context.Catalog, preset);
+
+    private static string UniqueName(string prefix, IEnumerable<string> taken)
+    {
+        var used = new HashSet<string>(taken);
+        for (int i = 1; ; i++)
+        {
+            string candidate = $"{prefix} {i}";
+            if (used.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
     /// <summary>Everything wrong with the preset catalog, worst first. Empty means it is usable.</summary>
     public IReadOnlyList<MeshMaterialIssue> Validate()
     {

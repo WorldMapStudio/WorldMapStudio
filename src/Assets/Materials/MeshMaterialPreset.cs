@@ -7,12 +7,15 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class MeshMaterialPreset : CatalogEntity, IKeyedCatalogEntity
 {
+    [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Material";
 
     /// <summary>Id of the <see cref="IMeshMaterialType"/> this preset's parameters belong to.</summary>
+    [ScriptProperty(Mutable = true)]
     public string TypeId { get; set; } = StandardMeshMaterial.TypeId;
 
     /// <summary>Serialized <see cref="MeshParameterValues"/> for <see cref="TypeId"/>.</summary>
+    [ScriptProperty(Mutable = true)]
     public string Parameters { get; set; } = "";
 
     /// <inheritdoc />

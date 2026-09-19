@@ -36,7 +36,7 @@ public sealed class MeshMaterialsWindow : Window
     {
         if (ImGui.Button("Add material"))
         {
-            Create(new MeshMaterialPreset { Name = UniqueName("Material", Materials.Presets.Select(m => m.Name)) });
+            Apply(Materials.BuildCreatePresetCommand(null, StandardMeshMaterial.TypeId, out _));
         }
 
         ImGui.Separator();
@@ -122,17 +122,11 @@ public sealed class MeshMaterialsWindow : Window
             return;
         }
 
-        var command = new DeleteCatalogEntityCommand(_context.Catalog, preset);
-        command.Apply();
-        _context.EditSessions.Record(command);
+        Apply(Materials.BuildDeletePresetCommand(preset));
     }
 
-    private void Create(MeshMaterialPreset entity)
+    private void Apply(IEditCommand command)
     {
-        // Identified before it is added, so a slot binding created in the same session can reference it.
-        _context.Catalog.AssignId(entity);
-
-        var command = new CreateCatalogEntityCommand(_context.Catalog, entity);
         command.Apply();
         _context.EditSessions.Record(command);
     }
@@ -148,18 +142,5 @@ public sealed class MeshMaterialsWindow : Window
         var command = new SetFieldCommand<T>(entity, field, set, before, after);
         command.Apply();
         _context.EditSessions.Record(command);
-    }
-
-    private static string UniqueName(string prefix, IEnumerable<string> taken)
-    {
-        var used = new HashSet<string>(taken);
-        for (int i = 1; ; i++)
-        {
-            string candidate = $"{prefix} {i}";
-            if (used.Add(candidate))
-            {
-                return candidate;
-            }
-        }
     }
 }
