@@ -11,7 +11,9 @@ public sealed class PaintToolFactory : IToolFactory
 
     public string Name => "Paint";
 
-    public PaintBrush Brush { get; } = new();
+    public Brush Brush { get; } = new();
+
+    public ImagePaintOptions Options { get; } = new();
 
     public PaintToolFactory(ToolSystem tools)
     {
@@ -20,5 +22,5 @@ public sealed class PaintToolFactory : IToolFactory
 
     public bool CanActivate() => _context.Landscape.IsEnabled;
 
-    public ITool Create(ToolContext context) => new PaintTool(context, Brush);
+    public ITool Create(ToolContext context) => new PaintTool(context, Brush, Options);
 }
