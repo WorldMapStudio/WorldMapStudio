@@ -430,8 +430,6 @@ public sealed class StreamingSystem : IWorldParticipant
             }
         }
 
-        RelinkLoadedParents();
-
         _reconciled = true;
         ScanVersion++;
         ApplyFates();
@@ -451,8 +449,8 @@ public sealed class StreamingSystem : IWorldParticipant
     /// </summary>
     /// <param name="scanned">
     /// Whether the last scan returned this entity. This is what covers the load margin — stored
-    /// entities are read over the wider region, so an input just past the view is in the scan — and
-    /// also the families a scan reaches outside its region to complete. Deliberately not a second
+    /// entities are read over the wider region, so an input just past the view is in the scan.
+    /// Deliberately not a second
     /// geometric test against the load region: derived content is produced for the view only, so a
     /// chunk the loader has stopped producing has to go rather than sit in the margin unrefreshed.
     /// </param>
@@ -513,25 +511,6 @@ public sealed class StreamingSystem : IWorldParticipant
     {
         _context.Scene.SetPeripheral(entity, true);
         _context.Selection.Remove(entity);
-    }
-
-    private void RelinkLoadedParents()
-    {
-        var byRecordId = new Dictionary<int, SceneEntity>();
-        foreach (SceneEntity entity in _context.Scene.Entities)
-        {
-            if (entity.RecordId is int id)
-            {
-                byRecordId[id] = entity;
-            }
-        }
-
-        foreach (SceneEntity entity in _context.Scene.Entities)
-        {
-            entity.Parent = entity.ParentRecordId is int parentId && byRecordId.TryGetValue(parentId, out SceneEntity? parent)
-                ? parent
-                : entity.Parent?.RecordId == null ? entity.Parent : null;
-        }
     }
 
     private bool IsPinned(SceneEntity entity)
