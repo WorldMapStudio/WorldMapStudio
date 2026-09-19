@@ -40,16 +40,8 @@ public abstract class Storage : ISubsystem
 
     internal void BindConnection(StorageConnection connection) => Connection = connection;
 
-    /// <summary>
-    /// This storage's own subsystem tree — its self-registered factories, sources, browsers, etc. Each
-    /// concrete storage implements this as a one-line forward to its own generated <c>Subsystems</c>
-    /// (from <c>[Subsystem(nameof(ConcreteStorage))]</c>), so the facets below only have to be written
-    /// once instead of every concrete storage re-declaring the same <c>Subsystems.OfType&lt;X&gt;()</c>
-    /// boilerplate. Abstract rather than routed through <see cref="ISubsystemHost"/>'s default
-    /// implementation on purpose: a storage that forgets to implement this fails to compile instead of
-    /// silently reporting every facet as empty.
-    /// </summary>
-    protected abstract IEnumerable<ISubsystem> HostedSubsystems { get; }
+    /// <summary>This storage's own subsystem tree: the <see cref="ISubsystemHost.Subsystems"/> of a concrete storage that hosts subsystems.</summary>
+    protected virtual IEnumerable<ISubsystem> HostedSubsystems => this is ISubsystemHost host ? host.Subsystems : [];
 
     // Subsystems are constructed once at startup and never change afterward — the same assumption
     // ISceneComponentPersistence's doc relies on for EF's model cache — so each facet below only ever
