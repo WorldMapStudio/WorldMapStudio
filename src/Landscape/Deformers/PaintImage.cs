@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.X86;
 using Godot;
 
 namespace WorldMapStudio;
@@ -728,7 +725,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// <see cref="ImageComponent.Rasterize"/> already applies to a scalar channel feeding a direct
     /// world-height buffer, just enforced at the storage end too instead of only at the point of
     /// reading it back.</summary>
-    public bool Paint(float u, float v, float radiusU, float radiusV, float opacity, bool erase)
+    public bool Paint(float u, float v, float radiusU, float radiusV, float opacity, bool erase, float hardness = 0.0f)
     {
         if (radiusU <= 0.0f || radiusV <= 0.0f)
         {
@@ -753,7 +750,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             {
                 for (int cx = chunkMinX; cx <= chunkMaxX; cx++)
                 {
-                    if (PaintChunkFloat(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, amount, erase))
+                    if (PaintChunkFloat(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, amount, erase, hardness))
                     {
                         changed = true;
                     }
@@ -767,7 +764,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
             {
                 for (int cx = chunkMinX; cx <= chunkMaxX; cx++)
                 {
-                    if (PaintChunk(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, amount, erase))
+                    if (PaintChunk(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, amount, erase, hardness))
                     {
                         changed = true;
                     }
@@ -796,11 +793,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// toward <paramref name="color"/> when painting or toward black when erasing. On a scalar image
     /// this behaves exactly like the scalar overload — <paramref name="color"/> is unused.
     /// </summary>
-    public bool Paint(float u, float v, float radiusU, float radiusV, Color color, float opacity, bool erase)
+    public bool Paint(float u, float v, float radiusU, float radiusV, Color color, float opacity, bool erase, float hardness = 0.0f)
     {
         if (_components == 1)
         {
-            return Paint(u, v, radiusU, radiusV, opacity, erase);
+            return Paint(u, v, radiusU, radiusV, opacity, erase, hardness);
         }
 
         if (radiusU <= 0.0f || radiusV <= 0.0f)
@@ -824,7 +821,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             for (int cx = chunkMinX; cx <= chunkMaxX; cx++)
             {
-                if (PaintChunkColor(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, color, amount, erase))
+                if (PaintChunkColor(new ImageChunkCoord(cx, cy), minX, maxX, minY, maxY, u, v, radiusU, radiusV, color, amount, erase, hardness))
                 {
                     changed = true;
                 }
@@ -970,7 +967,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// do until it actually loads. A truly empty chunk (never painted, never stored) still materializes
     /// on first non-erase write and stays absent for a no-op erase, exactly as before chunking
     /// existed.</summary>
-    private bool PaintChunk(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, byte amount, bool erase)
+    private bool PaintChunk(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, byte amount, bool erase, float hardness)
     {
         int components = _components;
         int chunkBaseX = coord.X * _chunkSize;
@@ -1020,7 +1017,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
                     continue;
                 }
 
-                float weight = Mathf.SmoothStep(0.0f, 1.0f, 1.0f - distance);
+                float weight = BrushFalloff.Weight(distance, hardness);
                 int delta = Mathf.RoundToInt(amount * weight);
                 if (delta == 0)
                 {
@@ -1056,7 +1053,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     /// written through <see cref="PaintImagePixelIO"/> instead of a byte saturating at [0,255]. Only
     /// ever called on a scalar image — see <see cref="ConfigureNew"/> for why Float32 never coexists
     /// with a 3/4-component image.</summary>
-    private bool PaintChunkFloat(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, float amount, bool erase)
+    private bool PaintChunkFloat(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, float amount, bool erase, float hardness)
     {
         int chunkBaseX = coord.X * _chunkSize;
         int chunkBaseY = coord.Y * _chunkSize;
@@ -1115,7 +1112,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         {
             float dy = (((py + 0.5f) * invHeight) - v) * invRadiusV;
             int rowStart = ((py - chunkBaseY) * _chunkSize) - chunkBaseX + loX;
-            StampRow(values.Slice(rowStart, count), rowColumnDistSq, dy * dy, amountSign, ref changed);
+            BrushFalloff.AddRow(values.Slice(rowStart, count), rowColumnDistSq, dy * dy, amountSign, hardness, ref changed);
         }
 
         if (changed)
@@ -1126,111 +1123,12 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         return changed;
     }
 
-    /// <summary>Test hook: forces the scalar stamp path so a test can diff it against the AVX2 one.</summary>
-    internal static bool ForceScalarStamp;
-
-    /// <summary>
-    /// Adds one brush row into <paramref name="values"/>: for each pixel, <c>weight = smoothstep(1 -
-    /// sqrt(colDistSq + dySq))</c> scaled by <paramref name="amountSign"/> (negative to erase), applied
-    /// only where the squared distance is within the unit disc. <paramref name="values"/> and
-    /// <paramref name="columnDistSq"/> are the same length and index in lockstep.
-    /// </summary>
-    private static void StampRow(Span<float> values, ReadOnlySpan<float> columnDistSq, float dySq, float amountSign, ref bool changed)
-    {
-        if (!ForceScalarStamp && Avx2.IsSupported && Fma.IsSupported && values.Length >= Vector256<float>.Count)
-        {
-            StampRowAvx2(values, columnDistSq, dySq, amountSign, ref changed);
-        }
-        else
-        {
-            StampRowScalar(values, columnDistSq, dySq, amountSign, ref changed);
-        }
-    }
-
-    private static void StampRowScalar(Span<float> values, ReadOnlySpan<float> columnDistSq, float dySq, float amountSign, ref bool changed)
-    {
-        for (int i = 0; i < values.Length; i++)
-        {
-            StampPixel(ref values[i], columnDistSq[i] + dySq, amountSign, ref changed);
-        }
-    }
-
-    private static void StampPixel(ref float value, float distSq, float amountSign, ref bool changed)
-    {
-        if (distSq > 1.0f)
-        {
-            return;
-        }
-
-        float s = 1.0f - MathF.Sqrt(distSq);
-        float delta = amountSign * (s * s * (3.0f - (2.0f * s)));
-        if (delta == 0.0f)
-        {
-            return;
-        }
-
-        float after = value + delta;
-        if (after != value)
-        {
-            value = after;
-            changed = true;
-        }
-    }
-
-    /// <summary>
-    /// Eight-wide <see cref="StampRowScalar"/>: exact <see cref="Avx.Sqrt(Vector256{float})"/>, the
-    /// <c>3 - 2s</c> term fused, and the outside-the-disc lanes zeroed by AND-ing the delta with the
-    /// compare mask rather than a select. The reciprocal-sqrt approximation was measured to run no
-    /// faster and it NaNs at the exact brush centre, so this stays on the exact square root.
-    /// </summary>
-    private static void StampRowAvx2(Span<float> values, ReadOnlySpan<float> columnDistSq, float dySq, float amountSign, ref bool changed)
-    {
-        ref float dst = ref MemoryMarshal.GetReference(values);
-        ref float col = ref MemoryMarshal.GetReference(columnDistSq);
-        int n = values.Length;
-
-        Vector256<float> one = Vector256.Create(1.0f);
-        Vector256<float> two = Vector256.Create(2.0f);
-        Vector256<float> three = Vector256.Create(3.0f);
-        Vector256<float> dySqVec = Vector256.Create(dySq);
-        Vector256<float> amountSignVec = Vector256.Create(amountSign);
-
-        int i = 0;
-        for (; i <= n - Vector256<float>.Count; i += Vector256<float>.Count)
-        {
-            Vector256<float> distSq = Avx.Add(Vector256.LoadUnsafe(ref col, (nuint)i), dySqVec);
-            Vector256<float> inside = Avx.CompareLessThanOrEqual(distSq, one);
-            if (Avx.MoveMask(inside) == 0)
-            {
-                continue;
-            }
-
-            Vector256<float> s = Avx.Subtract(one, Avx.Sqrt(distSq));
-            Vector256<float> weight = Avx.Multiply(Avx.Multiply(s, s), Fma.MultiplyAddNegated(two, s, three));
-            Vector256<float> delta = Avx.And(Avx.Multiply(weight, amountSignVec), inside);
-
-            Vector256<float> before = Vector256.LoadUnsafe(ref dst, (nuint)i);
-            Vector256<float> after = Avx.Add(before, delta);
-            Vector256<float> moved = Avx.CompareNotEqual(after, before);
-            if (Avx.MoveMask(moved) != 0)
-            {
-                Avx.BlendVariable(before, after, moved).StoreUnsafe(ref dst, (nuint)i);
-                changed = true;
-            }
-        }
-
-        for (; i < n; i++)
-        {
-            StampPixel(ref Unsafe.Add(ref dst, i), columnDistSq[i] + dySq, amountSign, ref changed);
-        }
-    }
-
     /// <summary>The color-aware counterpart to <see cref="PaintChunk"/> — see the type doc on the
-    /// public <see cref="Paint(float,float,float,float,Color,float,bool)"/> overload for the blend
+    /// public <see cref="Paint(float,float,float,float,Color,float,bool,float)"/> overload for the blend
     /// rules. Only ever called for a 3- or 4-component image.</summary>
     private bool PaintChunkColor(
         ImageChunkCoord coord, int minX, int maxX, int minY, int maxY,
-        float u, float v, float radiusU, float radiusV, Color color, byte amount, bool erase)
+        float u, float v, float radiusU, float radiusV, Color color, byte amount, bool erase, float hardness)
     {
         int components = _components;
         int chunkBaseX = coord.X * _chunkSize;
@@ -1280,7 +1178,7 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
                     continue;
                 }
 
-                float weight = Mathf.SmoothStep(0.0f, 1.0f, 1.0f - distance);
+                float weight = BrushFalloff.Weight(distance, hardness);
                 int delta = Mathf.RoundToInt(amount * weight);
                 if (delta == 0)
                 {

@@ -215,8 +215,8 @@ public static class ImageTests
         var image = new PaintImage();
         image.ConfigureNew(96, 96, chunkSize: 32, components: 1, format: PaintImagePixelFormat.Float32);
 
-        bool previous = PaintImage.ForceScalarStamp;
-        PaintImage.ForceScalarStamp = forceScalar;
+        bool previous = BrushFalloff.ForceScalar;
+        BrushFalloff.ForceScalar = forceScalar;
         try
         {
             foreach ((float u, float v, float ru, float rv, float opacity, bool erase) in dabs)
@@ -226,7 +226,7 @@ public static class ImageTests
         }
         finally
         {
-            PaintImage.ForceScalarStamp = previous;
+            BrushFalloff.ForceScalar = previous;
         }
 
         byte[] bytes = image.CopyPixels();
