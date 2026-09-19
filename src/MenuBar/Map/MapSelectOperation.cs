@@ -273,7 +273,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         if (ImGui.Button("Properties…"))
         {
-            _context.MenuBarManager.WindowManager.Windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(map.Id);
+            _context.WindowManager.MapPropertiesWindow.Open(map.Id);
             ImGui.CloseCurrentPopup();
         }
 

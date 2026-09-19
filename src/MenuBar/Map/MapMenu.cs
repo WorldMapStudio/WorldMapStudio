@@ -87,5 +87,5 @@ public sealed class MapMenu : IMainMenu
     }
 
     private void OpenProperties() =>
-        _context.MenuBarManager.WindowManager.Windows.OfType<MapPropertiesWindow>().FirstOrDefault()?.Open(_context.Maps.CurrentMap);
+        _context.WindowManager.MapPropertiesWindow.Open(_context.Maps.CurrentMap);
 }
