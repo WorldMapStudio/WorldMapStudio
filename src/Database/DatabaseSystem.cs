@@ -282,6 +282,9 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
         var committed = new HashSet<IEntity>();
         var failed = new HashSet<Storage>();
 
+        // Read before the primary pass deletes anything: some factories forget a row's key once it is gone.
+        Dictionary<SceneEntity, long> doomedKeys = KeysOfDeletedBridged(session);
+
         foreach (Storage storage in CommitOrder())
         {
             var saves = new List<IEntity>();
@@ -331,7 +334,7 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             }
         }
 
-        CommitBridged(session, failed);
+        CommitBridged(session, failed, doomedKeys);
 
         if (committed.Count > 0)
         {
