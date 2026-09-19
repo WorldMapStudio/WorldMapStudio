@@ -133,12 +133,9 @@ public sealed class PrefabSystem : IWorldParticipant
             root.RemoveComponent(marker);
         }
 
-        Vector3 delta = at - root.Transform.Origin;
-        foreach (SceneEntity entity in all)
-        {
-            Transform3D transform = entity.Transform;
-            entity.Transform = new Transform3D(transform.Basis, transform.Origin + delta);
-        }
+        // Moving the root carries its descendants along, so it is the only one that needs placing.
+        Transform3D placed = root.Transform;
+        root.Transform = new Transform3D(placed.Basis, at);
 
         var commands = all.Select(entity => (IEditCommand)new CreateEntityCommand(_context.Scene, entity)).ToList();
         return (new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands), all);
