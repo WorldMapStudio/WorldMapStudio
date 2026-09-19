@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -136,6 +137,171 @@ public sealed class ImageSystem : IWorldParticipant, IFrameParticipant
     /// layers window shows so an edit or delete does not surprise the user.</summary>
     public int DisplayLayerUsageCount(int layerId) =>
         Context.Scene.Entities.Count(entity => entity.Component<ImageComponent>()?.DisplayLayerId == layerId);
+
+    /// <summary>Why <paramref name="id"/> cannot be a new image's id, or null when it can.</summary>
+    public string? ValidateImageId(int id)
+    {
+        if (id <= 0)
+        {
+            return "Id must be positive.";
+        }
+
+        return Images.Any(image => image.RecordId == id) ? $"Id {id} is already used." : null;
+    }
+
+    /// <summary>Why <paramref name="spec"/> cannot be created, or null when it can.</summary>
+    public string? ValidateNew(NewImageSpec spec)
+    {
+        if (spec.RecordId is { } id && ValidateImageId(id) is { } idError)
+        {
+            return idError;
+        }
+
+        if (spec.ChunkSize <= 0)
+        {
+            return "Chunk size must be positive.";
+        }
+
+        return spec.Width <= 0 || spec.Height <= 0 ? "Image width and height must be positive." : null;
+    }
+
+    /// <summary>Pixels for a count of chunks, clamped to what <see cref="PaintImage"/> can hold. Widened
+    /// first so an absurd chunk count cannot overflow before the clamp catches it.</summary>
+    public static int ClampedPixelSize(int chunks, int chunkSize) =>
+        (int)Math.Clamp((long)Math.Max(0, chunks) * Math.Max(0, chunkSize), 1, PaintImage.MaxDimension);
+
+    /// <summary>The creation of a new image, not yet applied. Throws when <see cref="ValidateNew"/> objects.</summary>
+    public CreateCatalogEntityCommand BuildCreateCommand(NewImageSpec spec, out PaintImage image)
+    {
+        if (ValidateNew(spec) is { } error)
+        {
+            throw new InvalidOperationException(error);
+        }
+
+        image = new PaintImage { Name = spec.Name.Trim().Length == 0 ? "Image" : spec.Name };
+        if (spec.RecordId is { } id)
+        {
+            image.RecordId = id;
+        }
+        else
+        {
+            Context.Catalog.AssignId(image);
+        }
+
+        image.ConfigureNew(spec.Width, spec.Height, spec.ChunkSize, spec.Components, spec.Format);
+        if (spec.DiskPath != null)
+        {
+            image.ConfigureDiskSource(spec.DiskPath, spec.DiskTilePattern);
+        }
+
+        return new CreateCatalogEntityCommand(Context.Catalog, image);
+    }
+
+    /// <summary>A copy of <paramref name="image"/>, not yet applied. Always database-backed, even of a
+    /// disk-backed source: two catalog entries writing the same files on commit is never what
+    /// "duplicate" should mean.</summary>
+    public CreateCatalogEntityCommand BuildDuplicateCommand(PaintImage image, out PaintImage clone)
+    {
+        clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Select(m => m.Name)) };
+        clone.ConfigureNew(image.Width, image.Height, image.ChunkSize, image.Components, image.Format);
+
+        // Chunk-based rather than a dense CopyPixels()/LoadPixels() round-trip, so this stays cheap
+        // regardless of canvas size. Only copies what is currently resident — same limitation as
+        // PaintImage.ClearAll for the same reason: a chunk stored but not loaded on a huge image is
+        // not visited here.
+        clone.ApplyChunkEdits(image.ChunkCoords.Select(coord => (coord, (byte[]?)image.CopyChunkBytes(coord))).ToList());
+
+        // Identified before it is added, so a reference created in the same session can target it.
+        Context.Catalog.AssignId(clone);
+        return new CreateCatalogEntityCommand(Context.Catalog, clone);
+    }
+
+    /// <summary>Why <paramref name="image"/> cannot be deleted, or null when it can.</summary>
+    public string? DeleteBlocker(PaintImage image) =>
+        UsageCount(image.RecordId ?? -1) is > 0 and int uses ? $"in use by {uses} entities" : null;
+
+    /// <summary>The deletion of <paramref name="image"/>, not yet applied. Throws while it is in use.</summary>
+    public DeleteCatalogEntityCommand BuildDeleteCommand(PaintImage image) =>
+        DeleteBlocker(image) is { } blocker
+            ? throw new InvalidOperationException($"'{image.Name}' is {blocker}.")
+            : new DeleteCatalogEntityCommand(Context.Catalog, image);
+
+    /// <summary>Why <paramref name="id"/> cannot be a new display layer's id, or null when it can.</summary>
+    public string? ValidateLayerId(int id)
+    {
+        if (id <= 0)
+        {
+            return "Id must be positive.";
+        }
+
+        return DisplayLayers.Any(layer => layer.RecordId == id) ? $"Id {id} is already used." : null;
+    }
+
+    /// <summary>The creation of a display layer, not yet applied. A null <paramref name="id"/> takes the next free one.</summary>
+    public CreateCatalogEntityCommand BuildCreateLayerCommand(int? id, string name, out ImageDisplayLayer layer)
+    {
+        if (id is { } value && ValidateLayerId(value) is { } error)
+        {
+            throw new InvalidOperationException(error);
+        }
+
+        layer = new ImageDisplayLayer { Name = name.Trim().Length == 0 ? "Display Layer" : name };
+        if (id is { } explicitId)
+        {
+            layer.RecordId = explicitId;
+        }
+        else
+        {
+            Context.Catalog.AssignId(layer);
+        }
+
+        return new CreateCatalogEntityCommand(Context.Catalog, layer);
+    }
+
+    /// <summary>A copy of <paramref name="layer"/>, not yet applied.</summary>
+    public CreateCatalogEntityCommand BuildDuplicateLayerCommand(ImageDisplayLayer layer, out ImageDisplayLayer clone)
+    {
+        clone = new ImageDisplayLayer
+        {
+            Name = UniqueName($"{layer.Name} Copy", DisplayLayers.Select(l => l.Name)),
+            DisplayMode = layer.DisplayMode,
+            ColorSource = layer.ColorSource,
+            BaseColor = layer.BaseColor,
+            FullColor = layer.FullColor,
+        };
+
+        // Identified before it is added, so a reference created in the same session can target it.
+        Context.Catalog.AssignId(clone);
+        return new CreateCatalogEntityCommand(Context.Catalog, clone);
+    }
+
+    /// <summary>Why <paramref name="layer"/> cannot be deleted, or null when it can.</summary>
+    public string? DeleteBlocker(ImageDisplayLayer layer) =>
+        DisplayLayerUsageCount(layer.RecordId ?? -1) is > 0 and int uses ? $"in use by {uses} entities" : null;
+
+    /// <summary>The deletion of <paramref name="layer"/>, not yet applied. Throws while it is in use.</summary>
+    public DeleteCatalogEntityCommand BuildDeleteLayerCommand(ImageDisplayLayer layer) =>
+        DeleteBlocker(layer) is { } blocker
+            ? throw new InvalidOperationException($"'{layer.Name}' is {blocker}.")
+            : new DeleteCatalogEntityCommand(Context.Catalog, layer);
+
+    private static string UniqueName(string prefix, IEnumerable<string> taken)
+    {
+        var used = new HashSet<string>(taken);
+        if (used.Add(prefix))
+        {
+            return prefix;
+        }
+
+        for (int i = 2; ; i++)
+        {
+            string candidate = $"{prefix} {i}";
+            if (used.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
 
     // Catalog rows themselves come from DatabaseSystem's own IWorldParticipant, which bulk-loads every
     // registered catalog type before anything that resolves against one — nothing else to do on load.

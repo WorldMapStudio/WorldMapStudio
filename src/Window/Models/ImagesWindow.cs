@@ -54,7 +54,7 @@ public sealed class ImagesWindow : Window
                 }
 
                 DrawName(image, image.Name, value => image.Name = value);
-                DrawFooter(image, uses);
+                DrawFooter(image);
             }
 
             ImGui.PopID();
@@ -74,30 +74,31 @@ public sealed class ImagesWindow : Window
         _tracker.Track(_context.EditSessions, entity, "name", value, set);
     }
 
-    private void DrawFooter(PaintImage image, int uses)
+    private void DrawFooter(PaintImage image)
     {
         ImGui.Spacing();
         if (ImGui.SmallButton("Duplicate"))
         {
-            Duplicate(image);
+            Apply(Images.BuildDuplicateCommand(image, out _));
         }
 
         ImGui.SameLine();
-        if (uses > 0)
+        string? blocker = Images.DeleteBlocker(image);
+        if (blocker != null)
         {
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.SmallButton("Delete") && uses == 0)
+        if (ImGui.SmallButton("Delete") && blocker == null)
         {
-            Delete(image);
+            Apply(Images.BuildDeleteCommand(image));
         }
 
-        if (uses > 0)
+        if (blocker != null)
         {
             ImGui.EndDisabled();
             ImGui.SameLine();
-            ImGui.TextDisabled($"in use by {uses} entities");
+            ImGui.TextDisabled(blocker);
         }
     }
 
@@ -108,49 +109,9 @@ public sealed class ImagesWindow : Window
         _ => "Scalar",
     };
 
-    private void Duplicate(PaintImage image)
+    private void Apply(IEditCommand command)
     {
-        // A duplicate is always database-backed, even of a disk-backed source: two catalog entries
-        // writing the same files on commit is never what "duplicate" should mean.
-        var clone = new PaintImage { Name = UniqueName($"{image.Name} Copy", Images.Images.Select(m => m.Name)) };
-        clone.ConfigureNew(image.Width, image.Height, image.ChunkSize, image.Components, image.Format);
-
-        // Chunk-based rather than a dense CopyPixels()/LoadPixels() round-trip, so this stays cheap
-        // regardless of canvas size. Only copies what is currently resident — same limitation as
-        // PaintImage.ClearAll for the same reason: a chunk stored but not loaded on a huge image is
-        // not visited here.
-        clone.ApplyChunkEdits(image.ChunkCoords.Select(coord => (coord, (byte[]?)image.CopyChunkBytes(coord))).ToList());
-
-        // Identified before it is added, so a reference created in the same session can target it.
-        _context.Catalog.AssignId(clone);
-
-        var command = new CreateCatalogEntityCommand(_context.Catalog, clone);
         command.Apply();
         _context.EditSessions.Record(command);
-    }
-
-    private void Delete(PaintImage image)
-    {
-        var command = new DeleteCatalogEntityCommand(_context.Catalog, image);
-        command.Apply();
-        _context.EditSessions.Record(command);
-    }
-
-    private static string UniqueName(string prefix, IEnumerable<string> taken)
-    {
-        var used = new HashSet<string>(taken);
-        if (used.Add(prefix))
-        {
-            return prefix;
-        }
-
-        for (int i = 2; ; i++)
-        {
-            string candidate = $"{prefix} {i}";
-            if (used.Add(candidate))
-            {
-                return candidate;
-            }
-        }
     }
 }

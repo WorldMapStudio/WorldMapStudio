@@ -19,12 +19,13 @@ public sealed class ImageDisplayLayersWindow : Window
 
     private readonly EditorContext _context;
     private readonly FieldEditTracker _tracker = new();
-    private readonly ImageDisplayLayerPicker _picker = new();
+    private readonly ImageDisplayLayerPicker _picker;
 
     public ImageDisplayLayersWindow(WindowManager manager)
         : base("Image Display Layers", startOpen: false, defaultSize: new Vector2(420.0f, 480.0f))
     {
         _context = manager.Context;
+        _picker = new ImageDisplayLayerPicker(_context.Images);
     }
 
     private ImageSystem Images => _context.Images;
@@ -60,7 +61,7 @@ public sealed class ImageDisplayLayersWindow : Window
                     }
                 }
 
-                DrawFooter(layer, uses);
+                DrawFooter(layer);
             }
 
             ImGui.PopID();
@@ -150,74 +151,37 @@ public sealed class ImageDisplayLayersWindow : Window
         _tracker.Track(_context.EditSessions, layer, label, get(), set);
     }
 
-    private void DrawFooter(ImageDisplayLayer layer, int uses)
+    private void DrawFooter(ImageDisplayLayer layer)
     {
         ImGui.Spacing();
         if (ImGui.SmallButton("Duplicate"))
         {
-            Duplicate(layer);
+            Apply(Images.BuildDuplicateLayerCommand(layer, out _));
         }
 
         ImGui.SameLine();
-        if (uses > 0)
+        string? blocker = Images.DeleteBlocker(layer);
+        if (blocker != null)
         {
             ImGui.BeginDisabled();
         }
 
-        if (ImGui.SmallButton("Delete") && uses == 0)
+        if (ImGui.SmallButton("Delete") && blocker == null)
         {
-            Delete(layer);
+            Apply(Images.BuildDeleteLayerCommand(layer));
         }
 
-        if (uses > 0)
+        if (blocker != null)
         {
             ImGui.EndDisabled();
             ImGui.SameLine();
-            ImGui.TextDisabled($"in use by {uses} entities");
+            ImGui.TextDisabled(blocker);
         }
     }
 
-    private void Duplicate(ImageDisplayLayer layer)
+    private void Apply(IEditCommand command)
     {
-        var clone = new ImageDisplayLayer
-        {
-            Name = UniqueName($"{layer.Name} Copy", Images.DisplayLayers.Select(l => l.Name)),
-            DisplayMode = layer.DisplayMode,
-            ColorSource = layer.ColorSource,
-            BaseColor = layer.BaseColor,
-            FullColor = layer.FullColor,
-        };
-
-        // Identified before it is added, so a reference created in the same session can target it.
-        _context.Catalog.AssignId(clone);
-
-        var command = new CreateCatalogEntityCommand(_context.Catalog, clone);
         command.Apply();
         _context.EditSessions.Record(command);
-    }
-
-    private void Delete(ImageDisplayLayer layer)
-    {
-        var command = new DeleteCatalogEntityCommand(_context.Catalog, layer);
-        command.Apply();
-        _context.EditSessions.Record(command);
-    }
-
-    private static string UniqueName(string prefix, IEnumerable<string> taken)
-    {
-        var used = new HashSet<string>(taken);
-        if (used.Add(prefix))
-        {
-            return prefix;
-        }
-
-        for (int i = 2; ; i++)
-        {
-            string candidate = $"{prefix} {i}";
-            if (used.Add(candidate))
-            {
-                return candidate;
-            }
-        }
     }
 }
