@@ -105,7 +105,7 @@ public sealed class Migration : IScene
 
         foreach (SchemaChange change in migration.Changes)
         {
-            string line = $"{change.Kind} {change.Table}{Detail(change)}";
+            string line = change.Describe();
             if (change.IsDestructive)
             {
                 ImGui.TextColored(Destructive, line);
@@ -132,20 +132,5 @@ public sealed class Migration : IScene
 
         ImGui.Separator();
         ImGui.PopID();
-    }
-
-    private static string Detail(SchemaChange change)
-    {
-        if (change.Column != null)
-        {
-            return $".{change.Column.Name}";
-        }
-
-        if (change.Index != null)
-        {
-            return $" [{change.Index.Name}]";
-        }
-
-        return string.Empty;
     }
 }

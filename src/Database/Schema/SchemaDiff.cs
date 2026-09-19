@@ -36,6 +36,19 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
 
     /// <summary>True for changes that drop data (dropping a table or column). Surfaced for confirmation.</summary>
     public bool IsDestructive => Kind is SchemaChangeKind.DropTable or SchemaChangeKind.DropColumn;
+
+    /// <summary>One line naming the change, e.g. <c>AddColumn tc_item.Name</c>.</summary>
+    public string Describe() => $"{Kind} {Table}{Detail()}";
+
+    private string Detail()
+    {
+        if (Column != null)
+        {
+            return $".{Column.Name}";
+        }
+
+        return Index != null ? $" [{Index.Name}]" : string.Empty;
+    }
 }
 
 /// <summary>Compares the expected (EF model) schema to the live database schema. Detects missing/extra
