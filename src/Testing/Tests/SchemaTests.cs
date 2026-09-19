@@ -38,6 +38,9 @@ public static class SchemaTests
         // Id is ValueGeneratedNever(): SceneEntityFactory assigns it client-side (a MAX(Id)-seeded
         // high-water mark) so Pomelo can batch inserts, even though the live column stays AUTO_INCREMENT.
         Assert.IsFalse(entities.Column("Id")!.AutoIncrement, "Id is client-assigned, not database-generated");
+        Assert.IsTrue(
+            entities.Indexes.Any(index => index.Columns.SequenceEqual(["MapId", "MinX", "MaxX", "MinY", "MaxY"])),
+            "the streaming region query needs a bounds index");
     }
 
     [EditorTest(Category = "Schema")]
