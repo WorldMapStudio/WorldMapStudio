@@ -6,8 +6,8 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Root of the editor's subsystem tree. Owns the project and the shared systems (selection, and
-/// later the database and edit sessions), and hosts the menu bar. Constructed once by <see cref="Editor"/>.
+/// Root of the editor's subsystem tree. Owns the project and the shared systems, and hosts the menu
+/// bar and windows. Constructed by <see cref="LoadingScreen"/>.
 /// </summary>
 public sealed partial class EditorContext : ISubsystemHost
 {
@@ -114,7 +114,7 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Compares each storage's expected schema to the live database and drives migrations.</summary>
     public MigrationSystem Migrations { get; }
 
-    /// <summary>Hosts the JS-scriptable surface (console, and later the HTTP/MCP endpoint).</summary>
+    /// <summary>Hosts the JS-scriptable surface (console and the HTTP/MCP endpoint).</summary>
     public ScriptingSystem Scripting { get; }
 
     /// <summary>Hosts the batch operations and runs one at a time behind <see cref="Operations"/>.</summary>
