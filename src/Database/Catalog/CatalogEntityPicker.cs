@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 /// <summary>
 /// A reusable "pick an entity from a catalog" search popup — the <see cref="ICatalogBrowser"/> analogue
 /// of <c>ModelAssetPicker</c>, for any field that references another catalog's row by key (e.g.
-/// <c>WowLightParams.LightSkyboxId</c> referencing the "Light Skybox" catalog). Deliberately separate
+/// <c>LightParams.LightSkyboxId</c> referencing the "Light Skybox" catalog). Deliberately separate
 /// from <c>CatalogBrowserWindow</c> — a field editor wants a quick search-and-pick popup, not to
 /// navigate the whole browser away from what it's currently showing, and more than one field across more
 /// than one catalog is expected to want this same popup.
