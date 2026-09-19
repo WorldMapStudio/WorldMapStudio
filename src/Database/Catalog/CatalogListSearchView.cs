@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// The built-in <see cref="ICatalogSearchView"/> every catalog gets: a plain "key / name" table for
 /// <see cref="CatalogSearchPurpose.Browse"/>, a search-as-you-type <c>Selectable</c> list for
 /// <see cref="CatalogSearchPurpose.Pick"/> — merged from what <c>CatalogBrowserWindow.DrawSearch</c> and
-/// <c>CatalogEntitySelectionOperation.DrawList</c> each drew before views existed. Lowest
+/// <c>CatalogEntitySelectionDialog.DrawList</c> each drew before views existed. Lowest
 /// <see cref="Priority"/> on purpose: any catalog that gains a second view still opens on List until the
 /// user switches, so nothing changes for anyone who hasn't opted in.
 /// </summary>

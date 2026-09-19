@@ -8,7 +8,7 @@ using Vector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
-public sealed class TextureSelectionOperation : IModalOperation<TextureSelectionContext>
+public sealed class TextureSelectionDialog : IModalDialog<TextureSelectionContext>
 {
     private static readonly Vector2 BodySize = new(768, 432);
 
@@ -20,7 +20,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
     private Task<IReadOnlyList<AssetRef>>? _texturesTask;
     private readonly Dictionary<string, Task<Texture2D?>> _previews = new();
 
-    public ModalOperationState Draw(TextureSelectionContext context)
+    public ModalDialogState Draw(TextureSelectionContext context)
     {
         ImGui.Text("Select Texture");
         ImGui.Separator();
@@ -61,7 +61,7 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         {
             if (DrawTextureGrid(context))
             {
-                return ModalOperationState.Confirmed;
+                return ModalDialogState.Confirmed;
             }
         }
 
@@ -70,17 +70,17 @@ public sealed class TextureSelectionOperation : IModalOperation<TextureSelection
         if (ImGui.Button("Clear", new Vector2(120, 0)))
         {
             context.Select("");
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.SameLine();
 
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     private static void DrawCurrent(TextureSelectionContext context)

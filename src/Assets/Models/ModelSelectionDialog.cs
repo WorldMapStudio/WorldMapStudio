@@ -8,7 +8,7 @@ using Vector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
-public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionContext>
+public sealed class ModelSelectionDialog : IModalDialog<ModelSelectionContext>
 {
     private static readonly Vector2 BodySize = new(900, 480);
     private static readonly Vector2 PreviewSize = new(320, 320);
@@ -28,7 +28,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
     private bool _gridView = true;
     private float _thumbnailSize = 128.0f;
 
-    public ModalOperationState Draw(ModelSelectionContext context)
+    public ModalDialogState Draw(ModelSelectionContext context)
     {
         _preview ??= new ModelPreviewRenderer(context.Assets, context.Materials, context.PreviewOwner);
         if (_previewPath.Length == 0)
@@ -76,14 +76,14 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
 
         if (confirmed)
         {
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.Separator();
         if (ImGui.Button("Clear", new Vector2(120, 0)))
         {
             context.Select("");
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.SameLine();
@@ -96,7 +96,7 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         if (ImGui.Button("Select", new Vector2(120, 0)))
         {
             context.Select(_previewPath);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         if (!canSelect)
@@ -107,10 +107,10 @@ public sealed class ModelSelectionOperation : IModalOperation<ModelSelectionCont
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     public void OnClose()

@@ -1,7 +1,7 @@
 namespace WorldMapStudio;
 
-public interface IModalOperation<TContext>
+public interface IModalDialog<TContext>
 {
-    public ModalOperationState Draw(TContext context);
+    public ModalDialogState Draw(TContext context);
     public void OnClose() { }
 }

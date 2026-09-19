@@ -46,7 +46,7 @@ public sealed class ReloadWorldMenuItem : IMenuItem
 
     public void DrawOverlay()
     {
-        if (_confirm.Draw(true) == ModalOperationState.Confirmed)
+        if (_confirm.Draw(true) == ModalDialogState.Confirmed)
         {
             _context.EditSessions.Abort();
         }

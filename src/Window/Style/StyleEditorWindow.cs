@@ -302,14 +302,14 @@ public sealed partial class StyleEditorWindow : Window
 
     private void DrawConfirmModals()
     {
-        if (_unsavedConfirm.Draw(canBeClosed: true) == ModalOperationState.Confirmed && _pendingSwitchTo is { } target)
+        if (_unsavedConfirm.Draw(canBeClosed: true) == ModalDialogState.Confirmed && _pendingSwitchTo is { } target)
         {
             EditorStyle.Activate(target);
             _undoStack.Clear();
             _pendingSwitchTo = null;
         }
 
-        if (_deleteConfirm.Draw(canBeClosed: true) == ModalOperationState.Confirmed)
+        if (_deleteConfirm.Draw(canBeClosed: true) == ModalDialogState.Confirmed)
         {
             if (!EditorStyle.Delete(EditorStyle.ActiveName, out string? error))
             {

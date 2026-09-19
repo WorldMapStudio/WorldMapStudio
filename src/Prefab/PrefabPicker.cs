@@ -13,8 +13,8 @@ public sealed class PrefabPicker
     private readonly PrefabSystem _prefabs;
     private readonly EditSessionManager _sessions;
     private readonly SelectionSystem _selection;
-    private readonly ModalOperator<PrefabSelectionOperation, PrefabSelectionContext> _modal =
-        new("SelectPrefab", () => new PrefabSelectionOperation(), new Vector2(460, 0));
+    private readonly ModalDialogHost<PrefabSelectionDialog, PrefabSelectionContext> _modal =
+        new("SelectPrefab", () => new PrefabSelectionDialog(), new Vector2(460, 0));
 
     private PrefabSelectionContext? _context;
     private Vector3 _spawnAt;
@@ -40,8 +40,8 @@ public sealed class PrefabPicker
             return;
         }
 
-        ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             _context = null;
         }

@@ -18,8 +18,8 @@ public sealed class ImagePicker
     private const string CreatePopupId = "Create Image";
 
     private readonly ImageSystem _system;
-    private readonly ModalOperator<ImageSelectionOperation, ImageSelectionContext> _modal =
-        new("SelectImage", () => new ImageSelectionOperation(), new Vector2(760, 0));
+    private readonly ModalDialogHost<ImageSelectionDialog, ImageSelectionContext> _modal =
+        new("SelectImage", () => new ImageSelectionDialog(), new Vector2(760, 0));
 
     private ImageSelectionContext? _context;
 
@@ -85,8 +85,8 @@ public sealed class ImagePicker
     {
         if (_context != null)
         {
-            ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-            if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+            ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+            if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
             {
                 _context = null;
             }

@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 /// delete popup to purge each one, without the map-row step a real map's delete has. See
 /// <see cref="MapSystem.FindStrayMapIdsAsync"/>.
 /// </summary>
-public sealed class StrayMapCleanupOperation : IModalOperation<MapSystem>
+public sealed class StrayMapCleanupDialog : IModalDialog<MapSystem>
 {
     private static readonly Vector4 ErrorColor = new(0.95f, 0.5f, 0.4f, 1.0f);
     private static readonly Vector2 BodySize = new(420, 320);
@@ -22,7 +22,7 @@ public sealed class StrayMapCleanupOperation : IModalOperation<MapSystem>
     private Task<IReadOnlyList<int>>? _idsTask;
     private WorkHandle? _pendingPurge;
 
-    public ModalOperationState Draw(MapSystem maps)
+    public ModalDialogState Draw(MapSystem maps)
     {
         _idsTask ??= maps.FindStrayMapIdsAsync();
 
@@ -43,10 +43,10 @@ public sealed class StrayMapCleanupOperation : IModalOperation<MapSystem>
 
         _deletePopup.Draw();
 
-        var state = ModalOperationState.Running;
+        var state = ModalDialogState.Running;
         if (ImGui.Button("Close", new Vector2(120, 0)))
         {
-            state = ModalOperationState.Cancelled;
+            state = ModalDialogState.Cancelled;
         }
 
         return state;

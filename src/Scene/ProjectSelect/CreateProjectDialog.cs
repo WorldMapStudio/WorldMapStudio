@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 /// Modal for creating a new project: a name, its initial coordinate convention, and its database
 /// connection. On confirm it exposes the built <see cref="Project"/> via <see cref="CreatedProject"/>.
 /// </summary>
-public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Project>>
+public sealed class CreateProjectDialog : IModalDialog<IReadOnlyList<Project>>
 {
     private string _name = "";
     private string? _error;
@@ -22,7 +22,7 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
 
     public Project? CreatedProject { get; private set; }
 
-    public ModalOperationState Draw(IReadOnlyList<Project> existingProjects)
+    public ModalDialogState Draw(IReadOnlyList<Project> existingProjects)
     {
         ImGui.Text("New Project");
         ImGui.Separator();
@@ -51,13 +51,13 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
 
         ImGui.Separator();
 
-        var state = ModalOperationState.Running;
+        var state = ModalDialogState.Running;
 
         if (ImGui.Button("Create", new Vector2(120, 0)))
         {
             if (TryCreate(existingProjects, out string? error))
             {
-                state = ModalOperationState.Confirmed;
+                state = ModalDialogState.Confirmed;
             }
             else
             {
@@ -69,7 +69,7 @@ public sealed class CreateProjectOperation : IModalOperation<IReadOnlyList<Proje
 
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            state = ModalOperationState.Cancelled;
+            state = ModalDialogState.Cancelled;
         }
 
         return state;

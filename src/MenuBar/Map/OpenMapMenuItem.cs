@@ -12,12 +12,12 @@ public sealed class OpenMapMenuItem : IMenuItem
 {
     private readonly EditorContext _context;
     private readonly ShortcutAction _shortcut;
-    private readonly ModalOperator<MapSelectOperation, MapSystem> _selectModal;
+    private readonly ModalDialogHost<MapSelectDialog, MapSystem> _selectModal;
 
     public OpenMapMenuItem(MapMenu menu)
     {
         _context = menu.Context;
-        _selectModal = new("SelectMap", () => new MapSelectOperation(_context), new Vector2(700, 0));
+        _selectModal = new("SelectMap", () => new MapSelectDialog(_context), new Vector2(700, 0));
         _shortcut = _context.Shortcuts.Register(
             "map.open",
             "Map",
@@ -38,8 +38,8 @@ public sealed class OpenMapMenuItem : IMenuItem
     // the menu's ID stack — hence the overlay pass instead of drawing it from Draw().
     public void DrawOverlay()
     {
-        MapSelectOperation? operation = _selectModal._item;
-        if (_selectModal.Draw(_context.Maps, true, ImGuiWindowFlags.None) == ModalOperationState.Confirmed
+        MapSelectDialog? operation = _selectModal._item;
+        if (_selectModal.Draw(_context.Maps, true, ImGuiWindowFlags.None) == ModalDialogState.Confirmed
             && operation?.Selected is { } map)
         {
             _context.Maps.Enter(map);

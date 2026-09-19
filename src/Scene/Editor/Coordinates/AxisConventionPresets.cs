@@ -5,7 +5,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Hosts the axis convention presets offered when a project's coordinate system is set up. A subsystem
-/// of <see cref="AppSystems"/> rather than of a project, since <see cref="CreateProjectOperation"/>
+/// of <see cref="AppSystems"/> rather than of a project, since <see cref="CreateProjectDialog"/>
 /// needs the list before a <see cref="Project"/>, let alone an <c>EditorContext</c>, exists. Landscape
 /// settings solve the same "plugins contribute presets" problem with <see cref="ILandscapeProfile"/>
 /// hosted on the (project-scoped) <c>LandscapeSystem</c>; this is that pattern's counterpart for the

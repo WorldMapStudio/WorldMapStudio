@@ -14,15 +14,15 @@ namespace WorldMapStudio;
 ///
 /// Resizable so a catalog whose preferred <see cref="ICatalogSearchView"/> wants more room than the
 /// plain list (a thumbnail gallery) can actually show it — see
-/// <see cref="CatalogEntitySelectionOperation"/>, which grows or shrinks the popup to match whichever
+/// <see cref="CatalogEntitySelectionDialog"/>, which grows or shrinks the popup to match whichever
 /// view is current.
 /// </summary>
 public sealed class CatalogEntityPicker
 {
     private static readonly Vector2 MinSize = new(460, 320);
 
-    private readonly ModalOperator<CatalogEntitySelectionOperation, CatalogEntityPickerContext> _modal =
-        new("SelectCatalogEntity", () => new CatalogEntitySelectionOperation(), MinSize, resizable: true, initialSize: MinSize);
+    private readonly ModalDialogHost<CatalogEntitySelectionDialog, CatalogEntityPickerContext> _modal =
+        new("SelectCatalogEntity", () => new CatalogEntitySelectionDialog(), MinSize, resizable: true, initialSize: MinSize);
 
     private CatalogEntityPickerContext? _context;
 
@@ -44,8 +44,8 @@ public sealed class CatalogEntityPicker
             return;
         }
 
-        ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             _context = null;
         }

@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 /// Shows the distinct textures a model's surfaces reference as a thumbnail grid, read from whichever
 /// <see cref="IMeshMaterialType"/> each surface's material uses rather than assuming the built-in
 /// vocabulary, so a format-specific material (e.g. an M2/WMO one) is covered too. Card/thumbnail
-/// drawing mirrors <see cref="TextureSelectionOperation"/>'s picker grid, minus selection/filtering
+/// drawing mirrors <see cref="TextureSelectionDialog"/>'s picker grid, minus selection/filtering
 /// since this is a read-only listing rather than a picker. Owned and drawn by
 /// <see cref="ModelRendererComponentType"/>.
 /// </summary>

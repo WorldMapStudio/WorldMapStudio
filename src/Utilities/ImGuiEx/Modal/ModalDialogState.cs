@@ -1,6 +1,6 @@
 namespace WorldMapStudio;
 
-public enum ModalOperationState
+public enum ModalDialogState
 {
     Running,
     Confirmed,

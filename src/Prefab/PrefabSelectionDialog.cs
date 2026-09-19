@@ -6,14 +6,14 @@ using Vector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
-public sealed class PrefabSelectionOperation : IModalOperation<PrefabSelectionContext>
+public sealed class PrefabSelectionDialog : IModalDialog<PrefabSelectionContext>
 {
     private static readonly Vector2 BodySize = new(420, 320);
 
     private string _filter = "";
     private Prefab? _highlighted;
 
-    public ModalOperationState Draw(PrefabSelectionContext context)
+    public ModalDialogState Draw(PrefabSelectionContext context)
     {
         ImGui.Text("Select Prefab");
         ImGui.Separator();
@@ -71,13 +71,13 @@ public sealed class PrefabSelectionOperation : IModalOperation<PrefabSelectionCo
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
         if (spawn)
         {
             context.Select(_highlighted!);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         if (delete)
@@ -86,7 +86,7 @@ public sealed class PrefabSelectionOperation : IModalOperation<PrefabSelectionCo
             _highlighted = null;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     private static List<Prefab> Filter(IReadOnlyList<Prefab> prefabs, string filter)

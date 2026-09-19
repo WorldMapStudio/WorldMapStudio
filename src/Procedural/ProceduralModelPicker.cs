@@ -19,8 +19,8 @@ public sealed class ProceduralModelPicker
 
     private readonly ProceduralSystem _system;
     private readonly Node _previewOwner;
-    private readonly ModalOperator<ProceduralModelSelectionOperation, ProceduralModelSelectionContext> _modal =
-        new("SelectProceduralModel", () => new ProceduralModelSelectionOperation(), new Vector2(940, 0));
+    private readonly ModalDialogHost<ProceduralModelSelectionDialog, ProceduralModelSelectionContext> _modal =
+        new("SelectProceduralModel", () => new ProceduralModelSelectionDialog(), new Vector2(940, 0));
 
     private ProceduralModelSelectionContext? _context;
 
@@ -62,8 +62,8 @@ public sealed class ProceduralModelPicker
     {
         if (_context != null)
         {
-            ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-            if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+            ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+            if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
             {
                 _context = null;
             }

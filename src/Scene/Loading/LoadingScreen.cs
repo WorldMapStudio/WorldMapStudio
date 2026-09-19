@@ -143,10 +143,10 @@ public sealed class LoadingScreen : IScene
         PendingConfirm? confirm = _confirm;
         if (confirm != null)
         {
-            ModalOperationState state = confirm.Modal.Draw(true);
-            if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+            ModalDialogState state = confirm.Modal.Draw(true);
+            if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
             {
-                confirm.Result = state == ModalOperationState.Confirmed;
+                confirm.Result = state == ModalDialogState.Confirmed;
                 _confirm = null;
                 confirm.Signal.Set();
             }

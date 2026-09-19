@@ -5,7 +5,7 @@ using ImGuiNET;
 
 namespace WorldMapStudio;
 
-public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceSettings>>
+public sealed class AddAssetSourceDialog : IModalDialog<IList<AssetSourceSettings>>
 {
     private IAssetSourceDefinition? _definition;
     private string _id = "";
@@ -14,7 +14,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
     private bool _initialized;
     private string? _error;
 
-    public ModalOperationState Draw(IList<AssetSourceSettings> sources)
+    public ModalDialogState Draw(IList<AssetSourceSettings> sources)
     {
         if (!_initialized)
         {
@@ -61,7 +61,7 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
             if (_error == null)
             {
                 sources.Add(CreateSource());
-                return ModalOperationState.Confirmed;
+                return ModalDialogState.Confirmed;
             }
         }
 
@@ -69,10 +69,10 @@ public sealed class AddAssetSourceOperation : IModalOperation<IList<AssetSourceS
 
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     private void ResetDefaults(IList<AssetSourceSettings> sources)
