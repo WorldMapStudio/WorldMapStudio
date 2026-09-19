@@ -57,6 +57,11 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
             return;
         }
 
+        if (selected.Count == 1)
+        {
+            EntityOpenButtons.Draw(Context, selected[0]);
+        }
+
         string filter = string.Empty;
         if (inspector.ShowFieldFilter)
         {

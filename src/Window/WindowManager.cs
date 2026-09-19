@@ -43,6 +43,10 @@ public sealed partial class WindowManager : ISubsystemHost, ISubsystem
     public bool OpenCatalogEntry(string catalogName, string key) =>
         Windows.OfType<CatalogBrowserWindow>().FirstOrDefault()?.Open(catalogName, key) ?? false;
 
+    /// <summary>The windows that can show <paramref name="entity"/> — see <see cref="IEntityOpener"/>.</summary>
+    public IEnumerable<IEntityOpener> OpenersFor(IEntity entity) =>
+        Windows.OfType<IEntityOpener>().Where(opener => opener.CanOpen(entity));
+
     public void Draw()
     {
         foreach (Window window in Windows)

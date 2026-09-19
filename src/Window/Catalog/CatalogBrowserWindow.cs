@@ -214,6 +214,7 @@ public sealed class CatalogBrowserWindow : Window, ILayoutPersistentWindow
         ImGuiEx.FieldFilterInput("##fieldfilter", ref _fieldFilter);
         ImGui.Spacing();
 
+        EntityOpenButtons.Draw(_context, entity);
         catalog.DrawFields(_context, entity, _tracker, Navigate, _fieldFilter);
 
         ImGui.Spacing();
