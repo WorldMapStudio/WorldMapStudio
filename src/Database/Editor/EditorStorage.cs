@@ -36,6 +36,9 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public EditorContext Context => _database.Context;
 
+    /// <summary>The id source for every new <c>wms_entities</c> row, native or bridged.</summary>
+    public EntityIdAllocator EntityIds { get; } = new();
+
     // Default to an editor-managed dolt instance so a new project works out of the box. Exposed
     // statically so project settings (created before any Storage instance exists) can seed the same
     // defaults.

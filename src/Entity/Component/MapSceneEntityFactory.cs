@@ -61,11 +61,6 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
 {
     private readonly EditorStorage _storage;
 
-    // Set by PrepareBatchAsync, consumed by Stage: a high-water mark handed out sequentially to every
-    // new entity in the current commit, so Pomelo can batch their inserts into one multi-row statement
-    // instead of one INSERT + SELECT LAST_INSERT_ID() per row.
-    private int _nextId;
-
     public MapSceneEntityFactory(EditorStorage storage)
     {
         _storage = storage;
@@ -100,11 +95,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
             return;
         }
 
-        var db = (EditorDbContext)context;
-        _nextId = await db.Entities.AsNoTracking()
-            .Select(record => (int?)record.Id)
-            .MaxAsync()
-            .ConfigureAwait(false) ?? 0;
+        await _storage.EntityIds.SeedAsync((EditorDbContext)context).ConfigureAwait(false);
     }
 
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
@@ -169,10 +160,10 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         else
         {
             // Client-assigned, like the record.Id ValueGeneratedNever() above expects — see
-            // PrepareBatchAsync. scene.RecordId itself stays null until the write-back below runs:
+            // EntityIdAllocator. scene.RecordId itself stays null until the write-back below runs:
             // component persistences key off it to decide new-vs-existing (EditorComponentPersistenceHelpers.StageRow),
             // and setting it early would flip them onto their slower existing-row path.
-            record.Id = ++_nextId;
+            record.Id = _storage.EntityIds.Next();
         }
 
         identity.Id = record.Id;
