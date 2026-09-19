@@ -4,7 +4,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Root host for what has to exist before a project does: the project-select screens and
-/// <see cref="CreateProjectOperation"/> run against it with no <see cref="EditorContext"/> yet.
+/// <see cref="CreateProjectDialog"/> run against it with no <see cref="EditorContext"/> yet.
 /// App-lifetime, like <see cref="WorkQueue"/> and <see cref="EditorStyle"/>; everything
 /// project-scoped hangs off <see cref="EditorContext"/> instead. A subsystem's constructor must not
 /// read <see cref="Instance"/> — it is still being built.

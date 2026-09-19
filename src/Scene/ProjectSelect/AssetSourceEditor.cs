@@ -10,8 +10,8 @@ public sealed class AssetSourceEditor
     private const uint IdMaxLength = AssetSourceId.MaxLength;
     private const uint NameMaxLength = 128;
 
-    private readonly ModalOperator<AddAssetSourceOperation, IList<AssetSourceSettings>> _addModal =
-        new("AddAssetSource", () => new AddAssetSourceOperation(), new Vector2(320, 0));
+    private readonly ModalDialogHost<AddAssetSourceDialog, IList<AssetSourceSettings>> _addModal =
+        new("AddAssetSource", () => new AddAssetSourceDialog(), new Vector2(320, 0));
 
     public void Draw(IList<AssetSourceSettings> sources)
     {

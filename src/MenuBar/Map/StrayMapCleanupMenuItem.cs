@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 public sealed class StrayMapCleanupMenuItem : IMenuItem
 {
     private readonly EditorContext _context;
-    private readonly ModalOperator<StrayMapCleanupOperation, MapSystem> _modal = new("StrayMapCleanup", () => new StrayMapCleanupOperation());
+    private readonly ModalDialogHost<StrayMapCleanupDialog, MapSystem> _modal = new("StrayMapCleanup", () => new StrayMapCleanupDialog());
 
     public float Priority => 2f;
 

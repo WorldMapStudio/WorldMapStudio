@@ -10,8 +10,8 @@ public sealed class ModelAssetPicker
     private readonly AssetSystem _assets;
     private readonly MeshMaterialSystem _materials;
     private readonly Node _previewOwner;
-    private readonly ModalOperator<ModelSelectionOperation, ModelSelectionContext> _modal =
-        new("SelectModelAsset", () => new ModelSelectionOperation(), new Vector2(900, 0));
+    private readonly ModalDialogHost<ModelSelectionDialog, ModelSelectionContext> _modal =
+        new("SelectModelAsset", () => new ModelSelectionDialog(), new Vector2(900, 0));
 
     private ModelSelectionContext? _context;
 
@@ -35,8 +35,8 @@ public sealed class ModelAssetPicker
             return;
         }
 
-        ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             _context = null;
         }

@@ -21,11 +21,11 @@ public sealed class ProjectSelect : IScene
     private Project? _pendingDelete;
     private ModalConfirm? _deleteConfirm;
 
-    private readonly ModalOperator<CreateProjectOperation, IReadOnlyList<Project>> _createModal =
-        new("CreateProject", () => new CreateProjectOperation(), new Vector2(360, 0));
+    private readonly ModalDialogHost<CreateProjectDialog, IReadOnlyList<Project>> _createModal =
+        new("CreateProject", () => new CreateProjectDialog(), new Vector2(360, 0));
 
-    private readonly ModalOperator<EditProjectSettingsOperation, Project> _settingsModal =
-        new("ProjectSettings", () => new EditProjectSettingsOperation(), new Vector2(360, 0));
+    private readonly ModalDialogHost<EditProjectSettingsDialog, Project> _settingsModal =
+        new("ProjectSettings", () => new EditProjectSettingsDialog(), new Vector2(360, 0));
 
     public ProjectSelect(Node3D root)
     {
@@ -116,7 +116,7 @@ public sealed class ProjectSelect : IScene
     private void DrawCreateModal()
     {
         var createOperation = _createModal._item;
-        if (_createModal.Draw(_projects, true, ImGuiWindowFlags.None) == ModalOperationState.Confirmed)
+        if (_createModal.Draw(_projects, true, ImGuiWindowFlags.None) == ModalDialogState.Confirmed)
         {
             var created = createOperation?.CreatedProject;
             if (created != null && _projects.All(p => p.Name != created.Name))
@@ -135,7 +135,7 @@ public sealed class ProjectSelect : IScene
         }
 
         var state = _settingsModal.Draw(_settingsProject, true, ImGuiWindowFlags.None);
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             ProjectStore.Save(_settingsProject);
             _settingsProject = null;
@@ -150,13 +150,13 @@ public sealed class ProjectSelect : IScene
         }
 
         var state = _deleteConfirm.Draw(true);
-        if (state == ModalOperationState.Confirmed && _pendingDelete != null)
+        if (state == ModalDialogState.Confirmed && _pendingDelete != null)
         {
             ProjectStore.Delete(_pendingDelete);
             _projects.Remove(_pendingDelete);
         }
 
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             _deleteConfirm = null;
             _pendingDelete = null;

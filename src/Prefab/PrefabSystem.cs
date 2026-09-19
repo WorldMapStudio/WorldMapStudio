@@ -24,7 +24,7 @@ namespace WorldMapStudio;
 public sealed class PrefabSystem : IWorldParticipant
 {
     /// <summary>Never a real, created map: <see cref="MapId"/> carries no DB/FK constraint, and the
-    /// map-creation UI (<c>MapSelectOperation</c>) clamps new ids to non-negative, so this can never
+    /// map-creation UI (<c>MapSelectDialog</c>) clamps new ids to non-negative, so this can never
     /// collide. Streaming and export scans are always filtered by <c>MapId == CurrentMap</c>, so
     /// entities tagged with this id are provably never touched by either.</summary>
     public static readonly MapId LibraryMap = new(-1);

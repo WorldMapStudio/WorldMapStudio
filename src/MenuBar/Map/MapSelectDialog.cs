@@ -15,14 +15,14 @@ namespace WorldMapStudio;
 /// for a small inline form, so adding a map and opening it are one dialog rather than two — a freshly
 /// created map is entered straight away.
 /// </summary>
-public sealed class MapSelectOperation : IModalOperation<MapSystem>
+public sealed class MapSelectDialog : IModalDialog<MapSystem>
 {
     private static readonly Vector4 ErrorColor = new(0.95f, 0.5f, 0.4f, 1.0f);
     private static readonly Vector2 BodySize = new(768, 432);
 
     private readonly EditorContext _context;
 
-    public MapSelectOperation(EditorContext context)
+    public MapSelectDialog(EditorContext context)
     {
         _context = context;
     }
@@ -44,10 +44,10 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
     private readonly MapDeleteConfirmPopup _deletePopup = new("Delete Map");
 
-    /// <summary>The map the user picked, once the modal reports <see cref="ModalOperationState.Confirmed"/>.</summary>
+    /// <summary>The map the user picked, once the modal reports <see cref="ModalDialogState.Confirmed"/>.</summary>
     public Map? Selected { get; private set; }
 
-    public ModalOperationState Draw(MapSystem maps)
+    public ModalDialogState Draw(MapSystem maps)
     {
         ImGui.TextUnformatted(_creating ? "New Map" : "Open Map");
         ImGui.Separator();
@@ -55,7 +55,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
         return _creating ? DrawCreate(maps) : DrawGrid(maps);
     }
 
-    private ModalOperationState DrawGrid(MapSystem maps)
+    private ModalDialogState DrawGrid(MapSystem maps)
     {
         ImGui.SetNextItemWidth(BodySize.X - 160.0f);
         ImGui.InputTextWithHint("##filter", "Filter by name or id…", ref _filter, 128);
@@ -109,7 +109,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         if (ImGui.Button("Close", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
         ImGui.SameLine();
@@ -117,16 +117,16 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
 
         if (clicked == null)
         {
-            return ModalOperationState.Running;
+            return ModalDialogState.Running;
         }
 
         Selected = clicked;
-        return ModalOperationState.Confirmed;
+        return ModalDialogState.Confirmed;
     }
 
-    private ModalOperationState DrawCreate(MapSystem maps)
+    private ModalDialogState DrawCreate(MapSystem maps)
     {
-        var state = ModalOperationState.Running;
+        var state = ModalDialogState.Running;
 
         ImGuiEx.Child("MapCreate", BodySize, true, ImGuiWindowFlags.None, () =>
         {
@@ -153,7 +153,7 @@ public sealed class MapSelectOperation : IModalOperation<MapSystem>
             if (created != null)
             {
                 Selected = created;
-                state = ModalOperationState.Confirmed;
+                state = ModalDialogState.Confirmed;
             }
         }
 

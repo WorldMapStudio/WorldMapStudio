@@ -8,13 +8,13 @@ using Vector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The searchable "pick an image" popup, modelled on <see cref="ProceduralModelSelectionOperation"/>.
+/// The searchable "pick an image" popup, modelled on <see cref="ProceduralModelSelectionDialog"/>.
 /// The preview is a flat grayscale texture built straight from the raw pixel buffer (matching
 /// <see cref="Godot.Image.Format.R8"/>, the same one-byte-per-pixel layout
 /// <see cref="LandscapeBatchMesh"/> uses for alpha textures) rather than a rendered 3D scene, so there
 /// is no preview-owner node to construct with.
 /// </summary>
-public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionContext>
+public sealed class ImageSelectionDialog : IModalDialog<ImageSelectionContext>
 {
     private static readonly Vector2 BodySize = new(720, 380);
     private static readonly Vector2 PreviewSize = new(220, 220);
@@ -26,7 +26,7 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
     private int? _cachedId;
     private ImageTexture? _previewTexture;
 
-    public ModalOperationState Draw(ImageSelectionContext context)
+    public ModalDialogState Draw(ImageSelectionContext context)
     {
         if (!_previewIdSet)
         {
@@ -50,7 +50,7 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
         if (ImGui.Button("Clear", new Vector2(120, 0)))
         {
             context.Select(null);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.SameLine();
@@ -63,7 +63,7 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
         if (ImGui.Button("Select", new Vector2(120, 0)))
         {
             context.Select(_previewId);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         if (!canSelect)
@@ -74,10 +74,10 @@ public sealed class ImageSelectionOperation : IModalOperation<ImageSelectionCont
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     public void OnClose()

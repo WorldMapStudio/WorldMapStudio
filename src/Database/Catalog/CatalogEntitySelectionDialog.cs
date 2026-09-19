@@ -11,7 +11,7 @@ namespace WorldMapStudio;
 /// the <see cref="CatalogSearchPurpose.Pick"/> counterpart of <c>CatalogBrowserWindow</c>'s own
 /// chrome-around-a-session shape.
 /// </summary>
-public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEntityPickerContext>
+public sealed class CatalogEntitySelectionDialog : IModalDialog<CatalogEntityPickerContext>
 {
     // Selected label + separator + Clear/Select/Cancel row, reserved out of the session's own drawing
     // area so the footer never gets pushed off a small (List-sized) popup.
@@ -22,7 +22,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
     private string _selectedKey = "";
     private bool _confirmRequested;
 
-    public ModalOperationState Draw(CatalogEntityPickerContext context)
+    public ModalDialogState Draw(CatalogEntityPickerContext context)
     {
         EnsureSession(context);
 
@@ -40,7 +40,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         if (_confirmRequested)
         {
             context.Select(_selectedKey);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         string label = _selectedKey.Length == 0 ? "(none)" : _session.LabelFor(_selectedKey) ?? _selectedKey;
@@ -50,7 +50,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         if (ImGui.Button("Clear", new Vector2(120, 0)))
         {
             context.Select("");
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.SameLine();
@@ -59,7 +59,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         if (ImGui.Button("Select", new Vector2(120, 0)))
         {
             context.Select(_selectedKey);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.EndDisabled();
@@ -67,10 +67,10 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     public void OnClose() => _session?.Dispose();
@@ -113,7 +113,7 @@ public sealed class CatalogEntitySelectionOperation : IModalOperation<CatalogEnt
     }
 
     // Grows or shrinks the popup to match the new view's own preferred size — the reason
-    // CatalogEntityPicker's own ModalOperator is resizable rather than auto-fit.
+    // CatalogEntityPicker's own ModalDialogHost is resizable rather than auto-fit.
     private void SwitchView(CatalogEntityPickerContext context, ICatalogSearchView view)
     {
         string filter = _session?.Filter ?? string.Empty;

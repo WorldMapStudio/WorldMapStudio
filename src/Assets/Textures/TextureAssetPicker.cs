@@ -7,8 +7,8 @@ namespace WorldMapStudio;
 public sealed class TextureAssetPicker
 {
     private readonly AssetSystem _assets;
-    private readonly ModalOperator<TextureSelectionOperation, TextureSelectionContext> _modal =
-        new("SelectTextureAsset", () => new TextureSelectionOperation(), new Vector2(720, 0));
+    private readonly ModalDialogHost<TextureSelectionDialog, TextureSelectionContext> _modal =
+        new("SelectTextureAsset", () => new TextureSelectionDialog(), new Vector2(720, 0));
 
     private TextureSelectionContext? _context;
 
@@ -30,8 +30,8 @@ public sealed class TextureAssetPicker
             return;
         }
 
-        ModalOperationState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
-        if (state is ModalOperationState.Confirmed or ModalOperationState.Cancelled)
+        ModalDialogState state = _modal.Draw(_context, true, ImGuiWindowFlags.None);
+        if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
         {
             _context = null;
         }

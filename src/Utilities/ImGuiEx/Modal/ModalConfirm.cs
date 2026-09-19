@@ -5,40 +5,40 @@ namespace WorldMapStudio;
 
 public sealed class ModalConfirm
 {
-    private sealed class ConfirmOperation : IModalOperation<object?>
+    private sealed class ConfirmDialog : IModalDialog<object?>
     {
         private readonly ModalConfirm _owner;
 
-        public ConfirmOperation(ModalConfirm owner)
+        public ConfirmDialog(ModalConfirm owner)
         {
             _owner = owner;
         }
 
-        public ModalOperationState Draw(object? context)
+        public ModalDialogState Draw(object? context)
         {
             ImGui.Text(_owner.Title);
             ImGui.Separator();
             ImGui.TextWrapped(_owner.Message);
             ImGui.Spacing();
 
-            var state = ModalOperationState.Running;
+            var state = ModalDialogState.Running;
             if (ImGui.Button(_owner.ConfirmText))
             {
-                state = ModalOperationState.Confirmed;
+                state = ModalDialogState.Confirmed;
             }
 
             ImGui.SameLine();
 
             if (ImGui.Button(_owner.CancelText))
             {
-                state = ModalOperationState.Cancelled;
+                state = ModalDialogState.Cancelled;
             }
 
             return state;
         }
     }
 
-    private readonly ModalOperator<ConfirmOperation, object?> _operator;
+    private readonly ModalDialogHost<ConfirmDialog, object?> _operator;
 
     public ModalConfirm(string title, string message, string confirmText = "Confirm", string cancelText = "Cancel")
     {
@@ -46,10 +46,10 @@ public sealed class ModalConfirm
         Message = message;
         ConfirmText = confirmText;
         CancelText = cancelText;
-        _operator = new($"##ModalConfirm_{Guid.NewGuid():N}", () => new ConfirmOperation(this));
+        _operator = new($"##ModalConfirm_{Guid.NewGuid():N}", () => new ConfirmDialog(this));
     }
 
-    public ModalOperationState State => _operator.State;
+    public ModalDialogState State => _operator.State;
 
     public string Title { get; }
     public string Message { get; }
@@ -61,7 +61,7 @@ public sealed class ModalConfirm
         _operator.Show();
     }
 
-    public ModalOperationState Draw(bool canBeClosed, ImGuiWindowFlags flags = ImGuiWindowFlags.AlwaysAutoResize)
+    public ModalDialogState Draw(bool canBeClosed, ImGuiWindowFlags flags = ImGuiWindowFlags.AlwaysAutoResize)
     {
         ImGui.SetNextWindowSizeConstraints(
             new System.Numerics.Vector2(320, 0),

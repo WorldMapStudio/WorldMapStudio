@@ -9,14 +9,14 @@ using Vector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The searchable "pick a procedural model" popup, modelled on <see cref="ModelSelectionOperation"/>.
+/// The searchable "pick a procedural model" popup, modelled on <see cref="ModelSelectionDialog"/>.
 /// Unlike that one, the catalog is not indexed in memory — it is lazily loaded (see
 /// <see cref="ProceduralModelFactory"/>) — so the result list comes from <see cref="ProceduralModelFactory.SearchAsync"/>,
 /// debounced against typing, and only the row the user is actually previewing is ever opened
 /// (<see cref="ProceduralModelFactory.OpenAsync"/>): a search result carries just an id and a label,
 /// never a network.
 /// </summary>
-public sealed class ProceduralModelSelectionOperation : IModalOperation<ProceduralModelSelectionContext>
+public sealed class ProceduralModelSelectionDialog : IModalDialog<ProceduralModelSelectionContext>
 {
     private static readonly Vector2 BodySize = new(900, 480);
     private static readonly Vector2 PreviewSize = new(320, 320);
@@ -35,7 +35,7 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
 
     private ModelPreviewRenderer? _preview;
 
-    public ModalOperationState Draw(ProceduralModelSelectionContext context)
+    public ModalDialogState Draw(ProceduralModelSelectionContext context)
     {
         _preview ??= new ModelPreviewRenderer(context.System.Context.Assets, context.System.Context.MeshMaterials, context.PreviewOwner);
         if (!_previewIdSet)
@@ -66,7 +66,7 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
         if (ImGui.Button("Clear", new Vector2(120, 0)))
         {
             context.Select(null);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         ImGui.SameLine();
@@ -79,7 +79,7 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
         if (ImGui.Button("Select", new Vector2(120, 0)))
         {
             context.Select(_previewId);
-            return ModalOperationState.Confirmed;
+            return ModalDialogState.Confirmed;
         }
 
         if (!canSelect)
@@ -90,10 +90,10 @@ public sealed class ProceduralModelSelectionOperation : IModalOperation<Procedur
         ImGui.SameLine();
         if (ImGui.Button("Cancel", new Vector2(120, 0)))
         {
-            return ModalOperationState.Cancelled;
+            return ModalDialogState.Cancelled;
         }
 
-        return ModalOperationState.Running;
+        return ModalDialogState.Running;
     }
 
     public void OnClose()

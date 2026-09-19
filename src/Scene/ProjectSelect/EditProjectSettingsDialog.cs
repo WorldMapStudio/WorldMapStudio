@@ -7,12 +7,12 @@ namespace WorldMapStudio;
 /// Modal for editing an existing project's settings in place: its coordinate convention, its
 /// database connection, its asset sources and its named paths.
 /// </summary>
-public sealed class EditProjectSettingsOperation : IModalOperation<Project>
+public sealed class EditProjectSettingsDialog : IModalDialog<Project>
 {
     private readonly AssetSourceEditor _assetSourceEditor = new();
     private readonly ProjectPathsEditor _pathsEditor = new();
 
-    public ModalOperationState Draw(Project context)
+    public ModalDialogState Draw(Project context)
     {
         ImGui.Text(context.Name);
         ImGui.TextDisabled("Project Settings");
@@ -36,10 +36,10 @@ public sealed class EditProjectSettingsOperation : IModalOperation<Project>
 
         ImGui.Separator();
 
-        var state = ModalOperationState.Running;
+        var state = ModalDialogState.Running;
         if (ImGui.Button("Close", new Vector2(120, 0)))
         {
-            state = ModalOperationState.Confirmed;
+            state = ModalDialogState.Confirmed;
         }
 
         return state;

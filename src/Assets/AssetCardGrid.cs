@@ -6,7 +6,7 @@ using Vector2 = System.Numerics.Vector2;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Culled, clickable grid of <see cref="AssetRef"/> cards - the layout <see cref="TextureSelectionOperation"/>
+/// Culled, clickable grid of <see cref="AssetRef"/> cards - the layout <see cref="TextureSelectionDialog"/>
 /// pioneered, shared so a second picker (models) doesn't grow its own copy. Only lays out cards and
 /// reports clicks; a caller supplies how each thumbnail is drawn since that differs per asset kind.
 /// </summary>
