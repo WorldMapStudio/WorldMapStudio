@@ -25,7 +25,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
     public SceneEntityInspector(InspectorWindow window)
     {
         _editor = window.Context;
-        _savePrefabPopup = new SavePrefabPopup(_editor.Prefabs, _editor.EditSessions);
+        _savePrefabPopup = new SavePrefabPopup(_editor.Prefabs);
     }
 
     protected override void DrawTargets(InspectorContext context, IReadOnlyList<SceneEntity> targets)

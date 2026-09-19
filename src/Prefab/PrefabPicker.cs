@@ -11,7 +11,6 @@ namespace WorldMapStudio;
 public sealed class PrefabPicker
 {
     private readonly PrefabSystem _prefabs;
-    private readonly EditSessionManager _sessions;
     private readonly SelectionSystem _selection;
     private readonly ModalDialogHost<PrefabSelectionDialog, PrefabSelectionContext> _modal =
         new("SelectPrefab", () => new PrefabSelectionDialog(), new Vector2(460, 0));
@@ -19,10 +18,9 @@ public sealed class PrefabPicker
     private PrefabSelectionContext? _context;
     private Vector3 _spawnAt;
 
-    public PrefabPicker(PrefabSystem prefabs, EditSessionManager sessions, SelectionSystem selection)
+    public PrefabPicker(PrefabSystem prefabs, SelectionSystem selection)
     {
         _prefabs = prefabs;
-        _sessions = sessions;
         _selection = selection;
     }
 
@@ -49,9 +47,7 @@ public sealed class PrefabPicker
 
     private void Spawn(Prefab prefab)
     {
-        (IEditCommand command, IReadOnlyList<SceneEntity> entities) = _prefabs.BuildSpawnCommand(prefab, _spawnAt);
-        command.Apply();
-        _sessions.Record(command);
+        IReadOnlyList<SceneEntity> entities = _prefabs.Spawn(prefab, _spawnAt);
 
         _selection.Clear();
         foreach (SceneEntity entity in entities)
@@ -62,9 +58,7 @@ public sealed class PrefabPicker
 
     private void Delete(Prefab prefab)
     {
-        IEditCommand command = _prefabs.BuildDeleteCommand(prefab);
-        command.Apply();
-        _sessions.Record(command);
+        _prefabs.Delete(prefab);
 
         // Refresh the list the popup is drawing from so the deleted prefab disappears immediately.
         _context = _context! with { Prefabs = _prefabs.All.ToList() };

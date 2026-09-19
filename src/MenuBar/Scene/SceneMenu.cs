@@ -25,7 +25,7 @@ public sealed class SceneMenu : IMainMenu
     public SceneMenu(MenuBarManager manager)
     {
         _context = manager.Context;
-        _prefabPicker = new PrefabPicker(_context.Prefabs, _context.EditSessions, _context.Selection);
+        _prefabPicker = new PrefabPicker(_context.Prefabs, _context.Selection);
         _addSceneEntity = _context.Shortcuts.Register(
             "scene.add-entity",
             "Scene",

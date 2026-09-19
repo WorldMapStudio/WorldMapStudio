@@ -103,9 +103,11 @@ public sealed class PrefabSystem : IWorldParticipant
     /// descendants as a new named prefab. The caller applies and records it, like every other add-flow
     /// in this codebase.
     /// </summary>
-    public IEditCommand BuildSaveCommand(SceneEntity source, string name)
+    public IEditCommand BuildSaveCommand(SceneEntity source, string name) => BuildSaveCommand(source, name, out _);
+
+    private IEditCommand BuildSaveCommand(SceneEntity source, string name, out Prefab prefab)
     {
-        var prefab = new Prefab { Name = name.Trim().Length == 0 ? "Prefab" : name.Trim() };
+        prefab = new Prefab { Name = name.Trim().Length == 0 ? "Prefab" : name.Trim() };
         _context.Catalog.AssignId(prefab);
 
         (SceneEntity root, List<SceneEntity> all) = CloneSubtree(source, LibraryMap);
@@ -140,6 +142,36 @@ public sealed class PrefabSystem : IWorldParticipant
         var commands = all.Select(entity => (IEditCommand)new CreateEntityCommand(_context.Scene, entity)).ToList();
         return (new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands), all);
     }
+
+    /// <summary>Saves <paramref name="source"/> and its descendants as a new named prefab, undoably.</summary>
+    public Prefab Save(SceneEntity source, string name)
+    {
+        IEditCommand command = BuildSaveCommand(source, name, out Prefab prefab);
+        command.Apply();
+        _context.EditSessions.Record(command);
+        return prefab;
+    }
+
+    /// <summary>Spawns an independent copy of <paramref name="prefab"/> into the current map with its
+    /// root at <paramref name="at"/>, undoably, and returns the spawned entities.</summary>
+    public IReadOnlyList<SceneEntity> Spawn(Prefab prefab, Vector3 at)
+    {
+        (IEditCommand command, IReadOnlyList<SceneEntity> entities) = BuildSpawnCommand(prefab, at);
+        command.Apply();
+        _context.EditSessions.Record(command);
+        return entities;
+    }
+
+    /// <summary>Deletes a prefab, its catalog row and its whole template subtree, undoably.</summary>
+    public void Delete(Prefab prefab)
+    {
+        IEditCommand command = BuildDeleteCommand(prefab);
+        command.Apply();
+        _context.EditSessions.Record(command);
+    }
+
+    /// <summary>How many entities the prefab's template holds, or 0 when its subtree isn't loaded.</summary>
+    public int EntityCount(Prefab prefab) => RootOf(prefab) is { } root ? Family(root).Count() : 0;
 
     /// <summary>Builds (but does not apply or record) the command that deletes a prefab: its catalog
     /// row and its whole template subtree.</summary>
