@@ -239,6 +239,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Operations = Add(new WorldOperations(this));
 
         InitializeSubsystems();
+        WindowManager.LoadLayout();
     }
 
     /// <summary>
