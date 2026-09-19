@@ -72,7 +72,7 @@ public sealed class LandscapeFunctions
         // what keeps helper implementations — test doubles, nested experiments — out of the list a
         // user picks from.
         List<Type> candidates = assemblies
-            .SelectMany(SafeGetTypes)
+            .SelectMany(AssemblyTypes.SafeGetTypes)
             .Where(type => type.IsPublic && IsFunctionType(type))
             .ToList();
 
@@ -208,23 +208,6 @@ public sealed class LandscapeFunctions
         catch (Exception)
         {
             return false;
-        }
-    }
-
-    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException e)
-        {
-            // A partially loadable assembly still yields the types that did load.
-            return e.Types.Where(type => type != null)!;
-        }
-        catch (Exception)
-        {
-            return [];
         }
     }
 }

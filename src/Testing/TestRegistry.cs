@@ -30,7 +30,7 @@ public static class TestRegistry
 
         foreach (Assembly assembly in assemblies)
         {
-            foreach (Type type in SafeGetTypes(assembly))
+            foreach (Type type in AssemblyTypes.SafeGetTypes(assembly))
             {
                 MethodInfo[] methods = type.GetMethods(
                     BindingFlags.Public | BindingFlags.NonPublic |
@@ -127,19 +127,6 @@ public static class TestRegistry
 
         testCase = new TestCase(id, name, category, attr.Thread, attr.Skip, invoke);
         return true;
-    }
-
-    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException e)
-        {
-            // Some types failed to load; use the ones that did.
-            return e.Types.Where(t => t is not null)!;
-        }
     }
 
     private static string Prettify(string methodName) => methodName.Replace('_', ' ');
