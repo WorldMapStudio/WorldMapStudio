@@ -46,7 +46,7 @@ public static class StyleTokenRegistry
 
         _discovered = true;
 
-        foreach (Type type in SafeGetTypes(typeof(StyleTokenRegistry).Assembly))
+        foreach (Type type in AssemblyTypes.SafeGetTypes(typeof(StyleTokenRegistry).Assembly))
         {
             if (type.GetCustomAttribute<StyleTokensAttribute>() is null)
             {
@@ -97,17 +97,5 @@ public static class StyleTokenRegistry
 
         SizeList.Add(size);
         SizeDefaultsMap[size.Id] = size.DefaultValue;
-    }
-
-    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException e)
-        {
-            return e.Types.Where(static t => t is not null)!;
-        }
     }
 }

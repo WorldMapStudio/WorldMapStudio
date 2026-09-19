@@ -20,7 +20,7 @@ public static class AssetSourceTypeRegistry
     private static IReadOnlyList<IAssetSourceDefinition> Discover()
     {
         var definitions = new List<IAssetSourceDefinition>();
-        foreach (Type type in SafeGetTypes(typeof(AssetSourceTypeRegistry).Assembly))
+        foreach (Type type in AssemblyTypes.SafeGetTypes(typeof(AssetSourceTypeRegistry).Assembly))
         {
             if (type.IsAbstract || !typeof(IAssetSourceDefinition).IsAssignableFrom(type) || type.GetConstructor(Type.EmptyTypes) == null)
             {
@@ -42,17 +42,5 @@ public static class AssetSourceTypeRegistry
             .Select(group => group.First())
             .OrderBy(definition => definition.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-    }
-
-    private static IEnumerable<Type> SafeGetTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException e)
-        {
-            return e.Types.Where(type => type != null)!;
-        }
     }
 }
