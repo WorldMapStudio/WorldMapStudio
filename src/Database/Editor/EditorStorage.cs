@@ -405,6 +405,25 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Deletes the <c>wms_entities</c> row of every editor-authored entity on <paramref name="map"/>.
+    /// Foreign-key cascades take the <c>wms_map_entities</c> row and every tag and component row keyed on
+    /// the identity. Runs within an already-open context and transaction; see <see cref="CommitTransactionAsync"/>.
+    /// </summary>
+    public async Task<int> DeleteMapEntityIdentitiesAsync(EditorDbContext context, DbTransaction transaction, MapId map)
+    {
+        (string identityTable, string identityId) = ResolveColumn<EntityRecord>(context, nameof(EntityRecord.Id));
+        (string entityTable, string entityIdColumn, string entityMapColumn) = SceneEntityColumns(context);
+
+        await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandTimeout = MapScopedCommandTimeoutSeconds;
+        command.Transaction = transaction;
+        command.CommandText =
+            $"DELETE FROM `{identityTable}` WHERE `{identityId}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+        AddParameter(command, "@m", map.Value);
+        return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+    }
+
     /// <summary>Read-only count of what <see cref="DeleteForMapEntitiesAsync{TRecord}"/> would delete.
     /// <paramref name="context"/>'s connection does not need to be open yet; this opens it if needed.</summary>
     public async Task<int> CountForMapEntitiesAsync<TRecord>(EditorDbContext context, string entityIdPropertyName, MapId map)

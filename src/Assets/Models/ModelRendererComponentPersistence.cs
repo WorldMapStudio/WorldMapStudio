@@ -16,7 +16,7 @@ public sealed class SceneModelRendererComponentRecord
     /// extension; stored and returned verbatim.</summary>
     public string? FormatState { get; set; }
 
-    public MapEntityRecord? Entity { get; set; }
+    public EntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -68,7 +68,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
         ModelRendererComponent? model = entity.Component<ModelRendererComponent>();
         if (model == null)

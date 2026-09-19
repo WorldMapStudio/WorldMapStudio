@@ -37,10 +37,11 @@ public interface ISceneComponentPersistence : ISubsystem
 
     /// <summary>
     /// Stages an insert or update of <paramref name="entity"/>'s component of this kind, or a delete if
-    /// it no longer carries one. <paramref name="entityRow"/> is the entity's just-staged row, needed
-    /// only for EF navigation fixup when the entity has no id yet.
+    /// it no longer carries one. <paramref name="entityRow"/> is the entity's just-staged identity row, needed
+    /// only for EF navigation fixup when the entity has no id yet. Rows are keyed on the identity with a
+    /// cascading foreign key, so deleting the entity deletes them.
     /// </summary>
-    void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow);
+    void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow);
 
     /// <summary>Stages a delete of this component for an entity being deleted outright.</summary>
     void StageDelete(EditorDbContext context, int entityId);

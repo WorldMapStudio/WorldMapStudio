@@ -33,7 +33,7 @@ public sealed class SceneImageComponentRecord
     /// is the default an older row loads as.</summary>
     public ImageWriteMode WriteMode { get; set; } = ImageWriteMode.Max;
 
-    public MapEntityRecord? Entity { get; set; }
+    public EntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -93,7 +93,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
         ImageComponent? image = entity.Component<ImageComponent>();
         if (image == null)

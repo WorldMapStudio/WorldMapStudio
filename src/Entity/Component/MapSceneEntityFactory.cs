@@ -161,6 +161,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         var scene = (SceneEntity)entity;
 
         var record = new MapEntityRecord();
+        var identity = new EntityRecord();
         if (scene.RecordId is int id)
         {
             record.Id = id;
@@ -174,10 +175,12 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
             record.Id = ++_nextId;
         }
 
+        identity.Id = record.Id;
+
         WriteRecord(scene, record);
         if (scene.RecordId is null)
         {
-            db.Entities.Add(new EntityRecord { Id = record.Id });
+            db.Entities.Add(identity);
             db.MapEntities.Add(record);
         }
         else
@@ -187,23 +190,18 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
 
         foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
         {
-            persistence.Stage(db, scene, record);
+            persistence.Stage(db, scene, identity);
         }
 
         return () => scene.RecordId = record.Id;
     }
 
+    // One row: the identity's cascades take the map row, tags and every component with it.
     public void StageDelete(DbContext context, IEntity entity)
     {
-        var db = (EditorDbContext)context;
         if (((SceneEntity)entity).RecordId is int id)
         {
-            foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
-            {
-                persistence.StageDelete(db, id);
-            }
-
-            db.Entities.Remove(new EntityRecord { Id = id });
+            ((EditorDbContext)context).Entities.Remove(new EntityRecord { Id = id });
         }
     }
 
@@ -216,8 +214,9 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         (await context.MapEntities.AsNoTracking().Select(record => record.MapId).Distinct().ToListAsync().ConfigureAwait(false))
             .ToHashSet();
 
-    /// <summary>Fans every component persister's own map-scoped delete out first — mirroring
-    /// <see cref="StageDelete(DbContext, IEntity)"/> — then deletes the entity rows themselves. Runs
+    /// <summary>Fans every component persister's own map-scoped delete out first — bulk statements are
+    /// far cheaper than the same rows going through the foreign-key cascade one at a time — then deletes
+    /// the map's identity rows, whose cascades take the entity rows and anything else keyed on them. Runs
     /// last among <see cref="IMapScopedData"/> owners of priority 0 or lower, so every owner that finds
     /// its rows through these entities still can.</summary>
     async Task IMapScopedData.DeleteAsync(EditorDbContext context, DbTransaction transaction, MapId map)
@@ -227,7 +226,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
             await persistence.DeleteForMapAsync(context, transaction, map).ConfigureAwait(false);
         }
 
-        await _storage.DeleteWhereMapAsync<MapEntityRecord>(context, transaction, nameof(MapEntityRecord.MapId), map).ConfigureAwait(false);
+        await _storage.DeleteMapEntityIdentitiesAsync(context, transaction, map).ConfigureAwait(false);
     }
 
     private static SceneEntity ToEntity(MapEntityRecord record)
