@@ -16,7 +16,7 @@ public class SceneEntity : Entity
     // WorldBounds is Transform * LocalBounds, an eight-corner transform over a component scan, and the
     // terrain raycast reads it for every loaded chunk twice a frame. It only moves when the transform
     // or the component set does; every content change that alters LocalBounds routes through
-    // RefreshRepresentation, which re-applies the transform. So a counter bumped in SetTransform and
+    // RefreshRepresentation, which re-applies the transform. So a counter bumped in the Transform setter and
     // on a component being loaded covers every case, and the box is computed once per change.
     private Aabb _worldBounds;
     private int _worldBoundsVersion = -1;
@@ -263,34 +263,19 @@ public class SceneEntity : Entity
     public Transform3D Transform
     {
         get => _transform;
-        set => SetTransform(value, cascadeToChildren: true);
-    }
-
-    // cascadeToChildren must be false when re-applying the entity's own current transform just to
-    // re-run SanitizeTransform (e.g. after a component set change) rather than a genuine move: a
-    // snap in SelfRotation/SelfScale policy would otherwise compute a delta and drag every child by
-    // it, with no undo entry recorded for those child moves.
-    private void SetTransform(Transform3D value, bool cascadeToChildren)
-    {
-        _boundsVersion++;
-        Transform3D before = _transform;
-        _transform = SanitizeTransform(value);
-        if (Node != null)
+        set
         {
-            Node.GlobalTransform = _transform;
-        }
-
-        if (!cascadeToChildren || _children.Count == 0 || before.IsEqualApprox(_transform))
-        {
-            return;
-        }
-
-        Transform3D delta = _transform * before.AffineInverse();
-        foreach (SceneEntity child in _children.ToArray())
-        {
-            child.Transform = delta * child.Transform;
+            _boundsVersion++;
+            _transform = SanitizeTransform(value);
+            if (Node != null)
+            {
+                Node.GlobalTransform = _transform;
+            }
         }
     }
+
+    // Re-applies the current transform so SanitizeTransform and the bounds cache see a changed component set.
+    private void Resanitize() => Transform = _transform;
 
     public void CreateRepresentation(Node parent)
     {
@@ -363,7 +348,7 @@ public class SceneEntity : Entity
         component.Owner = this;
         _components.Add(component);
         RebuildRepresentation();
-        SetTransform(Transform, cascadeToChildren: false);
+        Resanitize();
     }
 
     public bool RemoveComponent(SceneComponent component)
@@ -375,7 +360,7 @@ public class SceneEntity : Entity
 
         component.Owner = null;
         RebuildRepresentation();
-        SetTransform(Transform, cascadeToChildren: false);
+        Resanitize();
         return true;
     }
 
@@ -389,7 +374,7 @@ public class SceneEntity : Entity
     public void RefreshRepresentation()
     {
         RebuildRepresentation();
-        SetTransform(Transform, cascadeToChildren: false);
+        Resanitize();
     }
 
     /// <summary>Builds the entity's viewport node. Called on the main thread.</summary>
