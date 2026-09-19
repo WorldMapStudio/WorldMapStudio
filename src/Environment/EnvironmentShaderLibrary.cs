@@ -2,27 +2,19 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Shared GLSL fragments consumed by more than one inline shader (the terrain splat shader, the sky
-/// shader, the liquid shader, and model materials) so fog/sun-glow/interior-ambient/matcap math has one
-/// source of truth instead of drifting copies. Every shader in this codebase is kept as an inline C#
-/// string rather than a <c>.gdshader</c> resource "so it needs no Godot import step" (see
-/// <c>LandscapeBatchMesh.SplatShaderCode</c>, <c>EnvironmentRenderer.SkyShaderCode</c>,
-/// <c>WowLiquidMaterialType.LiquidShaderCode</c>) — this class keeps that convention: consumers
-/// string-concatenate the fragments they need into their own shader source rather than <c>#include</c>-ing
-/// a resource file.
+/// shader, the liquid shader, and model materials), so fog/sun-glow/interior-ambient/matcap math has one
+/// source of truth. Consumers string-concatenate the fragments they need into their own inline shader
+/// source rather than <c>#include</c>-ing a resource file, so no Godot import step is needed.
 ///
-/// This is textual concatenation, not a real module with its own scope — every identifier here (global
-/// uniforms, function names, <em>and function parameters/locals</em>) lands in the same flat namespace
-/// as whatever the consuming shader declares. Godot's shader compiler treats a function parameter (and
-/// possibly a local variable — untested, not worth relying on) reusing a name already declared as a
-/// uniform elsewhere in the same file as a hard "Redefinition of 'x'" compile error, not ordinary
-/// shadowing. Every identifier below is therefore `wms_`-prefixed, including ones that would be
-/// perfectly fine as bare names (`t`, `color`, `dist`, ...) in a genuinely scoped language — the prefix
-/// isn't just a style choice here, it's load-bearing.
+/// This is textual concatenation, not a module with its own scope: every identifier here (global
+/// uniforms, function names, and function parameters/locals) lands in the same flat namespace as the
+/// consuming shader's own declarations, and Godot treats a parameter reusing a name already declared as
+/// a uniform as a "Redefinition" compile error, not shadowing. Every identifier below is therefore
+/// `wms_`-prefixed, even ones that would be fine as bare names.
 ///
-/// The fog/sun-glow globals below are pushed once per frame by <see cref="EnvironmentRenderer"/> via
-/// Godot's global shader parameters (<c>RenderingServer.GlobalShaderParameterSet</c>), the same
-/// mechanism <c>WowLiquidTintUpdater</c> already uses for ocean/river tint — every consumer reads the
-/// same values with no per-material uniform wiring needed.
+/// The fog/sun-glow globals are pushed once per frame by <see cref="EnvironmentRenderer"/> via Godot's
+/// global shader parameters (<c>RenderingServer.GlobalShaderParameterSet</c>), so every consumer reads
+/// the same values with no per-material uniform wiring.
 /// </summary>
 public static class EnvironmentShaderLibrary
 {

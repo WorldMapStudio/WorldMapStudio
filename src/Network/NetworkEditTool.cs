@@ -29,24 +29,19 @@ public enum NetworkModalMode
 /// <summary>
 /// Edits any <see cref="INetworkEditable"/>'s vertex/edge/face graph in the viewport: select, marquee,
 /// G/R/S modal transforms, extrude, duplicate, split, merge, subdivide (W) and loop cut (Ctrl+R). One
-/// tool serves every procedural mesh —
-/// which bound function it is (an ordinary mesh, a paint-only road) is entirely decided by
-/// <see cref="INetworkEditable.Paint"/> and <see cref="INetworkEditable.PlanarXZ"/>, so a mesh function
-/// and a paint function share every line of editing behaviour here and differ only in what they do
-/// with the resulting graph.
+/// tool serves every procedural mesh; what the bound function is (an ordinary mesh, a paint-only road)
+/// is decided by <see cref="INetworkEditable.Paint"/> and <see cref="INetworkEditable.PlanarXZ"/>, so
+/// mesh and paint functions share all editing behaviour and differ only in what they do with the graph.
 ///
 /// <see cref="INetworkEditable.PlanarXZ"/> functions (a road) get terrain-aware placement and display:
-/// a new vertex is dropped onto the terrain under the cursor rather than the entity's local plane, and
-/// every drawn vertex is projected onto the terrain for display even though its stored position is
-/// flat. Rotation locks to the vertical axis, and every transform's result has its height zeroed —
-/// the data is authored purely horizontal, so nothing is ever allowed to introduce a height component.
+/// a new vertex is dropped onto the terrain under the cursor, and every drawn vertex is projected onto
+/// the terrain even though its stored position is flat. Rotation locks to the vertical axis and every
+/// transform's result has its height zeroed, since the data is authored purely horizontal.
 ///
-/// The same "no meaningful height" treatment is also available per vertex, via
-/// <see cref="NetworkVertex.StickToTerrain"/> — for an otherwise ordinary (non-planar) mesh whose some
-/// vertices should still ride the ground (e.g. a foundation line) rather than carry an authored Y. A
-/// road's <see cref="INetworkEditable.PlanarXZ"/> is really just this same flag set network-wide: every
-/// vertex it creates is stamped with it too, so it behaves identically even where code inspects the
-/// vertex flag instead of the whole-network one.
+/// The same treatment is available per vertex via <see cref="NetworkVertex.StickToTerrain"/>, for an
+/// otherwise ordinary mesh whose some vertices should ride the ground (e.g. a foundation line).
+/// <see cref="INetworkEditable.PlanarXZ"/> is this flag set network-wide: every vertex it creates is
+/// stamped with it too.
 /// </summary>
 public sealed class NetworkEditTool : ITool
 {

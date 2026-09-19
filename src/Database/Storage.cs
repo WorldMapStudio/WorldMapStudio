@@ -43,11 +43,8 @@ public abstract class Storage : ISubsystem
     /// <summary>This storage's own subsystem tree: the <see cref="ISubsystemHost.Subsystems"/> of a concrete storage that hosts subsystems.</summary>
     protected virtual IEnumerable<ISubsystem> HostedSubsystems => this is ISubsystemHost host ? host.Subsystems : [];
 
-    // Subsystems are constructed once at startup and never change afterward — the same assumption
-    // ISceneComponentPersistence's doc relies on for EF's model cache — so each facet below only ever
-    // needs to filter HostedSubsystems once, the first time it's read, rather than on every access.
-    // Storage.EntityFactories is enumerated once per entity inside the Persist/CommitAsync loop, so an
-    // uncached OfType<> here was rescanning every subsystem in the whole editor per entity committed.
+    // Subsystems never change after startup, so each facet filters HostedSubsystems once and caches the
+    // result. EntityFactories is enumerated once per entity in the commit loop.
     private readonly Dictionary<Type, object> _facetCache = new();
 
     /// <summary>Caches the subsystems of type <typeparamref name="T"/> from <see cref="HostedSubsystems"/>

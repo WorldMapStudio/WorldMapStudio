@@ -14,21 +14,17 @@ namespace WorldMapStudio;
 /// Two halves, both gated on <see cref="StreamingSystem.ScanVersion"/> so this only does work when the
 /// load region actually moved:
 /// <list type="bullet">
-/// <item>Evict — any resident, clean chunk that fell outside every placement's (load-region-grown)
-/// footprint is dropped from memory <em>unconditionally</em>, the same way <c>LandscapeBatchLoader</c>
-/// drops terrain the moment it leaves the load region — an image's memory footprint must never outlive
-/// the view it was loaded for, regardless of how small the image is or how far under budget the editor
-/// happens to be. <see cref="BudgetBytes"/> is a second, independent pass on top of that: a backstop
-/// for the rarer case where what is currently wanted, on its own, is still too much. A chunk's pixels
-/// are untouched in storage either way, so it simply becomes "stored but not resident" — see
-/// <see cref="PaintImage.IsStored"/>.</item>
-/// <item>Reload — any chunk in the target set that is stored but not resident (typically one evicted
-/// earlier, now needed again) gets fetched back off the main thread, one batched query per image.</item>
+/// <item>Evict — any resident, clean chunk outside every placement's (load-region-grown) footprint is
+/// dropped from memory unconditionally, however small the image or far under budget the editor is.
+/// <see cref="BudgetBytes"/> is a second, independent backstop for when what is currently wanted is
+/// itself too much. A chunk's pixels stay in storage either way, so it becomes "stored but not resident"
+/// — see <see cref="PaintImage.IsStored"/>.</item>
+/// <item>Reload — any chunk in the target set that is stored but not resident gets fetched back off the
+/// main thread, one batched query per image.</item>
 /// </list>
 ///
-/// This is what makes a canvas far larger than any single view genuinely practical: only the chunks
-/// under a streamed-in placement's footprint are ever resident, regardless of how many chunks the image
-/// holds in storage.
+/// Only the chunks under a streamed-in placement's footprint are ever resident, so a canvas far larger
+/// than any single view stays practical.
 /// </summary>
 public sealed class ImageResidencySystem
 {
