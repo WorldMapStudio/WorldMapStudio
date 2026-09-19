@@ -6,7 +6,7 @@ using Godot;
 
 namespace WorldMapStudio;
 
-public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
+public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant, IFrameParticipant
 {
     // Bounds the built-model cache the same way MeshMaterialSystem bounds its built-material cache:
     // dragging a shared model's vertices bumps its Revision every frame, so without an LRU cap a long
@@ -404,6 +404,8 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         _evictionGeneration = 0;
         Version++;
     }
+
+    public float TickPriority => 2f;
 
     /// <summary>
     /// Notices a model changed since a loaded placement last built its representation — from another

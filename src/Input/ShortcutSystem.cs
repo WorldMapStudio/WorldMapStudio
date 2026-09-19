@@ -9,7 +9,7 @@ using ImGuiNET;
 
 namespace WorldMapStudio;
 
-public sealed class ShortcutSystem
+public sealed class ShortcutSystem : IFrameParticipant
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -77,6 +77,8 @@ public sealed class ShortcutSystem
     public string Label(string id) => _actions.TryGetValue(id, out ShortcutAction? action)
         ? action.ShortcutLabel
         : string.Empty;
+
+    public float TickPriority => 5f;
 
     public void Update()
     {

@@ -20,7 +20,7 @@ namespace WorldMapStudio;
 /// Also owns the catalog-name lookup every reference site otherwise repeats as its own private
 /// <c>FindCatalog</c>.
 /// </summary>
-public sealed class CatalogReferenceLabels
+public sealed class CatalogReferenceLabels : IFrameParticipant
 {
     public enum LabelState
     {
@@ -96,7 +96,11 @@ public sealed class CatalogReferenceLabels
         return LabelState.Pending;
     }
 
-    /// <summary>Call once per frame (see <see cref="Editor.Update"/>): folds in any completed
+    float IFrameParticipant.TickPriority => 6f;
+
+    void IFrameParticipant.Update() => Flush();
+
+    /// <summary>Folds in any completed
     /// <see cref="ICatalogBrowser.DescribeAsync"/> call and starts one for every catalog with queued
     /// misses and nothing already in flight.</summary>
     public void Flush()

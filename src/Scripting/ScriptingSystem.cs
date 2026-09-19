@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 /// already establish.
 /// </summary>
 [SubsystemHost(typeof(IScriptModule))]
-public sealed partial class ScriptingSystem : ISubsystemHost
+public sealed partial class ScriptingSystem : ISubsystemHost, IFrameParticipant
 {
     public EditorContext Context { get; }
 
@@ -81,6 +81,8 @@ public sealed partial class ScriptingSystem : ISubsystemHost
         Godot.GD.PushError($"[Scripting] Ignoring {PortFlag} '{value}': expected a port from 1 to 65535. Using {DefaultPort}.");
         return DefaultPort;
     }
+
+    public float TickPriority => 4f;
 
     /// <summary>
     /// Drains pending async script work and checks for event changes. Call once per frame from the

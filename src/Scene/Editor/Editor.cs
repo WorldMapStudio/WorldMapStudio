@@ -43,25 +43,7 @@ public sealed class Editor : IScene
         MenuBarManager menuBar = _context.MenuBarManager;
 
         // Regardless of which windows are open, the same way the viewport's fly camera keeps moving.
-        _context.Clock.Update();
-
-        // Entering another map swaps to that map's landscape settings.
-        _context.Landscape.Update();
-
-        // Notices a procedural model edited from one placement (or a window, script, or undo) and
-        // rebuilds every other placement referencing it.
-        _context.Procedural.Update();
-
-        // Same idea for an image or display layer edited from one placement (or a window, script, or
-        // undo): rebuilds every other placement's viewport representation.
-        _context.Images.Update();
-
-        // Resumes any script await-ing a Task-returning [ScriptFunction] whose Task has completed
-        // since last frame (never blocks, mirrors WorkQueue's own per-frame main-thread pump), and
-        // fires any registered wms.events handlers for what changed since last frame.
-        _context.Scripting.Update();
-        _context.Shortcuts.Update();
-        _context.ReferenceLabels.Flush();
+        _context.Frame.Tick();
 
         ImGuiEx.MainMenuBar(() =>
         {
