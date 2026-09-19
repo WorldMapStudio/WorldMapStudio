@@ -6,7 +6,7 @@ namespace WorldMapStudio;
 /// Owns the editor's active <see cref="EditSession"/>. Committing or aborting the current session
 /// starts a fresh empty one, so there is always a session to record edits into.
 ///
-/// <see cref="Commit"/> persists through the bound <see cref="IEditSessionStore"/> before clearing.
+/// <see cref="Commit"/> persists through the <see cref="EditSessionBindings.Store"/> before clearing.
 /// That is deliberately not the caller's job: when it was, the menu remembered to write through the
 /// database and the scripting API did not, so script edits were silently dropped.
 ///
@@ -19,42 +19,14 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class EditSessionManager : IWorldParticipant
 {
-    private IEditSessionStore? _store;
-    private StreamingSystem? _streaming;
-    private Action? _requestReload;
-    private Func<string?>? _activeOperationCheck;
+    private readonly EditSessionBindings _bindings;
+
+    public EditSessionManager(EditSessionBindings? bindings = null)
+    {
+        _bindings = bindings ?? EditSessionBindings.None;
+    }
 
     public EditSession Active { get; private set; } = new();
-
-    /// <summary>
-    /// Binds where committed sessions are written. Called once by <see cref="EditorContext"/>, after
-    /// the database exists. Left unbound (in tests, say) a commit simply keeps the edits in memory.
-    /// </summary>
-    public void BindStore(IEditSessionStore store) => _store = store;
-
-    /// <summary>
-    /// Binds the streaming system so releasing a session's pins can re-judge what stays loaded. Left
-    /// unbound (in tests, say) a commit or abort simply leaves the loaded set untouched.
-    /// </summary>
-    public void BindStreaming(StreamingSystem streaming) => _streaming = streaming;
-
-    /// <summary>
-    /// Binds what <see cref="Abort"/> asks for once it has reverted in memory. Left unbound (in
-    /// tests, say) an abort is <see cref="AbortInMemory"/> alone — which is exactly what the existing
-    /// unit tests exercise, so nothing about them changes.
-    /// </summary>
-    public void BindReload(Action requestReload) => _requestReload = requestReload;
-
-    /// <summary>
-    /// Binds the gate exclusive world operations run behind, so <see cref="Record"/> can refuse an
-    /// edit for the duration of one. Left unbound (in tests, say) recording is never refused.
-    /// </summary>
-    public void BindOperations(WorldOperations operations) => _activeOperationCheck = () => operations.ActiveOperation;
-
-    /// <summary>Test seam for the same check <see cref="BindOperations"/> wires in production, without
-    /// needing a live <see cref="WorldOperations"/> (which needs a live <see cref="EditorContext"/>
-    /// behind it) just to exercise <see cref="Record"/>'s guard.</summary>
-    internal void BindActiveOperationCheck(Func<string?> activeOperation) => _activeOperationCheck = activeOperation;
 
     /// <exception cref="InvalidOperationException">An exclusive world operation (see
     /// <see cref="WorldOperations"/>) is currently running. Loud on purpose, the same way recording a
@@ -62,7 +34,7 @@ public sealed class EditSessionManager : IWorldParticipant
     /// operation is rewriting underneath it is a correctness bug, not something to silently drop.</exception>
     public void Record(IEditCommand command)
     {
-        if (_activeOperationCheck?.Invoke() is { } operation)
+        if (_bindings.ActiveOperation() is { } operation)
         {
             throw new InvalidOperationException(
                 $"Cannot record an edit while exclusive operation '{operation}' is running.");
@@ -78,14 +50,14 @@ public sealed class EditSessionManager : IWorldParticipant
     /// <summary>Persists everything the session touched, then clears it and starts a fresh one.</summary>
     public void Commit()
     {
-        _store?.Persist(Active);
+        _bindings.Store()?.Persist(Active);
         Active.Commit();
         Active = new EditSession();
 
         // Entities that stayed loaded only because this session pinned them are now free to unload.
         // Judged here and now rather than at the next scan: scans are asynchronous and gated on the
         // focus moving, so waiting for one leaves settled entities lingering in the scene.
-        _streaming?.Resweep();
+        _bindings.Streaming()?.Resweep();
     }
 
     /// <summary>Reverts every recorded edit, then requests a full world reload. See the class docs
@@ -93,7 +65,7 @@ public sealed class EditSessionManager : IWorldParticipant
     public void Abort()
     {
         AbortInMemory();
-        _requestReload?.Invoke();
+        _bindings.RequestReload?.Invoke();
     }
 
     /// <summary>The in-memory revert alone, with no reload — what <see cref="Abort"/> used to be.
@@ -102,7 +74,7 @@ public sealed class EditSessionManager : IWorldParticipant
     {
         Active.Abort();
         Active = new EditSession();
-        _streaming?.Resweep();
+        _bindings.Streaming()?.Resweep();
     }
 
     /// <summary>A reload's own unload step: the in-memory revert alone, never the reload request —

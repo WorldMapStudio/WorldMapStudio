@@ -108,9 +108,8 @@ public static class WorldLifecycleTests
     public static void Abort_requests_a_reload_once_it_has_reverted_in_memory()
     {
         var entity = new FakeEntity();
-        var sessions = new EditSessionManager();
         var order = new List<string>();
-        sessions.BindReload(() => order.Add("reload-requested"));
+        var sessions = new EditSessionManager(EditSessionBindings.None with { RequestReload = () => order.Add("reload-requested") });
 
         sessions.Record(new FakeCommand(entity));
         Assert.IsTrue(sessions.Active.IsDirty);
@@ -125,9 +124,8 @@ public static class WorldLifecycleTests
     public static void AbortInMemory_never_requests_a_reload()
     {
         var entity = new FakeEntity();
-        var sessions = new EditSessionManager();
         var reloadRequested = false;
-        sessions.BindReload(() => reloadRequested = true);
+        var sessions = new EditSessionManager(EditSessionBindings.None with { RequestReload = () => reloadRequested = true });
 
         sessions.Record(new FakeCommand(entity));
         sessions.AbortInMemory();
@@ -139,9 +137,8 @@ public static class WorldLifecycleTests
     [EditorTest(Category = "EditSession", Thread = TestThread.Background)]
     public static void Recording_is_refused_while_an_exclusive_operation_is_active()
     {
-        var sessions = new EditSessionManager();
         string? active = "Batch Import";
-        sessions.BindActiveOperationCheck(() => active);
+        var sessions = new EditSessionManager(EditSessionBindings.None with { ActiveOperation = () => active });
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => sessions.Record(new FakeCommand(new FakeEntity())));
