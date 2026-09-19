@@ -55,12 +55,12 @@ public sealed class Editor : IScene
 
         ImGui.DockSpaceOverViewport();
 
-        menuBar.WindowManager.Draw();
+        _context.WindowManager.Draw();
         menuBar.DrawOverlay();
 
         if (_context.ExitRequested)
         {
-            menuBar.WindowManager.LayoutProfiles.SaveCurrent(out _);
+            _context.WindowManager.LayoutProfiles.SaveCurrent(out _);
             return null;
         }
 

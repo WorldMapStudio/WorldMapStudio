@@ -135,7 +135,7 @@ internal sealed class CatalogReferenceField
         }
         else
         {
-            context.MenuBarManager.WindowManager.OpenCatalogEntry(catalogName, key);
+            context.WindowManager.OpenCatalogEntry(catalogName, key);
         }
     }
 }
