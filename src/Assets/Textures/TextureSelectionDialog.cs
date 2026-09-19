@@ -16,12 +16,19 @@ public sealed class TextureSelectionDialog : IModalDialog<TextureSelectionContex
     private const float ThumbnailSize = 128.0f;
 
     private string _filter = "";
+    private TextureSelectionContext? _shown;
     private List<AssetRef>? _textures;
     private Task<IReadOnlyList<AssetRef>>? _texturesTask;
     private readonly Dictionary<string, Task<Texture2D?>> _previews = new();
 
     public ModalDialogState Draw(TextureSelectionContext context)
     {
+        if (!ReferenceEquals(_shown, context))
+        {
+            _shown = context;
+            _filter = context.InitialFilter;
+        }
+
         ImGui.Text("Select Texture");
         ImGui.Separator();
 

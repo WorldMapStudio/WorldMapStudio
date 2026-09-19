@@ -5,4 +5,5 @@ namespace WorldMapStudio;
 public sealed record TextureSelectionContext(
     AssetSystem Assets,
     string CurrentPath,
-    Action<string> Select);
+    Action<string> Select,
+    string InitialFilter = "");

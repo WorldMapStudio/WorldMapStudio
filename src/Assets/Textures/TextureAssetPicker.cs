@@ -17,9 +17,10 @@ public sealed class TextureAssetPicker
         _assets = assets;
     }
 
-    public void Browse(string currentPath, Action<string> select)
+    /// <summary>Opens the picker. <paramref name="filter"/> pre-fills its filter box.</summary>
+    public void Browse(string currentPath, Action<string> select, string filter = "")
     {
-        _context = new TextureSelectionContext(_assets, currentPath, select);
+        _context = new TextureSelectionContext(_assets, currentPath, select, filter);
         _modal.Show();
     }
 
