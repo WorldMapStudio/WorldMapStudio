@@ -10,8 +10,13 @@ public static class TagsScriptApiTests
         public string Name => "fixture";
 
         [ScriptFunction]
-        public ScriptEntityHandle[] All() =>
-            entities.Select(entity => new ScriptEntityHandle(context.Scene, context.Catalog, context.EditSessions, entity)).ToArray();
+        public ScriptEntityHandle[] All() => Take(0, entities.Length);
+
+        // A subset as a CLR array: a JS array literal of handles can't be converted back to handles.
+        [ScriptFunction]
+        public ScriptEntityHandle[] Take(int start, int count) =>
+            entities.Skip(start).Take(count)
+                .Select(entity => new ScriptEntityHandle(context.Scene, context.Catalog, context.EditSessions, entity)).ToArray();
     }
 
     private static (EditorContext, ScriptEngineHost, MapSceneEntity[]) NewRig()
@@ -39,7 +44,7 @@ public static class TagsScriptApiTests
         (EditorContext context, ScriptEngineHost host, MapSceneEntity[] entities) = NewRig();
 
         host.Evaluate("wms.tags.Create('town', 0xff8800)");
-        Assert.AreEqual("2", host.Evaluate("wms.tags.Add([wms.fixture.All()[0], wms.fixture.All()[1]], 'town').toString()"));
+        Assert.AreEqual("2", host.Evaluate("wms.tags.Add(wms.fixture.Take(0, 2), 'town').toString()"));
 
         Assert.AreEqual("1", host.Evaluate("wms.tags.List().length.toString()"));
         Assert.AreEqual("2", host.Evaluate("wms.tags.List()[0].LoadedCount.toString()"));
@@ -70,9 +75,9 @@ public static class TagsScriptApiTests
     {
         (_, ScriptEngineHost host, _) = NewRig();
         host.Evaluate("wms.tags.Create('a'); wms.tags.Create('b')");
-        host.Evaluate("wms.tags.Add([wms.fixture.All()[0]], 'a')");
+        host.Evaluate("wms.tags.Add(wms.fixture.Take(0, 1), 'a')");
 
-        host.Evaluate("wms.tags.Set([wms.fixture.All()[0], wms.fixture.All()[1]], ['b'])");
+        host.Evaluate("wms.tags.Set(wms.fixture.Take(0, 2), ['b'])");
 
         Assert.AreEqual("0", host.Evaluate("wms.scene.All(null, 'a').length.toString()"));
         Assert.AreEqual("2", host.Evaluate("wms.scene.All(null, 'b').length.toString()"));
