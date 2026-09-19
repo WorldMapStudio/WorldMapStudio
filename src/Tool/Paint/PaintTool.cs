@@ -15,56 +15,58 @@ public sealed class PaintTool : ITool
 {
     private readonly SelectionSystem _selection;
     private readonly SceneEntityRegistry _scene;
-    private readonly EditSessionManager _sessions;
     private readonly LandscapeSystem _landscape;
     private readonly TerrainProbe _terrain;
+    private readonly PaintBrush _brush;
+    private readonly PaintStroke _stroke;
 
-    private float _radius = 4.0f;
-    private float _opacity = 0.35f;
-    private Color _color = Colors.White;
-    private bool _erase;
-    private bool _paintOnObject = true;
-    private bool _painting;
-    private ImageComponent? _strokeTarget;
-    private PaintImage? _strokeImage;
-
-    // Where and when the last dab of the current stroke was stamped, in target-local space, and
-    // whether the stroke's first dab has been placed yet. A moving pointer spaces dabs by travel so
-    // stroke density no longer rides on the frame rate; a still pointer keeps dabbing at a fixed
-    // wall-clock rate so holding the brush down still builds paint up like an airbrush.
-    private GVector3 _lastStampLocal;
+    // When the stroke last laid a dab. A moving pointer spaces dabs by travel so stroke density does
+    // not ride on the frame rate; a still pointer keeps dabbing at a fixed wall-clock rate so holding
+    // the brush down still builds paint up like an airbrush.
     private ulong _lastStampMs;
-    private bool _strokeStamped;
 
-    private const float StampSpacingFraction = 0.25f;
-    private const float MinStampSpacing = 0.05f;
-    private const int MaxStampsPerFrame = 512;
     private const ulong StationaryStampIntervalMs = 16;
 
-    public PaintTool(ToolContext context)
+    public PaintTool(ToolContext context, PaintBrush brush)
     {
         _selection = context.Selection;
         _scene = context.Scene;
-        _sessions = context.Sessions;
         _landscape = context.Editor.Landscape;
         _terrain = new TerrainProbe(_landscape);
+        _brush = brush;
+        _stroke = new PaintStroke(brush, context.Sessions, _landscape);
     }
 
     public string Name => "Paint";
 
-    public bool CapturesMouse => _painting;
+    public bool CapturesMouse => _stroke.IsActive;
 
     public void DrawToolbar()
     {
+        float radius = _brush.Radius;
         ImGui.SetNextItemWidth(120.0f);
-        ImGui.DragFloat("Radius", ref _radius, 0.1f, 0.1f, 512.0f);
+        if (ImGui.DragFloat("Radius", ref radius, 0.1f, PaintBrush.MinRadius, PaintBrush.MaxRadius))
+        {
+            _brush.Radius = radius;
+        }
+
         ImGui.SameLine();
 
+        float opacity = _brush.Opacity;
         ImGui.SetNextItemWidth(120.0f);
-        ImGui.DragFloat("Opacity", ref _opacity, 0.01f, 0.01f, 1.0f);
+        if (ImGui.DragFloat("Opacity", ref opacity, 0.01f, PaintBrush.MinOpacity, PaintBrush.MaxOpacity))
+        {
+            _brush.Opacity = opacity;
+        }
+
         ImGui.SameLine();
 
-        ImGui.Checkbox("Erase", ref _erase);
+        bool erase = _brush.Erase;
+        if (ImGui.Checkbox("Erase", ref erase))
+        {
+            _brush.Erase = erase;
+        }
+
         ImGui.SameLine();
 
         bool colorAvailable = (ActiveTarget()?.Image?.Components ?? 1) > 1;
@@ -74,10 +76,10 @@ public sealed class PaintTool : ITool
         }
 
         ImGui.SetNextItemWidth(160.0f);
-        var colorValue = new NVector3(_color.R, _color.G, _color.B);
+        var colorValue = new NVector3(_brush.Color.R, _brush.Color.G, _brush.Color.B);
         if (ImGui.ColorEdit3("Color", ref colorValue))
         {
-            _color = new Color(colorValue.X, colorValue.Y, colorValue.Z);
+            _brush.Color = new Color(colorValue.X, colorValue.Y, colorValue.Z);
         }
 
         if (!colorAvailable)
@@ -93,7 +95,11 @@ public sealed class PaintTool : ITool
             ImGui.BeginDisabled();
         }
 
-        ImGui.Checkbox("Paint on Object", ref _paintOnObject);
+        bool paintOnObject = _brush.PaintOnObject;
+        if (ImGui.Checkbox("Paint on Object", ref paintOnObject))
+        {
+            _brush.PaintOnObject = paintOnObject;
+        }
 
         if (!objectAvailable)
         {
@@ -109,11 +115,11 @@ public sealed class PaintTool : ITool
         ImageComponent? target = ActiveTarget();
         if (target == null || context.CameraFlying)
         {
-            FinishStroke(record: false);
+            _stroke.Finish(record: false);
             return;
         }
 
-        bool onObject = _paintOnObject && target.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
+        bool onObject = _brush.PaintOnObject && target.DisplayLayer?.DisplayMode == ImageDisplayMode.Object;
 
         var projector = new ViewportProjector(context.Camera, context.ImageMin, context.ImageSize);
         DrawTargetOutline(target, onObject, projector);
@@ -124,86 +130,44 @@ public sealed class PaintTool : ITool
             DrawBrush(target, onObject, local, projector);
         }
 
-        if (!_painting && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && target.Image is { } image)
+        if (!_stroke.IsActive && context.Hovered && hit && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
         {
-            _painting = true;
-            _strokeTarget = target;
-            _strokeImage = image;
-            image.BeginStroke();
+            _stroke.Begin(target);
         }
 
-        if (_painting)
+        if (_stroke.IsActive)
         {
             if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
             {
-                FinishStroke(record: true);
+                _stroke.Finish(record: true);
                 return;
             }
 
-            if (_strokeTarget == target && hit && StampAlong(target, local))
+            if (_stroke.Target == target && hit)
             {
-                // A content signal the rebuilder polls on a timer — not a scene-version bump, which
-                // every per-frame cache in the editor would then rebuild for the length of the stroke.
-                _landscape.Rebuilder.NoticePaint();
+                Stamp(local);
             }
         }
     }
 
-    // Lays dabs from the last stamped point up to <paramref name="local"/>, one every
-    // StampSpacingFraction of the brush radius of travel, carrying the leftover distance to the next
-    // frame. The first dab of a stroke lands wherever the stroke started.
-    private bool StampAlong(ImageComponent target, GVector3 local)
+    private void Stamp(GVector3 local)
     {
+        _stroke.StampTo(local);
         ulong now = Time.GetTicksMsec();
-
-        if (!_strokeStamped)
+        if (_stroke.LaidDabs)
         {
-            _strokeStamped = true;
-            _lastStampLocal = local;
             _lastStampMs = now;
-            return target.Paint(local, _radius, _color, _opacity, _erase);
         }
-
-        float spacing = Math.Max(_radius * StampSpacingFraction, MinStampSpacing);
-        GVector3 travel = new(local.X - _lastStampLocal.X, 0.0f, local.Z - _lastStampLocal.Z);
-        float distance = travel.Length();
-
-        if (distance >= spacing)
+        else if (now - _lastStampMs >= StationaryStampIntervalMs)
         {
-            GVector3 step = (travel / distance) * spacing;
-            int stamps = Math.Min((int)(distance / spacing), MaxStampsPerFrame);
-            bool changed = false;
-            for (int i = 0; i < stamps; i++)
-            {
-                _lastStampLocal += step;
-                changed |= target.Paint(_lastStampLocal, _radius, _color, _opacity, _erase);
-            }
-
-            // If the pointer outran the per-frame cap, drop the backlog rather than let it accumulate.
-            if (stamps == MaxStampsPerFrame)
-            {
-                _lastStampLocal = local;
-            }
-
             _lastStampMs = now;
-            return changed;
+            _stroke.StampAt(local);
         }
-
-        // The pointer has not travelled a whole dab's worth this frame; keep laying paint at a steady
-        // wall-clock rate so a held-still brush still builds up.
-        if (now - _lastStampMs < StationaryStampIntervalMs)
-        {
-            return false;
-        }
-
-        _lastStampMs = now;
-        _lastStampLocal = local;
-        return target.Paint(local, _radius, _color, _opacity, _erase);
     }
 
     public void Deactivate()
     {
-        FinishStroke(record: true);
+        _stroke.Finish(record: true);
     }
 
     private ImageComponent? ActiveTarget() =>
@@ -211,32 +175,6 @@ public sealed class PaintTool : ITool
             .Where(entity => _scene.Contains(entity))
             .Select(entity => entity.Component<ImageComponent>())
             .FirstOrDefault(component => component != null);
-
-    private void FinishStroke(bool record)
-    {
-        if (!_painting)
-        {
-            return;
-        }
-
-        _painting = false;
-        _strokeStamped = false;
-        ImageComponent? target = _strokeTarget;
-        PaintImage? image = _strokeImage;
-        _strokeTarget = null;
-        _strokeImage = null;
-
-        // Always drains the stroke's per-chunk tracking, even when not recording — otherwise the next
-        // stroke's "before" snapshots would start from whatever an abandoned stroke left in progress.
-        var edits = image?.EndStroke();
-
-        if (!record || target == null || image == null || edits is not { Count: > 0 })
-        {
-            return;
-        }
-
-        _sessions.Record(new PaintImageChunksCommand(image, edits, target.AffectedEntities, $"Paint {image.Name}"));
-    }
 
     private bool TryHit(ImageComponent target, bool onObject, in ViewportContext context, out GVector3 local)
     {
@@ -289,7 +227,7 @@ public sealed class PaintTool : ITool
         }
 
         GVector3 candidate = origin + (direction * t);
-        if (!TargetContains(target, candidate))
+        if (!PaintStroke.Contains(target, candidate))
         {
             return false;
         }
@@ -302,7 +240,7 @@ public sealed class PaintTool : ITool
     {
         local = default;
         GVector3 candidate = target.Owner!.Transform.AffineInverse() * world;
-        if (!TargetContains(target, candidate))
+        if (!PaintStroke.Contains(target, candidate))
         {
             return false;
         }
@@ -327,12 +265,8 @@ public sealed class PaintTool : ITool
         }
 
         local = target.Owner!.Transform.AffineInverse() * (rayOrigin + (rayDir * t));
-        return TargetContains(target, local);
+        return PaintStroke.Contains(target, local);
     }
-
-    private static bool TargetContains(ImageComponent target, GVector3 local) =>
-        Mathf.Abs(local.X) <= target.WorldSizeX * 0.5f &&
-        Mathf.Abs(local.Z) <= target.WorldSizeZ * 0.5f;
 
     /// <summary>Where a local footprint point actually lands for display — the object's own flat
     /// surface when painting targets it, or dropped onto the terrain otherwise. Must match whatever
@@ -377,7 +311,7 @@ public sealed class PaintTool : ITool
         const int Segments = 48;
 
         ImDrawListPtr drawList = ImGui.GetWindowDrawList();
-        uint color = ImGui.GetColorU32(_erase
+        uint color = ImGui.GetColorU32(_brush.Erase
             ? new NVector4(1.0f, 0.35f, 0.25f, 0.95f)
             : new NVector4(0.2f, 0.75f, 1.0f, 0.95f));
 
@@ -386,9 +320,9 @@ public sealed class PaintTool : ITool
         {
             float angle = Mathf.Tau * i / Segments;
             GVector3 point = new(
-                local.X + (Mathf.Cos(angle) * _radius),
+                local.X + (Mathf.Cos(angle) * _brush.Radius),
                 0.0f,
-                local.Z + (Mathf.Sin(angle) * _radius));
+                local.Z + (Mathf.Sin(angle) * _brush.Radius));
             GVector3 world = SurfacePoint(target, point, onObject);
             if (!projector.TryProject(world, out NVector2 screen))
             {
