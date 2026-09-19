@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// A plain member of <see cref="EditorContext"/>, advanced once per frame from <see cref="Editor.Update"/>
 /// regardless of which windows are open, so time keeps flowing the same way the viewport's camera does.
 /// </summary>
-public sealed class WorldClock
+public sealed class WorldClock : IFrameParticipant
 {
     private const float MinSecondsPerDay = 1.0f;
 
@@ -36,6 +36,8 @@ public sealed class WorldClock
     /// <summary>Total real seconds this clock has advanced, unaffected by day wrap-around. Lets a
     /// source animate off real time instead of the day cycle (e.g. a slow-drifting cloud layer).</summary>
     public double Elapsed { get; private set; }
+
+    public float TickPriority => 0f;
 
     /// <summary>
     /// Advances the clock by the real time elapsed since the last call. The first call after

@@ -16,7 +16,7 @@ namespace WorldMapStudio;
 /// nothing builds. Enabling one is a deliberate act (pick a profile), because the settings decide how
 /// terrain is represented for the life of the map.
 /// </summary>
-public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
+public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant, IFrameParticipant
 {
     private readonly EditorContext _context;
 
@@ -362,6 +362,8 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         Reporter.ClearAll();
         Version++;
     }
+
+    public float TickPriority => 1f;
 
     /// <summary>Notices a map change and swaps to that map's settings. Cheap to call every frame.</summary>
     public void Update()

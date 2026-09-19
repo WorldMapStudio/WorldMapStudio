@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// kind of per-frame <see cref="Update"/> sweep to notice a shared image or display layer changed
 /// under a placement built from it.
 /// </summary>
-public sealed class ImageSystem : IWorldParticipant
+public sealed class ImageSystem : IWorldParticipant, IFrameParticipant
 {
     private (int CatalogVersion, int SceneVersion, int RevisionSum) _lastUpdateTick = (-1, -1, -1);
 
@@ -152,6 +152,8 @@ public sealed class ImageSystem : IWorldParticipant
     }
 
     bool IWorldParticipant.IsBusy => Residency.IsBusy;
+
+    public float TickPriority => 3f;
 
     /// <summary>
     /// Notices an image or display layer changed since a loaded placement last built its viewport

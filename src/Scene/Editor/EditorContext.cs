@@ -130,6 +130,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// project's data as one ordered operation, in both directions.</summary>
     public WorldLifecycle Lifecycle { get; }
 
+    /// <summary>Runs every <see cref="IFrameParticipant"/> once per frame.</summary>
+    public FrameLoop Frame { get; }
+
     /// <summary>The gate exclusive, world-rewriting operations (a batch import, a migration) run
     /// behind, and ordinary editing is refused while one is active.</summary>
     public WorldOperations Operations { get; }
@@ -226,6 +229,7 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions.BindReload(() => RequestReload("Edit session aborted"));
 
         Lifecycle = new WorldLifecycle(this);
+        Frame = new FrameLoop(this);
         Operations = new WorldOperations(this);
         EditSessions.BindOperations(Operations);
 
