@@ -10,6 +10,11 @@ namespace WorldMapStudio;
 /// </summary>
 public static class SceneClipboardTests
 {
+    // An entity stored in another table: it can't be duplicated.
+    private sealed class ExternalEntity : SceneEntity
+    {
+    }
+
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Clone_gets_a_fresh_identity_and_no_persisted_record()
     {
@@ -110,6 +115,31 @@ public static class SceneClipboardTests
         var pasted = clipboard.Paste(new MapId(5));
 
         Assert.AreEqual(5, pasted[0].Map.Value);
+    }
+
+    [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
+    public static void A_mixed_copy_pastes_only_the_entities_that_can_be_duplicated()
+    {
+        var native = new MapSceneEntity { Name = "Native" };
+        var external = new ExternalEntity { Name = "External" };
+
+        var clipboard = new SceneClipboard();
+        clipboard.Copy([native, external]);
+        var pasted = clipboard.Paste(new MapId(0));
+
+        Assert.AreEqual(1, pasted.Count);
+        Assert.AreEqual("Native", pasted[0].Name);
+    }
+
+    [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
+    public static void Tags_ride_along_on_a_clone()
+    {
+        var native = new MapSceneEntity { Tags = EntityTagSet.From([4, 9]), PersistedTags = EntityTagSet.From([4]) };
+
+        SceneEntity clone = native.Clone()!;
+
+        Assert.AreEqual("4,9", string.Join(",", clone.Tags));
+        Assert.IsTrue(clone.PersistedTags.IsEmpty, "a clone has nothing persisted yet");
     }
 
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
