@@ -33,6 +33,7 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
     private const string ISubsystemQualifiedName = "global::WorldMapStudio.ISubsystem";
     private const string ISubsystemHostMetadataName = "WorldMapStudio.ISubsystemHost";
     private const string ISubsystemHostQualifiedName = "global::WorldMapStudio.ISubsystemHost";
+    private const string HostAttributeFullName = "WorldMapStudio.SubsystemHostAttribute";
 
     private static readonly SymbolDisplayFormat QualifiedFormat =
         SymbolDisplayFormat.FullyQualifiedFormat.WithMiscellaneousOptions(SymbolDisplayMiscellaneousOptions.UseSpecialTypes);
@@ -81,6 +82,22 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
         "WMS0006",
         "Subsystem host must implement ISubsystemHost",
         "'{0}' must implement 'WorldMapStudio.ISubsystemHost' to host subsystem '{1}'",
+        "WorldMapStudio.Subsystem",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor ContractMustBeSubsystem = new(
+        "WMS0007",
+        "Subsystem host contract must be an ISubsystem",
+        "The [SubsystemHost] contract '{0}' on '{1}' must be a reference type that is or implements 'WorldMapStudio.ISubsystem'",
+        "WorldMapStudio.Subsystem",
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true);
+
+    private static readonly DiagnosticDescriptor SubsystemMustMeetContract = new(
+        "WMS0008",
+        "Subsystem does not satisfy its host's contract",
+        "'{0}' must implement '{1}' to be a subsystem of '{2}'",
         "WorldMapStudio.Subsystem",
         DiagnosticSeverity.Error,
         isEnabledByDefault: true);
@@ -171,6 +188,13 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
                 {
                     diagnostics.Add(Diagnostic.Create(ParentMustBePartial, nameofTarget.GetLocation(), resolvedParent.Name));
                 }
+                else if (GetContract(resolvedParent, compilation) is { } contract && !Satisfies(subsystemType, contract))
+                {
+                    diagnostics.Add(Diagnostic.Create(
+                        SubsystemMustMeetContract,
+                        attributeSyntax?.GetLocation() ?? subsystemType.Locations.FirstOrDefault() ?? Location.None,
+                        subsystemType.Name, contract.Name, resolvedParent.Name));
+                }
                 else
                 {
                     parentType = resolvedParent;
@@ -212,8 +236,61 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
             diagnostics.Add(Diagnostic.Create(ParentMustBePartial, classDecl.Identifier.GetLocation(), symbol.Name));
         }
 
+        INamedTypeSymbol? contract = null;
+        var contractAttribute = GetContractAttribute(symbol, ctx.SemanticModel.Compilation);
+        if (contractAttribute is not null && GetContract(symbol, ctx.SemanticModel.Compilation) is { } declared)
+        {
+            contract = declared;
+        }
+        else if (contractAttribute is not null
+            && contractAttribute.ApplicationSyntaxReference is { } reference
+            && reference.SyntaxTree == classDecl.SyntaxTree
+            && classDecl.Span.Contains(reference.Span))
+        {
+            var written = contractAttribute.ConstructorArguments.Length > 0
+                ? contractAttribute.ConstructorArguments[0].Value?.ToString() ?? "?"
+                : "?";
+            diagnostics.Add(Diagnostic.Create(
+                ContractMustBeSubsystem, reference.GetSyntax(ct).GetLocation(), written, symbol.Name));
+        }
+
         var hostType = diagnostics.Count == 0 ? symbol : null;
-        return new HostInfo(hostType, diagnostics.ToImmutable());
+        return new HostInfo(hostType, contract, diagnostics.ToImmutable());
+    }
+
+    private static AttributeData? GetContractAttribute(INamedTypeSymbol host, Compilation compilation)
+    {
+        var attributeType = compilation.GetTypeByMetadataName(HostAttributeFullName);
+        return attributeType is null
+            ? null
+            : host.GetAttributes().FirstOrDefault(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, attributeType));
+    }
+
+    // Null when the host declares no contract, or declares one that is not a valid ISubsystem type.
+    private static INamedTypeSymbol? GetContract(INamedTypeSymbol host, Compilation compilation)
+    {
+        if (GetContractAttribute(host, compilation) is not { ConstructorArguments.Length: 1 } attribute
+            || attribute.ConstructorArguments[0].Value is not INamedTypeSymbol contract
+            || !contract.IsReferenceType)
+        {
+            return null;
+        }
+
+        var subsystem = compilation.GetTypeByMetadataName(ISubsystemMetadataName);
+        return subsystem is not null && Satisfies(contract, subsystem) ? contract : null;
+    }
+
+    private static bool Satisfies(INamedTypeSymbol type, INamedTypeSymbol contract)
+    {
+        for (INamedTypeSymbol? current = type; current is not null; current = current.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, contract))
+            {
+                return true;
+            }
+        }
+
+        return type.AllInterfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, contract));
     }
 
     private static bool ImplementsInterface(INamedTypeSymbol type, string metadataName, Compilation compilation)
@@ -261,9 +338,19 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
             list.Add(info.SubsystemType);
         }
 
+        var contractByHost = new Dictionary<INamedTypeSymbol, INamedTypeSymbol>(SymbolEqualityComparer.Default);
+        foreach (var host in hostInfos)
+        {
+            if (host.HostType is not null && host.Contract is not null)
+            {
+                contractByHost[host.HostType] = host.Contract;
+            }
+        }
+
         foreach (var entry in subsystemsByParent)
         {
-            Emit(spc, entry.Key, entry.Value.ToImmutableArray());
+            contractByHost.TryGetValue(entry.Key, out var contract);
+            Emit(spc, entry.Key, entry.Value.ToImmutableArray(), contract);
         }
 
         var emittedEmptyHosts = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
@@ -274,11 +361,12 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
                 continue;
             }
 
-            Emit(spc, host.HostType, ImmutableArray<INamedTypeSymbol>.Empty);
+            Emit(spc, host.HostType, ImmutableArray<INamedTypeSymbol>.Empty, host.Contract);
         }
     }
 
-    private static void Emit(SourceProductionContext spc, INamedTypeSymbol parent, ImmutableArray<INamedTypeSymbol> subsystemsRaw)
+    private static void Emit(
+        SourceProductionContext spc, INamedTypeSymbol parent, ImmutableArray<INamedTypeSymbol> subsystemsRaw, INamedTypeSymbol? contract)
     {
         var subsystems = subsystemsRaw
             .Distinct(SymbolEqualityComparer.Default)
@@ -315,9 +403,17 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.Append("    public IEnumerable<").Append(ISubsystemQualifiedName).Append("> Subsystems { get; private set; } = System.Linq.Enumerable.Empty<")
-            .Append(ISubsystemQualifiedName).AppendLine(">();");
+        var elementType = contract is null ? ISubsystemQualifiedName : contract.ToDisplayString(QualifiedFormat);
+        sb.Append("    public IEnumerable<").Append(elementType).Append("> Subsystems { get; private set; } = System.Linq.Enumerable.Empty<")
+            .Append(elementType).AppendLine(">();");
         sb.AppendLine();
+
+        if (contract is not null)
+        {
+            sb.Append("    IEnumerable<").Append(ISubsystemQualifiedName).Append("> ").Append(ISubsystemHostQualifiedName)
+                .AppendLine(".Subsystems => Subsystems;");
+            sb.AppendLine();
+        }
 
         if (subsystems.Length > 0)
         {
@@ -337,9 +433,10 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
 
         if (subsystems.Length > 0)
         {
-            sb.Append("        Subsystems = new ").Append(ISubsystemQualifiedName).Append("[] { ")
+            var priority = contract is null ? "s.Priority" : $"(({ISubsystemQualifiedName})s).Priority";
+            sb.Append("        Subsystems = new ").Append(elementType).Append("[] { ")
                 .Append(string.Join(", ", subsystems.Select(static s => s.Name)))
-                .AppendLine(" }.OrderBy(static s => s.Priority).ToArray();");
+                .Append(" }.OrderBy(static s => ").Append(priority).AppendLine(").ToArray();");
         }
 
         sb.AppendLine("    }");
@@ -380,13 +477,16 @@ public sealed class SubsystemGenerator : IIncrementalGenerator
 
     private readonly struct HostInfo
     {
-        public HostInfo(INamedTypeSymbol? hostType, ImmutableArray<Diagnostic> diagnostics)
+        public HostInfo(INamedTypeSymbol? hostType, INamedTypeSymbol? contract, ImmutableArray<Diagnostic> diagnostics)
         {
             HostType = hostType;
+            Contract = contract;
             Diagnostics = diagnostics;
         }
 
         public INamedTypeSymbol? HostType { get; }
+
+        public INamedTypeSymbol? Contract { get; }
 
         public ImmutableArray<Diagnostic> Diagnostics { get; }
     }
