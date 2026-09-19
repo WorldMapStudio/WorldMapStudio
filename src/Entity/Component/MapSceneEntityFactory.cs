@@ -135,13 +135,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         Dictionary<int, SceneEntity> entities = rows.ToDictionary(row => row.Id, ToEntity);
 
         var catalog = new SceneEntityScanCatalog(publishing);
-        foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
-        {
-            using IDisposable scope = DiagnosticLog.Scope(persistence.GetType().Name);
-            clock = DiagnosticLog.Start();
-            await persistence.LoadAsync(context, entities, wanted, catalog).ConfigureAwait(false);
-            DiagnosticLog.Log($"    {persistence.GetType().Name}: {DiagnosticLog.MillisecondsSince(clock):F0}ms");
-        }
+        await _storage.Attachments.LoadAsync(context, entities, wanted, catalog).ConfigureAwait(false);
 
         return new SceneEntityScan(entities.Values.ToList(), keys, catalog.Loaded);
     }
@@ -179,12 +173,14 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
             db.MapEntities.Update(record);
         }
 
-        foreach (ISceneComponentPersistence persistence in _storage.ComponentPersistence)
-        {
-            persistence.Stage(db, scene, identity);
-        }
+        _storage.Attachments.StageComponents(db, scene, identity);
+        Action tagsWriteBack = _storage.Attachments.StageTags(db, scene, record.Id);
 
-        return () => scene.RecordId = record.Id;
+        return () =>
+        {
+            scene.RecordId = record.Id;
+            tagsWriteBack();
+        };
     }
 
     // One row: the identity's cascades take the map row, tags and every component with it.

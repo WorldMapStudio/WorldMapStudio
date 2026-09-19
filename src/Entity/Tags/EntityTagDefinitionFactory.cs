@@ -2,7 +2,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
-public sealed class EntityTagRecord : IKeyedRecord
+public sealed class TagDefinitionRecord : IKeyedRecord
 {
     public int Id { get; set; }
 
@@ -14,7 +14,7 @@ public sealed class EntityTagRecord : IKeyedRecord
 /// <summary>Maps <see cref="EntityTagDefinition"/> to and from the Editor storage's <c>wms_tags</c> table.</summary>
 [Subsystem(nameof(EditorStorage))]
 public sealed class EntityTagDefinitionFactory(EditorStorage storage)
-    : EditorCatalogFactory<EntityTagDefinition, EntityTagRecord>(storage)
+    : EditorCatalogFactory<EntityTagDefinition, TagDefinitionRecord>(storage)
 {
     public const int NameMaxLength = 64;
 
@@ -23,21 +23,21 @@ public sealed class EntityTagDefinitionFactory(EditorStorage storage)
     public override void Configure(ModelBuilder model)
     {
         base.Configure(model);
-        model.Entity<EntityTagRecord>(entity =>
+        model.Entity<TagDefinitionRecord>(entity =>
         {
             entity.Property(record => record.Name).HasMaxLength(NameMaxLength);
             entity.HasIndex(record => record.Name).IsUnique();
         });
     }
 
-    protected override EntityTagDefinition ToEntity(EntityTagRecord record) => new()
+    protected override EntityTagDefinition ToEntity(TagDefinitionRecord record) => new()
     {
         RecordId = record.Id,
         Name = record.Name,
         Color = record.Color,
     };
 
-    protected override void WriteRecord(EntityTagDefinition entity, EntityTagRecord record)
+    protected override void WriteRecord(EntityTagDefinition entity, TagDefinitionRecord record)
     {
         record.Name = entity.Name;
         record.Color = entity.Color;
