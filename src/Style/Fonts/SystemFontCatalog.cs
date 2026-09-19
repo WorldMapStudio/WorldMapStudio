@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace WorldMapStudio;
 
@@ -33,6 +34,7 @@ public static class SystemFontCatalog
 
     private static IReadOnlyList<SystemFontFamilyInfo>? _families;
     private static WorkHandle? _scanHandle;
+    private static TaskCompletionSource<IReadOnlyList<SystemFontFamilyInfo>>? _scan;
 
     /// <summary>Null until the first scan finishes. Check <see cref="IsScanning"/> to show a spinner
     /// meanwhile.</summary>
@@ -60,25 +62,10 @@ public static class SystemFontCatalog
 
     /// <summary>Starts the background scan if it hasn't already run this session. Safe to call every
     /// frame the Fonts tab is open.</summary>
-    public static void EnsureScanStarted()
-    {
-        lock (Lock)
-        {
-            if (_families is not null || _scanHandle is not null)
-            {
-                return;
-            }
+    public static void EnsureScanStarted() => StartScan();
 
-            _scanHandle = WorkQueue.Schedule("Scan system fonts", _ =>
-            {
-                IReadOnlyList<SystemFontFamilyInfo> result = ScanFamilies();
-                lock (Lock)
-                {
-                    _families = result;
-                }
-            });
-        }
-    }
+    /// <summary>The families once the scan has finished, starting it if it hasn't run this session.</summary>
+    public static Task<IReadOnlyList<SystemFontFamilyInfo>> ScanAsync() => StartScan();
 
     public static void Refresh()
     {
@@ -86,10 +73,48 @@ public static class SystemFontCatalog
         {
             _families = null;
             _scanHandle = null;
+            _scan = null;
             VariantCache.Clear();
         }
 
         EnsureScanStarted();
+    }
+
+    private static Task<IReadOnlyList<SystemFontFamilyInfo>> StartScan()
+    {
+        lock (Lock)
+        {
+            if (_scan is not null)
+            {
+                return _scan.Task;
+            }
+
+            var scan = new TaskCompletionSource<IReadOnlyList<SystemFontFamilyInfo>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _scan = scan;
+            _scanHandle = WorkQueue.Schedule("Scan system fonts", _ =>
+            {
+                try
+                {
+                    IReadOnlyList<SystemFontFamilyInfo> result = ScanFamilies();
+                    lock (Lock)
+                    {
+                        // A Refresh while this was running replaced the scan; its result is stale.
+                        if (ReferenceEquals(_scan, scan))
+                        {
+                            _families = result;
+                        }
+                    }
+
+                    scan.TrySetResult(result);
+                }
+                catch (Exception ex)
+                {
+                    scan.TrySetException(ex);
+                    throw;
+                }
+            });
+            return scan.Task;
+        }
     }
 
     /// <summary>Weight/italic variants available for <paramref name="family"/>, probing
