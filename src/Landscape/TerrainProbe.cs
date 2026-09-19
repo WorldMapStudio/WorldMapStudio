@@ -1,3 +1,4 @@
+using System;
 using Godot;
 
 namespace WorldMapStudio;
@@ -22,7 +23,7 @@ public sealed class TerrainProbe
         _landscape = landscape;
     }
 
-    private readonly record struct Candidate(
+    internal readonly record struct Candidate(
         ChunkCoord Coord, LandscapeChunkOutput Output, Vector3 Origin, float ChunkSize, float TMin, float TMax, float BoxT);
 
     // A near-horizontal ray can cross a lot of chunks; this caps the grid walk well past any real
@@ -183,7 +184,7 @@ public sealed class TerrainProbe
 
     // Chunks sit on the grid with an identity basis, so world->local is a plain subtraction of the
     // chunk's world origin and the caller's world-space box entry/exit carry over unchanged.
-    private static bool TryHitChunk(Candidate candidate, Vector3 rayOrigin, Vector3 rayDir, out float bestT, out Vector3 bestWorld)
+    internal static bool TryHitChunk(Candidate candidate, Vector3 rayOrigin, Vector3 rayDir, out float bestT, out Vector3 bestWorld)
     {
         bestT = float.PositiveInfinity;
         bestWorld = default;
@@ -214,7 +215,26 @@ public sealed class TerrainProbe
                 Vector3 bottomLeft = Vertex(output, x, z + 1, step);
                 Vector3 bottomRight = Vertex(output, x + 1, z + 1, step);
 
-                if (TryRayTriangle(origin, dir, topLeft, topRight, bottomLeft, out float t) && t < bestT)
+                float t;
+                if (output.HasCellCentres)
+                {
+                    var centre = new Vector3((x + 0.5f) * step, output.CentreHeightAt(x, z), (z + 0.5f) * step);
+                    Vector3 from = topLeft;
+                    foreach (Vector3 to in (ReadOnlySpan<Vector3>)[topRight, bottomRight, bottomLeft, topLeft])
+                    {
+                        if (TryRayTriangle(origin, dir, centre, from, to, out t) && t < bestT)
+                        {
+                            bestT = t;
+                            bestWorld = candidate.Origin + origin + (dir * t);
+                        }
+
+                        from = to;
+                    }
+
+                    continue;
+                }
+
+                if (TryRayTriangle(origin, dir, topLeft, topRight, bottomLeft, out t) && t < bestT)
                 {
                     bestT = t;
                     bestWorld = candidate.Origin + origin + (dir * t);
@@ -234,7 +254,7 @@ public sealed class TerrainProbe
     private static Vector3 Vertex(LandscapeChunkOutput output, int x, int z, float step) =>
         new(x * step, output.HeightAt(x, z), z * step);
 
-    private static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds, out float tMin, out float tMax)
+    internal static bool TryRayBox(Vector3 origin, Vector3 dir, Aabb bounds, out float tMin, out float tMax)
     {
         tMin = float.NegativeInfinity;
         tMax = float.PositiveInfinity;
@@ -308,19 +328,12 @@ public sealed class TerrainProbe
 
     private static float SampleChunkHeight(LandscapeChunkOutput output, float chunkSize, float x, float z)
     {
-        int resolution = output.HeightResolution;
-        int quads = resolution - 1;
+        int quads = output.HeightResolution - 1;
         float gx = Mathf.Clamp(x / chunkSize * quads, 0.0f, quads);
         float gz = Mathf.Clamp(z / chunkSize * quads, 0.0f, quads);
-        int x0 = Mathf.Clamp(Mathf.FloorToInt(gx), 0, resolution - 1);
-        int z0 = Mathf.Clamp(Mathf.FloorToInt(gz), 0, resolution - 1);
-        int x1 = Mathf.Min(x0 + 1, resolution - 1);
-        int z1 = Mathf.Min(z0 + 1, resolution - 1);
-        float tx = gx - x0;
-        float tz = gz - z0;
+        int cellX = Mathf.Min(Mathf.FloorToInt(gx), quads - 1);
+        int cellY = Mathf.Min(Mathf.FloorToInt(gz), quads - 1);
 
-        float a = Mathf.Lerp(output.HeightAt(x0, z0), output.HeightAt(x1, z0), tx);
-        float b = Mathf.Lerp(output.HeightAt(x0, z1), output.HeightAt(x1, z1), tx);
-        return Mathf.Lerp(a, b, tz);
+        return LandscapeCellSurface.HeightIn(output, cellX, cellY, gx - cellX, gz - cellY);
     }
 }

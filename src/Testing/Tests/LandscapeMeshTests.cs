@@ -116,4 +116,129 @@ public static class LandscapeMeshTests
         Assert.IsFalse(shader.Contains("color *= COLOR.rgb"), "COLOR is 8-bit unorm and clamps values above 1.0");
         Assert.IsTrue(shader.Contains("color *= vertex_color"), "expected vertex color to multiply albedo");
     }
+
+    private static LandscapeChunkOutput Chunk(int resolution, float[] heights, float[]? centreHeights)
+    {
+        int cells = (resolution - 1) * (resolution - 1);
+        return new LandscapeChunkOutput
+        {
+            Coord = new ChunkCoord(0, 0),
+            HeightResolution = resolution,
+            Heights = heights,
+            AlphaResolution = 1,
+            Layers = [],
+            HoleResolution = 1,
+            Holes = new bool[1],
+            VertexColors = new Color[resolution * resolution],
+            VertexLight = new Color[resolution * resolution],
+            CentreHeights = centreHeights,
+            CentreVertexColors = centreHeights == null ? null : new Color[cells],
+            CentreVertexLight = centreHeights == null ? null : new Color[cells],
+        };
+    }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void Every_fan_triangle_faces_up_and_every_vertex_is_referenced()
+    {
+        const int resolution = 4;
+        const int quads = resolution - 1;
+        int[] indices = LandscapeBatchMesh.BuildIndices(resolution, null, 0, centres: true);
+
+        Assert.AreEqual(quads * quads * 12, indices.Length);
+
+        static Vector3 Place(int index)
+        {
+            if (index < resolution * resolution)
+            {
+                return new Vector3(index % resolution, 0.0f, index / resolution);
+            }
+
+            int cell = index - (resolution * resolution);
+            return new Vector3((cell % quads) + 0.5f, 0.0f, (cell / quads) + 0.5f);
+        }
+
+        var seen = new bool[(resolution * resolution) + (quads * quads)];
+        for (int i = 0; i < indices.Length; i += 3)
+        {
+            Vector3 a = Place(indices[i]);
+            Vector3 b = Place(indices[i + 1]);
+            Vector3 c = Place(indices[i + 2]);
+            Assert.IsTrue((b - a).Cross(c - a).Y < 0.0f, $"fan triangle {i / 3} is wound the wrong way");
+            seen[indices[i]] = seen[indices[i + 1]] = seen[indices[i + 2]] = true;
+        }
+
+        for (int i = 0; i < seen.Length; i++)
+        {
+            Assert.IsTrue(seen[i], $"vertex {i} is in no triangle");
+        }
+    }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void A_holed_cell_drops_all_twelve_fan_indices()
+    {
+        const int resolution = 3;
+        bool[] holes = [true, false, false, false];
+
+        int[] dense = LandscapeBatchMesh.BuildIndices(resolution, null, 0, centres: true);
+        int[] withHole = LandscapeBatchMesh.BuildIndices(resolution, holes, 2, centres: true);
+
+        Assert.AreEqual(dense.Length - 12, withHole.Length);
+    }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void Cell_surface_height_follows_the_fan_triangle_it_falls_in()
+    {
+        // One cell: corners 0 (tl), 10 (tr), 20 (bl), 30 (br), and a centre raised to 100.
+        LandscapeChunkOutput output = Chunk(2, [0.0f, 10.0f, 20.0f, 30.0f], [100.0f]);
+
+        Assert.AreApproximatelyEqual(100.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.5f, 0.5f), 1e-4, "centre");
+        Assert.AreApproximatelyEqual(0.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.0f, 0.0f), 1e-4, "top-left");
+        Assert.AreApproximatelyEqual(10.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 1.0f, 0.0f), 1e-4, "top-right");
+        Assert.AreApproximatelyEqual(20.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.0f, 1.0f), 1e-4, "bottom-left");
+        Assert.AreApproximatelyEqual(30.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 1.0f, 1.0f), 1e-4, "bottom-right");
+
+        // Midway along an edge the fan reduces to that edge's two corners; a bilinear patch would
+        // instead let the centre lift the whole cell.
+        Assert.AreApproximatelyEqual(5.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.5f, 0.0f), 1e-4, "top edge");
+        Assert.AreApproximatelyEqual(25.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.5f, 1.0f), 1e-4, "bottom edge");
+        Assert.AreApproximatelyEqual(10.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.0f, 0.5f), 1e-4, "left edge");
+        Assert.AreApproximatelyEqual(20.0f, LandscapeCellSurface.HeightIn(output, 0, 0, 1.0f, 0.5f), 1e-4, "right edge");
+
+        // Halfway from the top edge midpoint to the centre.
+        Assert.AreApproximatelyEqual(52.5f, LandscapeCellSurface.HeightIn(output, 0, 0, 0.5f, 0.25f), 1e-4, "inside the top triangle");
+    }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void Cell_surface_without_centres_is_bilinear()
+    {
+        LandscapeChunkOutput plain = Chunk(2, [0.0f, 10.0f, 20.0f, 30.0f], null);
+
+        Assert.AreApproximatelyEqual(15.0f, LandscapeCellSurface.HeightIn(plain, 0, 0, 0.5f, 0.5f), 1e-4, "centre");
+        Assert.AreApproximatelyEqual(2.5f, LandscapeCellSurface.HeightIn(plain, 0, 0, 0.25f, 0.0f), 1e-4, "top edge");
+    }
+
+    [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
+    public static void A_ray_hits_the_fan_over_a_raised_centre()
+    {
+        // 2x2 cells of 8 units; the centre of cell (0,0) is raised to 8.
+        LandscapeChunkOutput output = Chunk(3, new float[9], [8.0f, 0.0f, 0.0f, 0.0f]);
+        const float chunkSize = 16.0f;
+        Aabb box = new(new Vector3(0.0f, -1.0f, 0.0f), new Vector3(chunkSize, 10.0f, chunkSize));
+
+        Vector3 HitFrom(float x, float z)
+        {
+            var start = new Vector3(x, 20.0f, z);
+            Assert.IsTrue(TerrainProbe.TryRayBox(start, Vector3.Down, box, out float tMin, out float tMax));
+            var candidate = new TerrainProbe.Candidate(new ChunkCoord(0, 0), output, Vector3.Zero, chunkSize, tMin, tMax, tMin);
+            Assert.IsTrue(TerrainProbe.TryHitChunk(candidate, start, Vector3.Down, out _, out Vector3 world));
+            return world;
+        }
+
+        Assert.AreApproximatelyEqual(8.0f, HitFrom(4.0f, 4.0f).Y, 1e-3, "the ray reaches the raised centre");
+        Assert.AreApproximatelyEqual(0.0f, HitFrom(12.0f, 12.0f).Y, 1e-3, "an untouched cell stays flat");
+
+        // The ray agrees with the shared height query, which is how things get placed on the ground.
+        float expected = LandscapeCellSurface.HeightIn(output, 0, 0, 0.25f, 0.5f);
+        Assert.AreApproximatelyEqual(expected, HitFrom(2.0f, 4.0f).Y, 1e-3, "ray and height query agree");
+    }
 }

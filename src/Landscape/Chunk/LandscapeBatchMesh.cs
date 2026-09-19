@@ -62,8 +62,14 @@ public static class LandscapeBatchMesh
         foreach ((ChunkCoord _, LandscapeChunkOutput output) in chunks)
         {
             int r = output.HeightResolution;
+            int cells = (r - 1) * (r - 1);
             totalVerts += r * r;
-            maxIndices += (r - 1) * (r - 1) * 6;
+            maxIndices += cells * 6;
+            if (output.HasCellCentres)
+            {
+                totalVerts += cells;
+                maxIndices += cells * 6;
+            }
         }
 
         var vertices = new Vector3[totalVerts];
@@ -110,7 +116,35 @@ public static class LandscapeBatchMesh
                 }
             }
 
-            foreach (int i in BuildIndices(resolution, output.Holes, output.HoleResolution))
+            if (output.HasCellCentres)
+            {
+                for (int y = 0; y < quads; y++)
+                {
+                    for (int x = 0; x < quads; x++)
+                    {
+                        vertices[v] = new Vector3(
+                            offsetX + ((x + 0.5f) * step), output.CentreHeightAt(x, y), offsetZ + ((y + 0.5f) * step));
+                        uvs[v] = new Vector2((x + 0.5f) / quads, (y + 0.5f) / quads);
+                        normals[v] = CentreNormalAt(output, x, y, step);
+
+                        Color tint = output.CentreVertexColorAt(x, y);
+                        vertexColor[v * 4] = tint.R;
+                        vertexColor[(v * 4) + 1] = tint.G;
+                        vertexColor[(v * 4) + 2] = tint.B;
+                        vertexColor[(v * 4) + 3] = 1.0f;
+
+                        Color glow = output.CentreVertexLightAt(x, y);
+                        light[v * 3] = glow.R;
+                        light[(v * 3) + 1] = glow.G;
+                        light[(v * 3) + 2] = glow.B;
+
+                        chunkIndex[v] = index;
+                        v++;
+                    }
+                }
+            }
+
+            foreach (int i in BuildIndices(resolution, output.Holes, output.HoleResolution, output.HasCellCentres))
             {
                 indices[idx++] = vertexBase + i;
             }
@@ -154,14 +188,18 @@ public static class LandscapeBatchMesh
     public static int[] BuildIndices(int resolution) => BuildIndices(resolution, null, 0);
 
     /// <summary>
-    /// As above, but skipping the 6 indices of any quad whose owning hole cell is set. A hole cell may
+    /// As above, but skipping the indices of any quad whose owning hole cell is set. A hole cell may
     /// be coarser than the vertex grid. Vertices themselves are never dropped: the height data under a
     /// hole still exists, so a neighbouring closed quad keeps a clean normal across the cut edge.
+    ///
+    /// With <paramref name="centres"/>, each cell is a 4-triangle fan around its centre vertex instead of
+    /// two triangles. Centre vertices follow the <c>resolution</c> squared corner vertices, one per cell
+    /// in row-major order.
     /// </summary>
-    public static int[] BuildIndices(int resolution, bool[]? holes, int holeResolution)
+    public static int[] BuildIndices(int resolution, bool[]? holes, int holeResolution, bool centres = false)
     {
         int quads = resolution - 1;
-        var indices = new int[quads * quads * 6];
+        var indices = new int[quads * quads * (centres ? 12 : 6)];
         int next = 0;
 
         for (int y = 0; y < quads; y++)
@@ -177,6 +215,27 @@ public static class LandscapeBatchMesh
                 int topRight = topLeft + 1;
                 int bottomLeft = topLeft + resolution;
                 int bottomRight = bottomLeft + 1;
+
+                if (centres)
+                {
+                    int centre = (resolution * resolution) + (y * quads) + x;
+                    indices[next++] = centre;
+                    indices[next++] = topLeft;
+                    indices[next++] = topRight;
+
+                    indices[next++] = centre;
+                    indices[next++] = topRight;
+                    indices[next++] = bottomRight;
+
+                    indices[next++] = centre;
+                    indices[next++] = bottomRight;
+                    indices[next++] = bottomLeft;
+
+                    indices[next++] = centre;
+                    indices[next++] = bottomLeft;
+                    indices[next++] = topLeft;
+                    continue;
+                }
 
                 indices[next++] = topLeft;
                 indices[next++] = topRight;
@@ -512,8 +571,42 @@ public static class LandscapeBatchMesh
         return Image.CreateFromData(PlaceholderSize, PlaceholderSize, false, Image.Format.R8, pixels);
     }
 
+    // Display-only: outside the chunk the height is clamped to the edge, as NormalAt does, so it never
+    // reaches into a neighbour.
+    private static Vector3 FanNormalAt(LandscapeChunkOutput output, int x, int y, float step)
+    {
+        int last = output.CellsPerEdge - 1;
+        float half = step * 0.5f;
+        float CentreAt(int cx, int cy) => output.CentreHeightAt(Mathf.Clamp(cx, 0, last), Mathf.Clamp(cy, 0, last));
+
+        var p = new Vector3(0.0f, output.HeightAt(x, y), 0.0f);
+        return LandscapeCellSurface.FanNormal(
+            p,
+            new Vector3(-half, CentreAt(x - 1, y - 1), -half),
+            new Vector3(half, CentreAt(x, y - 1), -half),
+            new Vector3(half, CentreAt(x, y), half),
+            new Vector3(-half, CentreAt(x - 1, y), half)).Normalized();
+    }
+
+    private static Vector3 CentreNormalAt(LandscapeChunkOutput output, int x, int y, float step)
+    {
+        float half = step * 0.5f;
+        var p = new Vector3(0.0f, output.CentreHeightAt(x, y), 0.0f);
+        return LandscapeCellSurface.FanNormal(
+            p,
+            new Vector3(-half, output.HeightAt(x, y), -half),
+            new Vector3(half, output.HeightAt(x + 1, y), -half),
+            new Vector3(half, output.HeightAt(x + 1, y + 1), half),
+            new Vector3(-half, output.HeightAt(x, y + 1), half)).Normalized();
+    }
+
     private static Vector3 NormalAt(LandscapeChunkOutput output, int x, int y, float step)
     {
+        if (output.HasCellCentres)
+        {
+            return FanNormalAt(output, x, y, step);
+        }
+
         int last = output.HeightResolution - 1;
         float left = output.HeightAt(Mathf.Max(x - 1, 0), y);
         float right = output.HeightAt(Mathf.Min(x + 1, last), y);
