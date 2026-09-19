@@ -837,6 +837,146 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         return changed;
     }
 
+    /// <summary>Whether a write to <paramref name="coord"/> is safe: the chunk is resident, or stored nowhere
+    /// (all zero). A stored chunk that is not resident would be overwritten from a blank buffer.</summary>
+    public bool CanEdit(ImageChunkCoord coord) => _chunks.ContainsKey(coord) || !IsStored(coord);
+
+    /// <summary>Whether <see cref="CanEdit"/> holds for every chunk a pixel rectangle touches. False for a
+    /// rectangle that is not inside the image.</summary>
+    public bool CanEditRegion(int x, int y, int width, int height)
+    {
+        if (!RegionInside(x, y, width, height))
+        {
+            return false;
+        }
+
+        for (int cy = y / _chunkSize; cy <= (y + height - 1) / _chunkSize; cy++)
+        {
+            for (int cx = x / _chunkSize; cx <= (x + width - 1) / _chunkSize; cx++)
+            {
+                if (!CanEdit(new ImageChunkCoord(cx, cy)))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Copies out a pixel rectangle inside the image, <see cref="Stride"/> bytes per pixel,
+    /// row-major. Absent chunks read as zero.</summary>
+    public byte[] ReadPixels(int x, int y, int width, int height)
+    {
+        if (!RegionInside(x, y, width, height))
+        {
+            throw new ArgumentOutOfRangeException(nameof(x), "The rectangle is not inside the image.");
+        }
+
+        int stride = Stride;
+        var result = new byte[width * height * stride];
+        ForEachRun(x, y, width, height, (coord, chunkOffset, regionOffset, run) =>
+        {
+            if (_chunks.TryGetValue(coord, out ImageChunk? chunk))
+            {
+                Array.Copy(chunk.Pixels, chunkOffset * stride, result, regionOffset * stride, run * stride);
+            }
+        });
+
+        return result;
+    }
+
+    /// <summary>
+    /// Writes a pixel rectangle inside the image (<see cref="Stride"/> bytes per pixel, row-major) as part of
+    /// the stroke begun with <see cref="BeginStroke"/>: chunks are snapshotted before their first change, and
+    /// changed pixels are tracked and signalled like a paint dab. Nothing is written when any touched chunk
+    /// fails <see cref="CanEdit"/>. True when a pixel changed.
+    /// </summary>
+    public bool WritePixels(int x, int y, int width, int height, ReadOnlySpan<byte> pixels)
+    {
+        int stride = Stride;
+        if (pixels.Length < width * height * stride || !CanEditRegion(x, y, width, height))
+        {
+            return false;
+        }
+
+        var touched = new Dictionary<ImageChunkCoord, bool>();
+        byte[] source = pixels.ToArray();
+        ForEachRun(x, y, width, height, (coord, chunkOffset, regionOffset, run) =>
+        {
+            bool resident = _chunks.TryGetValue(coord, out ImageChunk? existing);
+            var incoming = new ReadOnlySpan<byte>(source, regionOffset * stride, run * stride);
+            if (!resident && !incoming.ContainsAnyExcept((byte)0))
+            {
+                return;
+            }
+
+            byte[] chunkPixels = resident ? existing!.Pixels : new byte[_chunkSize * _chunkSize * stride];
+            Span<byte> target = chunkPixels.AsSpan(chunkOffset * stride, run * stride);
+            if (target.SequenceEqual(incoming))
+            {
+                return;
+            }
+
+            if (_strokeBefore is { } stroke && !stroke.ContainsKey(coord))
+            {
+                stroke[coord] = resident ? (byte[])chunkPixels.Clone() : null;
+            }
+
+            incoming.CopyTo(target);
+            if (!resident)
+            {
+                _chunks[coord] = new ImageChunk(chunkPixels) { Dirty = true };
+                _removedSincePersist.Remove(coord);
+                _strokeChanged?.Add(coord);
+                touched[coord] = true;
+            }
+            else
+            {
+                touched[coord] = false;
+            }
+        });
+
+        foreach ((ImageChunkCoord coord, bool created) in touched)
+        {
+            if (!created)
+            {
+                ImageChunk chunk = _chunks[coord];
+                CommitPaintedChunk(coord, chunk.Pixels, resident: true, chunk, mayZero: true);
+            }
+        }
+
+        if (touched.Count == 0)
+        {
+            return false;
+        }
+
+        MarkDirtyPixels(x, y, x + width - 1, y + height - 1);
+        BumpContent();
+        return true;
+    }
+
+    private bool RegionInside(int x, int y, int width, int height) =>
+        width > 0 && height > 0 && x >= 0 && y >= 0 && x + width <= _width && y + height <= _height;
+
+    // Splits a pixel rectangle into per-row runs that each stay inside one chunk. The callback gets the
+    // chunk, the run's pixel offset within it, its pixel offset within the rectangle, and its length.
+    private void ForEachRun(int x, int y, int width, int height, Action<ImageChunkCoord, int, int, int> visit)
+    {
+        for (int py = y; py < y + height; py++)
+        {
+            for (int px = x; px < x + width;)
+            {
+                var coord = new ImageChunkCoord(px / _chunkSize, py / _chunkSize);
+                int run = Math.Min(((coord.X + 1) * _chunkSize) - px, x + width - px);
+                int chunkOffset = ((py - (coord.Y * _chunkSize)) * _chunkSize) + (px - (coord.X * _chunkSize));
+                int regionOffset = ((py - y) * width) + (px - x);
+                visit(coord, chunkOffset, regionOffset, run);
+                px += run;
+            }
+        }
+    }
+
     /// <summary>Converts a UV range on this image into the inclusive, clamped chunk-coordinate rect
     /// that covers it, grown by <paramref name="headroomChunks"/> on every side — what a caller that
     /// needs "this footprint plus some slack" (residency's target computation) asks for, distinct from
