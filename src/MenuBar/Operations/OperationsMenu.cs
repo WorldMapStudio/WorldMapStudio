@@ -1,15 +1,11 @@
-using System.Linq;
-using ImGuiNET;
-
 namespace WorldMapStudio;
 
 /// <summary>
 /// The "Operations" menu: bulk edits that act on the current selection. Self-registers with
-/// <see cref="MenuBarManager"/>, sitting between View and Scene. Each entry is itself an
-/// <see cref="IOperation"/> subsystem, declared with [Subsystem(nameof(OperationsMenu))].
+/// <see cref="MenuBarManager"/>, sitting between View and Scene, and hosts its <see cref="IMenuItem"/>s.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
-[SubsystemHost(typeof(IOperation))]
+[SubsystemHost(typeof(IMenuItem))]
 public sealed partial class OperationsMenu : IMainMenu, ISubsystemHost
 {
     /// <summary>The editor's shared systems, forwarded down to hosted operations.</summary>
@@ -23,17 +19,7 @@ public sealed partial class OperationsMenu : IMainMenu, ISubsystemHost
         InitializeSubsystems();
     }
 
-    public void Draw()
-    {
-        ImGuiEx.Menu("Operations", () =>
-        {
-            foreach (IOperation operation in Subsystems)
-            {
-                if (ImGui.MenuItem(operation.Name, operation.ShortcutLabel, false, operation.CanApply()))
-                {
-                    operation.Apply();
-                }
-            }
-        });
-    }
+    public void Draw() => ImGuiEx.Menu("Operations", () => MenuItems.Draw(Subsystems));
+
+    public void DrawOverlay() => MenuItems.DrawOverlay(Subsystems);
 }

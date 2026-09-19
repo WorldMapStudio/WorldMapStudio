@@ -4,10 +4,11 @@ using System.Threading.Tasks;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The gate exclusive, world-rewriting operations run behind — a batch import, a migration, a future
-/// ADT-style bulk conversion. These are not permitted to run while a session is editing, and ordinary
-/// editing is not permitted to run while one of them is: <see cref="EditSessionManager.Record"/>
-/// throws for the duration, the same way it already throws for a derived-entity target.
+/// An operation is an exclusive, long-running job on the world: an <see cref="IBatchOperation"/>, a map
+/// delete, a stray-data cleanup. This is the gate they run behind. An operation is not permitted to run
+/// while a session is editing, and ordinary editing is not permitted to run while one is:
+/// <see cref="EditSessionManager.Record"/> throws for the duration, the same way it already throws for
+/// a derived-entity target.
 ///
 /// A batch operation writes to the database directly, behind the loaded world's back, so the loaded
 /// world is stale by definition once it finishes — <see cref="TryRun"/> defaults to reloading

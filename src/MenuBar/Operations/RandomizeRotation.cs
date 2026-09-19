@@ -1,21 +1,18 @@
 using System.Collections.Generic;
 using System.Linq;
 using Godot;
+using ImGuiNET;
 
 namespace WorldMapStudio;
 
 /// <summary>Randomly yaws each selected <see cref="SceneEntity"/> about the world's up axis.
 /// Self-registers with <see cref="OperationsMenu"/>.</summary>
 [Subsystem(nameof(OperationsMenu))]
-public sealed class RandomizeRotation : IOperation
+public sealed class RandomizeRotation : IMenuItem
 {
     private readonly SelectionSystem _selection;
     private readonly EditSessionManager _sessions;
     private readonly ShortcutAction _shortcut;
-
-    public string Name => "Randomize Rotation";
-
-    public string ShortcutLabel => _shortcut.ShortcutLabel;
 
     public RandomizeRotation(OperationsMenu menu)
     {
@@ -30,11 +27,19 @@ public sealed class RandomizeRotation : IOperation
             CanApply);
     }
 
-    public bool CanApply() => Targets().Any();
+    public void Draw()
+    {
+        if (ImGui.MenuItem("Randomize Rotation", _shortcut.ShortcutLabel, false, CanApply()))
+        {
+            Apply();
+        }
+    }
+
+    private bool CanApply() => Targets().Any();
 
     // Only yaws about the world's up axis: even Full-rotation entities keep their pitch/roll, since
     // "along the up axis" is the only thing this operation is meant to randomize.
-    public void Apply()
+    private void Apply()
     {
         SceneEntity[] entities = Targets().ToArray();
         if (entities.Length == 0)
