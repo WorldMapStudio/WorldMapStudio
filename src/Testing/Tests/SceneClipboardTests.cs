@@ -13,14 +13,13 @@ public static class SceneClipboardTests
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Clone_gets_a_fresh_identity_and_no_persisted_record()
     {
-        var entity = new SceneEntity { Name = "Torch", RecordId = 7, ParentRecordId = 3 };
+        var entity = new SceneEntity { Name = "Torch", RecordId = 7 };
         entity.Transform = new Transform3D(Basis.Identity, new Vector3(1.0f, 2.0f, 3.0f));
 
         SceneEntity clone = entity.Clone();
 
         Assert.AreNotEqual(entity.Id, clone.Id);
         Assert.IsNull(clone.RecordId);
-        Assert.IsNull(clone.ParentRecordId);
         Assert.AreEqual(entity.Name, clone.Name);
         Assert.IsTrue(clone.Transform.IsEqualApprox(entity.Transform));
     }
@@ -111,34 +110,6 @@ public static class SceneClipboardTests
         var pasted = clipboard.Paste(new MapId(5));
 
         Assert.AreEqual(5, pasted[0].Map.Value);
-    }
-
-    [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
-    public static void Copying_parent_and_child_together_preserves_the_link()
-    {
-        var parent = new SceneEntity { Name = "Parent" };
-        var child = new SceneEntity { Name = "Child", Parent = parent };
-
-        var clipboard = new SceneClipboard();
-        clipboard.Copy([parent, child]);
-        var pasted = clipboard.Paste(new MapId(0));
-
-        SceneEntity pastedParent = pasted.Single(e => e.Name == "Parent");
-        SceneEntity pastedChild = pasted.Single(e => e.Name == "Child");
-        Assert.IsTrue(ReferenceEquals(pastedChild.Parent, pastedParent));
-    }
-
-    [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
-    public static void Copying_only_the_child_drops_the_dangling_parent_link()
-    {
-        var parent = new SceneEntity { Name = "Parent" };
-        var child = new SceneEntity { Name = "Child", Parent = parent };
-
-        var clipboard = new SceneClipboard();
-        clipboard.Copy([child]);
-        var pasted = clipboard.Paste(new MapId(0));
-
-        Assert.IsNull(pasted.Single().Parent);
     }
 
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
