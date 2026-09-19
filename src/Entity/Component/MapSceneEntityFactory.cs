@@ -66,9 +66,9 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         _storage = storage;
     }
 
-    public Type EntityType => typeof(SceneEntity);
+    public Type EntityType => typeof(MapSceneEntity);
 
-    public bool Handles(IEntity entity) => entity.GetType() == typeof(SceneEntity);
+    public bool Handles(IEntity entity) => entity.GetType() == typeof(MapSceneEntity);
 
     public void Configure(ModelBuilder model)
     {
