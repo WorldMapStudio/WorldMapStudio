@@ -24,8 +24,6 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     public override string Name => StorageName;
 
-    protected override IEnumerable<ISubsystem> HostedSubsystems => Subsystems;
-
     public EditorStorage(DatabaseSystem database)
     {
         _database = database;
