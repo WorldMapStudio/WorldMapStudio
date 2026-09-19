@@ -21,9 +21,6 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
 
-    // Offline scans want every entity built, so nothing is reported as already loaded.
-    private static readonly HashSet<long> Nothing = [];
-
     private readonly EditorContext _context;
     private readonly List<DoltServer> _servers = [];
 
@@ -125,21 +122,12 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     /// </summary>
     public async Task<IReadOnlyList<SceneEntity>> ScanSceneAsync(MapId map, Aabb region)
     {
-        var result = new List<SceneEntity>();
-        foreach (Storage storage in Storages)
-        {
-            using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                // Not publishing: this result belongs to the caller, not the live editor — see
-                // SceneEntityScanCatalog.Publishing. Each entity's own resolved models ride on its
-                // components' attachments instead.
-                SceneEntityScan scan = await factory.ScanAsync(map, region, Nothing, publishing: false).ConfigureAwait(false);
-                result.AddRange(scan.Built);
-            }
-        }
-
-        return result;
+        // Not publishing: this result belongs to the caller, not the live editor — see
+        // SceneEntityScanCatalog.Publishing. Each entity's own resolved models ride on its
+        // components' attachments instead.
+        FactoryScanResult scan = await ScanFactoriesAsync(map, region, null, publishing: false, Context.Bridge.Snapshot)
+            .ConfigureAwait(false);
+        return scan.Built;
     }
 
     /// <summary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -260,7 +261,7 @@ public sealed class StreamingSystem : IWorldParticipant
         float range = _context.View.ViewDistanceChunks * ChunkWorldSize();
         var extent = new Vector3(range, VerticalRange, range);
         _scanView = new Aabb(focus - extent, extent * 2.0f);
-        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()), loadedKeys);
+        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()), loadedKeys, _context.Bridge.Snapshot);
     }
 
     private void ApplyCompletedScan()
@@ -316,39 +317,15 @@ public sealed class StreamingSystem : IWorldParticipant
     // Stored entities are loaded over the wider region, because they are what derived data is built
     // from; loaders produce what the user sees, so they get the view region.
     private async Task<(List<SceneEntity> Built, List<(Type Type, long Key)> Seen, List<CatalogEntity> Catalog)> ScanAsync(
-        MapId map, Aabb view, Aabb load, Dictionary<Type, HashSet<long>> loadedKeys)
+        MapId map, Aabb view, Aabb load, Dictionary<Type, HashSet<long>> loadedKeys,
+        FrozenDictionary<(string Source, long Key), int> bridge)
     {
         using IDisposable scope = DiagnosticLog.Scope($"scan {ScanVersion + 1}");
-        var built = new List<SceneEntity>();
-        var seen = new List<(Type Type, long Key)>();
-        var catalog = new List<CatalogEntity>();
-        foreach (Storage storage in _context.Database.Storages)
-        {
-            // One reader for the whole storage rather than one per factory: re-acquiring per factory
-            // lets an unrelated writer (image-chunk residency loads, mostly) wedge in between every
-            // factory, and each of those stalls the scan by however long that write runs — turning a
-            // handful of millisecond queries into seconds.
-            long lockClock = DiagnosticLog.Start();
-            using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-            DiagnosticLog.Log($"  {storage.Name}: reader lock {DiagnosticLog.MillisecondsSince(lockClock):F0}ms");
-
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                using IDisposable factoryScope = DiagnosticLog.Scope(factory.GetType().Name);
-                long factoryClock = DiagnosticLog.Start();
-                HashSet<long> known = loadedKeys.TryGetValue(factory.EntityType, out HashSet<long>? set) ? set : [];
-                SceneEntityScan scanned = await factory.ScanAsync(map, load, known, publishing: true).ConfigureAwait(false);
-                DiagnosticLog.Log(
-                    $"  {factory.GetType().Name}: {DiagnosticLog.MillisecondsSince(factoryClock):F0}ms, "
-                    + $"{scanned.Built.Count} built of {scanned.Keys.Count} in region");
-                built.AddRange(scanned.Built);
-                catalog.AddRange(scanned.Catalog);
-                foreach (long key in scanned.Keys)
-                {
-                    seen.Add((factory.EntityType, key));
-                }
-            }
-        }
+        FactoryScanResult scanned = await _context.Database.ScanFactoriesAsync(map, load, loadedKeys, publishing: true, bridge)
+            .ConfigureAwait(false);
+        List<SceneEntity> built = scanned.Built;
+        List<(Type Type, long Key)> seen = scanned.Seen;
+        List<CatalogEntity> catalog = scanned.Catalog;
 
         // Storage-free sources (landscape chunks) take no lock: there is no database behind them.
         foreach (ISceneEntityLoader loader in _loaders)
