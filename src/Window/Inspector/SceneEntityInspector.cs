@@ -194,16 +194,19 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             ImGui.PushID(component.TypeId);
             fields.Group(type.DisplayName, () =>
             {
-                fields.Chrome(() =>
+                if (!captured.IsIntrinsic)
                 {
-                    if (ImGui.SmallButton("Remove"))
+                    fields.Chrome(() =>
                     {
-                        var command = new RemoveComponentCommand(entity, captured);
-                        command.Apply();
-                        context.Sessions.Record(command);
-                        removed = true;
-                    }
-                });
+                        if (ImGui.SmallButton("Remove"))
+                        {
+                            var command = new RemoveComponentCommand(entity, captured);
+                            command.Apply();
+                            context.Sessions.Record(command);
+                            removed = true;
+                        }
+                    });
+                }
 
                 if (removed)
                 {

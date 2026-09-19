@@ -70,7 +70,7 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        ModelRendererComponent? model = entity.Component<ModelRendererComponent>();
+        ModelRendererComponent? model = entity.Attached<ModelRendererComponent>();
         if (model == null)
         {
             if (entity.RecordId is int id)

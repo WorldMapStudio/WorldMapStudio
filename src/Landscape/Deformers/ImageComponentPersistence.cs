@@ -95,7 +95,7 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        ImageComponent? image = entity.Component<ImageComponent>();
+        ImageComponent? image = entity.Attached<ImageComponent>();
         if (image == null)
         {
             if (entity.RecordId is int id)

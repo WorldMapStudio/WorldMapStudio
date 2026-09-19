@@ -58,7 +58,7 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        MarkerComponent? marker = entity.Component<MarkerComponent>();
+        MarkerComponent? marker = entity.Attached<MarkerComponent>();
         if (marker == null)
         {
             if (entity.RecordId is int id)

@@ -113,7 +113,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        ProceduralComponent? proceduralMesh = entity.Component<ProceduralComponent>();
+        ProceduralComponent? proceduralMesh = entity.Attached<ProceduralComponent>();
         if (proceduralMesh == null)
         {
             if (entity.RecordId is int id)
