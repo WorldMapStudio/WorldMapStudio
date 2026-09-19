@@ -119,8 +119,7 @@ public static class EditSessionTests
         // and this is what stops it splitting back apart.
         var entity = new FakeEntity();
         var store = new RecordingStore();
-        var sessions = new EditSessionManager();
-        sessions.BindStore(store);
+        var sessions = new EditSessionManager(EditSessionBindings.None with { Store = () => store });
 
         entity.Value = 4;
         sessions.Record(new SetValueCommand(entity, 0, 4));
@@ -136,8 +135,7 @@ public static class EditSessionTests
     {
         var entity = new FakeEntity();
         var store = new RecordingStore();
-        var sessions = new EditSessionManager();
-        sessions.BindStore(store);
+        var sessions = new EditSessionManager(EditSessionBindings.None with { Store = () => store });
 
         entity.Value = 4;
         sessions.Record(new SetValueCommand(entity, 0, 4));

@@ -191,7 +191,11 @@ public sealed partial class EditorContext : ISubsystemHost
         Clipboard = Add(new SceneClipboard());
         Pointer = Add(new ViewportPointer());
         View = Add(new ViewSettings());
-        EditSessions = Add(new EditSessionManager());
+        EditSessions = Add(new EditSessionManager(new EditSessionBindings(
+            () => Database,
+            () => Streaming,
+            () => RequestReload("Edit session aborted"),
+            () => Operations.ActiveOperation)));
         Scene = Add(new SceneEntityRegistry());
         Catalog = Add(new CatalogEntityRegistry());
         Problems = Add(new ProblemSystem());
@@ -241,18 +245,9 @@ public sealed partial class EditorContext : ISubsystemHost
         // the landscape hands streaming a loader instead of a storage factory.
         Streaming.AddLoader(Landscape.BatchLoader);
 
-        // Bound here rather than injected, because the session manager is constructed before the
-        // database and streaming system it depends on. From now on committing a session persists it,
-        // whichever caller (menu, script, HTTP) asked, and releasing its pins forces a rescan so
-        // entities that only stayed loaded for the edit can unload.
-        EditSessions.BindStore(Database);
-        EditSessions.BindStreaming(Streaming);
-        EditSessions.BindReload(() => RequestReload("Edit session aborted"));
-
         Lifecycle = Add(new WorldLifecycle(this));
         Frame = Add(new FrameLoop(this));
         Operations = Add(new WorldOperations(this));
-        EditSessions.BindOperations(Operations);
 
         InitializeSubsystems();
     }
