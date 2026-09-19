@@ -11,7 +11,7 @@ public sealed class ImageComponentType : ISceneComponentType
     private readonly ImageSystem _system;
     private readonly LandscapeSystem _landscape;
     private readonly ImagePicker _picker;
-    private readonly ImageDisplayLayerPicker _layerPicker = new();
+    private readonly ImageDisplayLayerPicker _layerPicker;
     private readonly ComponentFieldEditTracker _tracker = new();
 
     public float Priority => 2.0f;
@@ -21,6 +21,7 @@ public sealed class ImageComponentType : ISceneComponentType
         _system = registry.Context.Images;
         _landscape = registry.Context.Landscape;
         _picker = new ImagePicker(_system);
+        _layerPicker = new ImageDisplayLayerPicker(_system);
     }
 
     public string TypeId => ImageComponent.Kind;

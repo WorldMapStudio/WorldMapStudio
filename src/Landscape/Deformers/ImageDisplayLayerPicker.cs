@@ -17,6 +17,8 @@ public sealed class ImageDisplayLayerPicker
 {
     private const string CreatePopupId = "Create Image Display Layer";
 
+    private readonly ImageSystem _system;
+
     private bool _createOpenRequested;
     private bool _createActive;
     private EditSessionManager? _createSessions;
@@ -24,6 +26,11 @@ public sealed class ImageDisplayLayerPicker
     private Action<ImageDisplayLayer>? _onCreated;
     private int _createId;
     private string _createName = "Display Layer";
+
+    public ImageDisplayLayerPicker(ImageSystem system)
+    {
+        _system = system;
+    }
 
     /// <summary>Opens the "id, name" form; <paramref name="onCreated"/> runs once the layer is
     /// committed to the catalog (already recorded into <paramref name="sessions"/>).</summary>
@@ -94,17 +101,7 @@ public sealed class ImageDisplayLayerPicker
 
     private string? ValidationError()
     {
-        if (_createId <= 0)
-        {
-            return "Id must be positive.";
-        }
-
-        if (_createCatalog != null && _createCatalog.OfType<ImageDisplayLayer>().Any(layer => layer.RecordId == _createId))
-        {
-            return $"Id {_createId} is already used.";
-        }
-
-        return null;
+        return _system.ValidateLayerId(_createId);
     }
 
     private void Commit()
@@ -114,13 +111,7 @@ public sealed class ImageDisplayLayerPicker
             return;
         }
 
-        var layer = new ImageDisplayLayer
-        {
-            RecordId = _createId,
-            Name = _createName.Trim().Length == 0 ? "Display Layer" : _createName,
-        };
-
-        var command = new CreateCatalogEntityCommand(_createCatalog, layer);
+        CreateCatalogEntityCommand command = _system.BuildCreateLayerCommand(_createId, _createName, out ImageDisplayLayer layer);
         command.Apply();
         _createSessions.Record(command);
         _onCreated(layer);

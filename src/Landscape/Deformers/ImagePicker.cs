@@ -128,7 +128,7 @@ public sealed class ImagePicker
                 ImGui.InputInt("Chunk Size (px)", ref _createChunkSize);
                 ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
                 ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
-                ImGui.TextDisabled($"= {ClampedPixelSize(_createChunksX, _createChunkSize)} x {ClampedPixelSize(_createChunksY, _createChunkSize)} px total");
+                ImGui.TextDisabled($"= {ImageSystem.ClampedPixelSize(_createChunksX, _createChunkSize)} x {ImageSystem.ClampedPixelSize(_createChunksY, _createChunkSize)} px total");
                 ImGui.TextDisabled("Fixed once created — see .godot/ImageChunkPlan.md for why.");
             }
 
@@ -321,14 +321,9 @@ public sealed class ImagePicker
 
     private string? ValidationError()
     {
-        if (_createId <= 0)
+        if (_system.ValidateImageId(_createId) is { } idError)
         {
-            return "Id must be positive.";
-        }
-
-        if (_createCatalog != null && _createCatalog.OfType<PaintImage>().Any(image => image.RecordId == _createId))
-        {
-            return $"Id {_createId} is already used.";
+            return idError;
         }
 
         if (_createStorageKind == PaintImageStorageKind.Disk)
@@ -361,28 +356,31 @@ public sealed class ImagePicker
             return;
         }
 
-        var image = new PaintImage
-        {
-            RecordId = _createId,
-            Name = _createName.Trim().Length == 0 ? "Image" : _createName,
-        };
+        NewImageSpec spec = _createStorageKind == PaintImageStorageKind.Disk && _createDiskSource is { } disk
+            ? new NewImageSpec
+            {
+                RecordId = _createId,
+                Name = _createName,
+                Width = disk.Width,
+                Height = disk.Height,
+                ChunkSize = disk.ChunkSize,
+                Components = disk.Components,
+                Format = disk.Format,
+                DiskPath = disk.Path,
+                DiskTilePattern = disk.IsTiled ? disk.TilePattern : "",
+            }
+            : new NewImageSpec
+            {
+                RecordId = _createId,
+                Name = _createName,
+                Width = ImageSystem.ClampedPixelSize(_createChunksX, _createChunkSize),
+                Height = ImageSystem.ClampedPixelSize(_createChunksY, _createChunkSize),
+                ChunkSize = _createChunkSize,
+                Components = _createComponents,
+                Format = _createFormat,
+            };
 
-        if (_createStorageKind == PaintImageStorageKind.Disk && _createDiskSource is { } disk)
-        {
-            image.ConfigureNew(disk.Width, disk.Height, disk.ChunkSize, disk.Components, disk.Format);
-            image.ConfigureDiskSource(disk.Path, disk.IsTiled ? disk.TilePattern : "");
-        }
-        else
-        {
-            image.ConfigureNew(
-                ClampedPixelSize(_createChunksX, _createChunkSize),
-                ClampedPixelSize(_createChunksY, _createChunkSize),
-                _createChunkSize,
-                _createComponents,
-                _createFormat);
-        }
-
-        var command = new CreateCatalogEntityCommand(_createCatalog, image);
+        CreateCatalogEntityCommand command = _system.BuildCreateCommand(spec, out PaintImage image);
         command.Apply();
         _createSessions.Record(command);
         _onCreated(image);
@@ -392,8 +390,4 @@ public sealed class ImagePicker
     /// the form pre-fills it but lets the user type another.</summary>
     private static int NextFreeId(CatalogEntityRegistry catalog) => catalog.PeekNextId<PaintImage>();
 
-    // long multiplication first so a user typing an absurd chunk count cannot overflow int before the
-    // clamp gets a chance to catch it.
-    private static int ClampedPixelSize(int chunks, int chunkSize) =>
-        (int)Math.Clamp((long)Math.Max(0, chunks) * Math.Max(0, chunkSize), 1, PaintImage.MaxDimension);
 }
