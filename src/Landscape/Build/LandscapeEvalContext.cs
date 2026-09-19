@@ -17,14 +17,19 @@ public readonly struct LandscapeEvalContext
         LandscapeChannelPool channels,
         LandscapeSettings settings,
         LandscapeParameterValues values,
-        int resolution)
+        int resolution,
+        bool cellCentres = false)
     {
         Coord = coord;
         Channels = channels;
         Settings = settings;
         Values = values;
-        Resolution = resolution;
+        Resolution = cellCentres ? resolution - 1 : resolution;
+        CellCentres = cellCentres;
     }
+
+    /// <summary>Whether vertex positions are the cell centres of the height grid rather than its corners.</summary>
+    public bool CellCentres { get; }
 
     public ChunkCoord Coord { get; }
 
@@ -42,11 +47,18 @@ public readonly struct LandscapeEvalContext
 
     /// <summary>
     /// World position of output sample (x, y). Alpha texels are sampled at their centres; height
-    /// vertices sit <em>on</em> the grid, including the shared row at the chunk's far edge.
+    /// vertices sit <em>on</em> the grid, including the shared row at the chunk's far edge — or, for a
+    /// cell-centre context, at the centre of each cell.
     /// </summary>
     public Vector3 WorldAt(int x, int y, bool vertices)
     {
         Vector3 origin = Grid.OriginOf(Coord);
+        if (vertices && CellCentres)
+        {
+            float cell = Grid.ChunkSize / Resolution;
+            return new Vector3(origin.X + ((x + 0.5f) * cell), 0.0f, origin.Z + ((y + 0.5f) * cell));
+        }
+
         if (vertices)
         {
             float step = Grid.ChunkSize / (Resolution - 1);

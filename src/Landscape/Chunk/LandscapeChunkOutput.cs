@@ -73,6 +73,24 @@ public sealed class LandscapeChunkOutput
     public IReadOnlyDictionary<string, TerrainAttributeGrid> Attributes { get; init; } =
         new Dictionary<string, TerrainAttributeGrid>();
 
+    /// <summary>
+    /// Row-major heights of the cell-centre vertices, <c>(HeightResolution - 1)</c> squared, or null
+    /// when the layout has none (<see cref="HeightVertexLayout.Grid"/>). Kept apart from
+    /// <see cref="Heights"/> so everything reading the corner grid is unaffected.
+    /// </summary>
+    public float[]? CentreHeights { get; init; }
+
+    /// <summary>Cell-centre counterpart of <see cref="VertexColors"/>, same shape as <see cref="CentreHeights"/>.</summary>
+    public Color[]? CentreVertexColors { get; init; }
+
+    /// <summary>Cell-centre counterpart of <see cref="VertexLight"/>, same shape as <see cref="CentreHeights"/>.</summary>
+    public Color[]? CentreVertexLight { get; init; }
+
+    public bool HasCellCentres => CentreHeights != null;
+
+    /// <summary>Cells along a chunk edge.</summary>
+    public int CellsPerEdge => HeightResolution - 1;
+
     public float HeightAt(int x, int y) => Heights[(y * HeightResolution) + x];
 
     public bool IsHole(int x, int y) => Holes[(y * HoleResolution) + x];
@@ -80,4 +98,11 @@ public sealed class LandscapeChunkOutput
     public Color VertexColorAt(int x, int y) => VertexColors[(y * HeightResolution) + x];
 
     public Color VertexLightAt(int x, int y) => VertexLight[(y * HeightResolution) + x];
+
+    /// <summary>Height of the centre vertex of cell (x, y). Requires <see cref="HasCellCentres"/>.</summary>
+    public float CentreHeightAt(int x, int y) => CentreHeights![(y * CellsPerEdge) + x];
+
+    public Color CentreVertexColorAt(int x, int y) => CentreVertexColors![(y * CellsPerEdge) + x];
+
+    public Color CentreVertexLightAt(int x, int y) => CentreVertexLight![(y * CellsPerEdge) + x];
 }

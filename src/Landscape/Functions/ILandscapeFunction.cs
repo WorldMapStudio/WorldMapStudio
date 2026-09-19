@@ -67,6 +67,10 @@ public interface ILandscapeHeightFunction : ILandscapeFunction
     /// <summary>
     /// Rewrites <paramref name="heights"/> in place — world units, row-major,
     /// <see cref="LandscapeEvalContext.Resolution"/> squared, holding what earlier layers built.
+    ///
+    /// May be called for the corner grid or, under <see cref="HeightVertexLayout.GridWithCellCentres"/>,
+    /// again for the cell-centre grid. Take positions from <see cref="LandscapeEvalContext.WorldAt"/> and
+    /// never derive the layout from <see cref="LandscapeEvalContext.Settings"/>.
     /// </summary>
     void Evaluate(in LandscapeEvalContext context, float[] heights);
 }
@@ -102,6 +106,10 @@ public interface ILandscapeVertexColorFunction : ILandscapeFunction
     /// <summary>
     /// Rewrites <paramref name="colors"/> in place — row-major, <see cref="LandscapeEvalContext.Resolution"/>
     /// squared, holding what earlier layers built. Draw order, never entity scan order.
+    ///
+    /// May be called for the corner grid or, under <see cref="HeightVertexLayout.GridWithCellCentres"/>,
+    /// again for the cell-centre grid. Take positions from <see cref="LandscapeEvalContext.WorldAt"/> and
+    /// never derive the layout from <see cref="LandscapeEvalContext.Settings"/>.
     /// </summary>
     void Evaluate(in LandscapeEvalContext context, Color[] colors);
 }
@@ -119,6 +127,10 @@ public interface ILandscapeVertexLightFunction : ILandscapeFunction
     /// <summary>
     /// Rewrites <paramref name="light"/> in place — row-major, <see cref="LandscapeEvalContext.Resolution"/>
     /// squared, holding what earlier layers built. Draw order, never entity scan order.
+    ///
+    /// May be called for the corner grid or, under <see cref="HeightVertexLayout.GridWithCellCentres"/>,
+    /// again for the cell-centre grid. Take positions from <see cref="LandscapeEvalContext.WorldAt"/> and
+    /// never derive the layout from <see cref="LandscapeEvalContext.Settings"/>.
     /// </summary>
     void Evaluate(in LandscapeEvalContext context, Color[] light);
 }

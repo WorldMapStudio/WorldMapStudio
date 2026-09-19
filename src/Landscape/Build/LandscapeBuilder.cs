@@ -198,7 +198,11 @@ public sealed class LandscapeBuilder
         int alphaResolution = Mathf.Max(1, _settings.ChunkAlphaResolution);
         int holeResolution = Mathf.Max(1, _settings.ChunkHoleResolution);
 
+        bool centres = _settings.HeightVertexLayout == HeightVertexLayout.GridWithCellCentres;
+        int centreCount = (heightResolution - 1) * (heightResolution - 1);
+
         var heights = new float[heightResolution * heightResolution];
+        float[]? centreHeights = centres ? new float[centreCount] : null;
         foreach (LandscapeClaim claim in resolution.HeightClaims)
         {
             // A height claim that deforms nothing is otherwise completely silent: it resolves fine,
@@ -228,6 +232,10 @@ public sealed class LandscapeBuilder
             var values = LandscapeParameterValues.Parse(material.HeightParameters);
             var context = new LandscapeEvalContext(coord, _pool, _settings, values, heightResolution);
             function.Evaluate(context, heights);
+            if (centreHeights != null)
+            {
+                function.Evaluate(Centred(context), centreHeights);
+            }
         }
 
         // Holes are a union: every surviving claim just marks the cells it wants cut, and the order
@@ -263,6 +271,12 @@ public sealed class LandscapeBuilder
         // they map onto the mesh's own vertex buffer index-for-index, with no resampling step.
         var vertexColors = new Color[heightResolution * heightResolution];
         System.Array.Fill(vertexColors, Colors.White);
+        Color[]? centreColors = centres ? new Color[centreCount] : null;
+        if (centreColors != null)
+        {
+            System.Array.Fill(centreColors, Colors.White);
+        }
+
         foreach (LandscapeClaim claim in resolution.VertexColorClaims)
         {
             if (claim.Material is not { } material)
@@ -287,10 +301,20 @@ public sealed class LandscapeBuilder
             var values = LandscapeParameterValues.Parse(material.VertexColorParameters);
             var context = new LandscapeEvalContext(coord, _pool, _settings, values, heightResolution);
             function.Evaluate(context, vertexColors);
+            if (centreColors != null)
+            {
+                function.Evaluate(Centred(context), centreColors);
+            }
         }
 
         var vertexLight = new Color[heightResolution * heightResolution];
         System.Array.Fill(vertexLight, Colors.Black);
+        Color[]? centreLight = centres ? new Color[centreCount] : null;
+        if (centreLight != null)
+        {
+            System.Array.Fill(centreLight, Colors.Black);
+        }
+
         foreach (LandscapeClaim claim in resolution.VertexLightClaims)
         {
             if (claim.Material is not { } material)
@@ -315,6 +339,10 @@ public sealed class LandscapeBuilder
             var values = LandscapeParameterValues.Parse(material.VertexLightParameters);
             var context = new LandscapeEvalContext(coord, _pool, _settings, values, heightResolution);
             function.Evaluate(context, vertexLight);
+            if (centreLight != null)
+            {
+                function.Evaluate(Centred(context), centreLight);
+            }
         }
 
         // Terrain attributes: the declared, open-ended output kind. One buffer per attribute the map
@@ -413,9 +441,16 @@ public sealed class LandscapeBuilder
             Holes = holes,
             VertexColors = vertexColors,
             VertexLight = vertexLight,
+            CentreHeights = centreHeights,
+            CentreVertexColors = centreColors,
+            CentreVertexLight = centreLight,
             Attributes = attributes,
         };
     }
+
+    // The same evaluation over the cell-centre grid: same channels and values, positions from WorldAt.
+    private LandscapeEvalContext Centred(in LandscapeEvalContext corners) =>
+        new(corners.Coord, _pool, _settings, corners.Values, corners.Resolution, cellCentres: true);
 
     private static uint[] NewAttributeBuffer(int cells, int components, uint defaultValue)
     {
