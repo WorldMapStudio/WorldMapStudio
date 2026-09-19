@@ -10,11 +10,7 @@ namespace WorldMapStudio;
 /// as one ordered list — replacing what used to be a hardcoded load sequence
 /// (<see cref="EditorContext.LoadContent"/>) with no unload at all.
 ///
-/// Participants come from two places: the core spine members <see cref="EditorContext"/> constructs
-/// directly (they are not <see cref="ISubsystem"/>s, so nothing else would ever find them), and a
-/// recursive walk of the subsystem tree — <c>EditorContext → MenuBarManager → WindowManager →
-/// Window</c>, <c>DatabaseSystem → Storage</c>, and so on — which is what reaches every window and
-/// every plugin without naming any of them individually.
+/// Participants come from <see cref="SubsystemTree"/>.
 /// </summary>
 public sealed class WorldLifecycle
 {
@@ -31,7 +27,7 @@ public sealed class WorldLifecycle
 
     /// <summary>Every known participant, deduplicated. Recomputed each call: participants come and go
     /// as windows open/close their own hosted subsystems, and this is never called from a hot path.</summary>
-    public IReadOnlyList<IWorldParticipant> Participants => Collect(_context);
+    public IReadOnlyList<IWorldParticipant> Participants => SubsystemTree.Walk(_context).OfType<IWorldParticipant>().ToList();
 
     /// <summary>
     /// Whether a participant is still doing background work that writes into state <see cref="Unload"/>
@@ -209,59 +205,5 @@ public sealed class WorldLifecycle
         }
 
         return leftover;
-    }
-
-    private static List<IWorldParticipant> Collect(EditorContext context)
-    {
-        var seen = new HashSet<IWorldParticipant>(ReferenceEqualityComparer.Instance);
-        var result = new List<IWorldParticipant>();
-
-        void Visit(object? node)
-        {
-            if (node is IWorldParticipant participant && seen.Add(participant))
-            {
-                result.Add(participant);
-            }
-
-            if (node is ISubsystemHost host)
-            {
-                foreach (ISubsystem subsystem in host.Subsystems)
-                {
-                    Visit(subsystem);
-                }
-            }
-        }
-
-        // Core spine: constructed directly by EditorContext, so nothing self-registers these —
-        // they have to be named once, here, rather than discovered.
-        Visit(context.Selection);
-        Visit(context.Clipboard);
-        Visit(context.EditSessions);
-        Visit(context.Scene);
-        Visit(context.Catalog);
-        Visit(context.Problems);
-        Visit(context.Tools);
-        Visit(context.Database);
-        Visit(context.Maps);
-        Visit(context.ModelFormats);
-        Visit(context.Assets);
-        Visit(context.MeshMaterials);
-        Visit(context.Landscape);
-        Visit(context.Procedural);
-        Visit(context.Images);
-        Visit(context.Prefabs);
-        Visit(context.Streaming);
-        Visit(context.Environments);
-        Visit(context.Batch);
-        Visit(context.ComponentTypes);
-        Visit(context.MapProperties);
-        Visit(context.Scripting);
-        Visit(context.Migrations);
-
-        // Recurses into every self-registered subsystem: MenuBarManager -> WindowManager -> each
-        // Window, and any plugin type that hangs directly off EditorContext the same way.
-        Visit(context);
-
-        return result;
     }
 }
