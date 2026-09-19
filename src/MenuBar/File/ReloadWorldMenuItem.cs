@@ -10,7 +10,7 @@ namespace WorldMapStudio;
 /// immediately.
 /// </summary>
 [Subsystem(nameof(FileMenuManager))]
-public sealed class ReloadWorldMenuItem : IFileMenuItem
+public sealed class ReloadWorldMenuItem : IMenuItem
 {
     private readonly EditorContext _context;
     private readonly ShortcutAction _shortcut;
@@ -22,6 +22,8 @@ public sealed class ReloadWorldMenuItem : IFileMenuItem
         "Cancel");
 
     public float Priority => 0.5f;
+
+    public int Section => 1;
 
     public ReloadWorldMenuItem(FileMenuManager manager)
     {
@@ -36,7 +38,6 @@ public sealed class ReloadWorldMenuItem : IFileMenuItem
 
     public void Draw()
     {
-        ImGui.Separator();
         if (ImGui.MenuItem("Reload World", _shortcut.ShortcutLabel))
         {
             Request();

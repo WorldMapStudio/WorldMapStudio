@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
-
 namespace WorldMapStudio;
 
 /// <summary>
@@ -11,7 +8,7 @@ namespace WorldMapStudio;
 /// registered with <see cref="MenuBarManager"/>.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
-[SubsystemHost(typeof(IFileMenuItem))]
+[SubsystemHost(typeof(IMenuItem))]
 public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 {
     public EditorContext Context { get; }
@@ -25,24 +22,7 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
         InitializeSubsystems();
     }
 
-    public void Draw()
-    {
-        IEnumerable<IFileMenuItem> items = Subsystems;
-        ImGuiEx.Menu("File", () =>
-        {
-            foreach (IFileMenuItem item in items)
-            {
-                item.Draw();
-            }
-        });
-    }
+    public void Draw() => ImGuiEx.Menu("File", () => MenuItems.Draw(Subsystems));
 
-    /// <summary>Forwards to every item's own overlay, mirroring <see cref="MenuBarManager.DrawOverlay"/>.</summary>
-    public void DrawOverlay()
-    {
-        foreach (IFileMenuItem item in Subsystems)
-        {
-            item.DrawOverlay();
-        }
-    }
+    public void DrawOverlay() => MenuItems.DrawOverlay(Subsystems);
 }

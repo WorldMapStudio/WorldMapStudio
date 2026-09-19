@@ -3,7 +3,7 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 [Subsystem(nameof(FileMenuManager))]
-public sealed class ExitMenuItem(FileMenuManager manager) : IFileMenuItem
+public sealed class ExitMenuItem(FileMenuManager manager) : IMenuItem
 {
     private readonly ShortcutAction _shortcut = manager.Shortcuts.Register(
         "file.exit",
