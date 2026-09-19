@@ -336,6 +336,7 @@ a flatten function can run after a hill function and cut a flat bed into the hil
 
 - `ChunkWorldSize`: world units covered by one chunk.
 - `ChunkHeightResolution`: height vertices per chunk edge.
+- `HeightVertexLayout`: `Grid` for corner vertices only, or `GridWithCellCentres` for a vertex at the centre of every cell as well.
 - `ChunkAlphaResolution`: alpha texels per chunk edge.
 - `TextureLimit`: texture slots per chunk, including the base.
 - `FallbackMaterialId`: material used as the base when nothing claims one.
@@ -344,6 +345,13 @@ a flatten function can run after a hill function and cut a flat bed into the hil
 
 Changing representation settings causes a rebuild. Lowering the texture limit or changing fallback
 material can force re-resolution, which may make layers appear or disappear.
+
+### Cell-centre vertices
+
+Under `GridWithCellCentres`, height, vertex colour and vertex light functions run twice per chunk: once over the
+corner grid and once over the grid of cell centres. A function only asks the context for world positions
+through `WorldAt`, so the same function and material work for both without knowing which one it is writing.
+Each cell then renders and samples as a four-triangle fan around its centre vertex.
 
 ## Common Problems
 

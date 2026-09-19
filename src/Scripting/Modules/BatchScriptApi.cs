@@ -304,6 +304,7 @@ public sealed class BatchChunkSummary
         X = output.Coord.X;
         Y = output.Coord.Y;
         HeightResolution = output.HeightResolution;
+        HeightVertexLayout = output.HasCellCentres ? nameof(WorldMapStudio.HeightVertexLayout.GridWithCellCentres) : nameof(WorldMapStudio.HeightVertexLayout.Grid);
         AlphaResolution = output.AlphaResolution;
         MinHeight = output.Heights.Length == 0 ? 0f : output.Heights.Min();
         MaxHeight = output.Heights.Length == 0 ? 0f : output.Heights.Max();
@@ -322,6 +323,10 @@ public sealed class BatchChunkSummary
 
     [ScriptProperty]
     public int HeightResolution { get; }
+
+    /// <summary>The name of the chunk's <see cref="WorldMapStudio.HeightVertexLayout"/>.</summary>
+    [ScriptProperty]
+    public string HeightVertexLayout { get; }
 
     [ScriptProperty]
     public int AlphaResolution { get; }
