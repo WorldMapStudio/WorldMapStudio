@@ -18,6 +18,10 @@ public sealed class Project
     /// <summary>Per-storage database connection settings, keyed by storage name.</summary>
     public Dictionary<string, StorageConnection> StorageConnections { get; init; } = new();
 
+    /// <summary>Named directories, keyed by an opaque name owned by whoever reads it. Relative paths in a
+    /// config file resolve against that file's directory.</summary>
+    public Dictionary<string, string> Paths { get; init; } = new();
+
     /// <summary>Configured asset sources. Multiple entries may use the same source type.</summary>
     public List<AssetSourceSettings> AssetSources { get; init; } = [];
 

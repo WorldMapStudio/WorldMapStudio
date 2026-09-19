@@ -4,12 +4,13 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Modal for editing an existing project's settings in place: its coordinate convention and its
-/// database connection.
+/// Modal for editing an existing project's settings in place: its coordinate convention, its
+/// database connection, its asset sources and its named paths.
 /// </summary>
 public sealed class EditProjectSettingsOperation : IModalOperation<Project>
 {
     private readonly AssetSourceEditor _assetSourceEditor = new();
+    private readonly ProjectPathsEditor _pathsEditor = new();
 
     public ModalOperationState Draw(Project context)
     {
@@ -28,6 +29,10 @@ public sealed class EditProjectSettingsOperation : IModalOperation<Project>
         ImGui.Spacing();
         ImGui.TextDisabled("Assets");
         _assetSourceEditor.Draw(context.AssetSources);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("Paths");
+        _pathsEditor.Draw(context.Paths);
 
         ImGui.Separator();
 

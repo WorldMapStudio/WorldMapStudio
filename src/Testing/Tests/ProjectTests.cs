@@ -26,6 +26,7 @@ public static class ProjectTests
             Enabled = true,
             RootPath = "D:\\Textures",
         });
+        project.Paths["wow.clientContent"] = "D:\\Client\\Content";
         project.AssetSources.Add(new AssetSourceSettings
         {
             Id = "more",
@@ -51,10 +52,35 @@ public static class ProjectTests
             Assert.AreEqual("Loose Textures", loaded.AssetSources[0].Name);
             Assert.AreEqual(AssetSourceType.FileSystem, loaded.AssetSources[1].Type);
             Assert.IsFalse(loaded.AssetSources[1].Enabled);
+            Assert.AreEqual("D:\\Client\\Content", loaded.Paths["wow.clientContent"]);
         }
         finally
         {
             ProjectStore.Delete(project);
+        }
+    }
+
+    [EditorTest(Category = "Project")]
+    public static void Project_paths_resolve_against_the_config_directory()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "__wms_paths_test__");
+        Directory.CreateDirectory(root);
+        string file = Path.Combine(root, "project.json");
+
+        try
+        {
+            File.WriteAllText(file, "{ \"name\": \"p\", \"paths\": { \"a\": \"sub/dir\", \"b\": \"\" } }");
+            Project project = ProjectStore.Read(file);
+
+            Assert.AreEqual(Path.GetFullPath(Path.Combine(root, "sub", "dir")), project.Paths["a"]);
+            Assert.AreEqual(string.Empty, project.Paths["b"]);
+
+            File.WriteAllText(file, "{ \"name\": \"p\" }");
+            Assert.AreEqual(0, ProjectStore.Read(file).Paths.Count);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
         }
     }
 
