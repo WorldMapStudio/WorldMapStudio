@@ -173,6 +173,100 @@ public static class LandscapeBuilderTests
             Material = fixture.HoleMaterial,
         };
 
+    // Writes the world X of every vertex it is asked about, so the test can see where the builder
+    // put each grid's samples without going through a channel.
+    public sealed class WorldXHeight : ILandscapeHeightFunction
+    {
+        public string Id => "test.height.world_x";
+
+        public string DisplayName => "World X";
+
+        public string Description => "Test function.";
+
+        public int Version => 1;
+
+        public float MaxSampleRadius => 0.0f;
+
+        public IReadOnlyList<LandscapeParameter> Parameters { get; } = [];
+
+        public void Evaluate(in LandscapeEvalContext context, float[] heights)
+        {
+            for (int y = 0; y < context.Resolution; y++)
+            {
+                for (int x = 0; x < context.Resolution; x++)
+                {
+                    heights[(y * context.Resolution) + x] = context.WorldAt(x, y, vertices: true).X;
+                }
+            }
+        }
+    }
+
+    private static LandscapeChunkOutput BuildWorldX(HeightVertexLayout layout)
+    {
+        Fixture fixture = Build();
+        fixture.Functions.DiscoverFrom([typeof(WorldXHeight)]);
+        fixture.Settings.HeightVertexLayout = layout;
+
+        var material = new LandscapeMaterial
+        {
+            Name = "world_x",
+            RecordId = 9,
+            HeightFunction = "test.height.world_x",
+        };
+        var catalog = new LandscapeCatalog(
+            [new LandscapeChannel { Name = MaskChannel, RecordId = 1, Resolution = 32 }],
+            [fixture.Base, fixture.Detail],
+            [fixture.Material, material],
+            fixture.Functions);
+
+        Disc disc = DiscAt(fixture, "world_x", new Vector3(32.0f, 0.0f, 32.0f), 20.0f);
+        var probe = new Disc
+        {
+            Key = disc.Key,
+            Centre = disc.Centre,
+            Radius = disc.Radius,
+            Layer = fixture.Detail,
+            Material = material,
+        };
+
+        return new LandscapeBuilder(fixture.Settings, catalog, fixture.Functions)
+            .BuildOne(new ChunkCoord(0, 0), [probe]);
+    }
+
+    [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
+    public static void The_grid_layout_builds_no_cell_centres()
+    {
+        LandscapeChunkOutput output = BuildWorldX(HeightVertexLayout.Grid);
+
+        Assert.IsFalse(output.HasCellCentres);
+        Assert.IsNull(output.CentreHeights);
+        Assert.IsNull(output.CentreVertexColors);
+        Assert.IsNull(output.CentreVertexLight);
+    }
+
+    [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
+    public static void Functions_evaluate_at_cell_centres_under_the_centre_layout()
+    {
+        LandscapeChunkOutput output = BuildWorldX(HeightVertexLayout.GridWithCellCentres);
+
+        int cells = output.HeightResolution - 1;
+        float cell = 64.0f / cells;
+        Assert.IsTrue(output.HasCellCentres);
+        Assert.AreEqual(cells * cells, output.CentreHeights!.Length);
+        Assert.AreEqual(cells * cells, output.CentreVertexColors!.Length);
+        Assert.AreEqual(cells * cells, output.CentreVertexLight!.Length);
+
+        Assert.AreApproximatelyEqual(3 * cell, output.HeightAt(3, 5), 1e-4, "corners are on the grid");
+        for (int y = 0; y < cells; y++)
+        {
+            for (int x = 0; x < cells; x++)
+            {
+                Assert.AreApproximatelyEqual((x + 0.5f) * cell, output.CentreHeightAt(x, y), 1e-4,
+                    $"centre of cell {x},{y}");
+            }
+        }
+    }
+
     [EditorTest(Category = "LandscapeBuilder", Thread = TestThread.Background)]
     public static void A_deformer_raises_height_and_paints_alpha()
     {
