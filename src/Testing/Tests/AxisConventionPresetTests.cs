@@ -8,7 +8,7 @@ public static class AxisConventionPresetTests
     [EditorTest(Category = "Project")]
     public static void Built_in_godot_preset_is_registered_first()
     {
-        IAxisConventionPreset[] presets = AxisConventionPresets.Instance.Presets.ToArray();
+        IAxisConventionPreset[] presets = AppSystems.Instance.AxisConventionPresets.Presets.ToArray();
 
         Assert.IsTrue(presets.Length > 0);
         Assert.AreEqual("Godot (default)", presets[0].Name);

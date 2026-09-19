@@ -10,9 +10,9 @@ namespace WorldMapStudio;
 /// The landscape functions available to materials, discovered by reflection over the loaded
 /// assemblies at startup.
 ///
-/// This is the one place the editor deliberately departs from compile-time <c>[Subsystem]</c>
-/// registration: functions are meant to be able to live in an assembly loaded (and reloaded) at
-/// runtime, which a source generator cannot see. Discovery is therefore tolerant — a type that fails
+/// This deliberately departs from compile-time <c>[Subsystem]</c> registration: functions are meant
+/// to be able to live in an assembly loaded (and reloaded) at runtime, which a source generator
+/// cannot see. Discovery is therefore tolerant — a type that fails
 /// to construct is reported and skipped rather than taking the editor down with it.
 /// </summary>
 public sealed class LandscapeFunctions
