@@ -34,9 +34,6 @@ public sealed class PrefabSystem : IWorldParticipant
     private static readonly Aabb LibraryBounds = new(
         new Vector3(-1.0e8f, -1.0e8f, -1.0e8f), new Vector3(2.0e8f, 2.0e8f, 2.0e8f));
 
-    // The library load wants every template built, so nothing is reported as already loaded.
-    private static readonly HashSet<long> Nothing = [];
-
     private readonly EditorContext _context;
 
     public PrefabSystem(EditorContext context)
@@ -209,20 +206,10 @@ public sealed class PrefabSystem : IWorldParticipant
 
     private async Task<(List<SceneEntity> Entities, List<CatalogEntity> Catalog)> ScanLibraryAsync()
     {
-        var result = new List<SceneEntity>();
-        var catalog = new List<CatalogEntity>();
-        foreach (Storage storage in _context.Database.Storages)
-        {
-            using IDisposable reader = await storage.Lock.ReaderAsync().ConfigureAwait(false);
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                // Publishing: templates are loaded straight into the live scene registry below.
-                SceneEntityScan scan = await factory.ScanAsync(LibraryMap, LibraryBounds, Nothing, publishing: true).ConfigureAwait(false);
-                result.AddRange(scan.Built);
-                catalog.AddRange(scan.Catalog);
-            }
-        }
-
-        return (result, catalog);
+        // Publishing: templates are loaded straight into the live scene registry.
+        FactoryScanResult scan = await _context.Database
+            .ScanFactoriesAsync(LibraryMap, LibraryBounds, null, publishing: true, _context.Bridge.Snapshot)
+            .ConfigureAwait(false);
+        return (scan.Built, scan.Catalog);
     }
 }
