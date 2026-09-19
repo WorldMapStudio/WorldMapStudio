@@ -225,8 +225,10 @@ public sealed partial class EditorContext : ISubsystemHost
         Streaming = Add(new StreamingSystem(this));
         Environments = Add(new EnvironmentSystem(this));
         Migrations = Add(new MigrationSystem(this));
-        Scripting = Add(new ScriptingSystem(this));
+
+        // Before Scripting: the batch script module captures it.
         Batch = Add(new BatchSystem(this));
+        Scripting = Add(new ScriptingSystem(this));
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.
