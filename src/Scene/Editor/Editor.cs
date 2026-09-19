@@ -5,9 +5,7 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// The editor scene: a docked ImGui workspace of tool windows over the 3D viewport. This is the
-/// content that used to live directly on the root <c>WorldMapStudio</c> node, now hosted behind
-/// <see cref="IScene"/> so the app can route through a main menu and project selection first.
+/// The editor scene: a docked ImGui workspace of tool windows over the 3D viewport.
 /// </summary>
 public sealed class Editor : IScene
 {
