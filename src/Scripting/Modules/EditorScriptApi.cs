@@ -60,6 +60,6 @@ public sealed class EditorScriptApi : IScriptModule
         }
 
         AppExit.Code = exitCode;
-        _context.MenuBarManager.FileMenuManager.RequestExit();
+        _context.RequestExit();
     }
 }
