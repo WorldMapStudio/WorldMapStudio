@@ -17,17 +17,28 @@ public sealed class OutlineWindow : Window
 {
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.O, ShortcutModifiers.Alt);
 
+    private const string TagTokenPrefix = "tag:";
+
     private readonly SceneEntityRegistry _scene;
     private readonly SelectionSystem _selection;
     private readonly ViewCategorySystem _viewCategories;
+    private readonly CatalogEntityRegistry _catalog;
+    private readonly TagSystem _tags;
 
     private readonly List<SceneEntity> _listed = [];
     private readonly List<SceneEntity> _rows = [];
     private int _listedVersion = -1;
     private int _rowsListedVersion = -1;
+    private int _rowsTagVersion = -1;
+    private int _rowsCatalogVersion = -1;
     private bool _rowsDirty = true;
     private string _filter = string.Empty;
-    private string[] _filterTokens = [];
+    private string[] _nameTokens = [];
+    private string[] _tagTokens = [];
+
+    // Tag id to colour, rebuilt when the catalog changes, so a row's dots don't search it.
+    private readonly Dictionary<int, int> _tagColors = [];
+    private int _tagColorsVersion = -1;
 
     public OutlineWindow(WindowManager manager)
         : base("Outline", defaultSize: new Vector2(240, 400))
@@ -35,6 +46,8 @@ public sealed class OutlineWindow : Window
         _scene = manager.Context.Scene;
         _selection = manager.Context.Selection;
         _viewCategories = manager.Context.ViewCategories;
+        _catalog = manager.Context.Catalog;
+        _tags = manager.Context.Tags;
     }
 
     protected override void DrawContent()
@@ -93,9 +106,11 @@ public sealed class OutlineWindow : Window
     private void DrawFilter()
     {
         ImGui.SetNextItemWidth(-1.0f);
-        if (ImGui.InputTextWithHint("##filter", "Filter by name...", ref _filter, 128))
+        if (ImGui.InputTextWithHint("##filter", "Filter by name, or tag:<name>...", ref _filter, 128))
         {
-            _filterTokens = _filter.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            string[] tokens = _filter.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            _tagTokens = tokens.Where(IsTagToken).Select(token => token[TagTokenPrefix.Length..]).ToArray();
+            _nameTokens = tokens.Where(token => !IsTagToken(token)).ToArray();
             _rowsDirty = true;
         }
     }
@@ -126,27 +141,48 @@ public sealed class OutlineWindow : Window
     // refiltered each one, since the scan is over everything loaded and not over what is on screen.
     private void BuildRows()
     {
-        if (!_rowsDirty && _rowsListedVersion == _listedVersion)
+        if (!_rowsDirty
+            && _rowsListedVersion == _listedVersion
+            && _rowsTagVersion == _scene.TagVersion
+            && _rowsCatalogVersion == _catalog.Version)
         {
             return;
         }
 
         _rowsDirty = false;
         _rowsListedVersion = _listedVersion;
+        _rowsTagVersion = _scene.TagVersion;
+        _rowsCatalogVersion = _catalog.Version;
+
+        // Each tag: token resolved to an id once per rebuild. A token naming no tag matches nothing.
+        int[] tagIds = _tagTokens
+            .Select(token => _tags.FindByName(token)?.RecordId ?? -1)
+            .ToArray();
 
         _rows.Clear();
         foreach (SceneEntity entity in _listed)
         {
-            if (MatchesFilter(entity))
+            if (MatchesFilter(entity, tagIds))
             {
                 _rows.Add(entity);
             }
         }
     }
 
-    private bool MatchesFilter(SceneEntity entity)
+    private static bool IsTagToken(string token) =>
+        token.Length > TagTokenPrefix.Length && token.StartsWith(TagTokenPrefix, StringComparison.OrdinalIgnoreCase);
+
+    private bool MatchesFilter(SceneEntity entity, int[] tagIds)
     {
-        foreach (string token in _filterTokens)
+        foreach (int tagId in tagIds)
+        {
+            if (!entity.Tags.Contains(tagId))
+            {
+                return false;
+            }
+        }
+
+        foreach (string token in _nameTokens)
         {
             if (entity.DisplayName.IndexOf(token, StringComparison.OrdinalIgnoreCase) < 0)
             {
@@ -155,6 +191,43 @@ public sealed class OutlineWindow : Window
         }
 
         return true;
+    }
+
+    // A small dot per tag just past the label, in the tag's colour.
+    private void DrawTagDots(SceneEntity entity)
+    {
+        if (entity.Tags.IsEmpty)
+        {
+            return;
+        }
+
+        if (_tagColorsVersion != _catalog.Version)
+        {
+            _tagColorsVersion = _catalog.Version;
+            _tagColors.Clear();
+            foreach (EntityTagDefinition tag in _catalog.OfType<EntityTagDefinition>())
+            {
+                if (tag.RecordId is int id)
+                {
+                    _tagColors[id] = tag.Color;
+                }
+            }
+        }
+
+        Vector2 min = ImGui.GetItemRectMin();
+        Vector2 max = ImGui.GetItemRectMax();
+        float radius = (max.Y - min.Y) * 0.22f;
+        float x = min.X + ImGui.GetTreeNodeToLabelSpacing() + ImGui.CalcTextSize(entity.DisplayName).X + (radius * 3.0f);
+        float y = (min.Y + max.Y) * 0.5f;
+        ImDrawListPtr draw = ImGui.GetWindowDrawList();
+        foreach (int tagId in entity.Tags)
+        {
+            if (_tagColors.TryGetValue(tagId, out int color))
+            {
+                draw.AddCircleFilled(new Vector2(x, y), radius, ImGui.ColorConvertFloat4ToU32(TagColors.ToVector4(color)));
+                x += radius * 2.6f;
+            }
+        }
     }
 
     private void DrawEntity(SceneEntity entity)
@@ -192,6 +265,7 @@ public sealed class OutlineWindow : Window
             }
         }
 
+        DrawTagDots(entity);
         DrawVisibilityToggle(entity, hidingCategory);
     }
 
