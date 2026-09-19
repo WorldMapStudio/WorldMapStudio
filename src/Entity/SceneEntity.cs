@@ -42,6 +42,15 @@ public abstract class SceneEntity : Entity
     [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Entity";
 
+    /// <summary>The tags this entity carries. Changed only through <see cref="SceneEntityRegistry.SetTags"/>,
+    /// which is what tells caches keyed on tags to refresh; loading sets it directly, before the entity
+    /// is added to the registry.</summary>
+    public EntityTagSet Tags { get; internal set; }
+
+    /// <summary>The tags as last loaded or committed — what staging diffs <see cref="Tags"/> against, so
+    /// a commit never reads the table to find out what changed.</summary>
+    public EntityTagSet PersistedTags { get; internal set; }
+
     /// <summary>How the entity may rotate about itself; the object tool honours this.</summary>
     public virtual SelfRotation SelfRotation
     {

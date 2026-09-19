@@ -52,6 +52,22 @@ public sealed class SceneEntityRegistry : IWorldParticipant
 
     public int Version { get; private set; }
 
+    /// <summary>Bumped whenever any loaded entity's tags change, so a view derived from tags refreshes
+    /// on this rather than rewalking every entity to find out nothing did.</summary>
+    public int TagVersion { get; private set; }
+
+    /// <summary>Replaces an entity's tags. The one public way to change them.</summary>
+    public void SetTags(SceneEntity entity, EntityTagSet tags)
+    {
+        if (entity.Tags == tags)
+        {
+            return;
+        }
+
+        entity.Tags = tags;
+        TagVersion++;
+    }
+
     // Membership is checked once per loaded entity every frame (SyncRepresentations, ApplyFates), so
     // this has to be O(1): a List.Contains scan here made those passes O(N^2) in the loaded count,
     // which is exactly what view distance scales up.
