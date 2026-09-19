@@ -548,17 +548,6 @@ public sealed class StreamingSystem : IWorldParticipant
             }
         }
 
-        foreach (Storage storage in _context.Database.Storages)
-        {
-            foreach (ISceneEntityFactory factory in storage.SceneFactories)
-            {
-                if (factory.Handles(entity))
-                {
-                    return factory.PersistentKey(entity);
-                }
-            }
-        }
-
-        return null;
+        return _context.Database.SceneSources.FactoryFor(entity)?.PersistentKey(entity);
     }
 }
