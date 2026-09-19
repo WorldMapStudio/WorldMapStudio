@@ -47,6 +47,26 @@ public static class PrefabsScriptApiTests
     }
 
     [EditorTest(Category = "Prefabs Script", Thread = TestThread.Main)]
+    public static void Tags_survive_saving_and_spawning_a_prefab()
+    {
+        (EditorContext context, ScriptEngineHost host) = NewRig();
+        EntityTagDefinition tag = context.Tags.Create("keep");
+        SceneEntity tagged = context.Scene.Entities.First(entity => entity.Name == "First");
+        context.Tags.Add([tagged], tag.RecordId!.Value);
+
+        host.Evaluate("wms.prefabs.Save(wms.fixture.All(), 'Tagged')");
+        host.Evaluate("wms.prefabs.Spawn('Tagged', 50, 0, 50)");
+
+        SceneEntity[] spawned = context.Scene.Entities
+            .Where(entity => entity.Map == context.Maps.CurrentMap && !ReferenceEquals(entity, tagged) && entity.Name == "First")
+            .ToArray();
+        Assert.AreEqual(1, spawned.Length);
+        Assert.IsTrue(spawned[0].Tags.Contains(tag.RecordId!.Value), "the copy carries the tag");
+        Assert.IsTrue(context.Scene.Entities.Any(entity => entity.Map == PrefabSystem.LibraryMap && entity.Tags.Contains(tag.RecordId!.Value)),
+            "and so does the template");
+    }
+
+    [EditorTest(Category = "Prefabs Script", Thread = TestThread.Main)]
     public static void Spawn_can_select_the_new_entities()
     {
         (EditorContext context, ScriptEngineHost host) = NewRig();
