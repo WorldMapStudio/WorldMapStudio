@@ -148,9 +148,10 @@ public sealed class SceneMenu : IMainMenu
 
         // Shift the whole batch rigidly so the bottom-centre of its combined bounds lands under the
         // cursor, preserving whatever layout (and, for a parent/child pair, relative offset) the
-        // copied entities had.
+        // copied entities had. Moving a parent carries its children along, so only the ones without
+        // a copied parent are moved.
         Vector3 delta = pointer.WorldPoint - BoundsBottomCenter(pasted);
-        foreach (SceneEntity entity in pasted)
+        foreach (SceneEntity entity in pasted.Where(entity => entity.Parent == null))
         {
             Transform3D transform = entity.Transform;
             entity.Transform = new Transform3D(transform.Basis, transform.Origin + delta);
