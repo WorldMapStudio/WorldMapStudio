@@ -266,6 +266,13 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     /// still registered (in the scene or the catalog) is saved; one that has left (an undone creation or
     /// a deletion) is deleted.
     ///
+    /// Two ordered passes. The primary pass commits every entity to the storage that owns it, the
+    /// editor's own storage last, so a key a database assigns on insert (a creature's guid) is written
+    /// back before the second pass reads it. The attachment pass then commits the tags and attached
+    /// components of entities living outside the editor's storage — see
+    /// <see cref="EditorStorage.CommitBridgedAsync"/>. The two are separate transactions, since nothing
+    /// spans databases: if the second fails, the entities themselves are saved and the error is reported.
+    ///
     /// Reached through <see cref="IEditSessionStore"/> from <see cref="EditSessionManager.Commit"/>,
     /// never called directly — committing is one act, not a write followed by a clear the caller has to
     /// remember.
@@ -273,8 +280,9 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     public void Persist(EditSession session)
     {
         var committed = new HashSet<IEntity>();
+        var failed = new HashSet<Storage>();
 
-        foreach (Storage storage in Storages)
+        foreach (Storage storage in CommitOrder())
         {
             var saves = new List<IEntity>();
             var deletes = new List<IEntity>();
@@ -318,9 +326,12 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             }
             catch (Exception e)
             {
+                failed.Add(storage);
                 GD.PushError($"[Database] Commit failed for '{storage.Name}': {e.Message}");
             }
         }
+
+        CommitBridged(session, failed);
 
         if (committed.Count > 0)
         {
@@ -334,6 +345,10 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             }
         }
     }
+
+    // The editor's own storage last: see Persist.
+    private IEnumerable<Storage> CommitOrder() =>
+        Storages.Where(candidate => candidate.GetType() != typeof(EditorStorage)).Concat(Storages.OfType<EditorStorage>());
 
     public void Shutdown()
     {
