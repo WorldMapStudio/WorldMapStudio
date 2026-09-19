@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 
@@ -33,7 +34,7 @@ public sealed partial class EditorContext : ISubsystemHost
     public ViewSettings View { get; }
 
     /// <summary>The editor's day clock, advanced once per frame. See <see cref="WorldClock"/>.</summary>
-    public WorldClock Clock { get; } = new();
+    public WorldClock Clock { get; }
 
     /// <summary>Owns the active edit session and its undo history.</summary>
     public EditSessionManager EditSessions { get; }
@@ -166,31 +167,45 @@ public sealed partial class EditorContext : ISubsystemHost
 
     public void EndReload() => IsReloading = false;
 
+    private readonly List<object> _spine = [];
+
+    /// <summary>The core systems this constructor builds directly, in construction order. Everything
+    /// that walks the editor's systems (<see cref="SubsystemTree"/>) starts from these, since they are
+    /// not <see cref="ISubsystem"/>s and nothing else would find them.</summary>
+    public IReadOnlyList<object> Spine => _spine;
+
+    private T Add<T>(T member) where T : notnull
+    {
+        _spine.Add(member);
+        return member;
+    }
+
     public EditorContext(Node3D root, Project project)
     {
         Root = root;
         Project = project;
         _tests = new Lazy<TestRunner>(() => new TestRunner(root));
-        Shortcuts = new ShortcutSystem();
-        Selection = new SelectionSystem();
-        Clipboard = new SceneClipboard();
-        Pointer = new ViewportPointer();
-        View = new ViewSettings();
-        EditSessions = new EditSessionManager();
-        Scene = new SceneEntityRegistry();
-        Catalog = new CatalogEntityRegistry();
-        Problems = new ProblemSystem();
-        ChunkChanges = new ChunkChangeLog(this);
-        Focus = new ViewportFocus();
-        Tools = new ToolSystem(this);
-        Maps = new MapSystem(this);
-        MapProperties = new MapPropertiesRegistry(this);
-        ModelFormats = new ModelFormatSystem(this);
-        Assets = new AssetSystem(this);
-        MeshMaterials = new MeshMaterialSystem(this);
-        Database = new DatabaseSystem(this);
-        ReferenceLabels = new CatalogReferenceLabels(this);
-        CatalogSearchViews = new CatalogSearchViews(this);
+        Clock = Add(new WorldClock());
+        Shortcuts = Add(new ShortcutSystem());
+        Selection = Add(new SelectionSystem());
+        Clipboard = Add(new SceneClipboard());
+        Pointer = Add(new ViewportPointer());
+        View = Add(new ViewSettings());
+        EditSessions = Add(new EditSessionManager());
+        Scene = Add(new SceneEntityRegistry());
+        Catalog = Add(new CatalogEntityRegistry());
+        Problems = Add(new ProblemSystem());
+        ChunkChanges = Add(new ChunkChangeLog(this));
+        Focus = Add(new ViewportFocus());
+        Tools = Add(new ToolSystem(this));
+        Maps = Add(new MapSystem(this));
+        MapProperties = Add(new MapPropertiesRegistry(this));
+        ModelFormats = Add(new ModelFormatSystem(this));
+        Assets = Add(new AssetSystem(this));
+        MeshMaterials = Add(new MeshMaterialSystem(this));
+        Database = Add(new DatabaseSystem(this));
+        ReferenceLabels = Add(new CatalogReferenceLabels(this));
+        CatalogSearchViews = Add(new CatalogSearchViews(this));
 
         // Bound here rather than injected, because the catalog registry is constructed before the
         // database that owns each type's factory. Lets AssignId seed a type's high-water mark from
@@ -205,22 +220,22 @@ public sealed partial class EditorContext : ISubsystemHost
             ?? Database.Storages.SelectMany(storage => storage.LazyCatalogFactories)
                 .FirstOrDefault(factory => factory.EntityType == entityType) as IRecordIdSource);
 
-        Landscape = new LandscapeSystem(this);
-        Procedural = new ProceduralSystem(this);
-        Images = new ImageSystem(this);
-        Prefabs = new PrefabSystem(this);
+        Landscape = Add(new LandscapeSystem(this));
+        Procedural = Add(new ProceduralSystem(this));
+        Images = Add(new ImageSystem(this));
+        Prefabs = Add(new PrefabSystem(this));
 
         // After ModelFormats/Assets/Landscape/Procedural: a format-driven category source reads them.
-        ViewCategories = new ViewCategorySystem(this);
+        ViewCategories = Add(new ViewCategorySystem(this));
 
         // Built after Assets/Landscape/Procedural: the built-in component types capture them.
-        ComponentTypes = new SceneComponentRegistry(this);
+        ComponentTypes = Add(new SceneComponentRegistry(this));
 
-        Streaming = new StreamingSystem(this);
-        Environments = new EnvironmentSystem(this);
-        Migrations = new MigrationSystem(this);
-        Scripting = new ScriptingSystem(this);
-        Batch = new BatchSystem(this);
+        Streaming = Add(new StreamingSystem(this));
+        Environments = Add(new EnvironmentSystem(this));
+        Migrations = Add(new MigrationSystem(this));
+        Scripting = Add(new ScriptingSystem(this));
+        Batch = Add(new BatchSystem(this));
 
         // Chunks stream like any other scene entity, but they are generated rather than stored, so
         // the landscape hands streaming a loader instead of a storage factory.
@@ -234,9 +249,9 @@ public sealed partial class EditorContext : ISubsystemHost
         EditSessions.BindStreaming(Streaming);
         EditSessions.BindReload(() => RequestReload("Edit session aborted"));
 
-        Lifecycle = new WorldLifecycle(this);
-        Frame = new FrameLoop(this);
-        Operations = new WorldOperations(this);
+        Lifecycle = Add(new WorldLifecycle(this));
+        Frame = Add(new FrameLoop(this));
+        Operations = Add(new WorldOperations(this));
         EditSessions.BindOperations(Operations);
 
         InitializeSubsystems();
