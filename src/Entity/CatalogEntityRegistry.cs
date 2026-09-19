@@ -51,9 +51,8 @@ public sealed class CatalogEntityRegistry
     /// Backed by a per-type high-water mark rather than a scan of the loaded set on every call: seeded
     /// once, from <c>max(loaded, stored)</c>, the first time a type is assigned, then only incremented —
     /// eviction never lowers it, so an id already handed out can never be reused. For an eagerly-loaded
-    /// type the seed equals what the old per-call scan produced, so behaviour is unchanged; for a
-    /// lazily-loaded type most rows are never loaded, so the stored MAX is the only thing that can
-    /// answer this correctly.
+    /// type the seed equals the highest loaded id; for a lazily-loaded type most rows are never loaded,
+    /// so the stored MAX is the only thing that can answer this correctly.
     /// </summary>
     public void AssignId<TEntity>(TEntity entity) where TEntity : CatalogEntity, IKeyedCatalogEntity
     {
@@ -69,8 +68,8 @@ public sealed class CatalogEntityRegistry
     }
 
     /// <summary>Peeks the id <see cref="AssignId{TEntity}"/> would hand out next, without reserving it —
-    /// unlike the old scan-based AssignId, calling AssignId itself to peek would now advance the
-    /// high-water mark and skip an id, so a caller that wants to pre-fill a form uses this instead.</summary>
+    /// calling AssignId itself to peek would advance the high-water mark and skip an id, so a caller that
+    /// wants to pre-fill a form uses this instead.</summary>
     public int PeekNextId<TEntity>() where TEntity : CatalogEntity, IKeyedCatalogEntity
     {
         Type type = typeof(TEntity);

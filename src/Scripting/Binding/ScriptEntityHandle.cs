@@ -93,7 +93,7 @@ public sealed class ScriptEntityHandle
 
     // Deliberately minimal: covers the primitive/enum widening JS's single number type needs, not
     // arbitrary CLR types. A property like a Godot Vector3/Transform3D needs a real conversion layer
-    // this doesn't attempt yet — see ScriptingPlan.md's Phase 8 deviations.
+    // this doesn't attempt yet.
     internal static object? ConvertForClr(object? value, Type targetType)
     {
         if (value is null || targetType.IsInstanceOfType(value))

@@ -13,7 +13,7 @@ namespace WorldMapStudio;
 /// <see cref="ScriptEngineHost"/> just bound, by walking the same <see cref="ScriptReflection"/>
 /// metadata — see ScriptingDesign.md's "bindings and declarations are the same reflection pass"
 /// principle. Written to a gitignored, repo-local <c>.types/</c> folder every startup (regenerated,
-/// not hand-maintained, per ScriptingPlan.md decision #7).
+/// not hand-maintained).
 /// </summary>
 public static class ScriptTypeDeclarationWriter
 {
@@ -95,7 +95,7 @@ public static class ScriptTypeDeclarationWriter
 
     // Nullability is deliberately not modelled here (e.g. a method returning "Entity | null" is
     // emitted as just "Entity") — doing that precisely needs NullabilityInfoContext, which is more
-    // machinery than this surface currently justifies. Known, accepted gap; see ScriptingPlan.md.
+    // machinery than this surface currently justifies. Known, accepted gap.
     private static string TsType(Type type, HashSet<Type> visited, Queue<Type> worklist)
     {
         if (PrimitiveNames.TryGetValue(type, out string? primitive))

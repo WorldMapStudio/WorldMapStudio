@@ -115,8 +115,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     /// <summary>
     /// Stamps every chunk a commit touched with the current time. One batched upsert per
-    /// <see cref="ChunkChangeRowsPerStatement"/> rows: the earlier read-then-write per chunk was a
-    /// round-trip apiece, minutes of latency for a full-map edit.
+    /// <see cref="ChunkChangeRowsPerStatement"/> rows, since a round-trip per chunk costs minutes of latency
+    /// for a full-map edit.
     /// </summary>
     public async Task UpsertChunkChangesAsync(IReadOnlyCollection<(int Map, int X, int Y)> chunks)
     {
@@ -464,7 +464,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
     /// <summary>Whether a resource id is pinned by the active edit session, or loaded but not yet
     /// saved — belt-and-braces guards against purging a resource the (already-clean) session still has
-    /// unsaved state for. See <see cref="IMapScopedData"/> §4's guard.</summary>
+    /// unsaved state for. See <see cref="IMapScopedData"/>'s guard.</summary>
     private bool IsResourceLive(Type resourceType, int recordId)
     {
         foreach (CatalogEntity entity in Context.Catalog.Entities)

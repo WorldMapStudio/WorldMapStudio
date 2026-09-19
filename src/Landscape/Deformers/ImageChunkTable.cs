@@ -11,8 +11,8 @@ namespace WorldMapStudio;
 /// count) is what lets <see cref="PaintImage.CreateSampler"/> hand a landscape build a view that
 /// cannot have chunks appear or disappear underneath it mid-build, matching the snapshot-on-the-main-
 /// thread pattern <see cref="LandscapeBatchLoader.Prepare"/> already uses for everything else a build
-/// reads. The buffers themselves can still be edited in place during a stroke — the same tearing
-/// tolerance rasterization already had, just no longer compounded by the chunk set itself moving.
+/// reads. The buffers themselves can still be edited in place during a stroke — with the same tearing
+/// tolerance as any in-place raster edit, but the chunk set itself never moves under a reader.
 /// </summary>
 public sealed class ImageChunkTable
 {

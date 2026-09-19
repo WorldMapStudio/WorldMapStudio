@@ -95,8 +95,8 @@ public static class LandscapeMeshTests
     [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
     public static void Vertex_light_reaches_emission_not_albedo()
     {
-        // Pins the fix for vertex light being summed into ALBEDO, where the scene's own light
-        // multiplied it instead of leaving it able to survive a dark scene.
+        // Vertex light summed into ALBEDO would be multiplied by the scene's own light instead of
+        // surviving a dark scene.
         string shader = LandscapeBatchMesh.SplatShaderCode;
 
         Assert.IsFalse(shader.Contains("color += vertex_light"), "vertex light must not be summed into albedo");
@@ -108,8 +108,8 @@ public static class LandscapeMeshTests
     [EditorTest(Category = "LandscapeMesh", Thread = TestThread.Background)]
     public static void Vertex_color_is_carried_as_a_float_custom_channel()
     {
-        // Pins the fix for vertex color being clamped through Godot's 8-bit COLOR attribute, which
-        // destroyed the brightening half of MCCV's 0-2 multiplier range.
+        // Godot's 8-bit COLOR attribute would clamp vertex color, destroying the brightening half of
+        // MCCV's 0-2 multiplier range.
         string shader = LandscapeBatchMesh.SplatShaderCode;
 
         Assert.IsTrue(shader.Contains("CUSTOM2"), "vertex color must travel through a custom channel");

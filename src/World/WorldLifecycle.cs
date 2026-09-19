@@ -7,8 +7,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Collects every <see cref="IWorldParticipant"/> in the editor and drives them, in both directions,
-/// as one ordered list — replacing what used to be a hardcoded load sequence
-/// (<see cref="EditorContext.LoadContent"/>) with no unload at all.
+/// as one ordered list, so load and unload are symmetric.
 ///
 /// Participants come from <see cref="SubsystemTree"/>.
 /// </summary>
@@ -34,27 +33,24 @@ public sealed class WorldLifecycle
     /// is about to drop — a streaming scan landing, an image chunk load completing, a landscape rebuild
     /// applying. A reload waits for this to go false before unloading.
     ///
-    /// Deliberately narrower than "anything on <see cref="WorkQueue"/> is active": that includes
-    /// texture loads, model loads, and asset indexing, which run almost continuously while flying
-    /// around the viewport but write into caches this reload never touches. Gating on those made every
-    /// reload sit out most of the quiesce timeout for work with nothing to do with the world being
-    /// dropped — see the "Reload World" report this fixed.
+    /// Deliberately narrower than "anything on <see cref="WorkQueue"/> is active": that includes texture
+    /// loads, model loads, and asset indexing, which run almost continuously while flying around the
+    /// viewport but write into caches this reload never touches. Gating on those would make every reload sit
+    /// out most of the quiesce timeout for work with nothing to do with the world being dropped.
     /// </summary>
     public bool IsBusy => Participants.Any(participant => participant.IsBusy);
 
-    /// <summary>Reads every participant's state from the database, in ascending <see cref="IWorldParticipant.LoadPriority"/>
-    /// order. May run off the main thread — see <see cref="EditorContext.LoadContent"/>, which this replaces.</summary>
+    /// <summary>Reads every participant's state from the database, in ascending
+    /// <see cref="IWorldParticipant.LoadPriority"/> order. May run off the main thread.</summary>
     public void Load(Action<string>? onStep = null) => RunLoad(Participants, onStep);
 
     /// <summary>
-    /// Reverts a still-dirty session first — its pins are the only thing keeping uncommitted edits
-    /// alive in the scene/catalog registries, and no participant's <see cref="IWorldParticipant.UnloadWorld"/>
-    /// checks for a pin before it clears its own registry. Doing this after teardown (which is where it
-    /// used to live, inside <see cref="Verify"/>) was too late: by then the pinned entities were already
-    /// gone, so aborting found nothing left to revert and a create-then-reload sequence lost work
-    /// silently instead of behaving like the abort it actually was. Every reload path funnels through
-    /// here for exactly this reason — see <see cref="EditorScriptApi.Reload"/>, which documents this
-    /// exact guarantee and, before this fix, did not actually get it.
+    /// Reverts a still-dirty session first — its pins are the only thing keeping uncommitted edits alive in the
+    /// scene/catalog registries, and no participant's <see cref="IWorldParticipant.UnloadWorld"/> checks for a pin
+    /// before it clears its own registry. Doing this after teardown would be too late: by then the pinned entities
+    /// are already gone, so aborting finds nothing left to revert and a create-then-reload sequence loses work
+    /// silently instead of behaving like the abort it actually is. Every reload path funnels through here for exactly
+    /// this reason — see <see cref="EditorScriptApi.Reload"/>.
     /// </summary>
     private void RevertDirtySession()
     {

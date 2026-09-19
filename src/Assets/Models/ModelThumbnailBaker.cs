@@ -23,8 +23,7 @@ public sealed class ModelThumbnailBaker : IDisposable
 
     /// <summary>Frames to let a freshly-instantiated model sit before capturing it. References (e.g. WMO
     /// doodads) resolve asynchronously over a few frames; this is a fixed budget rather than tracking
-    /// completion, so a heavy WMO still produces a thumbnail even if some doodads land late (spike scope
-    /// - see model-browser-grid-plan.md's "Settling rule").</summary>
+    /// completion, so a heavy WMO still produces a thumbnail even if some doodads land late.</summary>
     private const int SettleFrames = 3;
 
     private enum Phase

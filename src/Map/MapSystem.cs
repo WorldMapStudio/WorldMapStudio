@@ -352,8 +352,7 @@ public sealed class MapSystem : IWorldParticipant
 
     /// <summary>
     /// Every map id an <see cref="IMapScopedData"/> owner holds rows for but that isn't a known map
-    /// (nor the prefab library) — data left behind by a map deleted before this cleanup existed. See
-    /// §6 of the delete-map plan.
+    /// (nor the prefab library) — data left behind by a map deleted without a full cleanup.
     /// </summary>
     public async Task<IReadOnlyList<int>> FindStrayMapIdsAsync()
     {

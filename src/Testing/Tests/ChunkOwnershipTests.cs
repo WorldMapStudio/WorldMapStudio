@@ -34,8 +34,8 @@ public static class ChunkOwnershipTests
         Assert.AreEqual(Local, entity.LocalChunkBounds);
     }
 
-    /// <summary>The bug this exists to stop: a global light on the same entity as real content used to
-    /// swallow that content's extent, so the entity claimed the whole map.</summary>
+    /// <summary>A global light on the same entity as real content must not swallow that
+    /// content's extent and make the entity claim the whole map.</summary>
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void A_map_spanning_component_does_not_widen_what_an_entity_owns()
     {
@@ -69,7 +69,7 @@ public static class ChunkOwnershipTests
 
     /// <summary>
     /// A region far larger than the map must not be walked coordinate by coordinate. A global light's
-    /// million-unit bounds used to make this yield the few thousand in-limit chunks out of billions of
+    /// million-unit bounds would otherwise mean yielding the few thousand in-limit chunks out of billions of
     /// candidates, which reads as a hang rather than a slow loop.
     /// </summary>
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]

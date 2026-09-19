@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 
 /// <summary>The numeric <c>ImGuiStyle</c> fields a style file may set under <c>"vars"</c>. Bools and
 /// the two <c>ImGuiDir</c> placement fields are deliberately left out — they aren't themeable colors
-/// or sizes, and the plan only asks for "rounding, padding, spacing, border sizes, alpha".</summary>
+/// or sizes. Only rounding, padding, spacing, border sizes and alpha are exposed.</summary>
 public static class StyleVarFields
 {
     public sealed class Field

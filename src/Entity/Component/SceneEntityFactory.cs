@@ -67,8 +67,7 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
 
     // Set by PrepareBatchAsync, consumed by Stage: a high-water mark handed out sequentially to every
     // new entity in the current commit, so Pomelo can batch their inserts into one multi-row statement
-    // instead of one INSERT + SELECT LAST_INSERT_ID() per row (see .local/adt-import-perf.md §6.3 — a
-    // client-assigned, ValueGeneratedNever key is what makes EF's own batching kick in).
+    // instead of one INSERT + SELECT LAST_INSERT_ID() per row.
     private int _nextId;
 
     public SceneEntityFactory(EditorStorage storage)

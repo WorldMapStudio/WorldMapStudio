@@ -89,8 +89,7 @@ public sealed class PaintImageChunksCommand : IEditCommand, IChunkChangeCommand,
     }
 
     // One side of the recorded edits, in a deterministic order so the same content always hashes the
-    // same way regardless of paint order. A chunk with no bytes on that side did not exist then, which
-    // is what reading an absent chunk off the image used to report.
+    // same way regardless of paint order. A chunk with no bytes on that side did not exist then.
     private static byte[] ConcatenateChunkBytes(
         IReadOnlyList<(ImageChunkCoord Coord, byte[]? Before, byte[]? After)> edits,
         bool before)

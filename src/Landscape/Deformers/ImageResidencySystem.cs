@@ -28,7 +28,7 @@ namespace WorldMapStudio;
 ///
 /// This is what makes a canvas far larger than any single view genuinely practical: only the chunks
 /// under a streamed-in placement's footprint are ever resident, regardless of how many chunks the image
-/// holds in storage. See <c>.godot/ImageChunkPlan.md</c>.
+/// holds in storage.
 /// </summary>
 public sealed class ImageResidencySystem
 {
@@ -50,9 +50,8 @@ public sealed class ImageResidencySystem
         _images = images;
     }
 
-    /// <summary>Total resident chunk bytes, across every loaded image, eviction tries to stay under.
-    /// A judgment-call default rather than a derived value — see the design plan's open questions for
-    /// why this eventually wants to be a project setting instead of a constant.</summary>
+    /// <summary>Total resident chunk bytes, across every loaded image, eviction tries to stay under. A
+    /// judgment-call default rather than a derived value; it would fit better as a project setting.</summary>
     public long BudgetBytes { get; set; } = 512L * 1024 * 1024;
 
     /// <summary>Whether a chunk load is in flight — <see cref="ImageSystem"/> forwards this as its own

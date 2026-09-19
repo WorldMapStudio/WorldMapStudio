@@ -12,7 +12,7 @@ namespace WorldMapStudio;
 /// <c>image_chunks</c> table. Implements <see cref="ICatalogEntityFactory"/> directly rather than going
 /// through <see cref="EditorCatalogFactory{TEntity,TRecord}"/> — that base assumes one row per entity,
 /// but a chunked image is a header row plus one row per non-empty chunk, and only those chunks are ever
-/// written. See <c>.godot/ImageChunkPlan.md</c> for the storage design this implements.
+/// written.
 ///
 /// Only currently resident chunks are re-staged on every commit — the "re-persist everything the entity
 /// currently holds" shape <see cref="EditorCatalogFactory{TEntity,TRecord}"/> uses for a single row,

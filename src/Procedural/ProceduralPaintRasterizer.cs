@@ -4,11 +4,10 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Scatters a <see cref="ProceduralPaint"/>'s strokes into a chunk's channel buffers. Lifted from the
-/// original road deformer's per-segment scatter so every paint-emitting procedural function shares one
-/// implementation instead of every author copying it. Each stroke only touches
-/// the texels within its own bounding box (grown by its radius), so a stroke crossing a chunk's corner
-/// costs a corner's worth of work, not a whole chunk.
+/// Scatters a <see cref="ProceduralPaint"/>'s strokes into a chunk's channel buffers, so every paint-emitting
+/// procedural function shares one implementation instead of every author copying it. Each stroke only touches
+/// the texels within its own bounding box (grown by its radius), so a stroke crossing a chunk's corner costs
+/// a corner's worth of work, not a whole chunk.
 ///
 /// Writes go only to the chunk in <paramref name="context"/> and never read a channel back — the
 /// stage-3 landscape invariant (pure scatter, chunk-local writes) that <see cref="ILandscapeDeformer"/>
@@ -104,8 +103,7 @@ public static class ProceduralPaintRasterizer
     }
 
     /// <summary>Coverage profile: 1 within the solid core, smoothstepped to 0 across the falloff band,
-    /// 0 beyond <paramref name="radius"/>. Same shape <see cref="StampComponent"/> and the original
-    /// <c>RoadPath.Weight</c> used, kept here now that every stroke shares one rasterizer.</summary>
+    /// 0 beyond <paramref name="radius"/>. Shared by every stroke.</summary>
     public static float Weight(float distance, float radius, float falloff)
     {
         if (radius <= 0.0f || distance >= radius)

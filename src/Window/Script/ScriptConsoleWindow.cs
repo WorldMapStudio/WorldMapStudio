@@ -9,8 +9,7 @@ namespace WorldMapStudio;
 /// <summary>
 /// A REPL over the shared <see cref="ScriptEngineHost"/> — the human-facing, interactive way to
 /// exercise the scripting API surface while it's being built out. Secondary to the eventual HTTP
-/// endpoint (see ScriptingPlan.md's Phase 12): this is for developing/debugging the API, not the
-/// primary way scripts get run.
+/// endpoint: this is for developing/debugging the API, not the primary way scripts get run.
 ///
 /// Submits through <see cref="ScriptEngineHost.EvaluateAsync"/> rather than the synchronous
 /// <see cref="ScriptEngineHost.Evaluate"/>, so a script that uses <c>await</c> shows the value it

@@ -5,9 +5,9 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// One open entity's worth of filterable catalog fields for <see cref="ICatalogBrowser.DrawFields"/>.
-/// The catalog-flavoured adapter over core's <see cref="FieldFilter"/>: it holds the
-/// <c>context, tracker, entity, navigate</c> quartet every field call used to repeat and forwards the
-/// typed widgets to <see cref="CatalogFieldDrawing"/>, while the filter gate, grouping and separator
+/// The catalog-flavoured adapter over core's <see cref="FieldFilter"/>: it holds the <c>context,
+/// tracker, entity, navigate</c> quartet so field calls don't repeat it, and forwards the typed
+/// widgets to <see cref="CatalogFieldDrawing"/>, while the filter gate, grouping and separator
 /// behaviour all live in <see cref="FieldFilter"/>.
 ///
 /// Adopt it by taking the extra <c>fieldFilter</c> parameter, constructing one, and calling

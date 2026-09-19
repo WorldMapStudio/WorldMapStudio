@@ -6,9 +6,9 @@ using Godot;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Covers the builder end to end. Two of these — determinism and edge continuity — are the tests the
-/// plan says to keep forever: both failures are subtle, visual, and expensive to debug from the
-/// symptom, and both are cheap to catch here.
+/// Covers the builder end to end. Two of these — determinism and edge continuity — are the tests to
+/// keep forever: both failures are subtle, visual, and expensive to debug from the symptom, and
+/// both are cheap to catch here.
 /// </summary>
 public static class LandscapeBuilderTests
 {

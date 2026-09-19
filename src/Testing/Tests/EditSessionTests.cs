@@ -114,9 +114,8 @@ public static class EditSessionTests
     [EditorTest(Category = "EditSession")]
     public static void Committing_persists_before_clearing()
     {
-        // Persisting used to be a second call every caller made for itself, and the scripting API
-        // never made it — so script edits were dropped instead of saved. Committing is one act now,
-        // and this is what stops it splitting back apart.
+        // Committing is one act: persisting is not a second call every caller must remember to make,
+        // or script edits would be dropped instead of saved.
         var entity = new FakeEntity();
         var store = new RecordingStore();
         var sessions = new EditSessionManager(EditSessionBindings.None with { Store = () => store });

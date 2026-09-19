@@ -28,10 +28,10 @@ public static class EnvironmentShaderLibrary
 {
     /// <summary>
     /// Fog globals plus <c>wms_evaluate_fog</c>, which returns a 0..1 visibility (0 = fully fogged) and
-    /// writes the fog color to blend toward. Mirrors the reference renderer's two-mode fog (a simple
-    /// start/end/curve falloff, or a cubic-curve mode selected once real curve data exists) plus a
-    /// height-fog color/weight mix and a sun-glow color blend — without adopting any WoW-specific field
-    /// names, since any <see cref="IEnvironmentSource"/> plugin can drive these, not just a WoW one.
+    /// writes the fog color to blend toward. Supports two fog modes (a simple start/end/curve falloff,
+    /// or a cubic-curve mode selected once real curve data exists) plus a height-fog color/weight mix
+    /// and a sun-glow color blend — without adopting any WoW-specific field names, since any
+    /// <see cref="IEnvironmentSource"/> plugin can drive these, not just a WoW one.
     ///
     /// The final <c>int</c> argument (an ordinary value the caller passes in, not a global) lets a
     /// translucent material push its fog color toward black/white instead of the scene fog color,
@@ -172,9 +172,8 @@ vec3 wms_blend_interior_ambient(float wms_arg_n_dot_up, float wms_arg_interior_b
 """;
 
     /// <summary>
-    /// A generic spherical-environment-map ("matcap") reflection lookup — the same technique the
-    /// reference renderer's env/metal pixel-shader modes use (a view-space-normal-driven UV into a
-    /// static environment texture), described generically since matcap shading isn't WoW-specific.
+    /// A generic spherical-environment-map ("matcap") reflection lookup — a view-space-normal-driven UV into a
+    /// static environment texture; not WoW-specific.
     /// </summary>
     public const string MatcapReflectionCode = """
 vec2 wms_matcap_uv(vec3 wms_arg_view_space_normal) {

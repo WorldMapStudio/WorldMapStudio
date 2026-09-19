@@ -4,10 +4,9 @@ using ImGuiNET;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Draws a <see cref="MeshParameter"/> list against a <see cref="MeshParameterValues"/> bag, the way
-/// <c>ProceduralComponentType</c> and <c>LandscapeMaterialsWindow</c> each used to do inline —
-/// shared here so the Mesh Materials window and the procedural inspector's material-slot editor are
-/// not a third and fourth copy of the same drag/undo bracketing.
+/// Draws a <see cref="MeshParameter"/> list against a <see cref="MeshParameterValues"/> bag, shared by the
+/// Mesh Materials window, <c>LandscapeMaterialsWindow</c> and the procedural inspector's material-slot
+/// editor so none of them repeats the same drag/undo bracketing.
 ///
 /// A numeric or color drag is bracketed into a single undo step by comparing the serialized bag at
 /// activation to the bag once the drag ends; a checkbox, combo or texture pick has no such bracket, so

@@ -148,9 +148,9 @@ public static class LandscapeDirtyTests
     [EditorTest(Category = "LandscapeDirty", Thread = TestThread.Background)]
     public static void An_incremental_deformer_reports_its_own_narrowed_region_instead_of_its_whole_bounds()
     {
-        // The bug this guards against: a huge-footprint image placement whose bound changed nowhere,
-        // but whose content moved in one small spot, used to dirty its entire footprint every paint
-        // dab. An opted-in deformer gets to report just the sub-region that actually changed instead.
+        // A huge-footprint image placement whose bound changed nowhere, but whose content moved in one
+        // small spot, must not dirty its entire footprint every paint dab. An opted-in deformer reports
+        // just the sub-region that actually changed instead.
         var tracker = new LandscapeDirtyTracker();
         var stamp = new IncrementalDeformer { Key = "a", Centre = Vector3.Zero, Radius = 500.0f };
         tracker.Collect([stamp]);

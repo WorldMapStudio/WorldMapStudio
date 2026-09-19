@@ -119,8 +119,8 @@ public sealed partial class AssetSystem : ISubsystemHost
 
     /// <summary>
     /// Walks every active provider's asset list exactly once, sorting each path into the texture
-    /// and/or model bucket by asking each format loader — instead of the equivalent of two full,
-    /// independent scans (one per kind), which used to double the cost of the same underlying walk.
+    /// and/or model bucket by asking each format loader — so the underlying walk is not repeated
+    /// once per kind.
     /// </summary>
     private AssetIndex BuildAssetIndex()
     {

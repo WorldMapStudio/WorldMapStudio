@@ -26,9 +26,8 @@ public readonly record struct MeshMaterialIssue(MeshMaterialIssueSeverity Severi
 /// </summary>
 public sealed partial class MeshMaterialSystem : ISubsystemHost, IWorldParticipant
 {
-    // Bounds the built-material cache so a long asset-browsing session cannot grow it without limit
-    // (see AssetSystem's own unbounded texture cache, flagged in WowModelsPlan.md, for the failure
-    // mode this avoids repeating).
+    // Bounds the built-material cache so a long asset-browsing session cannot grow it without
+    // limit.
     private const int MaxCachedMaterials = 4096;
 
     private readonly Dictionary<string, IMeshMaterialType> _byId = new(StringComparer.Ordinal);

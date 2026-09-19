@@ -22,10 +22,8 @@ namespace WorldMapStudio;
 /// creating a map, committing a session — and not for anything per-frame. Use <see cref="WorkQueue"/>
 /// for work that should not be felt.
 ///
-/// Deliberately one shared helper. It was previously copy-pasted, with the same comment, into four
-/// systems, which made the stalls impossible to find and guaranteed the fifth system would paste it
-/// again. Every main-thread database stall in the editor goes through here, so this is the one place
-/// to grep, count, or later replace.
+/// Deliberately one shared helper: every main-thread database stall in the editor goes through here,
+/// so this is the one place to grep, count, or replace.
 ///
 /// <b>Watchdog:</b> a stall here shows up as a frozen window with nothing in the log. Each call arms
 /// an off-thread timer that names the calling site and how long it has been blocked, first after

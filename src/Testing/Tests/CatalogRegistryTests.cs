@@ -69,11 +69,9 @@ public static class CatalogRegistryTests
     [EditorTest(Category = "Catalog", Thread = TestThread.Background)]
     public static void Reloading_a_catalog_keeps_an_entity_the_keep_predicate_protects()
     {
-        // Regression test: DatabaseSystem.LoadCatalog/UnloadCatalog pass a "still pinned by the active
-        // edit session" predicate here so a type-scoped reload can never silently evict an uncommitted
-        // create or edit — see the bug this fixed, where creating one catalog entity then another
-        // dropped the first on commit because a reload in between wiped it from the registry while it
-        // was still pinned.
+        // DatabaseSystem.LoadCatalog/UnloadCatalog pass a "still pinned by the active edit session"
+        // predicate here so a type-scoped reload can never silently evict an uncommitted create or
+        // edit.
         var registry = new CatalogEntityRegistry();
         var pinned = new Recipe();
         var unpinned = new Recipe();

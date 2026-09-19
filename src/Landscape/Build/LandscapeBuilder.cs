@@ -82,9 +82,8 @@ public sealed class LandscapeBuilder
         foreach (ChunkCoord coord in neighbourhood)
         {
             // Computed once and reused for rasterizing below: which deformers touch a chunk depends
-            // only on the chunk's (unchanging) bounds and the (unchanging) deformer list, so resolving
-            // and then rasterizing the same chunk used to filter and sort the full deformer list twice
-            // for an identical answer both times.
+            // only on the chunk's (unchanging) bounds and the (unchanging) deformer list, so filtering
+            // and sorting the full deformer list once serves both resolving and rasterizing the chunk.
             List<ILandscapeDeformer> chunkDeformers = Touching(deformers, coord);
             touching[coord] = chunkDeformers;
 

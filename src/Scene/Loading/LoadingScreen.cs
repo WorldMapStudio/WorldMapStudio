@@ -18,9 +18,8 @@ namespace WorldMapStudio;
 /// drift. Followed by <see cref="Migration"/> if there is any.</item>
 /// <item><see cref="EditorContext.LoadContent"/> — read the maps and the landscape, which the migration
 /// gate has to run before, since their tables may not exist until it has.</item>
-/// </list>
-/// The second phase used to run in <c>Editor.Start()</c> instead, which is the Godot main thread — so
-/// the two largest reads in the whole open sequence were the two that froze the window.
+/// </list> The second phase runs on a background thread rather than in <c>Editor.Start()</c>, the
+/// Godot main thread, so the two largest reads in the open sequence don't freeze the window.
 /// </summary>
 public sealed class LoadingScreen : IScene
 {
