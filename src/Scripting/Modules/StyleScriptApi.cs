@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Numerics;
 using ImGuiNET;
 
@@ -325,18 +326,12 @@ public sealed class StyleScriptApi : IScriptModule
     public StyleProblemDescriptor[] Problems() =>
         EditorStyle.Problems.Select(static p => new StyleProblemDescriptor(p.Path, p.Message)).ToArray();
 
-    /// <summary>Blocks until the first system-font scan this session finishes (harmless — the scan
-    /// itself runs on a background worker, never the calling thread).</summary>
+    /// <summary>The system font families, optionally narrowed by a name filter. Resolves once the first
+    /// scan this session has finished.</summary>
     [ScriptFunction]
-    public SystemFontDescriptor[] SystemFonts(string? filter = null)
+    public async Task<SystemFontDescriptor[]> SystemFonts(string? filter = null)
     {
-        SystemFontCatalog.EnsureScanStarted();
-        while (SystemFontCatalog.IsScanning)
-        {
-            System.Threading.Thread.Sleep(10);
-        }
-
-        IEnumerable<SystemFontFamilyInfo> families = SystemFontCatalog.Families ?? [];
+        IEnumerable<SystemFontFamilyInfo> families = await SystemFontCatalog.ScanAsync().ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(filter))
         {
             families = families.Where(f => f.Family.Contains(filter, StringComparison.OrdinalIgnoreCase));
