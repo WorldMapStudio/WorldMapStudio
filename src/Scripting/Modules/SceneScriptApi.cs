@@ -19,9 +19,10 @@ public sealed class SceneScriptApi : IScriptModule
         _context = system.Context;
     }
 
-    /// <summary>Every loaded scene entity in view, optionally filtered by component type id.</summary>
+    /// <summary>Every loaded scene entity in view, optionally filtered by component type id and by tag
+    /// (a tag's name or id).</summary>
     [ScriptFunction]
-    public ScriptEntityHandle[] All(string? componentType = null)
+    public ScriptEntityHandle[] All(string? componentType = null, object? tag = null)
     {
         IEnumerable<SceneEntity> entities = _context.Scene.InView;
         if (!string.IsNullOrEmpty(componentType))
@@ -29,8 +30,32 @@ public sealed class SceneScriptApi : IScriptModule
             entities = entities.Where(entity => entity.Components.Any(component => component.TypeId == componentType));
         }
 
+        if (tag != null)
+        {
+            EntityTagDefinition definition = tag is string name
+                ? _context.Tags.FindByName(name) ?? throw new InvalidOperationException($"No tag named '{name}'.")
+                : _context.Tags.Find(Convert.ToInt32(tag, System.Globalization.CultureInfo.InvariantCulture))
+                    ?? throw new InvalidOperationException($"No tag with id {tag}.");
+            int tagId = definition.RecordId!.Value;
+            entities = entities.Where(entity => entity.Tags.Contains(tagId));
+        }
+
         return entities.Select(ToHandle).ToArray();
     }
+
+    /// <summary>Whether the entity is stored in some other table than the editor's own (a creature spawn,
+    /// say) and only has editor-side data — tags, attached components — bridged onto it.</summary>
+    [ScriptFunction]
+    public bool IsBridged(ScriptEntityHandle handle) =>
+        _context.Database.SceneSources.SourceOf(RequireSceneEntity(handle)) != null;
+
+    /// <summary>Where a bridged entity's own row lives: the name its factory is bridged under and the
+    /// row's key (null until the row exists). Null for an entity that isn't bridged.</summary>
+    [ScriptFunction]
+    public EntitySourceDescriptor? Source(ScriptEntityHandle handle) =>
+        _context.Database.SceneSources.SourceOf(RequireSceneEntity(handle)) is var (source, key)
+            ? new EntitySourceDescriptor(source, key)
+            : null;
 
     /// <summary>The loaded scene entity with this id, or null if none is loaded.</summary>
     [ScriptFunction]
@@ -222,4 +247,11 @@ public sealed class SceneScriptApi : IScriptModule
 
     private string DefaultName(string typeId) =>
         _context.ComponentTypes.Find(typeId)?.DisplayName ?? "Entity";
+}
+
+/// <summary>Where a bridged entity's own row lives, as <c>wms.scene.Source</c> reports it.</summary>
+public sealed class EntitySourceDescriptor(string source, long? key)
+{
+    [ScriptProperty] public string Source { get; } = source;
+    [ScriptProperty] public double? Key { get; } = key;
 }
