@@ -1,7 +1,7 @@
-namespace WorldMapStudio;
-
 using System.Collections.Generic;
 using System.Linq;
+
+namespace WorldMapStudio;
 
 public interface ISubsystemHost
 {

@@ -11,8 +11,6 @@ public sealed class ToolsScriptApi : IScriptModule
 
     public string Name => "tools";
 
-    public float Priority => 0f;
-
     public ToolsScriptApi(ScriptingSystem system)
     {
         _tools = system.Context.Tools;

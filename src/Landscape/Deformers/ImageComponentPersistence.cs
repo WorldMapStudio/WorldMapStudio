@@ -50,8 +50,6 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
     /// <see cref="ProceduralComponentPersistence.Procedural"/> for why.</summary>
     private ImageSystem Images => _storage.Context.Images;
 
-    public float Priority => 0.0f;
-
     public string TypeId => ImageComponent.Kind;
 
     public void Configure(ModelBuilder model)

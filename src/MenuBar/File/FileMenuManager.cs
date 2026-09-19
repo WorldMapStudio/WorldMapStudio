@@ -14,8 +14,6 @@ namespace WorldMapStudio;
 [SubsystemHost(typeof(IFileMenuItem))]
 public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 {
-    public float Priority => 0f;
-
     public EditorContext Context { get; }
 
     public ShortcutSystem Shortcuts { get; }

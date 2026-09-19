@@ -25,8 +25,6 @@ public sealed class CatalogListSearchView : ICatalogSearchView
 
     public string ViewName => "List";
 
-    public float Priority => 0.0f;
-
     public bool Supports(ICatalogBrowser catalog) => true;
 
     public Vector2 PreferredPickerSize => new(460.0f, 320.0f);

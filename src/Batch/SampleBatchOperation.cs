@@ -36,8 +36,6 @@ public sealed class SampleBatchOperation : IBatchOperation
     public string Description =>
         "Writes an 8-bit PGM per alpha slot for every chunk edited since the last run.";
 
-    public float Priority => 0.0f;
-
     public SampleBatchOperation(BatchSystem batch)
     {
     }

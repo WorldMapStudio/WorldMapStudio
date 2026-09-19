@@ -14,8 +14,6 @@ public sealed class TimeScriptApi : IScriptModule
 {
     public string Name => "time";
 
-    public float Priority => 0f;
-
     public TimeScriptApi(ScriptingSystem system)
     {
     }

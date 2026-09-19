@@ -42,8 +42,6 @@ public sealed class ChunkChangeScriptApi : IScriptModule
 
     public string Name => "chunks";
 
-    public float Priority => 0f;
-
     public ChunkChangeScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

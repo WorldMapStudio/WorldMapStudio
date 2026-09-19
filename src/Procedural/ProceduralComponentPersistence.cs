@@ -41,8 +41,6 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
 
     private ProceduralModelFactory ModelFactory => _storage.ProceduralModelFactory;
 
-    public float Priority => 0.0f;
-
     public string TypeId => ProceduralComponent.Kind;
 
     public void Configure(ModelBuilder model)

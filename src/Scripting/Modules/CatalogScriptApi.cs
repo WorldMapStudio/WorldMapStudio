@@ -17,8 +17,6 @@ public sealed class CatalogScriptApi : IScriptModule
 
     public string Name => "catalog";
 
-    public float Priority => 0f;
-
     public CatalogScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

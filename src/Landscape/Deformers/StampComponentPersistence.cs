@@ -39,8 +39,6 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => StampComponent.Kind;
 
     public void Configure(ModelBuilder model)

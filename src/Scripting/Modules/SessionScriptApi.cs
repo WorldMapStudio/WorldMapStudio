@@ -8,8 +8,6 @@ public sealed class SessionScriptApi : IScriptModule
 
     public string Name => "session";
 
-    public float Priority => 0f;
-
     public SessionScriptApi(ScriptingSystem system)
     {
         _sessions = system.Context.EditSessions;

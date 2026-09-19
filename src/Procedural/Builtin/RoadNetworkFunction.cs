@@ -41,8 +41,6 @@ public sealed class RoadNetworkFunction : IProceduralFunction
 
     public int Version => 1;
 
-    public float Priority => 0f;
-
     /// <summary>Vertex height is never stored or read — see the class comment.</summary>
     public bool PlanarNetwork => true;
 

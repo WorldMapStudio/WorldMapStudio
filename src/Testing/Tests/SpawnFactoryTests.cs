@@ -17,8 +17,6 @@ public static class SpawnFactoryTests
     // exactly what a real factory is expected to do, without needing a database behind it.
     private sealed class FakeSpawnFactory : ISpawnFactory
     {
-        public float Priority => 0.0f;
-
         public string SpawnKind => "Fake";
 
         public string PickerCatalogName => "Fake Catalog";

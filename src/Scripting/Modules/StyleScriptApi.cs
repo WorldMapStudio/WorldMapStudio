@@ -112,8 +112,6 @@ public sealed class StyleScriptApi : IScriptModule
 
     public string Name => "style";
 
-    public float Priority => 0f;
-
     public StyleScriptApi(ScriptingSystem system)
     {
     }

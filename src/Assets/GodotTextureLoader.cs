@@ -25,8 +25,6 @@ public sealed class GodotTextureLoader : ITextureLoader
     {
     }
 
-    public float Priority => 0f;
-
     public bool CanLoad(string path) => Extensions.Contains(AssetPath.Extension(path));
 
     public async Task<Image?> LoadTextureImageAsync(AssetSystem assets, string path)

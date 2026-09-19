@@ -28,8 +28,6 @@ public sealed partial class EditorDbContext
 [Subsystem(nameof(EditorStorage))]
 public sealed class BatchStateTableConfiguration : ITableConfiguration
 {
-    public float Priority => 0.0f;
-
     public BatchStateTableConfiguration(EditorStorage storage)
     {
     }

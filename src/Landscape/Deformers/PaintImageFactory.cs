@@ -43,8 +43,6 @@ public sealed class PaintImageFactory : ICatalogEntityFactory, IMapOwnableResour
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public Type EntityType => typeof(PaintImage);
 
     public bool Handles(IEntity entity) => entity is PaintImage;

@@ -11,8 +11,6 @@ public sealed class ViewportScriptApi : IScriptModule
 
     public string Name => "viewport";
 
-    public float Priority => 0f;
-
     public ViewportScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

@@ -14,8 +14,6 @@ public sealed class EditorScriptApi : IScriptModule
 
     public string Name => "editor";
 
-    public float Priority => 0f;
-
     public EditorScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

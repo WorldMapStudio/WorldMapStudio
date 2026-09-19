@@ -10,8 +10,6 @@ public sealed class TerrainViewCategory : IViewCategory
 {
     public const string CategoryId = "view.terrain";
 
-    public float Priority => 0f;
-
     public string Id => CategoryId;
 
     public string DisplayName => "Terrain";

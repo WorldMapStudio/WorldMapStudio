@@ -48,8 +48,6 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => TerrainValueComponent.Kind;
 
     public void Configure(ModelBuilder model)

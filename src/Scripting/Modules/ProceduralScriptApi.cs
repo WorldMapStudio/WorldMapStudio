@@ -19,8 +19,6 @@ public sealed class ProceduralScriptApi : IScriptModule
 
     public string Name => "procedural";
 
-    public float Priority => 0f;
-
     public ProceduralScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

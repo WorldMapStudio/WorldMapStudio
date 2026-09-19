@@ -28,8 +28,6 @@ public sealed class EventsScriptApi : IScriptModule
 
     public string Name => "events";
 
-    public float Priority => 0f;
-
     public EventsScriptApi(ScriptingSystem system)
         : this(system.Context.Selection, () => system.Context.Maps.Version)
     {

@@ -42,8 +42,6 @@ public sealed class ViewScriptApi : IScriptModule
 
     public string Name => "view";
 
-    public float Priority => 0f;
-
     public ViewScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

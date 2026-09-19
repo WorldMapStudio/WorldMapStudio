@@ -27,8 +27,6 @@ public sealed class TubeNetworkMeshFunction : IProceduralFunction
 
     public int Version => 2;
 
-    public float Priority => 0f;
-
     public IReadOnlyList<MeshParameter> Parameters { get; } =
         MeshParameter.List(Radius, Segments, UvScale);
 
