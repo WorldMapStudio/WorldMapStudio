@@ -17,7 +17,7 @@ public static class ClipboardScriptApiTests
     [EditorTest(Category = "Clipboard Script", Thread = TestThread.Main)]
     public static void Paste_lands_the_bottom_centre_at_the_point_keeps_the_layout_and_undoes()
     {
-        (EditorContext context, ScriptEngineHost host) = NewRig(withHierarchy: false);
+        (EditorContext context, ScriptEngineHost host) = NewRig(gap: 10.0f);
         int before = context.Scene.Entities.Count();
 
         host.Evaluate("wms.clipboard.Copy(wms.fixture.All())");
@@ -39,22 +39,22 @@ public static class ClipboardScriptApiTests
     }
 
     [EditorTest(Category = "Clipboard Script", Thread = TestThread.Main)]
-    public static void Pasting_a_parent_and_child_keeps_their_offset()
+    public static void Pasting_two_close_entities_keeps_their_offset()
     {
-        (EditorContext context, ScriptEngineHost host) = NewRig(withHierarchy: true);
+        (EditorContext context, ScriptEngineHost host) = NewRig(gap: 2.0f);
 
         host.Evaluate("wms.clipboard.Copy(wms.fixture.All())");
         host.Evaluate("var pasted = wms.clipboard.Paste(100, 0, 50)");
 
-        double parentX = double.Parse(host.Evaluate("wms.scene.GetPosition(pasted[0])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
-        double childX = double.Parse(host.Evaluate("wms.scene.GetPosition(pasted[1])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
-        Assert.AreApproximatelyEqual(2.0, childX - parentX, 1e-4, "a child stays where it was relative to its parent");
+        double firstX = double.Parse(host.Evaluate("wms.scene.GetPosition(pasted[0])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
+        double secondX = double.Parse(host.Evaluate("wms.scene.GetPosition(pasted[1])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
+        Assert.AreApproximatelyEqual(2.0, secondX - firstX, 1e-4, "the second entity stays where it was relative to the first");
     }
 
     [EditorTest(Category = "Clipboard Script", Thread = TestThread.Main)]
     public static void Clear_and_an_empty_paste()
     {
-        (EditorContext context, ScriptEngineHost host) = NewRig(withHierarchy: false);
+        (EditorContext context, ScriptEngineHost host) = NewRig(gap: 10.0f);
         host.Evaluate("wms.clipboard.Copy(wms.fixture.All())");
 
         host.Evaluate("wms.clipboard.Clear()");
@@ -66,7 +66,7 @@ public static class ClipboardScriptApiTests
     [EditorTest(Category = "Clipboard Script", Thread = TestThread.Main)]
     public static void Copy_defaults_to_the_selection()
     {
-        (EditorContext context, ScriptEngineHost host) = NewRig(withHierarchy: false);
+        (EditorContext context, ScriptEngineHost host) = NewRig(gap: 10.0f);
         context.Selection.Set(context.Scene.Entities.First());
 
         host.Evaluate("wms.clipboard.Copy()");
@@ -74,20 +74,12 @@ public static class ClipboardScriptApiTests
         Assert.AreEqual("1", host.Evaluate("wms.clipboard.Paste(0, 0, 0, false).length.toString()"));
     }
 
-    private static (EditorContext, ScriptEngineHost) NewRig(bool withHierarchy)
+    private static (EditorContext, ScriptEngineHost) NewRig(float gap)
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_clipboard_script_test__" });
         var first = new SceneEntity { Name = "A", Map = context.Maps.CurrentMap };
         var second = new SceneEntity { Name = "B", Map = context.Maps.CurrentMap };
-        if (withHierarchy)
-        {
-            second.Parent = first;
-            second.Transform = new Transform3D(Basis.Identity, new Vector3(2, 0, 0));
-        }
-        else
-        {
-            second.Transform = new Transform3D(Basis.Identity, new Vector3(10, 0, 0));
-        }
+        second.Transform = new Transform3D(Basis.Identity, new Vector3(gap, 0, 0));
 
         context.Scene.Add(first);
         context.Scene.Add(second);

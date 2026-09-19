@@ -17,8 +17,7 @@ public sealed class SceneClipboard : IWorldParticipant
 
     public bool HasContent => _entries.Count > 0;
 
-    /// <summary>Clones each entity, preserving parent links between entities that were copied together
-    /// and dropping any link to a parent that wasn't.</summary>
+    /// <summary>Clones each entity.</summary>
     public void Copy(IEnumerable<SceneEntity> entities) => _entries = CloneBatch(entities.ToArray(), map: null);
 
     /// <summary>
@@ -30,8 +29,8 @@ public sealed class SceneClipboard : IWorldParticipant
 
     /// <summary>
     /// <see cref="Paste"/>, shifted rigidly so the bottom-centre of the batch's combined bounds lands at
-    /// <paramref name="point"/>, preserving whatever layout (and, for a parent/child pair, relative
-    /// offset) the copied entities had. Returns the entities and the not yet applied command that adds
+    /// <paramref name="point"/>, preserving whatever layout the copied
+    /// entities had. Returns the entities and the not yet applied command that adds
     /// them to <paramref name="scene"/>, or a null command when there is nothing to paste.
     /// </summary>
     public (IReadOnlyList<SceneEntity> Entities, IEditCommand? Command) PasteAt(SceneEntityRegistry scene, MapId map, Vector3 point)
@@ -42,9 +41,8 @@ public sealed class SceneClipboard : IWorldParticipant
             return (pasted, null);
         }
 
-        // Moving a parent carries its children along, so only the ones without a copied parent are moved.
         Vector3 delta = point - BoundsBottomCenter(pasted);
-        foreach (SceneEntity entity in pasted.Where(entity => entity.Parent == null))
+        foreach (SceneEntity entity in pasted)
         {
             Transform3D transform = entity.Transform;
             entity.Transform = new Transform3D(transform.Basis, transform.Origin + delta);
@@ -79,26 +77,16 @@ public sealed class SceneClipboard : IWorldParticipant
 
     private static IReadOnlyList<SceneEntity> CloneBatch(IReadOnlyList<SceneEntity> source, MapId? map)
     {
-        var clones = new Dictionary<SceneEntity, SceneEntity>();
-        foreach (SceneEntity entity in source)
+        var clones = new SceneEntity[source.Count];
+        for (int i = 0; i < clones.Length; i++)
         {
-            SceneEntity clone = entity.Clone();
+            clones[i] = source[i].Clone();
             if (map is { } target)
             {
-                clone.Map = target;
-            }
-
-            clones[entity] = clone;
-        }
-
-        foreach (SceneEntity entity in source)
-        {
-            if (entity.Parent is { } parent && clones.TryGetValue(parent, out SceneEntity? parentClone))
-            {
-                clones[entity].Parent = parentClone;
+                clones[i].Map = target;
             }
         }
 
-        return clones.Values.ToArray();
+        return clones;
     }
 }
