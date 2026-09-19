@@ -197,7 +197,7 @@ public sealed partial class EditorContext : ISubsystemHost
             () => RequestReload("Edit session aborted"),
             () => Operations.ActiveOperation)));
         Scene = Add(new SceneEntityRegistry());
-        Catalog = Add(new CatalogEntityRegistry());
+        Catalog = Add(new CatalogEntityRegistry(type => Database.FindRecordIdSource(type)));
         Problems = Add(new ProblemSystem());
         ChunkChanges = Add(new ChunkChangeLog(this));
         Focus = Add(new ViewportFocus());
@@ -210,19 +210,6 @@ public sealed partial class EditorContext : ISubsystemHost
         Database = Add(new DatabaseSystem(this));
         ReferenceLabels = Add(new CatalogReferenceLabels(this));
         CatalogSearchViews = Add(new CatalogSearchViews(this));
-
-        // Bound here rather than injected, because the catalog registry is constructed before the
-        // database that owns each type's factory. Lets AssignId seed a type's high-water mark from
-        // storage the first time it is needed instead of assuming the loaded set is everything. Both
-        // facets are searched — a lazy factory's type needs this exactly as much as an eager one's,
-        // since most of a lazy catalog's rows are never loaded at all. A lazy factory that does not
-        // happen to implement IRecordIdSource simply isn't found here, and AssignId falls back to
-        // seeding from the loaded set alone, same as before this existed.
-        Catalog.BindFactoryLookup(entityType =>
-            (IRecordIdSource?)Database.Storages.SelectMany(storage => storage.CatalogFactories)
-                .FirstOrDefault(factory => factory.EntityType == entityType)
-            ?? Database.Storages.SelectMany(storage => storage.LazyCatalogFactories)
-                .FirstOrDefault(factory => factory.EntityType == entityType) as IRecordIdSource);
 
         Landscape = Add(new LandscapeSystem(this));
         Procedural = Add(new ProceduralSystem(this));

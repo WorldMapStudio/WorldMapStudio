@@ -20,7 +20,16 @@ public sealed class CatalogEntityRegistry
     private readonly Dictionary<EntityId, CatalogEntity> _byId = [];
     private readonly Dictionary<Type, int> _highWaterMarks = [];
 
-    private Func<Type, IRecordIdSource?>? _factoryLookup;
+    private readonly Func<Type, IRecordIdSource?>? _recordIdSource;
+
+    /// <param name="recordIdSource">Finds where a catalog type's row ids live, so
+    /// <see cref="AssignId{TEntity}"/> can seed a type's high-water mark from storage rather than
+    /// assuming the loaded set is everything — required once a catalog can be lazily loaded, where most
+    /// rows are never loaded at all. Null seeds from the loaded set alone.</param>
+    public CatalogEntityRegistry(Func<Type, IRecordIdSource?>? recordIdSource = null)
+    {
+        _recordIdSource = recordIdSource;
+    }
 
     public IReadOnlyList<CatalogEntity> Entities => _entities;
 
@@ -34,16 +43,6 @@ public sealed class CatalogEntityRegistry
     /// <summary>The loaded entities of one catalog type, in load order.</summary>
     public IEnumerable<TEntity> OfType<TEntity>() where TEntity : CatalogEntity =>
         _entities.OfType<TEntity>();
-
-    /// <summary>
-    /// Bound once by <see cref="EditorContext"/> after <see cref="DatabaseSystem"/> exists, since this
-    /// registry is constructed first. Lets <see cref="AssignId{TEntity}"/> seed a type's high-water mark
-    /// from storage rather than assuming the loaded set is everything — required once a catalog can be
-    /// lazily loaded, where most rows are never loaded at all. Typed against <see cref="IRecordIdSource"/>
-    /// rather than <see cref="ICatalogEntityFactory"/> so a lazy factory's type answers this exactly the
-    /// same way an eager one's does.
-    /// </summary>
-    public void BindFactoryLookup(Func<Type, IRecordIdSource?> lookup) => _factoryLookup = lookup;
 
     /// <summary>
     /// Gives a newly created entity the next free row id for its type, so other entities can
@@ -86,7 +85,7 @@ public sealed class CatalogEntityRegistry
 
     private int SeedHighWaterMark<TEntity>(Type type) where TEntity : CatalogEntity, IKeyedCatalogEntity
     {
-        int seed = _factoryLookup?.Invoke(type) is { } factory ? BlockingWork.Run(factory.MaxRecordIdAsync) : 0;
+        int seed = _recordIdSource?.Invoke(type) is { } factory ? BlockingWork.Run(factory.MaxRecordIdAsync) : 0;
 
         foreach (TEntity existing in OfType<TEntity>())
         {
