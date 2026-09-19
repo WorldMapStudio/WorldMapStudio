@@ -90,6 +90,9 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
                 .WithMany()
                 .HasForeignKey(record => record.ParentId)
                 .OnDelete(DeleteBehavior.SetNull);
+
+            // Serves the streaming region query; without it that query scans every map's rows.
+            entity.HasIndex(record => new { record.MapId, record.MinX, record.MaxX, record.MinY, record.MaxY });
         });
     }
 
