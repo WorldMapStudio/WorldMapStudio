@@ -140,49 +140,21 @@ public sealed class SceneMenu : IMainMenu
             return;
         }
 
-        IReadOnlyList<SceneEntity> pasted = _context.Clipboard.Paste(_context.Maps.CurrentMap);
-        if (pasted.Count == 0)
+        (IReadOnlyList<SceneEntity> pasted, IEditCommand? command) =
+            _context.Clipboard.PasteAt(_context.Scene, _context.Maps.CurrentMap, pointer.WorldPoint);
+        if (command == null)
         {
             return;
         }
 
-        // Shift the whole batch rigidly so the bottom-centre of its combined bounds lands under the
-        // cursor, preserving whatever layout (and, for a parent/child pair, relative offset) the
-        // copied entities had. Moving a parent carries its children along, so only the ones without
-        // a copied parent are moved.
-        Vector3 delta = pointer.WorldPoint - BoundsBottomCenter(pasted);
-        foreach (SceneEntity entity in pasted.Where(entity => entity.Parent == null))
-        {
-            Transform3D transform = entity.Transform;
-            entity.Transform = new Transform3D(transform.Basis, transform.Origin + delta);
-        }
+        command.Apply();
+        _context.EditSessions.Record(command);
 
-        var commands = new List<IEditCommand>();
         _context.Selection.Clear();
         foreach (SceneEntity entity in pasted)
         {
-            _context.Scene.Add(entity);
             _context.Selection.Add(entity);
-            commands.Add(new CreateEntityCommand(_context.Scene, entity));
         }
-
-        _context.EditSessions.Record(commands.Count == 1
-            ? commands[0]
-            : new BatchEditCommand($"Paste {commands.Count} entities", commands));
-    }
-
-    // Horizontally centred, vertically at the lowest point: the natural anchor for dropping a batch
-    // onto a surface, so pasted content sits on the ground under the cursor rather than being buried
-    // or floating.
-    private static Vector3 BoundsBottomCenter(IReadOnlyList<SceneEntity> entities)
-    {
-        Aabb bounds = entities[0].WorldBounds;
-        for (int i = 1; i < entities.Count; i++)
-        {
-            bounds = bounds.Merge(entities[i].WorldBounds);
-        }
-
-        return new Vector3(bounds.Position.X + bounds.Size.X * 0.5f, bounds.Position.Y, bounds.Position.Z + bounds.Size.Z * 0.5f);
     }
 
     private void AddSceneEntity()
