@@ -31,7 +31,7 @@ public static class LandscapeMaterialBindTests
         };
         var catalog = new LandscapeCatalog([], [layer], [material], functions);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new StampComponent { Radius = 80.0f });
         var bind = new LandscapeMaterialBindComponent();
         bind.ReplaceBindings([new LandscapeMaterialBinding(layer.RecordId, material.RecordId)]);

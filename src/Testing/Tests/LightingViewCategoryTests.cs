@@ -34,7 +34,7 @@ public static class LightingViewCategoryTests
     public static void Includes_an_entity_whose_component_is_an_environment_source()
     {
         var category = new LightingViewCategory(null!);
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new FakeEnvironmentSource());
 
         Assert.IsTrue(category.Includes(entity));
@@ -44,7 +44,7 @@ public static class LightingViewCategoryTests
     public static void Excludes_an_entity_with_no_environment_source_component()
     {
         var category = new LightingViewCategory(null!);
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new PlainComponent());
 
         Assert.IsFalse(category.Includes(entity));

@@ -149,7 +149,7 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new SceneEntity { Name = "Torch" };
+        var empty = new MapSceneEntity { Name = "Torch" };
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
@@ -168,7 +168,7 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new SceneEntity();
+        var empty = new MapSceneEntity();
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
@@ -181,7 +181,7 @@ public static class ScriptingTests
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();
-        var empty = new SceneEntity();
+        var empty = new MapSceneEntity();
         scene.Add(empty);
 
         var handle = new ScriptEntityHandle(scene, catalog, sessions, empty);
@@ -441,7 +441,7 @@ public static class ScriptingTests
         events.Update();
         Assert.AreEqual(0, fired, "no change yet");
 
-        selection.Add(new SceneEntity());
+        selection.Add(new MapSceneEntity());
         events.Update();
         Assert.AreEqual(1, fired);
 
@@ -458,7 +458,7 @@ public static class ScriptingTests
         events.On("selectionChanged", () => fired++);
         events.Off("selectionChanged");
 
-        selection.Add(new SceneEntity());
+        selection.Add(new MapSceneEntity());
         events.Update();
 
         Assert.AreEqual(0, fired);
@@ -472,7 +472,7 @@ public static class ScriptingTests
         var host = new ScriptEngineHost([events]);
         host.Evaluate("var fired = 0; wms.events.On('selectionChanged', function () { fired++; });");
 
-        selection.Add(new SceneEntity());
+        selection.Add(new MapSceneEntity());
         events.Update();
 
         Assert.AreEqual("1", host.Evaluate("fired.toString()"));

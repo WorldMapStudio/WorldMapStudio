@@ -294,12 +294,12 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return (type.GetTableName()!, type.FindProperty(propertyName)!.GetColumnName(table)!);
     }
 
-    /// <summary>The table and id/map column names of <see cref="SceneEntityRecord"/> — what a
+    /// <summary>The table and id/map column names of <see cref="MapEntityRecord"/> — what a
     /// component's map-scoped delete joins against to find the map's entity ids.</summary>
     private static (string Table, string Id, string Map) SceneEntityColumns(EditorDbContext context)
     {
-        (string table, string mapColumn) = ResolveColumn<SceneEntityRecord>(context, nameof(SceneEntityRecord.MapId));
-        (_, string idColumn) = ResolveColumn<SceneEntityRecord>(context, nameof(SceneEntityRecord.Id));
+        (string table, string mapColumn) = ResolveColumn<MapEntityRecord>(context, nameof(MapEntityRecord.MapId));
+        (_, string idColumn) = ResolveColumn<MapEntityRecord>(context, nameof(MapEntityRecord.Id));
         return (table, idColumn, mapColumn);
     }
 

@@ -71,8 +71,8 @@ public static class PrefabsScriptApiTests
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_prefabs_script_test__" });
 
-        var first = new SceneEntity { Name = "First", Map = context.Maps.CurrentMap };
-        var second = new SceneEntity { Name = "Second", Map = context.Maps.CurrentMap };
+        var first = new MapSceneEntity { Name = "First", Map = context.Maps.CurrentMap };
+        var second = new MapSceneEntity { Name = "Second", Map = context.Maps.CurrentMap };
         second.Transform = new Transform3D(Basis.Identity, new Vector3(2, 0, 0));
         context.Scene.Add(first);
         context.Scene.Add(second);

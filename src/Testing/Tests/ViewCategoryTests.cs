@@ -39,7 +39,7 @@ public static class ViewCategoryTests
         IModelFormat format = context.ModelFormats.Find(ObjModelFormat.FormatId)!;
         var category = new ModelFormatViewCategory(format, context.Assets, context.Procedural);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new ModelRendererComponent(context.Assets, context.MeshMaterials) { ModelPath = "thing.obj" });
 
         Assert.IsTrue(category.Includes(entity));
@@ -54,7 +54,7 @@ public static class ViewCategoryTests
         var model = new ProceduralModel { RecordId = 1, FunctionId = "test.fake_mesh" };
         context.Catalog.Add(model);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new ProceduralComponent(context.Procedural) { ModelId = model.RecordId });
 
         IModelFormat mesh = context.ModelFormats.Find(MeshModelFormat.FormatId)!;
@@ -70,14 +70,14 @@ public static class ViewCategoryTests
         IModelFormat format = context.ModelFormats.Find(ObjModelFormat.FormatId)!;
         var category = new ModelFormatViewCategory(format, context.Assets, context.Procedural);
 
-        Assert.IsFalse(category.Includes(new SceneEntity()));
+        Assert.IsFalse(category.Includes(new MapSceneEntity()));
     }
 
     [EditorTest(Category = "View", Thread = TestThread.Background)]
     public static void Hidden_is_true_when_any_including_category_is_hidden()
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_view_category_union_test__" });
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         context.Scene.Add(entity);
 
         var a = new FakeCategory("test.a", includeAll: false);
@@ -98,7 +98,7 @@ public static class ViewCategoryTests
         var everything = new FakeCategory("test.everything", includeAll: true);
         context.ViewCategories.DiscoverFrom([everything]);
 
-        var first = new SceneEntity();
+        var first = new MapSceneEntity();
         context.Scene.Add(first);
         Assert.AreEqual(1, context.ViewCategories.Visible.Count, "a newly loaded entity is visible by default");
 
@@ -106,7 +106,7 @@ public static class ViewCategoryTests
         Assert.AreEqual(0, context.ViewCategories.Visible.Count, "the cache must notice the filter version moved");
 
         context.ViewCategories.SetHidden("test.everything", false);
-        var second = new SceneEntity();
+        var second = new MapSceneEntity();
         context.Scene.Add(second);
         Assert.AreEqual(2, context.ViewCategories.Visible.Count, "the cache must notice the scene version moved");
     }

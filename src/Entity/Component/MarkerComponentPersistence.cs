@@ -12,7 +12,7 @@ public sealed class SceneMarkerComponentRecord
 
     public int Shape { get; set; }
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -56,7 +56,7 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         MarkerComponent? marker = entity.Component<MarkerComponent>();
         if (marker == null)

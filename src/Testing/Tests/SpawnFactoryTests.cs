@@ -34,7 +34,7 @@ public static class SpawnFactoryTests
                 throw new InvalidOperationException("key required");
             }
 
-            var entity = new SceneEntity { Name = "Fake", Map = map, Transform = transform };
+            var entity = new MapSceneEntity { Name = "Fake", Map = map, Transform = transform };
             var command = new CreateEntityCommand(context.Scene, entity);
             command.Apply();
             context.EditSessions.Record(command);

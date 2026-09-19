@@ -153,7 +153,7 @@ public static class WorldLifecycleTests
     public static void Clearing_the_scene_registry_drops_peripheral_and_resident_flags_too()
     {
         var registry = new SceneEntityRegistry();
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         registry.Add(entity);
         registry.SetPeripheral(entity, true);
         registry.SetResident(entity, true);

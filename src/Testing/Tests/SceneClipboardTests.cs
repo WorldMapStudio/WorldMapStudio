@@ -13,7 +13,7 @@ public static class SceneClipboardTests
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Clone_gets_a_fresh_identity_and_no_persisted_record()
     {
-        var entity = new SceneEntity { Name = "Torch", RecordId = 7 };
+        var entity = new MapSceneEntity { Name = "Torch", RecordId = 7 };
         entity.Transform = new Transform3D(Basis.Identity, new Vector3(1.0f, 2.0f, 3.0f));
 
         SceneEntity clone = entity.Clone();
@@ -27,7 +27,7 @@ public static class SceneClipboardTests
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Clone_duplicates_component_data_independently()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new MarkerComponent { Shape = MarkerShape.Cube });
 
         SceneEntity clone = entity.Clone();
@@ -45,7 +45,7 @@ public static class SceneClipboardTests
         var image = new PaintImage { RecordId = 1, Name = "Image 1" };
         context.Catalog.Add(image);
 
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         var target = new ImageComponent(context.Images) { ImageId = image.RecordId };
         entity.AddComponent(target);
 
@@ -66,7 +66,7 @@ public static class SceneClipboardTests
     public static void Copy_survives_the_source_entity_being_deleted_before_paste()
     {
         var scene = new SceneEntityRegistry();
-        var entity = new SceneEntity { Name = "Crate" };
+        var entity = new MapSceneEntity { Name = "Crate" };
         entity.AddComponent(new MarkerComponent { Shape = MarkerShape.Cube });
         scene.Add(entity);
 
@@ -87,7 +87,7 @@ public static class SceneClipboardTests
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Pasting_twice_never_shares_entities_or_components()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new MarkerComponent());
 
         var clipboard = new SceneClipboard();
@@ -103,7 +103,7 @@ public static class SceneClipboardTests
     [EditorTest(Category = "Clipboard", Thread = TestThread.Background)]
     public static void Paste_places_entities_into_the_requested_map()
     {
-        var entity = new SceneEntity { Map = new MapId(1) };
+        var entity = new MapSceneEntity { Map = new MapId(1) };
         var clipboard = new SceneClipboard();
         clipboard.Copy([entity]);
 
@@ -116,8 +116,8 @@ public static class SceneClipboardTests
     public static void Batch_paste_command_reports_chunk_impacts_from_every_created_entity()
     {
         var scene = new SceneEntityRegistry();
-        var a = new SceneEntity();
-        var b = new SceneEntity();
+        var a = new MapSceneEntity();
+        var b = new MapSceneEntity();
         scene.Add(a);
         scene.Add(b);
 

@@ -159,7 +159,7 @@ public sealed class SceneMenu : IMainMenu
 
     private void AddSceneEntity()
     {
-        var entity = new SceneEntity { Name = "Entity", Map = _context.Maps.CurrentMap };
+        var entity = new MapSceneEntity { Name = "Entity", Map = _context.Maps.CurrentMap };
         _context.Scene.Add(entity);
         _context.Selection.Set(entity);
         _context.EditSessions.Record(new CreateEntityCommand(_context.Scene, entity));

@@ -19,7 +19,7 @@ namespace WorldMapStudio;
 /// property and needs nothing declared here, so a named one exists only where it earns its keep
 /// (readability at a call site used more than once): as a <c>partial</c> addition in that table's own
 /// owning file, right next to the <see cref="ITableConfiguration"/>/<see cref="IEntityFactory"/> that
-/// declares the table itself. See e.g. <see cref="SceneEntityFactory"/> or <c>ChunkChangeRecords.cs</c>.
+/// declares the table itself. See e.g. <see cref="MapSceneEntityFactory"/> or <c>ChunkChangeRecords.cs</c>.
 /// </summary>
 public sealed partial class EditorDbContext : DbContext
 {

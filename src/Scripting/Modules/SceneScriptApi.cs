@@ -44,7 +44,7 @@ public sealed class SceneScriptApi : IScriptModule
     [ScriptFunction]
     public ScriptEntityHandle Create(string? componentType = null)
     {
-        var entity = new SceneEntity { Map = _context.Maps.CurrentMap };
+        var entity = new MapSceneEntity { Map = _context.Maps.CurrentMap };
         if (!string.IsNullOrEmpty(componentType))
         {
             entity.AddComponent(CreateComponent(componentType));

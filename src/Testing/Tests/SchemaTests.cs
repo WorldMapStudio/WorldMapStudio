@@ -23,7 +23,7 @@ public static class SchemaTests
             new MarkerComponentPersistence(null!),
             new StampComponentPersistence(null!),
         };
-        var entityFactories = new IEntityFactory[] { new SceneEntityFactory(null!) };
+        var entityFactories = new IEntityFactory[] { new MapSceneEntityFactory(null!) };
         using var context = new EditorDbContext(options, persistence, entityFactories, []);
 
         Schema schema = ModelSchema.Extract(context);
@@ -34,7 +34,7 @@ public static class SchemaTests
         SchemaTable entities = schema.Tables["wms_scene_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
-        // Id is ValueGeneratedNever(): SceneEntityFactory assigns it client-side (a MAX(Id)-seeded
+        // Id is ValueGeneratedNever(): MapSceneEntityFactory assigns it client-side (a MAX(Id)-seeded
         // high-water mark) so Pomelo can batch inserts, even though the live column stays AUTO_INCREMENT.
         Assert.IsFalse(entities.Column("Id")!.AutoIncrement, "Id is client-assigned, not database-generated");
         Assert.IsTrue(

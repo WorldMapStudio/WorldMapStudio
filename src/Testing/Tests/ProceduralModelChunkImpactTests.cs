@@ -48,7 +48,7 @@ public static class ProceduralModelChunkImpactTests
 
     private static SceneEntity Place(EditorContext context, ProceduralModel model)
     {
-        var entity = new SceneEntity { Name = "Placement" };
+        var entity = new MapSceneEntity { Name = "Placement" };
         entity.AddComponent(new ProceduralComponent(context.Procedural) { ModelId = model.RecordId });
         context.Scene.Add(entity);
         return entity;

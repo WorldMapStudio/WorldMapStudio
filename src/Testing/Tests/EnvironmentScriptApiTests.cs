@@ -55,7 +55,7 @@ public static class EnvironmentScriptApiTests
     private static (EditorContext, ScriptEngineHost) NewRig()
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_environment_script_test__" });
-        var entity = new SceneEntity { Map = context.Maps.CurrentMap };
+        var entity = new MapSceneEntity { Map = context.Maps.CurrentMap };
         entity.AddComponent(new SphereSource());
         entity.Transform = new Transform3D(Basis.Identity, new Vector3(100, 0, 0));
         context.Scene.Add(entity);

@@ -16,7 +16,7 @@ public sealed class SceneProceduralComponentRecord
     /// without ever picking a model.</summary>
     public int? ModelId { get; set; }
 
-    public SceneEntityRecord? Entity { get; set; }
+    public MapEntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -111,7 +111,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
     {
         ProceduralComponent? proceduralMesh = entity.Component<ProceduralComponent>();
         if (proceduralMesh == null)
@@ -145,10 +145,10 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         EditorDbContext context,
         int resourceRecordId)
     {
-        List<SceneEntityRecord> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
+        List<MapEntityRecord> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
             .Where(record => record.ModelId == resourceRecordId)
             .Join(
-                context.SceneEntities.AsNoTracking(),
+                context.MapEntities.AsNoTracking(),
                 record => record.EntityId,
                 entity => entity.Id,
                 (record, entity) => entity)
@@ -163,7 +163,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         List<(int, int)> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()
             .Where(record => record.ModelId != null)
             .Join(
-                context.SceneEntities.AsNoTracking(),
+                context.MapEntities.AsNoTracking(),
                 record => record.EntityId,
                 entity => entity.Id,
                 (record, entity) => new ValueTuple<int, int>(record.ModelId!.Value, entity.MapId))

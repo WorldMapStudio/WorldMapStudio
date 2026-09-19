@@ -77,8 +77,8 @@ public static class ClipboardScriptApiTests
     private static (EditorContext, ScriptEngineHost) NewRig(float gap)
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_clipboard_script_test__" });
-        var first = new SceneEntity { Name = "A", Map = context.Maps.CurrentMap };
-        var second = new SceneEntity { Name = "B", Map = context.Maps.CurrentMap };
+        var first = new MapSceneEntity { Name = "A", Map = context.Maps.CurrentMap };
+        var second = new MapSceneEntity { Name = "B", Map = context.Maps.CurrentMap };
         second.Transform = new Transform3D(Basis.Identity, new Vector3(gap, 0, 0));
 
         context.Scene.Add(first);

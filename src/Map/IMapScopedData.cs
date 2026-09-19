@@ -26,7 +26,7 @@ public interface IMapScopedData : ISubsystem
     /// <paramref name="context"/>'s connection already open. <see cref="ISubsystem.Priority"/> orders
     /// owners, lower first: an owner that finds its rows through the map's entities (rather than a
     /// column naming the map directly) needs a negative priority so it runs before
-    /// <c>SceneEntityFactory</c> (priority 0) deletes them.
+    /// <c>MapSceneEntityFactory</c> (priority 0) deletes them.
     /// </summary>
     Task DeleteAsync(EditorDbContext context, DbTransaction transaction, MapId map);
 }

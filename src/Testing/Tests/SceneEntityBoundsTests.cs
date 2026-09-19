@@ -77,7 +77,7 @@ public static class SceneEntityBoundsTests
     [EditorTest(Category = "SceneEntity", Thread = TestThread.Background)]
     public static void Effective_bounds_merge_component_extents()
     {
-        var entity = new SceneEntity();
+        var entity = new MapSceneEntity();
         entity.AddComponent(new BoundsComponent(new Aabb(Vector3.Zero, new Vector3(2.0f, 10.0f, 4.0f))));
         entity.AddComponent(new BoundsComponent(new Aabb(Vector3.Zero, new Vector3(12.0f, 2.0f, 6.0f))));
 
