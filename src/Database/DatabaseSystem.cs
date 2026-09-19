@@ -198,6 +198,14 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     private IEnumerable<Type> CatalogEntityTypes() =>
         Storages.SelectMany(storage => storage.CatalogFactories).Select(factory => factory.EntityType).Distinct();
 
+    /// <summary>Where the row ids of <paramref name="entityType"/> are stored, from its eager or lazy
+    /// factory; null when the type has none or its lazy factory is not an <see cref="IRecordIdSource"/>.</summary>
+    public IRecordIdSource? FindRecordIdSource(Type entityType) =>
+        (IRecordIdSource?)Storages.SelectMany(storage => storage.CatalogFactories)
+            .FirstOrDefault(factory => factory.EntityType == entityType)
+        ?? Storages.SelectMany(storage => storage.LazyCatalogFactories)
+            .FirstOrDefault(factory => factory.EntityType == entityType) as IRecordIdSource;
+
     /// <summary>Every distinct <see cref="ILazyCatalogEntityFactory.EntityType"/> registered across
     /// every storage. A lazy factory never bulk-loads, so this plays no part in
     /// <see cref="IWorldParticipant.LoadWorld(PhaseTimings)"/> — but whatever it opened on demand still
