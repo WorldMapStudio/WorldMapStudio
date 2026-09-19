@@ -29,9 +29,13 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 
     public IEnumerable<Storage> Storages => Subsystems;
 
+    /// <summary>Which storage and factory own a scene entity, by type — see <see cref="SceneEntitySources"/>.</summary>
+    public SceneEntitySources SceneSources { get; }
+
     public DatabaseSystem(EditorContext context)
     {
         _context = context;
+        SceneSources = new SceneEntitySources(this);
         InitializeSubsystems();
         BindConnections();
     }
@@ -297,7 +301,10 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
                     continue;
                 }
 
-                if (storage.EntityFactories.Any(factory => factory.Handles(entity)))
+                bool owned = entity is SceneEntity scene
+                    ? ReferenceEquals(SceneSources.StorageOf(scene), storage)
+                    : storage.EntityFactories.Any(factory => factory.Handles(entity));
+                if (owned)
                 {
                     (IsLoaded(entity) ? saves : deletes).Add(entity);
                 }

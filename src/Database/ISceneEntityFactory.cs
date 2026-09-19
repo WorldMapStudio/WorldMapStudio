@@ -25,6 +25,14 @@ public interface ISceneEntityFactory : IEntityFactory
     long? PersistentKey(SceneEntity entity);
 
     /// <summary>
+    /// Stable name under which this factory's entities are bridged into the editor's entity table so
+    /// they can carry tags and attached components. Null opts out. Persisted; never rename.
+    /// <see cref="PersistentKey"/> must be stable across sessions for a bridged factory: a key that is
+    /// per-session or positional would attach editor data to whatever row happens to hold it next.
+    /// </summary>
+    string? BridgeSource => null;
+
+    /// <summary>
     /// Loads this factory's entities for the given map whose <see cref="SceneEntity.WorldBounds"/>
     /// <em>overlap</em> the region. Overlap, not containment of the origin: a large building or a long
     /// spline influences a region its origin is nowhere near, and the landscape system asks this same
