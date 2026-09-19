@@ -149,6 +149,18 @@ public sealed class LandscapeWindow : Window
         Heading("Chunk");
         if (ImGui.DragFloat("World size", ref worldSize, 1.0f, 1.0f, 4096.0f)) { _draft.ChunkWorldSize = worldSize; }
         if (ImGui.DragInt("Height resolution", ref height, 1.0f, 2, 1024)) { _draft.ChunkHeightResolution = height; }
+        if (ImGui.BeginCombo("Height vertices", _draft.HeightVertexLayout.ToString()))
+        {
+            foreach (HeightVertexLayout layout in new[] { HeightVertexLayout.Grid, HeightVertexLayout.GridWithCellCentres })
+            {
+                if (ImGui.Selectable(layout.ToString(), _draft.HeightVertexLayout == layout))
+                {
+                    _draft.HeightVertexLayout = layout;
+                }
+            }
+
+            ImGui.EndCombo();
+        }
         if (ImGui.DragInt("Alpha resolution", ref alpha, 1.0f, 1, 4096)) { _draft.ChunkAlphaResolution = alpha; }
         if (ImGui.DragInt("Hole resolution", ref holes, 1.0f, 1, 256)) { _draft.ChunkHoleResolution = holes; }
         ImGui.SameLine();

@@ -94,6 +94,7 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, IT
         ChunkAlphaResolution = record.ChunkAlphaResolution,
         ChunkHoleResolution = record.ChunkHoleResolution,
         HeightEncoding = (HeightEncoding)record.HeightEncoding,
+        HeightVertexLayout = (HeightVertexLayout)record.HeightVertexLayout,
         HeightOffset = (float)record.HeightOffset,
         HeightScale = (float)record.HeightScale,
         AlphaBitDepth = record.AlphaBitDepth,
@@ -113,6 +114,7 @@ public sealed class EditorLandscapeSettingsSource : ILandscapeSettingsSource, IT
         record.ChunkAlphaResolution = settings.ChunkAlphaResolution;
         record.ChunkHoleResolution = settings.ChunkHoleResolution;
         record.HeightEncoding = (int)settings.HeightEncoding;
+        record.HeightVertexLayout = (int)settings.HeightVertexLayout;
         record.HeightOffset = settings.HeightOffset;
         record.HeightScale = settings.HeightScale;
         record.AlphaBitDepth = settings.AlphaBitDepth;

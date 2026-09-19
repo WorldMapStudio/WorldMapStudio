@@ -38,6 +38,17 @@ public enum HeightEncoding
     UInt16,
 }
 
+/// <summary>Which vertices a chunk's height grid has.</summary>
+public enum HeightVertexLayout
+{
+    /// <summary>Corner vertices only; each cell renders as two triangles.</summary>
+    Grid,
+
+    /// <summary>Corner vertices plus one at the centre of every cell; each cell renders as a
+    /// 4-triangle fan around it.</summary>
+    GridWithCellCentres,
+}
+
 /// <summary>
 /// The landscape settings of one map: how terrain is represented, and the constraint the slot
 /// resolver has to satisfy. Supplied by an <see cref="ILandscapeProfile"/> for a known export target,
@@ -53,6 +64,10 @@ public sealed class LandscapeSettings
 
     /// <summary>Heightmap vertices along a chunk edge. Edge rows are shared with the neighbour.</summary>
     public int ChunkHeightResolution { get; set; } = 33;
+
+    /// <summary>Whether cells also have a centre vertex. <see cref="ChunkHeightResolution"/> keeps
+    /// meaning the corner grid either way.</summary>
+    public HeightVertexLayout HeightVertexLayout { get; set; } = HeightVertexLayout.Grid;
 
     /// <summary>Alpha texels along a chunk edge.</summary>
     public int ChunkAlphaResolution { get; set; } = 64;
@@ -163,6 +178,7 @@ public sealed class LandscapeSettings
         bool rebuild =
             previous.ChunkWorldSize != next.ChunkWorldSize ||
             previous.ChunkHeightResolution != next.ChunkHeightResolution ||
+            previous.HeightVertexLayout != next.HeightVertexLayout ||
             previous.ChunkAlphaResolution != next.ChunkAlphaResolution ||
             previous.ChunkHoleResolution != next.ChunkHoleResolution ||
             previous.HeightEncoding != next.HeightEncoding ||
