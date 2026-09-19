@@ -65,7 +65,14 @@ public sealed class SceneScriptApi : IScriptModule
             return;
         }
 
-        SceneComponent component = CreateComponent(componentType);
+        ISceneComponentType type = _context.ComponentTypes.Find(componentType)
+            ?? throw new InvalidOperationException($"No scene component type named '{componentType}'.");
+        if (!type.CanAddTo(entity))
+        {
+            throw new InvalidOperationException($"A '{componentType}' component can't be added to '{entity.DisplayName}'.");
+        }
+
+        SceneComponent component = type.Create();
         var command = new AddComponentCommand(entity, component);
         command.Apply();
         _context.EditSessions.Record(command);
@@ -79,6 +86,11 @@ public sealed class SceneScriptApi : IScriptModule
         if (component == null)
         {
             return;
+        }
+
+        if (component.IsIntrinsic)
+        {
+            throw new InvalidOperationException($"The '{componentType}' component of '{entity.DisplayName}' is built from its stored row and can't be removed.");
         }
 
         var command = new RemoveComponentCommand(entity, component);

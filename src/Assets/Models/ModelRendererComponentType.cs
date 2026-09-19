@@ -24,6 +24,8 @@ public sealed class ModelRendererComponentType : ISceneComponentType
 
     public string DisplayName => "Model Renderer";
 
+    public bool AttachesToBridgedEntities => true;
+
     public SceneComponent Create() => new ModelRendererComponent(_assets, _materials);
 
     public void DrawInspector(InspectorContext context, SceneComponent component)

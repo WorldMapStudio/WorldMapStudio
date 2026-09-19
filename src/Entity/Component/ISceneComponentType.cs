@@ -15,8 +15,15 @@ public interface ISceneComponentType : ISubsystem
 
     string DisplayName { get; }
 
-    /// <summary>Whether the entity may receive another of this kind. Default: at most one.</summary>
-    bool CanAddTo(SceneEntity entity) => entity.Components.All(component => component.TypeId != TypeId);
+    /// <summary>Whether this kind may be attached to an entity stored outside the editor's own tables.
+    /// False for anything whose persistence or evaluation is scoped to an editor map's entities.</summary>
+    bool AttachesToBridgedEntities => false;
+
+    /// <summary>Whether the entity may receive another of this kind. Default: at most one, and only on an
+    /// editor-authored entity unless <see cref="AttachesToBridgedEntities"/> says otherwise.</summary>
+    bool CanAddTo(SceneEntity entity) =>
+        (entity is MapSceneEntity || AttachesToBridgedEntities)
+        && entity.Components.All(component => component.TypeId != TypeId);
 
     SceneComponent Create();
 

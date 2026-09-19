@@ -13,6 +13,8 @@ public sealed class MarkerComponentType : ISceneComponentType
 
     public string DisplayName => "Marker";
 
+    public bool AttachesToBridgedEntities => true;
+
     public SceneComponent Create() => new MarkerComponent();
 
     public void DrawInspector(InspectorContext context, SceneComponent component)
