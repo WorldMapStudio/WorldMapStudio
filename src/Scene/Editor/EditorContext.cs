@@ -150,6 +150,12 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Called by <see cref="Editor"/> once it starts acting on a pending reload.</summary>
     public void ClearPendingReload() => PendingReloadReason = null;
 
+    /// <summary>Whether something (File → Exit, a script) has asked the editor to close. Polled by
+    /// <see cref="Editor.Update"/>.</summary>
+    public bool ExitRequested { get; private set; }
+
+    public void RequestExit() => ExitRequested = true;
+
     /// <summary>Whether a <see cref="WorldReload"/> is currently in progress — true from the moment
     /// it starts acting on <see cref="PendingReloadReason"/> until it hands control back to
     /// <see cref="Editor"/>, which is longer than <see cref="PendingReloadReason"/> stays set. What

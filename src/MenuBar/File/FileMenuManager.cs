@@ -18,16 +18,12 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 
     public ShortcutSystem Shortcuts { get; }
 
-    public bool ExitRequested { get; private set; }
-
     public FileMenuManager(MenuBarManager manager)
     {
         Context = manager.Context;
         Shortcuts = manager.Context.Shortcuts;
         InitializeSubsystems();
     }
-
-    public void RequestExit() => ExitRequested = true;
 
     public void Draw()
     {

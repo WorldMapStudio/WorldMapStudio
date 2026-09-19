@@ -10,13 +10,13 @@ public sealed class ExitMenuItem(FileMenuManager manager) : IFileMenuItem
         "File",
         "Exit",
         new KeyboardShortcut(ImGuiKey.F4, ShortcutModifiers.Alt),
-        manager.RequestExit);
+        manager.Context.RequestExit);
 
     public void Draw()
     {
         if (ImGui.MenuItem("Exit", _shortcut.ShortcutLabel))
         {
-            manager.RequestExit();
+            manager.Context.RequestExit();
         }
     }
 }
