@@ -18,6 +18,9 @@ public sealed class TagSystem(EditorContext context)
         0xE05A47, 0x4FA3E0, 0x5CB85C, 0xE0B341, 0xA06CD5, 0x3CC6C6, 0xE07AB0, 0x8C8C8C,
     ];
 
+    /// <summary>Which entities the Object tool may target.</summary>
+    public ObjectTargetFilter ObjectFilter { get; } = new();
+
     public IEnumerable<EntityTagDefinition> Definitions =>
         context.Catalog.OfType<EntityTagDefinition>().OrderBy(tag => tag.Name, StringComparer.OrdinalIgnoreCase);
 
@@ -161,6 +164,27 @@ public sealed class TagSystem(EditorContext context)
     {
         EntityTagSet target = EntityTagSet.From(tagIds);
         return Change(entities, _ => target);
+    }
+
+    /// <summary>
+    /// Sets which entities the Object tool may target. Whatever is selected and no longer targetable
+    /// leaves the selection, so the inspector and gizmo never go on editing something the tool has
+    /// been told to leave alone.
+    /// </summary>
+    public void SetObjectFilter(EntityTagSet include, EntityTagSet exclude, bool includeUntagged)
+    {
+        if (!ObjectFilter.Set(include, exclude, includeUntagged))
+        {
+            return;
+        }
+
+        foreach (IEntity entity in context.Selection.Selected.ToArray())
+        {
+            if (entity is SceneEntity scene && !ObjectFilter.Targets(scene))
+            {
+                context.Selection.Remove(entity);
+            }
+        }
     }
 
     /// <summary>How many loaded entities carry the tag.</summary>
