@@ -33,7 +33,6 @@ public static class SchemaTests
         Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_stamp_components"), "model should define landscape stamp component table");
         SchemaTable entities = schema.Tables["wms_scene_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
-        Assert.IsTrue(entities.Column("ParentId")?.Nullable == true, "ParentId should be nullable for root entities");
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
         // Id is ValueGeneratedNever(): SceneEntityFactory assigns it client-side (a MAX(Id)-seeded
         // high-water mark) so Pomelo can batch inserts, even though the live column stays AUTO_INCREMENT.
