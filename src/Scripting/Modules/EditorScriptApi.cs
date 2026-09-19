@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace WorldMapStudio;
@@ -22,6 +24,11 @@ public sealed class EditorScriptApi : IScriptModule
     /// <summary>Whether background work is still in flight — a reload would have to wait for this.</summary>
     [ScriptProperty]
     public bool IsBusy => _context.Lifecycle.IsBusy;
+
+    /// <summary>The project's named directories, resolved to absolute paths where the config was a file.</summary>
+    [ScriptProperty]
+    public IDictionary<string, object?> ProjectPaths =>
+        _context.Project.Paths.ToDictionary(p => p.Key, p => (object?)p.Value);
 
     /// <summary>Why an exclusive world operation cannot start right now, or null when one can.</summary>
     [ScriptProperty]
