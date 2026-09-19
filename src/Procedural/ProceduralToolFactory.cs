@@ -1,13 +1,13 @@
 namespace WorldMapStudio;
 
-[Subsystem(nameof(ToolWindow))]
+[Subsystem(nameof(ToolSystem))]
 public sealed class ProceduralToolFactory : IToolFactory
 {
     public float Priority => 20f;
 
     public string Name => "Procedural Mesh";
 
-    public ProceduralToolFactory(ToolWindow window)
+    public ProceduralToolFactory(ToolSystem tools)
     {
     }
 

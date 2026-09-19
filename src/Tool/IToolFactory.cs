@@ -1,8 +1,8 @@
 namespace WorldMapStudio;
 
 /// <summary>
-/// Self-registers a tool with the <see cref="ToolWindow"/> and creates it on demand. Declare
-/// [Subsystem(nameof(ToolWindow))] to register.
+/// Self-registers a tool with the <see cref="ToolSystem"/> and creates it on demand. Declare
+/// [Subsystem(nameof(ToolSystem))] to register.
 /// </summary>
 public interface IToolFactory : ISubsystem
 {

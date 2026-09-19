@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Numerics;
 using ImGuiNET;
 
@@ -6,11 +5,11 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Lists the available tools and lets the user pick the active one, like Blender's tool shelf.
-/// Tool factories self-register here with [Subsystem(nameof(ToolWindow))]; this window hands them to
-/// the shared <see cref="ToolSystem"/>, which owns the active tool the viewport drives.
+/// The tools themselves live on the shared <see cref="ToolSystem"/>, which owns the active tool the
+/// viewport drives.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
-public sealed partial class ToolWindow : Window, ISubsystemHost
+public sealed class ToolWindow : Window
 {
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.T, ShortcutModifiers.Alt);
 
@@ -19,19 +18,8 @@ public sealed partial class ToolWindow : Window, ISubsystemHost
     public ToolWindow(WindowManager manager)
         : base("Tools", defaultSize: new Vector2(200, 300))
     {
-        Context = manager.Context;
         _tools = manager.Context.Tools;
-        InitializeSubsystems();
-
-        foreach (IToolFactory factory in Subsystems.Cast<IToolFactory>())
-        {
-            _tools.Register(factory);
-        }
-
-        _tools.EnsureActive();
     }
-
-    public EditorContext Context { get; }
 
     protected override void DrawContent()
     {

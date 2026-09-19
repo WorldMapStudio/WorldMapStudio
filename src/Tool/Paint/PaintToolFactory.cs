@@ -1,7 +1,7 @@
 namespace WorldMapStudio;
 
-/// <summary>Registers the landscape paint tool with the tool window.</summary>
-[Subsystem(nameof(ToolWindow))]
+/// <summary>Registers the landscape paint tool with the tool system.</summary>
+[Subsystem(nameof(ToolSystem))]
 public sealed class PaintToolFactory : IToolFactory
 {
     private readonly EditorContext _context;
@@ -10,9 +10,9 @@ public sealed class PaintToolFactory : IToolFactory
 
     public string Name => "Paint";
 
-    public PaintToolFactory(ToolWindow window)
+    public PaintToolFactory(ToolSystem tools)
     {
-        _context = window.Context;
+        _context = tools.Context.Editor;
     }
 
     public bool CanActivate() => _context.Landscape.IsEnabled;
