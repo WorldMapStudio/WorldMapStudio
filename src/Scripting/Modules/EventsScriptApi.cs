@@ -5,11 +5,11 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Event hooks, exposed to JS as <c>wms.events</c>: <c>wms.events.On("selectionChanged", fn)</c> /
-/// <c>Off(name)</c>. Hand-wired to a small, fixed set of events (not a generic
-/// attribute-driven mechanism — see ScriptingPlan.md's Phase 8/9 open gap on this) by polling
-/// <see cref="SelectionSystem.Version"/>/<see cref="MapSystem.Version"/> once per frame via
-/// <see cref="Update"/>, since nothing in this codebase raises real C# events for these changes —
-/// everything here already follows a "bump a Version counter, let views poll it" convention.
+/// <c>Off(name)</c>. Hand-wired to a small, fixed set of events (not a generic attribute-driven
+/// mechanism) by polling <see cref="SelectionSystem.Version"/>/<see cref="MapSystem.Version"/>
+/// once per frame via <see cref="Update"/>, since nothing in this codebase raises real C# events
+/// for these changes — everything here already follows a "bump a Version counter, let views poll
+/// it" convention.
 ///
 /// <see cref="Off"/> removes every handler registered for a name, not a single specific callback —
 /// matching a JS function value across the JS/CLR boundary reliably enough to support fine-grained

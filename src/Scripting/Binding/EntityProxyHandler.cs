@@ -15,13 +15,12 @@ namespace WorldMapStudio;
 /// access through Jint's ECMAScript Proxy machinery (<c>engine.Advanced.CreateProxy</c>) instead of
 /// relying on its automatic reflection-based CLR object wrapping.
 ///
-/// That automatic path was the original plan and doesn't work for this: Jint's
-/// <see cref="TypeResolver.MemberFilter"/> is evaluated once per <see cref="PropertyInfo"/>, so it
-/// cannot expose a mutable property's getter while routing the setter through
-/// <see cref="ScriptPropertyEditCommand"/> — if the filter lets a settable property through at all, JS
-/// gets the raw CLR setter too, bypassing the edit session. A Proxy's <c>get</c>/<c>set</c> traps don't
-/// have that limitation: they see every access individually, so writes can be routed through
-/// <see cref="ScriptEntityHandle.Set"/> while reads stay direct. See ScriptingPlan.md's Phase 9 notes.
+/// The automatic path doesn't work for this: Jint's <see cref="TypeResolver.MemberFilter"/> is
+/// evaluated once per <see cref="PropertyInfo"/>, so it cannot expose a mutable property's getter while
+/// routing the setter through <see cref="ScriptPropertyEditCommand"/> — if the filter lets a settable
+/// property through at all, JS gets the raw CLR setter too, bypassing the edit session. A Proxy's
+/// <c>get</c>/<c>set</c> traps don't have that limitation: they see every access individually, so
+/// writes can be routed through <see cref="ScriptEntityHandle.Set"/> while reads stay direct.
 ///
 /// Installed globally via <c>Options.Interop.WrapObjectHandler</c> in <see cref="ScriptEngineHost"/>,
 /// so every <see cref="ScriptEntityHandle"/> crossing the JS boundary — a module's return value, an

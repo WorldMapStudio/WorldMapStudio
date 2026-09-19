@@ -25,7 +25,7 @@ internal readonly record struct CatalogReference(
 /// widget only draws what follows it.
 ///
 /// One instance per field-drawing site, held for the picker's own per-frame <see cref="CatalogEntityPicker.Draw"/>
-/// contract — the same lifetime a call site's own <c>CatalogEntityPicker</c> field used to have.
+/// contract.
 /// </summary>
 internal sealed class CatalogReferenceField
 {

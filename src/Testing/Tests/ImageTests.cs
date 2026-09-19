@@ -785,9 +785,9 @@ public static class ImageTests
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void Residency_evicts_chunks_outside_the_target_even_deeply_under_budget()
     {
-        // Regression: eviction used to only run once total resident bytes crossed the budget, so a
-        // small image (nowhere near 512MB) never dropped anything, no matter how far a chunk was from
-        // every placement that actually needed it.
+        // Eviction must not wait for total resident bytes to cross the budget: a small image (nowhere
+        // near 512MB) would otherwise never drop anything, no matter how far a chunk was from every
+        // placement that actually needed it.
         EditorContext context = NewContext("__wms_image_residency_evict_test__");
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(64, 64, chunkSize: 16);
@@ -1158,10 +1158,9 @@ public static class ImageTests
     [EditorTest(Category = "Image", Thread = TestThread.Main)]
     public static void ConsumeDirtyRegions_narrows_a_dab_to_brush_size_on_a_single_chunk_image()
     {
-        // The regression this guards against, and the reason chunk-granular narrowing was not enough:
-        // a default image is ONE 256px chunk, so narrowing to "the chunks the stroke touched" is the
-        // whole canvas. Stretched over a large footprint that dirtied every landscape chunk beneath
-        // the placement for a single small dab.
+        // Chunk-granular narrowing is not enough: a default image is ONE 256px chunk, so narrowing to
+        // "the chunks the stroke touched" is the whole canvas. Stretched over a large footprint that
+        // would dirty every landscape chunk beneath the placement for a single small dab.
         EditorContext context = NewContext("__wms_image_dirty_narrow_test__");
         PaintImage image = NewImage(context, id: 1);
         image.ConfigureNew(256, 256, chunkSize: 256); // exactly one chunk, like a default image

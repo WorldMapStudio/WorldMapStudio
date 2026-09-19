@@ -129,7 +129,7 @@ public sealed class ImagePicker
                 ImGui.InputInt("Image Width (chunks)", ref _createChunksX);
                 ImGui.InputInt("Image Height (chunks)", ref _createChunksY);
                 ImGui.TextDisabled($"= {ImageSystem.ClampedPixelSize(_createChunksX, _createChunkSize)} x {ImageSystem.ClampedPixelSize(_createChunksY, _createChunkSize)} px total");
-                ImGui.TextDisabled("Fixed once created — see .godot/ImageChunkPlan.md for why.");
+                ImGui.TextDisabled("Fixed once created.");
             }
 
             string? error = ValidationError();

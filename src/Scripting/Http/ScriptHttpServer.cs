@@ -18,13 +18,12 @@ namespace WorldMapStudio;
 ///
 /// Bound to <c>127.0.0.1</c> only — a local, trusted-caller surface, not a public API. Guardrails are
 /// the engine's own (statement/timeout limits from <see cref="ScriptEngineHost"/>), not
-/// authentication; see ScriptingPlan.md decision #9. Kept out of <c>src/Scripting/</c> itself so the
-/// core binder stays transport-agnostic — this and the console window are two equally-privileged
-/// callers of the same <see cref="ScriptEngineHost"/>.
+/// authentication. Kept out of <c>src/Scripting/</c> itself so the core binder stays
+/// transport-agnostic — this and the console window are two equally-privileged callers of the same
+/// <see cref="ScriptEngineHost"/>.
 ///
 /// Runs on a background accept loop for the process's lifetime once started; not explicitly stopped
-/// on editor shutdown (see ScriptingPlan.md's Phase 12 notes — the same gap
-/// <see cref="DatabaseSystem.Shutdown"/> already has, not a new one this introduces).
+/// on editor shutdown.
 /// </summary>
 public sealed class ScriptHttpServer
 {

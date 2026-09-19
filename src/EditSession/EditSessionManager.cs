@@ -15,7 +15,7 @@ namespace WorldMapStudio;
 /// about system or non-scene entities another part of the editor may have changed outside the
 /// session's bookkeeping. A reload is the actual guarantee that abandoning a session leaves the
 /// editor exactly where opening the project fresh would have. See <see cref="AbortInMemory"/> for
-/// the revert alone, which is what this used to be and is still what tests exercise directly.
+/// the revert alone, which tests exercise directly.
 /// </summary>
 public sealed class EditSessionManager : IWorldParticipant
 {
@@ -68,8 +68,8 @@ public sealed class EditSessionManager : IWorldParticipant
         _bindings.RequestReload?.Invoke();
     }
 
-    /// <summary>The in-memory revert alone, with no reload — what <see cref="Abort"/> used to be.
-    /// Used by tests, and by the reload itself (which must not recurse into requesting another one).</summary>
+    /// <summary>The in-memory revert alone, with no reload. Used by tests, and by the reload itself (which
+    /// must not recurse into requesting another one).</summary>
     public void AbortInMemory()
     {
         Active.Abort();

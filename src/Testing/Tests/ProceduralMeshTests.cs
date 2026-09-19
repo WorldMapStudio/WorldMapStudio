@@ -335,7 +335,7 @@ public static class ProceduralMeshTests
     public static void Polygon_triangulator_handles_a_concave_ngon_correctly()
     {
         // An L-shaped hexagon (concave at (2,2)); a naive vertex-0 fan produces a triangle that pokes
-        // outside the shape here, so this is exactly the case that used to render/pick as "bugged."
+        // outside the shape here, so this is exactly the case that would render/pick wrongly.
         NVector2[] loop =
         [
             new NVector2(0.0f, 0.0f), new NVector2(4.0f, 0.0f), new NVector2(4.0f, 2.0f),

@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// Queries over whatever catalog entities are currently loaded, exposed to JS as <c>wms.catalog</c>.
 /// Catalog entities aren't streamed like scene entities — load the catalog through whatever system
 /// owns it first (see <see cref="DatabaseSystem.LoadCatalog{TEntity}"/>). Create/delete aren't
-/// exposed yet — see ScriptingPlan.md's open gap on this.
+/// exposed yet.
 /// </summary>
 [Subsystem(nameof(ScriptingSystem))]
 public sealed class CatalogScriptApi : IScriptModule

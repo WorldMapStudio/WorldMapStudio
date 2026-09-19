@@ -128,9 +128,9 @@ public abstract class EditorKeyedCatalogFactory<TEntity, TRecord> : IEntityFacto
 }
 
 /// <summary>
-/// A <see cref="EditorKeyedCatalogFactory{TEntity,TRecord}"/> whose table is small enough to load
-/// whole. Every catalog that used to derive directly from the combined base keeps deriving from this
-/// one instead — the split only matters to a catalog that chooses <see cref="EditorLazyCatalogFactory{TEntity,TRecord}"/>.
+/// A <see cref="EditorKeyedCatalogFactory{TEntity,TRecord}"/> whose table is small enough to load whole. The default
+/// base for a catalog — the split only matters to one that chooses
+/// <see cref="EditorLazyCatalogFactory{TEntity,TRecord}"/>.
 /// </summary>
 public abstract class EditorCatalogFactory<TEntity, TRecord> : EditorKeyedCatalogFactory<TEntity, TRecord>, ICatalogEntityFactory
     where TEntity : CatalogEntity, IKeyedCatalogEntity

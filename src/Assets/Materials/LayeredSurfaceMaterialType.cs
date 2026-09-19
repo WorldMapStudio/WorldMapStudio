@@ -238,8 +238,7 @@ void fragment() {
     // Manual ambient (see InteriorAmbientBlendCode's doc comment for why): COLOR.a is the
     // interior/exterior blend factor, defaulting to 1.0 (fully exterior) on any mesh that carries no
     // real vertex color data at all, so untouched geometry behaves as if this were ordinary ambient.
-    // precomputed_light adds on top of ambient before it modulates albedo, matching how the reference
-    // renderer accumulates baked vertex light.
+    // precomputed_light adds on top of ambient before it modulates albedo.
     float n_dot_up = clamp(dot(world_normal, vec3(0.0, 1.0, 0.0)), -1.0, 1.0);
     vec3 ambient = wms_blend_interior_ambient(n_dot_up, COLOR.a);
     EMISSION = (ambient + precomputed_light) * albedo + emissive_color * emissive_strength;

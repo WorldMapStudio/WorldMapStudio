@@ -116,8 +116,8 @@ public sealed class LandscapeDebugWindow : Window
         }
     }
 
-    // A stable per-value hue, the same idea the plan's overlay legend uses — so two cells holding the
-    // same id read as the same colour and a change of id is a change of colour.
+    // A stable per-value hue, so two cells holding the same id read as the same
+    // colour and a change of id is a change of colour.
     private static NVector4 HashColor(long value)
     {
         if (value == 0)

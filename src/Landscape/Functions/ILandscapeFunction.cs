@@ -13,8 +13,8 @@ namespace WorldMapStudio;
 /// values from the material, channels from the builder — because chunk builds run in parallel and a
 /// single instance serves all of them.
 ///
-/// Evaluation itself arrives with the builder (Phase 6). What is declared here is the contract the
-/// builder and the editor need first: what the function reads, what it takes, how far it reaches,
+/// Evaluation itself belongs to the builder. What is declared here is the contract the
+/// builder and the editor need: what the function reads, what it takes, how far it reaches,
 /// and which version of it produced a given result.
 /// </summary>
 public interface ILandscapeFunction

@@ -10,10 +10,9 @@ namespace WorldMapStudio;
 /// the reason <see cref="ProceduralComponent"/> renders nothing for a placement bound to it beyond the
 /// tool's own overlay.
 ///
-/// Authored flat: vertex height is never stored or read (<see cref="PlanarNetwork"/>), so the road
-/// follows whatever the terrain under it already does. See <c>.godot/RoadPlan.md</c> for the design
-/// this ports, and <c>.godot/ProceduralOutputsPlan.md</c> §7 for why the two textures are picked as
-/// channel names rather than layer/material combos at the function level.
+/// Authored flat: vertex height is never stored or read (<see cref="PlanarNetwork"/>), so the road follows whatever
+/// the terrain under it already does. The two textures are picked as channel names rather than layer/material combos
+/// at the function level.
 /// </summary>
 [Subsystem(nameof(ProceduralSystem))]
 public sealed class RoadNetworkFunction : IProceduralFunction

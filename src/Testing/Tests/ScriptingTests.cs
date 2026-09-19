@@ -10,10 +10,10 @@ using StringContent = System.Net.Http.StringContent;
 namespace WorldMapStudio;
 
 /// <summary>
-/// Covers the Phase 8 scripting core: that [ScriptProperty]/[ScriptFunction] reflection survives a
-/// virtual override (the real case that broke a naive implementation), and that the
-/// Jint engine's member filter actually restricts JS to the attributed surface rather than leaking
-/// the whole CLR object.
+/// Covers the scripting core: that [ScriptProperty]/[ScriptFunction] reflection survives a virtual
+/// override (the real case that broke a naive implementation), and that the Jint engine's member
+/// filter actually restricts JS to the attributed surface rather than leaking the whole CLR
+/// object.
 /// </summary>
 public static class ScriptingTests
 {
@@ -481,10 +481,10 @@ public static class ScriptingTests
     [EditorTest(Category = "Scripting", Thread = TestThread.Background)]
     public static void Engine_can_pass_a_handle_it_received_back_into_another_function()
     {
-        // The risky case Phase 11 needed to confirm before ViewportScriptApi.Focus/SceneScriptApi.Delete
-        // (both take a ScriptEntityHandle parameter) could be trusted: a handle returned from one
-        // [ScriptFunction] and passed as an argument into another must round-trip to the same CLR
-        // handle instance through Jint's Proxy machinery, not some copy or an unresolvable JS object.
+        // The risky case for ViewportScriptApi.Focus/SceneScriptApi.Delete (both take a
+        // ScriptEntityHandle parameter): a handle returned from one [ScriptFunction] and passed as an
+        // argument into another must round-trip to the same CLR handle instance through Jint's Proxy
+        // machinery, not some copy or an unresolvable JS object.
         var scene = new SceneEntityRegistry();
         var catalog = new CatalogEntityRegistry();
         var sessions = new EditSessionManager();

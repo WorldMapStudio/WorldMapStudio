@@ -9,7 +9,7 @@ namespace WorldMapStudio;
 /// Request queue and LRU store of baked model thumbnails, backing the model picker's grid view. A card
 /// calls <see cref="TextureId"/> every frame it is visible; that both reads the cached texture and
 /// (re-)registers the request, so scrolling away for a few frames drops it from the bake queue before
-/// it ever costs a model load - see model-browser-grid-plan.md's "Request queue / scheduling".
+/// it ever costs a model load.
 /// </summary>
 public sealed class ModelThumbnailCache : IDisposable
 {

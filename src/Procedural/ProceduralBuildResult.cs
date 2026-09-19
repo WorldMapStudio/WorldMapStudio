@@ -26,8 +26,7 @@ public sealed record ProceduralModelOutput(ProceduralOutputSlot Slot, Transform3
 /// One "paint a mask" primitive: a disc when <see cref="A"/> equals <see cref="B"/>, a capsule-shaped
 /// stroke along the segment otherwise. The vocabulary a build's landscape contribution is restricted
 /// to, so chunk-independence and pure scatter hold by construction rather than by every function
-/// author's discipline — see <c>.godot/ProceduralOutputsPlan.md</c> for why a per-function
-/// <c>Rasterize</c> callback was rejected in favour of this.
+/// author's discipline.
 ///
 /// <see cref="Value"/> only matters when the channel this stroke lands on carries more than one
 /// component — see <see cref="ProceduralPaintRasterizer"/>. Defaults to white so an unmodified caller

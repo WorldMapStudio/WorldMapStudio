@@ -8,9 +8,9 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// One map's settings: the built-in General block plus every registered
-/// <see cref="IMapPropertiesSection"/>, each its own collapsible header — the proper home for what the
-/// map picker's card popup used to draw cramped into a context menu. A header combo picks which map is
-/// shown; "Follow current map" (on by default) tracks <see cref="MapSystem.CurrentMap"/> instead.
+/// <see cref="IMapPropertiesSection"/>, each its own collapsible header — roomier than the map
+/// picker's card popup. A header combo picks which map is shown; "Follow current map" (on by
+/// default) tracks <see cref="MapSystem.CurrentMap"/> instead.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class MapPropertiesWindow : Window

@@ -16,12 +16,11 @@ namespace WorldMapStudio;
 /// every placement.
 ///
 /// A chunk holding nothing but zeros is never allocated in memory and never gets a row in
-/// <see cref="PaintImageFactory"/>'s storage; only what a streamed-in placement's footprint actually
-/// needs is ever loaded (<see cref="ImageResidencySystem"/>), which is what lets <see cref="Width"/> and
-/// <see cref="Height"/> reach up to <see cref="MaxDimension"/> without every image needing that much
-/// memory at once; and a stroke crossing a chunk boundary evaluates its falloff from global pixel
-/// coordinates rather than chunk-local ones, so there is nothing to seam. See <c>.godot/ImageChunkPlan.md</c>
-/// for the full design.
+/// <see cref="PaintImageFactory"/>'s storage; only what a streamed-in placement's footprint actually needs is
+/// ever loaded (<see cref="ImageResidencySystem"/>), which is what lets <see cref="Width"/> and
+/// <see cref="Height"/> reach up to <see cref="MaxDimension"/> without every image needing that much memory
+/// at once; and a stroke crossing a chunk boundary evaluates its falloff from global pixel coordinates rather
+/// than chunk-local ones, so there is nothing to seam.
 ///
 /// A handful of members — <see cref="CopyPixels"/>, <see cref="Resize"/>, <see cref="ReplacePixels"/>,
 /// <see cref="LoadPixels"/> — are the exception: they work over one dense buffer sized to the whole
@@ -410,11 +409,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
         SetPersistedChunkCoords(coords);
     }
 
-    /// <summary>Whether a coordinate's content genuinely exists in storage as far as this session
-    /// currently believes — resident or not. False for a coordinate this session has explicitly
-    /// emptied out (see <see cref="RemovedSincePersist"/>) even before that reaches storage, so neither
-    /// <see cref="Paint"/> nor <see cref="ImageResidencySystem"/> treat an uncommitted erase as
-    /// something still worth reloading. See the four-state table in <c>.godot/ImageChunkPlan.md</c>.</summary>
+    /// <summary>Whether a coordinate's content genuinely exists in storage as far as this session currently
+    /// believes — resident or not. False for a coordinate this session has explicitly emptied out (see
+    /// <see cref="RemovedSincePersist"/>) even before that reaches storage, so neither <see cref="Paint"/> nor
+    /// <see cref="ImageResidencySystem"/> treat an uncommitted erase as something still worth
+    /// reloading.</summary>
     internal bool IsStored(ImageChunkCoord coord) => _persistedChunkCoords.Contains(coord) && !_removedSincePersist.Contains(coord);
 
     internal bool IsResident(ImageChunkCoord coord) => _chunks.ContainsKey(coord);
@@ -968,11 +967,11 @@ public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
     }
 
     /// <summary>Paints the part of one brush stamp that falls in one chunk. A chunk that is stored but
-    /// not currently resident refuses the whole stamp — see <c>.godot/ImageChunkPlan.md</c>, "Painting
-    /// into a chunk that hasn't loaded": fabricating a zero buffer over it would silently destroy real
-    /// pixels at the next commit, and there is no way to know what erasing it should even do until it
-    /// actually loads. A truly empty chunk (never painted, never stored) still materializes on first
-    /// non-erase write and stays absent for a no-op erase, exactly as before chunking existed.</summary>
+    /// not currently resident refuses the whole stamp: fabricating a zero buffer over it would silently
+    /// destroy real pixels at the next commit, and there is no way to know what erasing it should even
+    /// do until it actually loads. A truly empty chunk (never painted, never stored) still materializes
+    /// on first non-erase write and stays absent for a no-op erase, exactly as before chunking
+    /// existed.</summary>
     private bool PaintChunk(ImageChunkCoord coord, int minX, int maxX, int minY, int maxY, float u, float v, float radiusU, float radiusV, byte amount, bool erase)
     {
         int components = _components;

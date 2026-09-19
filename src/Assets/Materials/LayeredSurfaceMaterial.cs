@@ -48,8 +48,7 @@ public static class LayeredSurfaceMaterial
 
     public static readonly MeshParameter DepthWrite = MeshParameter.Bool("depth_write", "Depth Write", true);
 
-    /// <summary>Skips the shared fog function entirely — the generic analogue of the reference
-    /// renderer's per-material "unfogged" flag on effect-style materials.</summary>
+    /// <summary>Skips the shared fog function entirely, for effect-style materials.</summary>
     public static readonly MeshParameter Unfogged = MeshParameter.Bool("unfogged", "Unfogged", false);
 
     /// <summary>Whether vertex COLOR.rgb is added to ambient as precomputed per-vertex light (e.g. a

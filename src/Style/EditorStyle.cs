@@ -66,7 +66,7 @@ public static partial class EditorStyle
         : Active.Problems.Concat(RuntimeProblems).ToList();
 
     /// <summary>Called by <see cref="FontAtlasBuilder"/> after every rebuild with whatever font slots
-    /// failed to load. Replaces the previous set — stale font problems from a since-fixed slot don't linger.</summary>
+    /// failed to load. Replaces the previous set, so stale font problems don't linger.</summary>
     internal static void ReportFontProblems(IReadOnlyList<StyleProblem> problems)
     {
         RuntimeProblems.Clear();

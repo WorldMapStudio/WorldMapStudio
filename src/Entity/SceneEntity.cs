@@ -255,11 +255,10 @@ public class SceneEntity : Entity
     /// <summary>
     /// World placement. Setting it moves the live representation, if any.
     ///
-    /// The field is the truth and the node is a mirror of it, never read back. It used to be the
-    /// other way around whenever a representation existed, which made this getter a Godot node access
-    /// — and background chunk building reads deformer transforms, so a rebuild racing a gizmo drag
-    /// was touching a live node off the main thread. Nothing writes the node's transform except the
-    /// two places below, so the mirror cannot drift.
+    /// The field is the truth and the node is a mirror of it, never read back. Reading it from the node would make
+    /// this getter a Godot node access — and background chunk building reads deformer transforms, so a rebuild racing
+    /// a gizmo drag would touch a live node off the main thread. Nothing writes the node's transform except the two
+    /// places below, so the mirror cannot drift.
     /// </summary>
     public Transform3D Transform
     {
@@ -472,9 +471,8 @@ public class SceneEntity : Entity
             // them are nowhere near the ray. This has to gate MeshPicking.Triangles() itself, not just
             // the triangle loop below it — that call is what populates the triangle cache, via a
             // marshaled SurfaceGetArrays per surface, and is the expensive part. Checking the box
-            // afterwards (as this used to) meant the very first click anywhere on a heavy model paid
-            // full extraction for every mesh in its entire tree, not just the handful the ray is near;
-            // every click after was fast purely because the cache was already warm by then.
+            // afterwards would make the very first click anywhere on a heavy model pay full extraction
+            // for every mesh in its entire tree, not just the handful the ray is near.
             if (MeshPicking.TryRayBox(origin, dir, global * mesh.GetAabb()))
             {
                 Vector3[] triangles = MeshPicking.Triangles(mesh);

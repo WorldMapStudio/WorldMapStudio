@@ -6,9 +6,9 @@ namespace WorldMapStudio;
 /// <summary>
 /// A generic, reflection-backed edit of one [ScriptProperty(Mutable = true)] — one command per
 /// <see cref="ScriptEntityHandle.Set"/> call, the same "one interaction, one command" granularity
-/// Phase 1 established for gizmo drags and modal transforms (see ScriptingPlan.md decision #4). Covers
-/// every scriptable property on every entity type, built-in or plugin, without a hand-written command
-/// per property the way <see cref="TransformEntitiesCommand"/> is hand-written for the gizmo.
+/// gizmo drags and modal transforms use. Covers every scriptable property on every entity type,
+/// built-in or plugin, without a hand-written command per property the way
+/// <see cref="TransformEntitiesCommand"/> is hand-written for the gizmo.
 /// </summary>
 public sealed class ScriptPropertyEditCommand : IEditCommand, IChunkChangeCommand
 {

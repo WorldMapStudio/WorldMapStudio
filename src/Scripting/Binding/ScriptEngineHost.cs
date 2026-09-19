@@ -20,7 +20,7 @@ public readonly record struct ScriptResult(bool Success, string Output);
 /// <summary>
 /// Wraps the shared Jint engine every script call (console, and later the HTTP endpoint) runs
 /// against — one instance per editor session, so state persists across calls the way Blender's
-/// console and script text-blocks share one Python interpreter (see ScriptingPlan.md, decision #8).
+/// console and script text-blocks share one Python interpreter.
 ///
 /// The engine never gets raw CLR access. Two mechanisms enforce that, for two different shapes of
 /// object: <see cref="TypeResolver.MemberFilter"/>, set once here to <see cref="ScriptReflection.IsVisible"/>,

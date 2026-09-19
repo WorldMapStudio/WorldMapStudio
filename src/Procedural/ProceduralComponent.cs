@@ -114,9 +114,8 @@ public sealed class ProceduralComponent : SceneComponent, ISceneBoundsProvider, 
 
     /// <summary>The bound model's function, or null while unbound or dangling. What
     /// <see cref="PlanarXZ"/> and the <see cref="ITransformPolicy"/> members forward to — switching a
-    /// model's function can change what a placement's transform means (see
-    /// <c>.godot/ProceduralOutputsPlan.md</c> §3), which is a real, deliberate consequence rather than
-    /// an oversight.</summary>
+    /// model's function can change what a placement's transform means, which is a real, deliberate
+    /// consequence rather than an oversight.</summary>
     private IProceduralFunction? BoundFunction => Model is { } model ? _system.Find(model.FunctionId) : null;
 
     public bool PlanarXZ => BoundFunction?.PlanarNetwork ?? false;

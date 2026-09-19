@@ -36,8 +36,8 @@ public static class MeshPickingTests
     [EditorTest(Category = "MeshPicking", Thread = TestThread.Background)]
     public static void Indexed_surfaces_yield_their_triangles()
     {
-        // The regression that made every model unselectable: extraction returning nothing turns
-        // "the click missed" and "there was nothing to test" into the same answer.
+        // Extraction returning nothing would turn "the click missed" and "there was nothing to test"
+        // into the same answer.
         Vector3[] triangles = MeshPicking.Triangles(BuildQuad());
 
         Assert.AreEqual(6, triangles.Length, "two triangles, three vertices each");

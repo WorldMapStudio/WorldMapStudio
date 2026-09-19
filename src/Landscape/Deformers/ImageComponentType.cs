@@ -53,8 +53,8 @@ public sealed class ImageComponentType : ISceneComponentType
 
         // "Footprint" for how large the projection is on the ground, distinct from both the entity's
         // own transform (position/rotation, drawn elsewhere and untouched by this component) and the
-        // image's pixel resolution (shown below) — three different "size"-shaped settings that used to
-        // share overlapping names.
+        // image's pixel resolution (shown below) — three different "size"-shaped settings that must
+        // not share names.
         fields.Field("Footprint Width", () =>
         {
             float sizeX = image.WorldSizeX;

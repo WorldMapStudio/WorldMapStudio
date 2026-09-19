@@ -19,11 +19,9 @@ namespace WorldMapStudio;
 /// sight) until the session is committed or aborted.
 ///
 /// Streaming judges every non-resident entity in the registry, not just the ones it put there itself.
-/// It used to track only what it had loaded, keyed by the row id: an entity created in the editor has
-/// no row yet, so it was invisible to that bookkeeping and simply never unloaded — it stayed drawn and
-/// listed over a chunk that was long gone, and committing it did not help, because a commit does not
-/// hand streaming anything it was not already tracking. Judging the registry has no such gap, which is
-/// why a new entity and a modified one now behave identically.
+/// Tracking only what it loaded, keyed by row id, would miss an entity created in the editor (it has no
+/// row yet), which would stay drawn and listed over a chunk that was long gone. Judging the registry has
+/// no such gap, so a new entity and a modified one behave identically.
 ///
 /// Two regions, not one. The <b>view</b> is what the user is looking at and what loaders produce for.
 /// The <b>load</b> region is wider, by whatever margin a loader declares, and is what stored entities

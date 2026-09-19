@@ -319,7 +319,7 @@ public sealed class EnvironmentRenderer
     // shader itself via EnvironmentShaderLibrary.FogFunctionCode, driven by the global shader parameters
     // ApplyEnvironmentGlobals pushes below. That's what lets a single fog model support the curve, height,
     // and sun-glow terms Godot's built-in depth fog has no equivalent for, and lets model materials skip
-    // fog per-material (see Phase 3's "unfogged" bypass) the way the built-in fog never could.
+    // fog per-material via the "unfogged" bypass, the way the built-in fog never could.
     private void ApplyFog(EnvironmentValues values)
     {
         RenderingServer.GlobalShaderParameterSet(Names.FogEnabled, values.FogEnabled);
@@ -381,7 +381,7 @@ public sealed class EnvironmentRenderer
 
     // Camera-pinned models (skybox, stars): loaded lazily per path and kept until the path drops out
     // of Current.SkyLayers entirely. No per-material alpha driving — the weight only gates visibility
-    // for now (see LightingPlan.md's phase 5 risk notes); a plugin's own material can refine this.
+    // for now; a plugin's own material can refine this.
     private void ApplySkyLayers(EnvironmentValues values)
     {
         var seen = new HashSet<string>();
@@ -532,11 +532,10 @@ public sealed class EnvironmentRenderer
     // Kept in source rather than a .gdshader resource so it needs no Godot import step, matching
     // LandscapeBatchMesh's splat shader.
     //
-    // Colours travel as a plain array uniform rather than a baked gradient texture: a sky shader's
-    // background renders through Godot's own radiance-bake pipeline (see Environment.BackgroundMode.Sky
-    // process modes), and a texture swapped in via SetShaderParameter almost every frame (this material
-    // used to get a brand new ImageTexture on every camera move) could out-run that bake, which read as
-    // an unbound/placeholder-magenta sky. Scalar uniforms have no such caching layer to race.
+    // Colours travel as a plain array uniform rather than a baked gradient texture: a sky shader's background renders
+    // through Godot's own radiance-bake pipeline (see Environment.BackgroundMode.Sky process modes), and a texture
+    // swapped in via SetShaderParameter almost every frame could out-run that bake, which read as an
+    // unbound/placeholder-magenta sky. Scalar uniforms have no such caching layer to race.
     private const string SkyShaderCode = """
 shader_type sky;
 

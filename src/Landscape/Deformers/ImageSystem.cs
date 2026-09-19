@@ -107,8 +107,8 @@ public sealed class ImageSystem : IWorldParticipant, IFrameParticipant
 
     // Verified on the way out rather than trusted: a record id is assigned when an entity is first
     // saved, which the registry's membership version never sees, so an index entry can name an entity
-    // whose id has since moved. A miss falls back to the same scan the lookup used to be, and does not
-    // write what it finds — the snapshot it read is shared with every other thread reading it.
+    // whose id has since moved. A miss falls back to a linear scan, and does not write what it finds
+    // — the snapshot it read is shared with every other thread reading it.
     private static TEntity? Lookup<TEntity>(Dictionary<int, TEntity> index, IReadOnlyList<TEntity> loaded, int id)
         where TEntity : class, IKeyedCatalogEntity
     {

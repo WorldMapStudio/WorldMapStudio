@@ -169,12 +169,12 @@ public sealed class ObjectSelection
     /// <summary>
     /// Nearest entity under the cursor, or null.
     ///
-    /// Two phases. The broad phase is the old ray-vs-box test over everything in view; it both
-    /// rejects the bulk of the scene and yields a lower bound on how far away each survivor's real
-    /// geometry can possibly be. The narrow phase then walks the survivors nearest-box-first and, for
-    /// anything carrying real geometry, ray-tests its actual triangles — so clicking through the
-    /// hollow of an archway or past a model's silhouette correctly misses it. Entities that only draw
-    /// editor helpers (markers, stamps) or whose model is still streaming in keep their box hit.
+    /// Two phases. The broad phase is a ray-vs-box test over everything in view; it both rejects the
+    /// bulk of the scene and yields a lower bound on how far away each survivor's real geometry can
+    /// possibly be. The narrow phase then walks the survivors nearest-box-first and, for anything
+    /// carrying real geometry, ray-tests its actual triangles — so clicking through the hollow of an
+    /// archway or past a model's silhouette correctly misses it. Entities that only draw editor
+    /// helpers (markers, stamps) or whose model is still streaming in keep their box hit.
     ///
     /// Sorting is what makes triangle testing affordable: once something is hit at distance t, every
     /// remaining candidate whose box starts beyond t is unreachable, so a click typically tests the

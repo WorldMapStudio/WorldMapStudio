@@ -1,7 +1,6 @@
 namespace WorldMapStudio;
 
-/// <summary>The handful of semantic colors used all over the core editor — replaces the repeated
-/// <c>new Vector4(1.0f, 0.45f, 0.4f, 1.0f)</c>-style literals at error/warning/success/accent call
+/// <summary>The handful of semantic colors used all over the core editor, for error/warning/success/accent call
 /// sites.</summary>
 [StyleTokens]
 public static class CommonColors

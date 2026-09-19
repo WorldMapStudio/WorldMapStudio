@@ -7,7 +7,7 @@ namespace WorldMapStudio;
 
 /// <summary>A color as stored in a style file: a literal, or a reference to a palette entry,
 /// another ImGui color, or another semantic token — optionally with an alpha/lighten/darken
-/// modifier. See the value grammar table in <c>.local/editor-style-plan.md</c>.</summary>
+/// modifier.</summary>
 public abstract class StyleColorValue
 {
     public static readonly StyleColorValue Missing = new StyleColorLiteral(new Vector4(1f, 0f, 1f, 1f));

@@ -67,10 +67,10 @@ public interface ICatalogSearchView : ISubsystem
 
 /// <summary>
 /// One open view's worth of state: the query text, results, selection/scroll position — everything a
-/// <see cref="CatalogBrowserWindow"/> or <see cref="CatalogEntityPicker"/> host used to keep for itself
-/// before views existed. The host still draws its own chrome (Back, the catalog combo, the view toggle,
-/// <see cref="ICatalogBrowser.DrawCreate"/>, a picker's Clear/Select/Cancel footer) — a session only ever
-/// fills the results region <see cref="Draw"/> is given.
+/// <see cref="CatalogBrowserWindow"/> or <see cref="CatalogEntityPicker"/> host would otherwise keep for itself.
+/// The host still draws its own chrome (Back, the catalog combo, the view toggle,
+/// <see cref="ICatalogBrowser.DrawCreate"/>, a picker's Clear/Select/Cancel footer) — a session only ever fills
+/// the results region <see cref="Draw"/> is given.
 /// </summary>
 public interface ICatalogSearchViewSession : IDisposable
 {

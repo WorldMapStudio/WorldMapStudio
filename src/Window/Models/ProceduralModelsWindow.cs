@@ -14,9 +14,9 @@ namespace WorldMapStudio;
 /// against, but locked to this one catalog and without its cross-catalog history stack — a link into
 /// another catalog has nowhere to go from here, so it reports where to follow it instead.
 ///
-/// A list of every loaded model doesn't answer "what models are there" any more now that the catalog is
-/// lazily loaded (see <see cref="ProceduralModelFactory"/>) — most rows are never loaded at all — so
-/// this searches storage instead, the same way <see cref="CatalogBrowserWindow"/> does.
+/// A list of every loaded model can't answer "what models are there" because the catalog is lazily
+/// loaded (see <see cref="ProceduralModelFactory"/>) — most rows are never loaded at all — so this
+/// searches storage instead, the same way <see cref="CatalogBrowserWindow"/> does.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
 public sealed class ProceduralModelsWindow : Window

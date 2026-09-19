@@ -6,11 +6,11 @@ namespace WorldMapStudio;
 /// Covers <see cref="StreamingSystem.FateOf"/>: what happens to a loaded entity once the editor has
 /// scanned somewhere.
 ///
-/// These rules used to differ by accident depending on whether an entity had ever been saved, because
-/// "is it still loaded" was answered from a row id an unsaved entity does not have. A new entity was
-/// therefore never unloaded and never hidden — it hung in the outline and the viewport over ground the
-/// editor had stopped loading, and even committing it did not clear it. What is asserted here is that
-/// place alone decides visibility, and that being saved is never part of the question.
+/// These rules must not differ depending on whether an entity has ever been saved: "is it still loaded"
+/// cannot be answered from a row id an unsaved entity does not have, or a new entity would never be
+/// unloaded and would hang in the outline and the viewport over ground the editor had stopped loading.
+/// What is asserted here is that place alone decides visibility, and that being saved is never part of
+/// the question.
 /// </summary>
 public static class StreamingFateTests
 {
@@ -81,8 +81,8 @@ public static class StreamingFateTests
     public static void A_new_entity_and_a_modified_one_share_a_fate()
     {
         // Having been saved shows up here as one thing only: a never-saved entity has no row, so no
-        // scan can ever return it. Whether it did must not change the answer for a dirty entity —
-        // that difference is exactly what used to leave created entities behaving unlike edited ones.
+        // scan can ever return it. Whether it did must not change the answer for a dirty entity, or
+        // created entities would behave unlike edited ones.
         Aabb inRange = At(10.0f);
         Aabb outOfRange = At(ViewExtent + Margin + 10.0f);
 
