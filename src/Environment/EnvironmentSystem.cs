@@ -57,7 +57,7 @@ public sealed class EnvironmentSystem : IWorldParticipant
     // rendered here — most importantly a global source, since picking the wrong map's would silently
     // override the current map's own default. Materialised and held across frames: it is walked more
     // than once per frame (Update and HasSources) and only changes when the scene or the open map do.
-    private IReadOnlyList<IEnvironmentSource> Sources
+    public IReadOnlyList<IEnvironmentSource> Sources
     {
         get
         {
@@ -78,6 +78,13 @@ public sealed class EnvironmentSystem : IWorldParticipant
             return _sources;
         }
     }
+
+    /// <summary>
+    /// The blend at an arbitrary point and time (the world clock's, when <paramref name="dayFraction"/>
+    /// is null), leaving <see cref="Current"/> and <see cref="Active"/> as they were.
+    /// </summary>
+    public EnvironmentBlender.Result Sample(Vector3 focus, float? dayFraction = null) =>
+        EnvironmentBlender.Blend(Sources, focus, new EnvironmentTime(dayFraction ?? _context.Clock.DayFraction, _context.Clock.Elapsed));
 
     /// <summary>
     /// Forces the next <see cref="Update"/> to recompute regardless of what moved. An edit to a
