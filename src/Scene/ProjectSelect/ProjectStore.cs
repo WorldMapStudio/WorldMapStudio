@@ -70,8 +70,8 @@ public static class ProjectStore
 
     /// <summary>
     /// Loads a project from an explicit file, resolving any relative <see cref="StorageConnection.RepositoryPath"/>
-    /// and <see cref="AssetSourceSettings.RootPath"/> against the file's own directory so the config
-    /// travels with the checkout. Throws on a missing file or malformed document.
+    /// <see cref="AssetSourceSettings.RootPath"/> and <see cref="Project.Paths"/> value against the file's own
+    /// directory so the config travels with the checkout. Throws on a missing file or malformed document.
     /// </summary>
     public static Project Read(string filePath)
     {
@@ -130,6 +130,11 @@ public static class ProjectStore
         {
             source.RootPath = Resolve(source.RootPath, baseDir);
         }
+
+        foreach (string key in project.Paths.Keys.ToList())
+        {
+            project.Paths[key] = Resolve(project.Paths[key], baseDir);
+        }
     }
 
     private static string Resolve(string path, string baseDir) =>
@@ -143,6 +148,7 @@ public static class ProjectStore
         AxisZ = project.AxisConvention.Z,
         StorageConnections = new Dictionary<string, StorageConnection>(project.StorageConnections),
         AssetSources = project.AssetSources.Select(CloneAssetSource).ToList(),
+        Paths = new Dictionary<string, string>(project.Paths),
     };
 
     private static Project FromDocument(ProjectDocument doc) => new()
@@ -151,6 +157,7 @@ public static class ProjectStore
         AxisConvention = AxisConvention.Create(doc.AxisX, doc.AxisY, doc.AxisZ),
         StorageConnections = new Dictionary<string, StorageConnection>(doc.StorageConnections),
         AssetSources = (doc.AssetSources ?? []).Select(CloneAssetSource).ToList(),
+        Paths = new Dictionary<string, string>(doc.Paths ?? new Dictionary<string, string>()),
     };
 
     private static AssetSourceSettings CloneAssetSource(AssetSourceSettings source) => new()
@@ -182,5 +189,6 @@ public static class ProjectStore
         public SignedAxis AxisZ { get; set; } = SignedAxis.PosZ;
         public Dictionary<string, StorageConnection> StorageConnections { get; set; } = new();
         public List<AssetSourceSettings> AssetSources { get; set; } = [];
+        public Dictionary<string, string>? Paths { get; set; }
     }
 }
