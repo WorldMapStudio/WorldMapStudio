@@ -89,4 +89,29 @@ public static class EntityTagTests
         Assert.AreEqual(version, scene.TagVersion);
         Assert.IsTrue(loaded.Tags.Contains(1));
     }
+
+    [EditorTest(Category = "Tags", Thread = TestThread.Background)]
+    public static void SetEntityTagsCommand_applies_and_reverts_over_mixed_before_sets()
+    {
+        var scene = new SceneEntityRegistry();
+        var tagged = new MapSceneEntity { Tags = EntityTagSet.From([1]) };
+        var untagged = new MapSceneEntity();
+        scene.Add(tagged);
+        scene.Add(untagged);
+
+        var command = new SetEntityTagsCommand(
+            scene,
+            [tagged, untagged],
+            [tagged.Tags, untagged.Tags],
+            [tagged.Tags.With(2), untagged.Tags.With(2)]);
+
+        command.Apply();
+        Assert.AreEqual("1,2", string.Join(",", tagged.Tags));
+        Assert.AreEqual("2", string.Join(",", untagged.Tags));
+
+        command.Revert();
+        Assert.AreEqual("1", string.Join(",", tagged.Tags));
+        Assert.IsTrue(untagged.Tags.IsEmpty);
+        Assert.AreEqual(2, command.Targets.Count);
+    }
 }
