@@ -40,8 +40,12 @@
     <Compile Remove="analyzer\**" />
   </ItemGroup>
   <ItemGroup Condition=" '$(WmsCoreOnly)' != 'true' ">
-    <Compile Include=".local\Plugins\**\*.cs" />
-    <Compile Include="Plugins\**\*.cs" />
     <Compile Include="..\WorldMapStudioPlugins\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition=" '$(WmsCoreOnly)' != 'true' ">
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>WorldMapStudio.PluginsDirectory</_Parameter1>
+      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\WorldMapStudioPlugins'))</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 </Project>
