@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace WorldMapStudio;
 
-public sealed class ScenePrefabRootComponentRecord
+public sealed class ScenePrefabTemplateComponentRecord
 {
     public int EntityId { get; set; }
 
@@ -16,50 +16,50 @@ public sealed class ScenePrefabRootComponentRecord
 }
 
 [Subsystem(nameof(EditorStorage))]
-public sealed class PrefabRootComponentPersistence : ISceneComponentPersistence
+public sealed class PrefabTemplateComponentPersistence : ISceneComponentPersistence
 {
     private readonly EditorStorage _storage;
 
-    public PrefabRootComponentPersistence(EditorStorage storage)
+    public PrefabTemplateComponentPersistence(EditorStorage storage)
     {
         _storage = storage;
     }
 
-    public string TypeId => PrefabRootComponent.Kind;
+    public string TypeId => PrefabTemplateComponent.Kind;
 
     public void Configure(ModelBuilder model)
     {
-        model.Entity<ScenePrefabRootComponentRecord>(entity =>
+        model.Entity<ScenePrefabTemplateComponentRecord>(entity =>
         {
-            entity.ToTable("wms_scene_prefab_root_components");
+            entity.ToTable("wms_scene_prefab_template_components");
             entity.HasKey(record => record.EntityId);
             entity.HasOne(record => record.Entity)
                 .WithOne()
-                .HasForeignKey<ScenePrefabRootComponentRecord>(record => record.EntityId)
+                .HasForeignKey<ScenePrefabTemplateComponentRecord>(record => record.EntityId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
 
     public async Task LoadAsync(EditorDbContext context, IReadOnlyDictionary<int, SceneEntity> byId, IReadOnlyList<int> ids, SceneEntityScanCatalog catalog)
     {
-        List<ScenePrefabRootComponentRecord> rows = await context.Set<ScenePrefabRootComponentRecord>().AsNoTracking()
+        List<ScenePrefabTemplateComponentRecord> rows = await context.Set<ScenePrefabTemplateComponentRecord>().AsNoTracking()
             .Where(record => ids.Contains(record.EntityId))
             .ToListAsync()
             .ConfigureAwait(false);
 
-        foreach (ScenePrefabRootComponentRecord row in rows)
+        foreach (ScenePrefabTemplateComponentRecord row in rows)
         {
             if (byId.TryGetValue(row.EntityId, out SceneEntity? entity))
             {
-                entity.LoadComponent(new PrefabRootComponent { PrefabId = row.PrefabId });
+                entity.LoadComponent(new PrefabTemplateComponent { PrefabId = row.PrefabId });
             }
         }
     }
 
     public void Stage(EditorDbContext context, SceneEntity entity, SceneEntityRecord entityRow)
     {
-        PrefabRootComponent? root = entity.Component<PrefabRootComponent>();
-        if (root == null)
+        PrefabTemplateComponent? template = entity.Component<PrefabTemplateComponent>();
+        if (template == null)
         {
             if (entity.RecordId is int id)
             {
@@ -69,18 +69,18 @@ public sealed class PrefabRootComponentPersistence : ISceneComponentPersistence
             return;
         }
 
-        var row = new ScenePrefabRootComponentRecord
+        var row = new ScenePrefabTemplateComponentRecord
         {
             Entity = entity.RecordId is null ? entityRow : null,
             EntityId = entity.RecordId ?? 0,
-            PrefabId = root.PrefabId,
+            PrefabId = template.PrefabId,
         };
         EditorComponentPersistenceHelpers.StageRow(context, row, entity.RecordId);
     }
 
     public void StageDelete(EditorDbContext context, int entityId) =>
-        EditorComponentPersistenceHelpers.StageDelete<ScenePrefabRootComponentRecord>(context, entityId);
+        EditorComponentPersistenceHelpers.StageDelete<ScenePrefabTemplateComponentRecord>(context, entityId);
 
     public Task DeleteForMapAsync(EditorDbContext context, DbTransaction transaction, MapId map) =>
-        EditorComponentPersistenceHelpers.DeleteForMapAsync<ScenePrefabRootComponentRecord>(_storage, context, transaction, map);
+        EditorComponentPersistenceHelpers.DeleteForMapAsync<ScenePrefabTemplateComponentRecord>(_storage, context, transaction, map);
 }

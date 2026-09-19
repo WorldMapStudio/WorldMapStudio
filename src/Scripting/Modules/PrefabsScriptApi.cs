@@ -24,21 +24,20 @@ public sealed class PrefabsScriptApi : IScriptModule
     [ScriptFunction]
     public PrefabDescriptor[] List() => Prefabs.All.Select(Describe).ToArray();
 
-    /// <summary>Saves the entity and its descendants as a new prefab, undoably.</summary>
+    /// <summary>Saves the entities as a new prefab, undoably.</summary>
     [ScriptFunction]
-    public PrefabDescriptor Save(ScriptEntityHandle handle, string name)
+    public PrefabDescriptor Save(ScriptEntityHandle[] handles, string name)
     {
-        if (handle.Resolve() is not SceneEntity source)
-        {
-            throw new InvalidOperationException("That handle does not refer to a scene entity.");
-        }
-
-        return Describe(Prefabs.Save(source, name));
+        SceneEntity[] sources = handles
+            .Select(handle => handle.Resolve() as SceneEntity
+                ?? throw new InvalidOperationException("A handle does not refer to a scene entity."))
+            .ToArray();
+        return Describe(Prefabs.Save(sources, name));
     }
 
     /// <summary>
-    /// Spawns a prefab, by name or id, with its root at world (x, y, z), undoably. Returns the spawned
-    /// entities, root first; with <paramref name="select"/> they also become the selection.
+    /// Spawns a prefab, by name or id, with its anchor (the bottom-centre of the saved entities) at world
+    /// (x, y, z), undoably. Returns the spawned entities; with <paramref name="select"/> they also become the selection.
     /// </summary>
     [ScriptFunction]
     public ScriptEntityHandle[] Spawn(object nameOrId, double x, double y, double z, bool select = false)
@@ -56,7 +55,7 @@ public sealed class PrefabsScriptApi : IScriptModule
         return spawned.Select(entity => new ScriptEntityHandle(_context.Scene, _context.Catalog, _context.EditSessions, entity)).ToArray();
     }
 
-    /// <summary>Deletes a prefab, by name or id, along with its template, undoably.</summary>
+    /// <summary>Deletes a prefab, by name or id, along with its template entities, undoably.</summary>
     [ScriptFunction]
     public void Delete(object nameOrId) => Prefabs.Delete(Find(nameOrId));
 

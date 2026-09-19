@@ -1,10 +1,11 @@
+using System.Collections.Generic;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 
 namespace WorldMapStudio;
 
 /// <summary>
-/// "Name it" popup for saving a scene entity as a prefab (small form popup, modelled on
+/// "Name it" popup for saving scene entities as a prefab (small form popup, modelled on
 /// <see cref="ProceduralModelPicker"/>'s create popup, minus the id/function fields this doesn't
 /// need). Owned and drawn by <see cref="SceneEntityInspector"/>.
 /// </summary>
@@ -16,7 +17,7 @@ public sealed class SavePrefabPopup
 
     private bool _openRequested;
     private bool _active;
-    private SceneEntity? _source;
+    private IReadOnlyList<SceneEntity> _sources = [];
     private string _name = "Prefab";
 
     public SavePrefabPopup(PrefabSystem prefabs)
@@ -24,10 +25,10 @@ public sealed class SavePrefabPopup
         _prefabs = prefabs;
     }
 
-    public void Open(SceneEntity source)
+    public void Open(IReadOnlyList<SceneEntity> sources)
     {
-        _source = source;
-        _name = source.Name;
+        _sources = sources;
+        _name = sources[0].Name;
         _openRequested = true;
     }
 
@@ -66,17 +67,15 @@ public sealed class SavePrefabPopup
         if (!open)
         {
             _active = false;
-            _source = null;
+            _sources = [];
         }
     }
 
     private void Commit()
     {
-        if (_source == null)
+        if (_sources.Count > 0)
         {
-            return;
+            _prefabs.Save(_sources, _name);
         }
-
-        _prefabs.Save(_source, _name);
     }
 }

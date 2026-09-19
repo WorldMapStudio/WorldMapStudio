@@ -5,27 +5,32 @@ namespace WorldMapStudio;
 
 public static class PrefabsScriptApiTests
 {
-    private sealed class Fixture(EditorContext context, SceneEntity entity) : IScriptModule
+    private sealed class Fixture(EditorContext context, SceneEntity[] entities) : IScriptModule
     {
         public string Name => "fixture";
 
         [ScriptFunction]
-        public ScriptEntityHandle Root() => new(context.Scene, context.Catalog, context.EditSessions, entity);
+        public ScriptEntityHandle[] All() =>
+            entities.Select(entity => new ScriptEntityHandle(context.Scene, context.Catalog, context.EditSessions, entity)).ToArray();
     }
 
     [EditorTest(Category = "Prefabs Script", Thread = TestThread.Main)]
-    public static void Save_spawn_undo_and_delete_a_two_entity_hierarchy()
+    public static void Save_spawn_undo_and_delete_a_two_entity_selection()
     {
         (EditorContext context, ScriptEngineHost host) = NewRig();
 
-        Assert.AreEqual("2", host.Evaluate("wms.prefabs.Save(wms.fixture.Root(), 'Pair').EntityCount.toString()"));
+        Assert.AreEqual("2", host.Evaluate("wms.prefabs.Save(wms.fixture.All(), 'Pair').EntityCount.toString()"));
 
         int before = context.Scene.Entities.Count();
         Assert.AreEqual("2", host.Evaluate("var spawned = wms.prefabs.Spawn('Pair', 100, 0, 50); spawned.length.toString()"));
         Assert.AreEqual(before + 2, context.Scene.Entities.Count());
 
-        Assert.AreEqual("100,0,50", host.Evaluate("wms.scene.GetPosition(spawned[0]).join(',')"));
-        Assert.AreEqual("102,0,50", host.Evaluate("wms.scene.GetPosition(spawned[1]).join(',')"));
+        // The anchor is the bottom-centre of both entities' combined bounds, so it lands on the spawn
+        // point and the layout between them is kept.
+        double firstX = double.Parse(host.Evaluate("wms.scene.GetPosition(spawned[0])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
+        double secondX = double.Parse(host.Evaluate("wms.scene.GetPosition(spawned[1])[0].toString()"), System.Globalization.CultureInfo.InvariantCulture);
+        Assert.AreApproximatelyEqual(2.0, System.Math.Abs(secondX - firstX), 1e-4, "the layout is kept");
+        Assert.AreApproximatelyEqual(100.0, (firstX + secondX) * 0.5, 1e-4, "the anchor lands on the spawn point");
 
         context.EditSessions.Undo();
         Assert.AreEqual(before, context.Scene.Entities.Count());
@@ -45,7 +50,7 @@ public static class PrefabsScriptApiTests
     public static void Spawn_can_select_the_new_entities()
     {
         (EditorContext context, ScriptEngineHost host) = NewRig();
-        host.Evaluate("wms.prefabs.Save(wms.fixture.Root(), 'Pair')");
+        host.Evaluate("wms.prefabs.Save(wms.fixture.All(), 'Pair')");
 
         host.Evaluate("wms.prefabs.Spawn('Pair', 0, 0, 0, true)");
 
@@ -66,13 +71,13 @@ public static class PrefabsScriptApiTests
     {
         var context = new EditorContext(new Node3D(), new Project { Name = "__wms_prefabs_script_test__" });
 
-        var root = new SceneEntity { Name = "Root", Map = context.Maps.CurrentMap };
-        var child = new SceneEntity { Name = "Child", Map = context.Maps.CurrentMap, Parent = root };
-        child.Transform = new Transform3D(Basis.Identity, new Vector3(2, 0, 0));
-        context.Scene.Add(root);
-        context.Scene.Add(child);
+        var first = new SceneEntity { Name = "First", Map = context.Maps.CurrentMap };
+        var second = new SceneEntity { Name = "Second", Map = context.Maps.CurrentMap };
+        second.Transform = new Transform3D(Basis.Identity, new Vector3(2, 0, 0));
+        context.Scene.Add(first);
+        context.Scene.Add(second);
 
-        var host = new ScriptEngineHost([context.Scripting.PrefabsScriptApi, context.Scripting.SceneScriptApi, new Fixture(context, root)]);
+        var host = new ScriptEngineHost([context.Scripting.PrefabsScriptApi, context.Scripting.SceneScriptApi, new Fixture(context, [first, second])]);
         return (context, host);
     }
 }
