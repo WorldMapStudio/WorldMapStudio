@@ -23,9 +23,7 @@ public class SceneEntity : Entity
     private int _boundsVersion;
 
     private readonly List<SceneComponent> _components = [];
-    private readonly List<SceneEntity> _children = [];
     private readonly List<Node3D> _meshPickNodes = [];
-    private SceneEntity? _parent;
 
     /// <summary>The representation node while loaded into a viewport, otherwise null.</summary>
     protected Node3D? Node { get; private set; }
@@ -35,67 +33,6 @@ public class SceneEntity : Entity
 
     /// <summary>Primary key of the backing row once persisted; null until first saved.</summary>
     public int? RecordId { get; set; }
-
-    /// <summary>
-    /// Primary key of the persisted parent row. Kept separately so streamed entities can remember
-    /// relationships before every member has been resolved to a live object.
-    /// </summary>
-    public int? ParentRecordId { get; set; }
-
-    /// <summary>
-    /// Optional parent entity. Transforms are still stored in world space; the relationship controls
-    /// editor grouping, loading, and parent-driven movement rather than Godot node parenting.
-    /// </summary>
-    public SceneEntity? Parent
-    {
-        get => _parent;
-        set
-        {
-            if (ReferenceEquals(_parent, value))
-            {
-                return;
-            }
-
-            if (value != null && WouldCycle(value))
-            {
-                GD.PushError($"[Scene] Refusing to parent {DisplayName} to {value.DisplayName}: would create a cycle.");
-                return;
-            }
-
-            _parent?._children.Remove(this);
-            _parent = value;
-            if (_parent != null && !_parent._children.Contains(this))
-            {
-                _parent._children.Add(this);
-            }
-
-            HierarchyVersion++;
-        }
-    }
-
-    public IReadOnlyList<SceneEntity> Children => _children;
-
-    /// <summary>
-    /// Bumped whenever any entity's parent changes. A view that derives a tree from the hierarchy can
-    /// hold that derivation across frames and rebuild only when this moves, rather than rewalking
-    /// every loaded entity to find out nothing changed — which is the difference between a cost that
-    /// scales with what is on screen and one that scales with what is loaded.
-    /// </summary>
-    public static int HierarchyVersion { get; private set; }
-
-    /// <summary>Whether <paramref name="parent"/> is this entity itself or one of its own descendants.</summary>
-    public bool WouldCycle(SceneEntity parent)
-    {
-        for (SceneEntity? current = parent; current != null; current = current.Parent)
-        {
-            if (ReferenceEquals(current, this))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
 
     [ScriptProperty(Mutable = true)]
     public string Name { get; set; } = "Entity";
@@ -315,7 +252,7 @@ public class SceneEntity : Entity
     }
 
     /// <summary>
-    /// An independent duplicate: fresh identity, no persisted record or parent link, and its own deep
+    /// An independent duplicate: fresh identity, no persisted record, and its own deep
     /// copy of every component. Used by copy/paste, which must not depend on the original entity still
     /// being loaded — once cloned, nothing here references the source, so streaming unloading (or even
     /// deleting) the original afterwards has no effect on the clone.
