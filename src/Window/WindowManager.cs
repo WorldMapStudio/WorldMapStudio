@@ -19,7 +19,7 @@ public sealed partial class WindowManager : ISubsystemHost, ISubsystem
     public ImGuiLayoutProfiles LayoutProfiles { get; }
 
     /// <summary>Why the saved layout could not be loaded at startup, if it could not.</summary>
-    public string? LayoutLoadError { get; }
+    public string? LayoutLoadError { get; private set; }
 
     public IEnumerable<Window> Windows => Subsystems;
 
@@ -31,6 +31,12 @@ public sealed partial class WindowManager : ISubsystemHost, ISubsystem
         InitializeSubsystems();
         RegisterWindowShortcuts();
         LayoutProfiles = new ImGuiLayoutProfiles(this);
+    }
+
+    /// <summary>Restores the saved layout. Called once the editor context has built every subsystem,
+    /// because a window's saved state can reach any of them.</summary>
+    public void LoadLayout()
+    {
         if (!LayoutProfiles.LoadCurrent(out string? error))
         {
             LayoutLoadError = $"Could not load current layout: {error}";
