@@ -11,11 +11,12 @@ namespace WorldMapStudio;
 /// itself a host, following the same pattern <see cref="DatabaseSystem"/> and <see cref="ToolSystem"/>
 /// already establish.
 /// </summary>
+[SubsystemHost(typeof(IScriptModule))]
 public sealed partial class ScriptingSystem : ISubsystemHost
 {
     public EditorContext Context { get; }
 
-    public IEnumerable<IScriptModule> Modules => Subsystems.Cast<IScriptModule>();
+    public IEnumerable<IScriptModule> Modules => Subsystems;
 
     /// <summary>The running engine, or null until <see cref="Startup"/> has run.</summary>
     public ScriptEngineHost? Engine { get; private set; }

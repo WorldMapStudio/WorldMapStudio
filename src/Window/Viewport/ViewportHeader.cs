@@ -10,6 +10,7 @@ namespace WorldMapStudio;
 /// [Subsystem(nameof(ViewportHeader))] and never touch the viewport itself. Draws nothing when no
 /// item is registered.
 /// </summary>
+[SubsystemHost(typeof(IViewportHeaderItem))]
 public sealed partial class ViewportHeader : ISubsystemHost
 {
     /// <summary>The editor's shared systems, forwarded to hosted items.</summary>
@@ -26,7 +27,7 @@ public sealed partial class ViewportHeader : ISubsystemHost
     public void Draw(in ViewportHeaderContext context, bool continueRow)
     {
         bool started = continueRow;
-        foreach (IViewportHeaderItem item in Subsystems.Cast<IViewportHeaderItem>())
+        foreach (IViewportHeaderItem item in Subsystems)
         {
             if (started)
             {

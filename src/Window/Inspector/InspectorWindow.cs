@@ -11,6 +11,7 @@ namespace WorldMapStudio;
 /// of them at once, with edits applied to every target as one command.
 /// </summary>
 [Subsystem(nameof(WindowManager))]
+[SubsystemHost(typeof(IEntityInspector))]
 public sealed partial class InspectorWindow : Window, ISubsystemHost
 {
     public override KeyboardShortcut DefaultShortcut => new(ImGuiKey.I, ShortcutModifiers.Alt);
@@ -31,7 +32,7 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
     /// <summary>The editor context, so a registered inspector can reach shared systems.</summary>
     public EditorContext Context { get; }
 
-    private IEnumerable<IEntityInspector> Inspectors => Subsystems.Cast<IEntityInspector>();
+    private IEnumerable<IEntityInspector> Inspectors => Subsystems;
 
     protected override void DrawContent()
     {

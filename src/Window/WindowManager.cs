@@ -11,6 +11,7 @@ namespace WorldMapStudio;
 /// WindowManager is itself a top-level menu, self-registered with <see cref="MenuBarManager"/>.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
+[SubsystemHost(typeof(Window))]
 public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 {
     public float Priority => 1f;
@@ -20,7 +21,7 @@ public sealed partial class WindowManager : ISubsystemHost, IMainMenu
 
     public ImGuiLayoutProfiles LayoutProfiles { get; }
 
-    public IEnumerable<Window> Windows => Subsystems.Cast<Window>();
+    public IEnumerable<Window> Windows => Subsystems;
 
     private readonly Dictionary<Window, ShortcutAction> _windowShortcuts = [];
     private ShortcutAction _layoutProfilesShortcut = null!;

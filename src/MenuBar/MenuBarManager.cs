@@ -9,6 +9,7 @@ namespace WorldMapStudio;
 /// (and everything it hosts) can register itself without touching <see cref="Editor"/>.
 /// </summary>
 [Subsystem(nameof(EditorContext))]
+[SubsystemHost(typeof(IMainMenu))]
 public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
 {
     /// <summary>The editor's shared systems and project, forwarded down to the menus and windows.</summary>
@@ -24,7 +25,7 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
 
     public void Draw()
     {
-        foreach (IMainMenu menu in Subsystems.Cast<IMainMenu>())
+        foreach (IMainMenu menu in Subsystems)
         {
             menu.Draw();
         }
@@ -33,7 +34,7 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>Draws each menu's root-level overlays (its modals). Called outside the menu bar.</summary>
     public void DrawOverlay()
     {
-        foreach (IMainMenu menu in Subsystems.Cast<IMainMenu>())
+        foreach (IMainMenu menu in Subsystems)
         {
             menu.DrawOverlay();
         }

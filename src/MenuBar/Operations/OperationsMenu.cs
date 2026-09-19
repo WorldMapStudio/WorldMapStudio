@@ -9,6 +9,7 @@ namespace WorldMapStudio;
 /// <see cref="IOperation"/> subsystem, declared with [Subsystem(nameof(OperationsMenu))].
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
+[SubsystemHost(typeof(IOperation))]
 public sealed partial class OperationsMenu : IMainMenu, ISubsystemHost
 {
     /// <summary>The editor's shared systems, forwarded down to hosted operations.</summary>
@@ -26,7 +27,7 @@ public sealed partial class OperationsMenu : IMainMenu, ISubsystemHost
     {
         ImGuiEx.Menu("Operations", () =>
         {
-            foreach (IOperation operation in Subsystems.Cast<IOperation>())
+            foreach (IOperation operation in Subsystems)
             {
                 if (ImGui.MenuItem(operation.Name, operation.ShortcutLabel, false, operation.CanApply()))
                 {

@@ -8,6 +8,7 @@ namespace WorldMapStudio;
 /// (the core spine, not an extension point), but itself a host so plugins register their own
 /// component kinds into it, exactly like <see cref="LandscapeSystem"/> hosts landscape profiles.
 /// </summary>
+[SubsystemHost(typeof(ISceneComponentType))]
 public sealed partial class SceneComponentRegistry : ISubsystemHost
 {
     public SceneComponentRegistry(EditorContext context)
@@ -18,7 +19,7 @@ public sealed partial class SceneComponentRegistry : ISubsystemHost
 
     public EditorContext Context { get; }
 
-    public IEnumerable<ISceneComponentType> All => Subsystems.Cast<ISceneComponentType>();
+    public IEnumerable<ISceneComponentType> All => Subsystems;
 
     public ISceneComponentType? Find(string typeId) => All.FirstOrDefault(type => type.TypeId == typeId);
 }

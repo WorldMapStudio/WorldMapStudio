@@ -11,6 +11,7 @@ namespace WorldMapStudio;
 /// registered with <see cref="MenuBarManager"/>.
 /// </summary>
 [Subsystem(nameof(MenuBarManager))]
+[SubsystemHost(typeof(IFileMenuItem))]
 public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 {
     public float Priority => 0f;
@@ -32,7 +33,7 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
 
     public void Draw()
     {
-        IEnumerable<IFileMenuItem> items = Subsystems.Cast<IFileMenuItem>();
+        IEnumerable<IFileMenuItem> items = Subsystems;
         ImGuiEx.Menu("File", () =>
         {
             foreach (IFileMenuItem item in items)
@@ -45,7 +46,7 @@ public sealed partial class FileMenuManager : ISubsystemHost, IMainMenu
     /// <summary>Forwards to every item's own overlay, mirroring <see cref="MenuBarManager.DrawOverlay"/>.</summary>
     public void DrawOverlay()
     {
-        foreach (IFileMenuItem item in Subsystems.Cast<IFileMenuItem>())
+        foreach (IFileMenuItem item in Subsystems)
         {
             item.DrawOverlay();
         }
