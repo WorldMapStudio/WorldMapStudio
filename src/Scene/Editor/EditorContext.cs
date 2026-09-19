@@ -65,6 +65,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Hosts the data backends (storages) and their entity factories.</summary>
     public DatabaseSystem Database { get; }
 
+    /// <summary>Which externally-stored entities carry editor data — see <see cref="EntityBridgeIndex"/>.</summary>
+    public EntityBridgeIndex Bridge { get; }
+
     /// <summary>Cached display text for catalog reference fields — see <see cref="CatalogReferenceLabels"/>.</summary>
     public CatalogReferenceLabels ReferenceLabels { get; }
 
@@ -208,6 +211,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Assets = Add(new AssetSystem(this));
         MeshMaterials = Add(new MeshMaterialSystem(this));
         Database = Add(new DatabaseSystem(this));
+        Bridge = Add(new EntityBridgeIndex(this));
         ReferenceLabels = Add(new CatalogReferenceLabels(this));
         CatalogSearchViews = Add(new CatalogSearchViews(this));
 
