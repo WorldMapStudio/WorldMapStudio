@@ -58,7 +58,7 @@ public sealed class PrefabTemplateComponentPersistence : ISceneComponentPersiste
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        PrefabTemplateComponent? template = entity.Component<PrefabTemplateComponent>();
+        PrefabTemplateComponent? template = entity.Attached<PrefabTemplateComponent>();
         if (template == null)
         {
             if (entity.RecordId is int id)

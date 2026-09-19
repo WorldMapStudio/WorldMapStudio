@@ -6,6 +6,14 @@ public abstract class SceneComponent
 {
     public SceneEntity? Owner { get; internal set; }
 
+    /// <summary>
+    /// Whether the owning entity's own factory builds this component from the entity's source row on every
+    /// scan, as opposed to the user or a script having attached it. An intrinsic component is never
+    /// persisted to the editor's tables, can't be removed in the inspector and isn't cloned. Set by
+    /// <see cref="SceneEntity.AddIntrinsicComponent"/>.
+    /// </summary>
+    public bool IsIntrinsic { get; internal set; }
+
     public abstract string TypeId { get; }
 
     public abstract string DisplayName { get; }

@@ -277,6 +277,14 @@ public abstract class SceneEntity : Entity
     public T? Component<T>() where T : SceneComponent =>
         Components.OfType<T>().FirstOrDefault();
 
+    /// <summary>The first component of type <typeparamref name="T"/> that was attached rather than built
+    /// by the entity's factory — what persistence reads, so an intrinsic component never reaches an editor table.</summary>
+    public T? Attached<T>() where T : SceneComponent =>
+        Components.OfType<T>().FirstOrDefault(component => !component.IsIntrinsic);
+
+    /// <summary>The components that were attached, not built by the entity's factory.</summary>
+    public IEnumerable<SceneComponent> AttachedComponents => Components.Where(component => !component.IsIntrinsic);
+
     public IEnumerable<T> ComponentsOf<T>() =>
         Components.OfType<T>();
 
@@ -291,6 +299,14 @@ public abstract class SceneEntity : Entity
         _components.Add(component);
         RebuildRepresentation();
         Resanitize();
+    }
+
+    /// <summary>Adds a component the owning factory rebuilds from the entity's source row on every scan —
+    /// see <see cref="SceneComponent.IsIntrinsic"/>.</summary>
+    public void AddIntrinsicComponent(SceneComponent component)
+    {
+        component.IsIntrinsic = true;
+        AddComponent(component);
     }
 
     public bool RemoveComponent(SceneComponent component)

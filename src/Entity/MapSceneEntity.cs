@@ -12,7 +12,7 @@ public sealed class MapSceneEntity : SceneEntity
     public override SceneEntity Clone()
     {
         var clone = new MapSceneEntity { Name = Name, Map = Map };
-        foreach (SceneComponent component in Components)
+        foreach (SceneComponent component in AttachedComponents)
         {
             clone.AddComponent(component.Clone());
         }

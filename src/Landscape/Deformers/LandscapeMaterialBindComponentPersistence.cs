@@ -101,7 +101,7 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        LandscapeMaterialBindComponent? bind = entity.Component<LandscapeMaterialBindComponent>();
+        LandscapeMaterialBindComponent? bind = entity.Attached<LandscapeMaterialBindComponent>();
         if (bind == null)
         {
             if (entity.RecordId is int id)

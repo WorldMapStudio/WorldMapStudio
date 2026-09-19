@@ -119,7 +119,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        TerrainValueComponent? terrainValue = entity.Component<TerrainValueComponent>();
+        TerrainValueComponent? terrainValue = entity.Attached<TerrainValueComponent>();
         if (terrainValue == null)
         {
             if (entity.RecordId is int id)

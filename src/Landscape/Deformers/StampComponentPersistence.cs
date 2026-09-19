@@ -79,7 +79,7 @@ public sealed class StampComponentPersistence : ISceneComponentPersistence
 
     public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
-        StampComponent? stamp = entity.Component<StampComponent>();
+        StampComponent? stamp = entity.Attached<StampComponent>();
         if (stamp == null)
         {
             if (entity.RecordId is int id)
