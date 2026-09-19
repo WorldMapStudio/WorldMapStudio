@@ -103,6 +103,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Owns the saved prefab library: catalog rows plus their scene-entity templates.</summary>
     public PrefabSystem Prefabs { get; }
 
+    /// <summary>The tag catalog and putting tags on entities — see <see cref="TagSystem"/>.</summary>
+    public TagSystem Tags { get; }
+
     /// <summary>Registered view categories and which are hidden — the per-type viewport visibility
     /// filter behind the "View" menu.</summary>
     public ViewCategorySystem ViewCategories { get; }
@@ -219,6 +222,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Procedural = Add(new ProceduralSystem(this));
         Images = Add(new ImageSystem(this));
         Prefabs = Add(new PrefabSystem(this));
+        Tags = Add(new TagSystem(this));
 
         // After ModelFormats/Assets/Landscape/Procedural: a format-driven category source reads them.
         ViewCategories = Add(new ViewCategorySystem(this));

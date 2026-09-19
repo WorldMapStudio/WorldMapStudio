@@ -18,6 +18,7 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
 
     private readonly SelectionSystem _selection;
     private readonly EditSessionManager _sessions;
+    private readonly TagFieldEditor _tagField;
     private string _fieldFilter = string.Empty;
 
     public InspectorWindow(WindowManager manager)
@@ -26,6 +27,7 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
         Context = manager.Context;
         _selection = manager.Context.Selection;
         _sessions = manager.Context.EditSessions;
+        _tagField = new TagFieldEditor(manager.Context);
         InitializeSubsystems();
     }
 
@@ -72,6 +74,14 @@ public sealed partial class InspectorWindow : Window, ISubsystemHost
 
         var context = new InspectorContext(_sessions, new FieldFilter(filter));
         inspector.Draw(context, selected);
+
+        // Below whichever inspector the selection resolved to, since an entity kind's own inspector
+        // replaces the base one rather than extending it — tags belong to every scene entity alike.
+        if (selected.All(entity => entity is SceneEntity))
+        {
+            context.Fields.Separator();
+            _tagField.Draw(context, selected.Cast<SceneEntity>().ToList());
+        }
     }
 
     // The most-derived registered inspector whose target type every selected entity is an instance
