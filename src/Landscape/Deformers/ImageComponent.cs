@@ -744,7 +744,7 @@ void fragment() {
     /// <summary>Stamps a soft circular brush at a local-space point, in the bound image's pixels.
     /// False if unbound or the point falls outside this placement's footprint. Scalar — has no color
     /// to paint with; kept for a caller that never has one.</summary>
-    public bool Paint(Vector3 local, float radius, float opacity, bool erase)
+    public bool Paint(Vector3 local, float radius, float opacity, bool erase, float hardness = 0.0f)
     {
         if (Image is not { } image || !TryLocalToUv(local, out float u, out float v))
         {
@@ -753,14 +753,14 @@ void fragment() {
 
         float radiusX = radius / WorldSizeX;
         float radiusY = radius / WorldSizeZ;
-        return image.Paint(u, v, radiusX, radiusY, opacity, erase);
+        return image.Paint(u, v, radiusX, radiusY, opacity, erase, hardness);
     }
 
-    /// <summary>Color-aware counterpart to the scalar <see cref="Paint(Vector3,float,float,bool)"/> —
-    /// see <see cref="PaintImage.Paint(float,float,float,float,Color,float,bool)"/> for the blend
+    /// <summary>Color-aware counterpart to the scalar <see cref="Paint(Vector3,float,float,bool,float)"/> —
+    /// see <see cref="PaintImage.Paint(float,float,float,float,Color,float,bool,float)"/> for the blend
     /// rules. Identical to the scalar overload on a scalar-format image, where <paramref name="color"/>
     /// is unused.</summary>
-    public bool Paint(Vector3 local, float radius, Color color, float opacity, bool erase)
+    public bool Paint(Vector3 local, float radius, Color color, float opacity, bool erase, float hardness = 0.0f)
     {
         if (Image is not { } image || !TryLocalToUv(local, out float u, out float v))
         {
@@ -769,7 +769,7 @@ void fragment() {
 
         float radiusX = radius / WorldSizeX;
         float radiusY = radius / WorldSizeZ;
-        return image.Paint(u, v, radiusX, radiusY, color, opacity, erase);
+        return image.Paint(u, v, radiusX, radiusY, color, opacity, erase, hardness);
     }
 
     /// <summary>The bound image's chunks this placement needs resident to cover a world-space region
