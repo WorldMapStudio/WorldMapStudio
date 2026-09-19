@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace WorldMapStudio;
 
@@ -24,14 +25,16 @@ public static class SchemaTests
             new StampComponentPersistence(null!),
         };
         var entityFactories = new IEntityFactory[] { new MapSceneEntityFactory(null!) };
-        using var context = new EditorDbContext(options, persistence, entityFactories, []);
+        var tables = new ITableConfiguration[] { new EntityTableConfiguration(null!) };
+        using var context = new EditorDbContext(options, persistence, entityFactories, tables);
 
         Schema schema = ModelSchema.Extract(context);
 
-        Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_entities"), "model should define the generic scene entity table");
+        Assert.IsTrue(schema.Tables.ContainsKey("wms_entities"), "model should define the entity identity table");
+        Assert.IsTrue(schema.Tables.ContainsKey("wms_map_entities"), "model should define the editor-authored entity table");
         Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_marker_components"), "model should define component tables");
         Assert.IsTrue(schema.Tables.ContainsKey("wms_scene_stamp_components"), "model should define landscape stamp component table");
-        SchemaTable entities = schema.Tables["wms_scene_entities"];
+        SchemaTable entities = schema.Tables["wms_map_entities"];
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
         // Id is ValueGeneratedNever(): MapSceneEntityFactory assigns it client-side (a MAX(Id)-seeded
@@ -40,6 +43,16 @@ public static class SchemaTests
         Assert.IsTrue(
             entities.Indexes.Any(index => index.Columns.SequenceEqual(["MapId", "MinX", "MaxX", "MinY", "MaxY"])),
             "the streaming region query needs a bounds index");
+
+        IForeignKey identity = context.Model.FindEntityType(typeof(MapEntityRecord))!.GetForeignKeys().Single();
+        Assert.AreEqual(typeof(EntityRecord), identity.PrincipalEntityType.ClrType);
+        Assert.AreEqual(DeleteBehavior.Cascade, identity.DeleteBehavior);
+
+        SchemaTable identities = schema.Tables["wms_entities"];
+        Assert.IsTrue(identities.Column("Source")?.Nullable == true, "Source is null for a native entity");
+        Assert.IsTrue(
+            identities.Indexes.Any(index => index.Unique && index.Columns.SequenceEqual(["Source", "SourceKey"])),
+            "a bridged entity's source row is identified once");
     }
 
     [EditorTest(Category = "Schema")]

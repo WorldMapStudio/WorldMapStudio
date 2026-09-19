@@ -79,9 +79,13 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
     {
         model.Entity<MapEntityRecord>(entity =>
         {
-            entity.ToTable("wms_scene_entities");
+            entity.ToTable("wms_map_entities");
             entity.HasKey(record => record.Id);
             entity.Property(record => record.Id).ValueGeneratedNever();
+            entity.HasOne<EntityRecord>()
+                .WithOne()
+                .HasForeignKey<MapEntityRecord>(record => record.Id)
+                .OnDelete(DeleteBehavior.Cascade);
 
             // Serves the streaming region query; without it that query scans every map's rows.
             entity.HasIndex(record => new { record.MapId, record.MinX, record.MaxX, record.MinY, record.MaxY });
@@ -97,7 +101,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         }
 
         var db = (EditorDbContext)context;
-        _nextId = await db.MapEntities.AsNoTracking()
+        _nextId = await db.Entities.AsNoTracking()
             .Select(record => (int?)record.Id)
             .MaxAsync()
             .ConfigureAwait(false) ?? 0;
@@ -173,6 +177,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
         WriteRecord(scene, record);
         if (scene.RecordId is null)
         {
+            db.Entities.Add(new EntityRecord { Id = record.Id });
             db.MapEntities.Add(record);
         }
         else
@@ -198,7 +203,7 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
                 persistence.StageDelete(db, id);
             }
 
-            db.MapEntities.Remove(new MapEntityRecord { Id = id });
+            db.Entities.Remove(new EntityRecord { Id = id });
         }
     }
 
