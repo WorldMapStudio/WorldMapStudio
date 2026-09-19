@@ -61,10 +61,12 @@ public sealed class SceneClipboard : IWorldParticipant
 
     void IWorldParticipant.UnloadWorld() => Clear();
 
-    // Horizontally centred, vertically at the lowest point: the natural anchor for dropping a batch
-    // onto a surface, so pasted content sits on the ground under the cursor rather than being buried
-    // or floating.
-    private static Vector3 BoundsBottomCenter(IReadOnlyList<SceneEntity> entities)
+    /// <summary>
+    /// Horizontally centred, vertically at the lowest point of the entities' combined bounds: the natural
+    /// anchor for dropping a batch onto a surface, so placed content sits on the ground under the cursor
+    /// rather than being buried or floating.
+    /// </summary>
+    public static Vector3 BoundsBottomCenter(IReadOnlyList<SceneEntity> entities)
     {
         Aabb bounds = entities[0].WorldBounds;
         for (int i = 1; i < entities.Count; i++)

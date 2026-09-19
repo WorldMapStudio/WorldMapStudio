@@ -8,8 +8,8 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Owns the prefab library: saved <see cref="Prefab"/> catalog rows plus the
-/// <see cref="SceneEntity"/> template subtree each one names, found via
-/// <see cref="PrefabRootComponent"/>. Templates are ordinary scene entities tagged with
+/// <see cref="SceneEntity"/> templates each one names, found via
+/// <see cref="PrefabTemplateComponent"/>. Templates are ordinary scene entities tagged with
 /// <see cref="LibraryMap"/>, a reserved id no real map ever uses, so the existing
 /// <see cref="SceneEntity"/> + <see cref="ISceneComponentPersistence"/> machinery persists them
 /// without any new serialization — see <c>.claude/plans</c> for the full reasoning. Loaded once,
@@ -46,7 +46,7 @@ public sealed class PrefabSystem : IWorldParticipant
 
     public IEnumerable<Prefab> All => _context.Catalog.OfType<Prefab>();
 
-    /// <summary>Loads every prefab template subtree once. Called from <see cref="EditorContext.LoadContent"/>;
+    /// <summary>Loads every prefab template entity once. Called from <see cref="EditorContext.LoadContent"/>;
     /// the <see cref="Prefab"/> catalog itself is loaded earlier, by <see cref="DatabaseSystem"/>'s own
     /// <see cref="IWorldParticipant"/>.</summary>
     public void LoadLibrary()
@@ -93,67 +93,92 @@ public sealed class PrefabSystem : IWorldParticipant
         }
     }
 
-    /// <summary>The template's root entity, or null if the prefab's row exists but its subtree isn't
+    /// <summary>The prefab's template entities; empty if the prefab's row exists but its entities aren't
     /// loaded (e.g. failed to load).</summary>
-    public SceneEntity? RootOf(Prefab prefab) => _context.Scene.Entities.FirstOrDefault(entity =>
-        entity.Map == LibraryMap && entity.Component<PrefabRootComponent>()?.PrefabId == prefab.RecordId);
+    public IReadOnlyList<SceneEntity> TemplateOf(Prefab prefab) => _context.Scene.Entities
+        .Where(entity => entity.Map == LibraryMap && entity.Component<PrefabTemplateComponent>()?.PrefabId == prefab.RecordId)
+        .ToList();
 
     /// <summary>
-    /// Builds (but does not apply or record) the command that saves <paramref name="source"/> and its
-    /// descendants as a new named prefab. The caller applies and records it, like every other add-flow
-    /// in this codebase.
+    /// Builds (but does not apply or record) the command that saves <paramref name="sources"/> as a new
+    /// named prefab. Entities that can't be duplicated are left out. The caller applies and records it,
+    /// like every other add-flow in this codebase.
     /// </summary>
-    public IEditCommand BuildSaveCommand(SceneEntity source, string name) => BuildSaveCommand(source, name, out _);
+    public IEditCommand BuildSaveCommand(IReadOnlyList<SceneEntity> sources, string name) =>
+        BuildSaveCommand(sources, name, out _);
 
-    private IEditCommand BuildSaveCommand(SceneEntity source, string name, out Prefab prefab)
+    private IEditCommand BuildSaveCommand(IReadOnlyList<SceneEntity> sources, string name, out Prefab prefab)
     {
-        prefab = new Prefab { Name = name.Trim().Length == 0 ? "Prefab" : name.Trim() };
+        List<SceneEntity> templates = sources.Select(source => source.Clone()).OfType<SceneEntity>().ToList();
+        if (templates.Count == 0)
+        {
+            throw new InvalidOperationException("None of the entities can be saved as a prefab.");
+        }
+
+        prefab = new Prefab
+        {
+            Name = name.Trim().Length == 0 ? "Prefab" : name.Trim(),
+            Anchor = SceneClipboard.BoundsBottomCenter(templates),
+        };
         _context.Catalog.AssignId(prefab);
 
-        (SceneEntity root, List<SceneEntity> all) = CloneSubtree(source, LibraryMap);
-        root.AddComponent(new PrefabRootComponent { PrefabId = prefab.RecordId!.Value });
-
         var commands = new List<IEditCommand> { new CreateCatalogEntityCommand(_context.Catalog, prefab) };
-        commands.AddRange(all.Select(entity => (IEditCommand)new CreateLibraryEntityCommand(_context.Scene, entity)));
+        foreach (SceneEntity template in templates)
+        {
+            template.Map = LibraryMap;
+            template.AddComponent(new PrefabTemplateComponent { PrefabId = prefab.RecordId!.Value });
+            commands.Add(new CreateLibraryEntityCommand(_context.Scene, template));
+        }
+
         return new BatchEditCommand($"Save Prefab '{prefab.Name}'", commands);
     }
 
     /// <summary>
     /// Builds (but does not apply or record) the command that spawns an independent copy of
-    /// <paramref name="prefab"/>'s template into the current map, with its root placed at
+    /// <paramref name="prefab"/>'s template into the current map, with its anchor placed at
     /// <paramref name="at"/>. Also returns every spawned entity, so the caller can select them.
     /// </summary>
     public (IEditCommand Command, IReadOnlyList<SceneEntity> Entities) BuildSpawnCommand(Prefab prefab, Vector3 at)
     {
-        SceneEntity template = RootOf(prefab) ?? throw new InvalidOperationException(
-            $"Prefab '{prefab.Name}' has no loaded template.");
-
-        (SceneEntity root, List<SceneEntity> all) = CloneSubtree(template, _context.Maps.CurrentMap);
-        if (root.Component<PrefabRootComponent>() is { } marker)
+        IReadOnlyList<SceneEntity> template = TemplateOf(prefab);
+        if (template.Count == 0)
         {
-            // A spawned instance is an ordinary entity, not another prefab root.
-            root.RemoveComponent(marker);
+            throw new InvalidOperationException($"Prefab '{prefab.Name}' has no loaded template.");
         }
 
-        // Moving the root carries its descendants along, so it is the only one that needs placing.
-        Transform3D placed = root.Transform;
-        root.Transform = new Transform3D(placed.Basis, at);
+        Vector3 offset = at - prefab.Anchor;
+        var spawned = new List<SceneEntity>(template.Count);
+        foreach (SceneEntity source in template)
+        {
+            SceneEntity clone = source.Clone() ?? throw new InvalidOperationException($"'{source.DisplayName}' can't be duplicated.");
+            clone.Map = _context.Maps.CurrentMap;
 
-        var commands = all.Select(entity => (IEditCommand)new CreateEntityCommand(_context.Scene, entity)).ToList();
-        return (new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands), all);
+            // A spawned instance is an ordinary entity, not another template member.
+            if (clone.Component<PrefabTemplateComponent>() is { } marker)
+            {
+                clone.RemoveComponent(marker);
+            }
+
+            Transform3D placed = clone.Transform;
+            clone.Transform = new Transform3D(placed.Basis, placed.Origin + offset);
+            spawned.Add(clone);
+        }
+
+        var commands = spawned.Select(entity => (IEditCommand)new CreateEntityCommand(_context.Scene, entity)).ToList();
+        return (new BatchEditCommand($"Spawn Prefab '{prefab.Name}'", commands), spawned);
     }
 
-    /// <summary>Saves <paramref name="source"/> and its descendants as a new named prefab, undoably.</summary>
-    public Prefab Save(SceneEntity source, string name)
+    /// <summary>Saves <paramref name="sources"/> as a new named prefab, undoably.</summary>
+    public Prefab Save(IReadOnlyList<SceneEntity> sources, string name)
     {
-        IEditCommand command = BuildSaveCommand(source, name, out Prefab prefab);
+        IEditCommand command = BuildSaveCommand(sources, name, out Prefab prefab);
         command.Apply();
         _context.EditSessions.Record(command);
         return prefab;
     }
 
     /// <summary>Spawns an independent copy of <paramref name="prefab"/> into the current map with its
-    /// root at <paramref name="at"/>, undoably, and returns the spawned entities.</summary>
+    /// anchor at <paramref name="at"/>, undoably, and returns the spawned entities.</summary>
     public IReadOnlyList<SceneEntity> Spawn(Prefab prefab, Vector3 at)
     {
         (IEditCommand command, IReadOnlyList<SceneEntity> entities) = BuildSpawnCommand(prefab, at);
@@ -162,7 +187,7 @@ public sealed class PrefabSystem : IWorldParticipant
         return entities;
     }
 
-    /// <summary>Deletes a prefab, its catalog row and its whole template subtree, undoably.</summary>
+    /// <summary>Deletes a prefab, its catalog row and its template entities, undoably.</summary>
     public void Delete(Prefab prefab)
     {
         IEditCommand command = BuildDeleteCommand(prefab);
@@ -170,19 +195,15 @@ public sealed class PrefabSystem : IWorldParticipant
         _context.EditSessions.Record(command);
     }
 
-    /// <summary>How many entities the prefab's template holds, or 0 when its subtree isn't loaded.</summary>
-    public int EntityCount(Prefab prefab) => RootOf(prefab) is { } root ? Family(root).Count() : 0;
+    /// <summary>How many entities the prefab's template holds, or 0 when they aren't loaded.</summary>
+    public int EntityCount(Prefab prefab) => TemplateOf(prefab).Count;
 
     /// <summary>Builds (but does not apply or record) the command that deletes a prefab: its catalog
-    /// row and its whole template subtree.</summary>
+    /// row and its template entities.</summary>
     public IEditCommand BuildDeleteCommand(Prefab prefab)
     {
         var commands = new List<IEditCommand> { new DeleteCatalogEntityCommand(_context.Catalog, prefab) };
-        if (RootOf(prefab) is { } root)
-        {
-            commands.AddRange(Family(root).Select(entity => (IEditCommand)new DeleteLibraryEntityCommand(_context.Scene, entity)));
-        }
-
+        commands.AddRange(TemplateOf(prefab).Select(entity => (IEditCommand)new DeleteLibraryEntityCommand(_context.Scene, entity)));
         return new BatchEditCommand($"Delete Prefab '{prefab.Name}'", commands);
     }
 
@@ -203,42 +224,5 @@ public sealed class PrefabSystem : IWorldParticipant
         }
 
         return (result, catalog);
-    }
-
-    /// <summary>Clones <paramref name="source"/> and its descendants, relinking parents among the
-    /// clones and retargeting every clone to <paramref name="map"/>. Mirrors <see cref="SceneClipboard"/>'s
-    /// clone logic, scoped to one root's own subtree instead of an arbitrary selection.</summary>
-    private static (SceneEntity Root, List<SceneEntity> All) CloneSubtree(SceneEntity source, MapId map)
-    {
-        List<SceneEntity> family = Family(source).ToList();
-        var clones = new Dictionary<SceneEntity, SceneEntity>();
-        foreach (SceneEntity entity in family)
-        {
-            SceneEntity clone = entity.Clone();
-            clone.Map = map;
-            clones[entity] = clone;
-        }
-
-        foreach (SceneEntity entity in family)
-        {
-            if (entity.Parent is { } parent && clones.TryGetValue(parent, out SceneEntity? parentClone))
-            {
-                clones[entity].Parent = parentClone;
-            }
-        }
-
-        return (clones[source], clones.Values.ToList());
-    }
-
-    private static IEnumerable<SceneEntity> Family(SceneEntity root)
-    {
-        yield return root;
-        foreach (SceneEntity child in root.Children)
-        {
-            foreach (SceneEntity descendant in Family(child))
-            {
-                yield return descendant;
-            }
-        }
     }
 }

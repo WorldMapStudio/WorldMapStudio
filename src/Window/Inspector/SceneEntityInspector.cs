@@ -50,15 +50,21 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             fields.Field("Effective size", () => DrawSize(targets[0]));
             fields.Separator();
             DrawComponents(context, targets[0]);
-            fields.Separator();
-            fields.Field("Save as Prefab", () =>
-            {
-                if (ImGui.Button("Save as Prefab"))
-                {
-                    _savePrefabPopup.Open(targets[0]);
-                }
-            });
         }
+
+        fields.Separator();
+        fields.Field("Save as Prefab", () =>
+        {
+            if (ImGui.Button("Save as Prefab"))
+            {
+                // Only entities that can be duplicated make a template.
+                SceneEntity[] savable = targets.Where(target => target.Clone() != null).ToArray();
+                if (savable.Length > 0)
+                {
+                    _savePrefabPopup.Open(savable);
+                }
+            }
+        });
 
         _savePrefabPopup.Draw();
     }
@@ -178,7 +184,7 @@ public sealed class SceneEntityInspector : EntityInspector<SceneEntity>
             if (type == null)
             {
                 // No registered type to recreate it from, so a Remove here couldn't be redone
-                // consistently — e.g. PrefabRootComponent, which is deliberately not user-addable or
+                // consistently — e.g. PrefabTemplateComponent, which is deliberately not user-addable or
                 // -removable via the inspector.
                 continue;
             }
