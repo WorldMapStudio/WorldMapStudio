@@ -25,9 +25,19 @@ public sealed class ObjectSelection
 
     private readonly SelectionSystem _selection;
     private readonly ViewCategorySystem _viewCategories;
+    private readonly SceneEntityRegistry _scene;
+    private readonly ObjectTargetFilter _filter;
 
     private readonly List<SceneEntity> _selectionCache = [];
     private int _cachedVersion = -1;
+
+    // What clicks and marquees may hit: the visible entities the tag filter allows. Held until any of
+    // what it derives from moves, so a frame with nothing changed costs nothing.
+    private readonly List<SceneEntity> _targetable = [];
+    private int _targetableSceneVersion = -1;
+    private int _targetableViewVersion = -1;
+    private int _targetableTagVersion = -1;
+    private int _targetableFilterVersion = -1;
 
     /// <summary>True while a click or marquee drag is in progress.</summary>
     public bool IsDragging => _mouseDown;
@@ -36,10 +46,43 @@ public sealed class ObjectSelection
     private bool _marquee;
     private NVector2 _marqueeStart;
 
-    public ObjectSelection(SelectionSystem selection, ViewCategorySystem viewCategories)
+    public ObjectSelection(SelectionSystem selection, ViewCategorySystem viewCategories, SceneEntityRegistry scene, ObjectTargetFilter filter)
     {
         _selection = selection;
         _viewCategories = viewCategories;
+        _scene = scene;
+        _filter = filter;
+    }
+
+    /// <summary>The visible entities the Object tool may target: <see cref="ViewCategorySystem.Visible"/>
+    /// narrowed by the tag filter.</summary>
+    public IReadOnlyList<SceneEntity> Targetable
+    {
+        get
+        {
+            if (_targetableSceneVersion == _scene.Version
+                && _targetableViewVersion == _viewCategories.Version
+                && _targetableTagVersion == _scene.TagVersion
+                && _targetableFilterVersion == _filter.Version)
+            {
+                return _targetable;
+            }
+
+            _targetableSceneVersion = _scene.Version;
+            _targetableViewVersion = _viewCategories.Version;
+            _targetableTagVersion = _scene.TagVersion;
+            _targetableFilterVersion = _filter.Version;
+            _targetable.Clear();
+            foreach (SceneEntity entity in _viewCategories.Visible)
+            {
+                if (_filter.Targets(entity))
+                {
+                    _targetable.Add(entity);
+                }
+            }
+
+            return _targetable;
+        }
     }
 
     /// <summary>The selected scene entities, cached until the shared selection next changes.</summary>
@@ -145,7 +188,7 @@ public sealed class ObjectSelection
             _selection.Clear();
         }
 
-        foreach (SceneEntity obj in _viewCategories.Visible)
+        foreach (SceneEntity obj in Targetable)
         {
             if (obj is IDerivedEntity)
             {
@@ -193,7 +236,7 @@ public sealed class ObjectSelection
 
         // (entity, nearest possible distance, distance to use if it has no geometry to test)
         var candidates = new List<(SceneEntity Entity, float Near, float BoxHit)>();
-        foreach (SceneEntity obj in _viewCategories.Visible)
+        foreach (SceneEntity obj in Targetable)
         {
             if (TryRayBox(from, dir, obj.Transform, obj.LocalBounds, out float boxHit, out float near))
             {

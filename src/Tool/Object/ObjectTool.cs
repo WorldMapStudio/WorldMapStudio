@@ -13,6 +13,7 @@ public sealed class ObjectTool : ITool
 {
     private readonly EditSessionManager _sessions;
     private readonly ObjectSelection _objectSelection;
+    private readonly TagSystem _tags;
     private readonly TransformGizmo _gizmo = new();
     private readonly ModalTransform _modalTransform = new();
     private bool _localSpacePreferred = true;
@@ -26,7 +27,9 @@ public sealed class ObjectTool : ITool
     public ObjectTool(ToolContext context)
     {
         _sessions = context.Sessions;
-        _objectSelection = new ObjectSelection(context.Selection, context.Editor.ViewCategories);
+        _tags = context.Editor.Tags;
+        _objectSelection = new ObjectSelection(
+            context.Selection, context.Editor.ViewCategories, context.Scene, _tags.ObjectFilter);
         _gizmo.Axes = context.Axes;
         _modalTransform.Axes = context.Axes;
     }
@@ -94,6 +97,107 @@ public sealed class ObjectTool : ITool
         ImGui.TextDisabled("|");
         ImGui.SameLine();
         ImGui.TextDisabled($"{_objectSelection.Selection.Count} selected");
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("|");
+        ImGui.SameLine();
+        DrawTagFilter();
+    }
+
+    // "Tags: All" until a constraint is set, then a summary of it, e.g. "Tags: +town -wip".
+    private string TagFilterLabel()
+    {
+        ObjectTargetFilter filter = _tags.ObjectFilter;
+        if (!filter.IsActive)
+        {
+            return "Tags: All";
+        }
+
+        var parts = new List<string>();
+        foreach (int id in filter.Include)
+        {
+            parts.Add($"+{_tags.Find(id)?.Name ?? "?"}");
+        }
+
+        if (filter.IncludeUntagged && !filter.Include.IsEmpty)
+        {
+            parts.Add("+untagged");
+        }
+
+        foreach (int id in filter.Exclude)
+        {
+            parts.Add($"-{_tags.Find(id)?.Name ?? "?"}");
+        }
+
+        return $"Tags: {string.Join(' ', parts)}";
+    }
+
+    // Each tag is ignore, include or exclude; clicking cycles them. A tag can't be both.
+    private void DrawTagFilter()
+    {
+        if (ImGui.Button($"{TagFilterLabel()}###object-tag-filter"))
+        {
+            ImGui.OpenPopup("object-tag-filter-popup");
+        }
+
+        if (!ImGui.BeginPopup("object-tag-filter-popup"))
+        {
+            return;
+        }
+
+        ObjectTargetFilter filter = _tags.ObjectFilter;
+        EntityTagSet include = filter.Include;
+        EntityTagSet exclude = filter.Exclude;
+        bool includeUntagged = filter.IncludeUntagged;
+
+        ImGui.TextDisabled("Objects the tool can click, box-select and move");
+        ImGui.Separator();
+
+        bool any = false;
+        foreach (EntityTagDefinition tag in _tags.Definitions)
+        {
+            if (tag.RecordId is not int id)
+            {
+                continue;
+            }
+
+            any = true;
+            string state = include.Contains(id) ? "+" : exclude.Contains(id) ? "-" : " ";
+            ImGui.PushID(id);
+            if (ImGui.SmallButton($"[{state}]"))
+            {
+                (include, exclude) = state switch
+                {
+                    " " => (include.With(id), exclude),
+                    "+" => (include.Without(id), exclude.With(id)),
+                    _ => (include, exclude.Without(id)),
+                };
+            }
+
+            ImGui.SameLine();
+            ImGui.TextColored(TagColors.ToVector4(tag.Color), tag.Name);
+            ImGui.PopID();
+        }
+
+        if (!any)
+        {
+            ImGui.TextDisabled("No tags yet.");
+        }
+
+        ImGui.Separator();
+        ImGui.BeginDisabled(include.IsEmpty);
+        ImGui.Checkbox("Include untagged", ref includeUntagged);
+        ImGui.EndDisabled();
+
+        if (ImGui.Button("Clear"))
+        {
+            include = EntityTagSet.Empty;
+            exclude = EntityTagSet.Empty;
+            includeUntagged = false;
+        }
+
+        _tags.SetObjectFilter(include, exclude, includeUntagged && !include.IsEmpty);
+        ImGui.EndPopup();
     }
 
     public void UpdateViewport(in ViewportContext ctx)
