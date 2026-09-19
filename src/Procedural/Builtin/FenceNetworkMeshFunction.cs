@@ -69,8 +69,6 @@ public sealed class FenceNetworkMeshFunction : IProceduralFunction
 
     public int Version => 5;
 
-    public float Priority => 0f;
-
     /// <summary>New points snap onto the terrain under the cursor — see the class comment.</summary>
     public bool SnapToTerrainOnPlace => true;
 

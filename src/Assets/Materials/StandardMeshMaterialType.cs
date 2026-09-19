@@ -12,8 +12,6 @@ public sealed class StandardMeshMaterialType : IMeshMaterialType
     {
     }
 
-    public float Priority => 0.0f;
-
     public string Id => StandardMeshMaterial.TypeId;
 
     public string DisplayName => "Standard";

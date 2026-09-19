@@ -26,8 +26,6 @@ public sealed class SpawnScriptApi : IScriptModule
 
     public string Name => "spawn";
 
-    public float Priority => 0.0f;
-
     public SpawnScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

@@ -18,8 +18,6 @@ public static class BatchTests
 
         public string Description => "Does nothing.";
 
-        public float Priority => 0.0f;
-
         public void DrawSettings()
         {
         }

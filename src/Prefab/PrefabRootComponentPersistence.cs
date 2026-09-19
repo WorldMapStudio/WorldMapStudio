@@ -25,8 +25,6 @@ public sealed class PrefabRootComponentPersistence : ISceneComponentPersistence
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => PrefabRootComponent.Kind;
 
     public void Configure(ModelBuilder model)

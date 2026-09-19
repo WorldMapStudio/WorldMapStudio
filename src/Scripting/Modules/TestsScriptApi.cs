@@ -162,8 +162,6 @@ public sealed class TestsScriptApi : IScriptModule
 
     public string Name => "tests";
 
-    public float Priority => 0f;
-
     public TestsScriptApi(ScriptingSystem system)
         : this(() => system.Context.Tests)
     {

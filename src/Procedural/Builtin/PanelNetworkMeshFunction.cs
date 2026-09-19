@@ -30,8 +30,6 @@ public sealed class PanelNetworkMeshFunction : IProceduralFunction
 
     public NetworkCapabilities Capabilities => new(AllowsFaces: true);
 
-    public float Priority => 0f;
-
     public IReadOnlyList<MeshParameter> Parameters { get; } = MeshParameter.List(UvScale);
 
     public IReadOnlyList<ProceduralOutputSlot> Outputs { get; } = [Output];

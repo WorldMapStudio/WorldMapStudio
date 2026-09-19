@@ -4,8 +4,6 @@ namespace WorldMapStudio;
 [Subsystem(nameof(ToolWindow))]
 public sealed class ObjectToolFactory : IToolFactory
 {
-    public float Priority => 0f;
-
     public string Name => "Object";
 
     public ObjectToolFactory(ToolWindow window)

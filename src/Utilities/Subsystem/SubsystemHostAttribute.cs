@@ -1,6 +1,6 @@
-namespace WorldMapStudio;
-
 using System;
+
+namespace WorldMapStudio;
 
 /// <summary>
 /// Declares the type every subsystem of this host must be. The generator rejects a subsystem that

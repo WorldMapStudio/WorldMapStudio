@@ -69,8 +69,6 @@ public sealed class MapScriptApi : IScriptModule
 
     public string Name => "map";
 
-    public float Priority => 0f;
-
     public MapScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

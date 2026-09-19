@@ -76,8 +76,6 @@ public sealed class SceneEntityFactory : ISceneEntityFactory, IMapScopedData
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public Type EntityType => typeof(SceneEntity);
 
     public bool Handles(IEntity entity) => entity.GetType() == typeof(SceneEntity);

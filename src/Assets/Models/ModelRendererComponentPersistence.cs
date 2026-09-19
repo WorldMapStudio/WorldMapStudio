@@ -33,8 +33,6 @@ public sealed class ModelRendererComponentPersistence : ISceneComponentPersisten
         _materials = storage.MeshMaterials;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => ModelRendererComponent.Kind;
 
     public void Configure(ModelBuilder model)

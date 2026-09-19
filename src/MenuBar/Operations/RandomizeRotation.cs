@@ -13,8 +13,6 @@ public sealed class RandomizeRotation : IOperation
     private readonly EditSessionManager _sessions;
     private readonly ShortcutAction _shortcut;
 
-    public float Priority => 0f;
-
     public string Name => "Randomize Rotation";
 
     public string ShortcutLabel => _shortcut.ShortcutLabel;

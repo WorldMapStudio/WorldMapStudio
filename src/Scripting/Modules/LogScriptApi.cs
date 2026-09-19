@@ -7,8 +7,6 @@ public sealed class LogScriptApi : IScriptModule
 {
     public string Name => "log";
 
-    public float Priority => 0f;
-
     public LogScriptApi(ScriptingSystem system)
     {
     }

@@ -10,8 +10,6 @@ public sealed class ObjModelFormat : IModelFormat
     {
     }
 
-    public float Priority => 0.0f;
-
     public string Id => FormatId;
 
     public string DisplayName => "OBJ";
@@ -30,8 +28,6 @@ public sealed class GltfModelFormat : IModelFormat
     public GltfModelFormat(ModelFormatSystem system)
     {
     }
-
-    public float Priority => 0.0f;
 
     public string Id => FormatId;
 
@@ -55,8 +51,6 @@ public sealed class MeshModelFormat : IModelFormat
     public MeshModelFormat(ModelFormatSystem system)
     {
     }
-
-    public float Priority => 0.0f;
 
     public string Id => FormatId;
 

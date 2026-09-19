@@ -38,8 +38,6 @@ public sealed class LandscapeMaterialBindComponentPersistence : ISceneComponentP
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => LandscapeMaterialBindComponent.Kind;
 
     public void Configure(ModelBuilder model)

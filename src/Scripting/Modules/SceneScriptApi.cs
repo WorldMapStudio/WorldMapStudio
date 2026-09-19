@@ -14,8 +14,6 @@ public sealed class SceneScriptApi : IScriptModule
 
     public string Name => "scene";
 
-    public float Priority => 0f;
-
     public SceneScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

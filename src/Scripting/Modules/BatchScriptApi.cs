@@ -116,8 +116,6 @@ public sealed class BatchScriptApi : IScriptModule
 
     public string Name => "batch";
 
-    public float Priority => 0f;
-
     public BatchScriptApi(ScriptingSystem system)
     {
         _batch = system.Context.Batch;

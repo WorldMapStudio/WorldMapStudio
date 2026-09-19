@@ -25,8 +25,6 @@ public sealed class MarkerComponentPersistence : ISceneComponentPersistence
         _storage = storage;
     }
 
-    public float Priority => 0.0f;
-
     public string TypeId => MarkerComponent.Kind;
 
     public void Configure(ModelBuilder model)

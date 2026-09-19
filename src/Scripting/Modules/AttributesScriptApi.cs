@@ -51,8 +51,6 @@ public sealed class AttributesScriptApi : IScriptModule
 
     public string Name => "attributes";
 
-    public float Priority => 0f;
-
     public AttributesScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

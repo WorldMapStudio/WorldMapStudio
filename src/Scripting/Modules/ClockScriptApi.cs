@@ -8,8 +8,6 @@ public sealed class ClockScriptApi : IScriptModule
 
     public string Name => "clock";
 
-    public float Priority => 0f;
-
     public ClockScriptApi(ScriptingSystem system)
     {
         _clock = system.Context.Clock;

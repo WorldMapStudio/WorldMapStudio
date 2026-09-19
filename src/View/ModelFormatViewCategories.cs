@@ -15,8 +15,6 @@ public sealed class ModelFormatViewCategories : IViewCategorySource
 {
     private readonly EditorContext _context;
 
-    public float Priority => 0f;
-
     public ModelFormatViewCategories(ViewCategorySystem system)
     {
         _context = system.Context;

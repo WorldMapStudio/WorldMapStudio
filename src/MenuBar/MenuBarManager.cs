@@ -15,8 +15,6 @@ public sealed partial class MenuBarManager : ISubsystemHost, ISubsystem
     /// <summary>The editor's shared systems and project, forwarded down to the menus and windows.</summary>
     public EditorContext Context { get; }
 
-    public float Priority => 0f;
-
     public MenuBarManager(EditorContext context)
     {
         Context = context;

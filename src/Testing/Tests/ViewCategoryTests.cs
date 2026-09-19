@@ -13,7 +13,6 @@ public static class ViewCategoryTests
 {
     private sealed class FakeCategory(string id, bool includeAll) : IViewCategory
     {
-        public float Priority => 0f;
         public string Id => id;
         public string DisplayName => id;
         public string Group => "Test";
@@ -28,7 +27,6 @@ public static class ViewCategoryTests
         public string DisplayName => "Fake Mesh";
         public string Description => "";
         public int Version => 1;
-        public float Priority => 0f;
         public IReadOnlyList<MeshParameter> Parameters { get; } = [];
         public IReadOnlyList<ProceduralOutputSlot> Outputs { get; } = [new ProceduralOutputSlot("mesh", "Mesh", [], [])];
         public void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output) { }

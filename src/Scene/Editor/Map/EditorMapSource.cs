@@ -20,8 +20,6 @@ public sealed class EditorMapSource : IMapSource, ITableConfiguration
 {
     private readonly EditorStorage _storage;
 
-    public float Priority => 0f;
-
     public bool CanEdit => true;
 
     public EditorMapSource(EditorStorage storage)

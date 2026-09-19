@@ -27,8 +27,6 @@ public sealed class GltfModelLoader : IModelLoader
     {
     }
 
-    public float Priority => 0.0f;
-
     public string FormatId => GltfModelFormat.FormatId;
 
     public bool CanLoad(string path)

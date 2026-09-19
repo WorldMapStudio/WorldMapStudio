@@ -5,8 +5,6 @@ namespace WorldMapStudio;
 [Subsystem(nameof(SceneComponentRegistry))]
 public sealed class MarkerComponentType : ISceneComponentType
 {
-    public float Priority => 0.0f;
-
     public MarkerComponentType(SceneComponentRegistry registry)
     {
     }

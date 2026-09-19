@@ -10,8 +10,6 @@ public sealed class SelectionScriptApi : IScriptModule
 
     public string Name => "selection";
 
-    public float Priority => 0f;
-
     public SelectionScriptApi(ScriptingSystem system)
     {
         _context = system.Context;

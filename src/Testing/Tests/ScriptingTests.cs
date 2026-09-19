@@ -30,8 +30,6 @@ public static class ScriptingTests
     {
         public string Name => "fixture";
 
-        public float Priority => 0f;
-
         [ScriptFunction]
         public Entity[] All() => entities.Cast<Entity>().ToArray();
 
@@ -60,8 +58,6 @@ public static class ScriptingTests
     {
         public string Name => "handles";
 
-        public float Priority => 0f;
-
         [ScriptFunction]
         public ScriptEntityHandle Get() => new(scene, catalog, sessions, entity);
 
@@ -74,8 +70,6 @@ public static class ScriptingTests
     private sealed class AsyncFixtureModule : IScriptModule
     {
         public string Name => "asyncFixture";
-
-        public float Priority => 0f;
 
         [ScriptFunction]
         public async Task<string> LoadAsync()
@@ -421,8 +415,6 @@ public static class ScriptingTests
     private sealed class TimeFixtureModule : IScriptModule
     {
         public string Name => "time";
-
-        public float Priority => 0f;
 
         [ScriptFunction]
         public Task Wait(int milliseconds) => Task.Delay(milliseconds);

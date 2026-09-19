@@ -12,8 +12,6 @@ public sealed class ExitMenuItem(FileMenuManager manager) : IFileMenuItem
         new KeyboardShortcut(ImGuiKey.F4, ShortcutModifiers.Alt),
         manager.RequestExit);
 
-    public float Priority => 0f;
-
     public void Draw()
     {
         if (ImGui.MenuItem("Exit", _shortcut.ShortcutLabel))

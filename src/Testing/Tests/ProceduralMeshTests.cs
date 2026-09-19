@@ -14,7 +14,6 @@ public static class ProceduralMeshTests
         public string Description => "";
         public int Version => 1;
         public NetworkCapabilities Capabilities => new(AllowsMultipleGraphs: false, AllowsBranching: false);
-        public float Priority => 0f;
         public System.Collections.Generic.IReadOnlyList<MeshParameter> Parameters { get; } = [];
         public void Build(in ProceduralBuildContext context, ProceduralOutputBuilder output) { }
     }

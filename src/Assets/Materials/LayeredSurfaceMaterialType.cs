@@ -23,8 +23,6 @@ public sealed class LayeredSurfaceMaterialType : IMeshMaterialType
     {
     }
 
-    public float Priority => 0.0f;
-
     public string Id => LayeredSurfaceMaterial.TypeId;
 
     public string DisplayName => "Layered Surface";
