@@ -24,7 +24,7 @@ public sealed class SceneTerrainValueComponentRecord
 
     public double ColorA { get; set; } = 1.0;
 
-    public MapEntityRecord? Entity { get; set; }
+    public EntityRecord? Entity { get; set; }
 }
 
 public sealed class SceneTerrainValueChannelRecord
@@ -117,7 +117,7 @@ public sealed class TerrainValueComponentPersistence : ISceneComponentPersistenc
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
         TerrainValueComponent? terrainValue = entity.Component<TerrainValueComponent>();
         if (terrainValue == null)

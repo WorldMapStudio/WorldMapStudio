@@ -16,7 +16,7 @@ public sealed class SceneProceduralComponentRecord
     /// without ever picking a model.</summary>
     public int? ModelId { get; set; }
 
-    public MapEntityRecord? Entity { get; set; }
+    public EntityRecord? Entity { get; set; }
 }
 
 [Subsystem(nameof(EditorStorage))]
@@ -111,7 +111,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         }
     }
 
-    public void Stage(EditorDbContext context, SceneEntity entity, MapEntityRecord entityRow)
+    public void Stage(EditorDbContext context, SceneEntity entity, EntityRecord entityRow)
     {
         ProceduralComponent? proceduralMesh = entity.Component<ProceduralComponent>();
         if (proceduralMesh == null)
