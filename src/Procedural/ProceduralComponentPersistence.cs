@@ -39,10 +39,7 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
     /// </summary>
     private ProceduralSystem Procedural => _storage.Context.Procedural;
 
-    // Resolved by concrete type off the storage's subsystem list rather than a facet — a facet keyed
-    // on ICatalogEntityFactory would stop finding it the moment ProceduralModelFactory becomes lazy.
-    private ProceduralModelFactory? _modelFactory;
-    private ProceduralModelFactory ModelFactory => _modelFactory ??= _storage.Subsystems.OfType<ProceduralModelFactory>().First();
+    private ProceduralModelFactory ModelFactory => _storage.ProceduralModelFactory;
 
     public float Priority => 0.0f;
 

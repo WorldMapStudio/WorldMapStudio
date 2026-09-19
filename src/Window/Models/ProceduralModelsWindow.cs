@@ -45,8 +45,7 @@ public sealed class ProceduralModelsWindow : Window
         : base("Procedural Models", startOpen: false, defaultSize: new Vector2(560.0f, 560.0f))
     {
         _context = manager.Context;
-        _catalog = _context.Database.Storages.OfType<EditorStorage>().First()
-            .Subsystems.OfType<ProceduralModelFactory>().First();
+        _catalog = _context.Database.EditorStorage.ProceduralModelFactory;
     }
 
     protected override void DrawContent()
@@ -223,7 +222,7 @@ public sealed class ProceduralModelsWindow : Window
 
     private async Task<int> CountStoredPlacementsAsync(int modelId)
     {
-        EditorStorage storage = _context.Database.Storages.OfType<EditorStorage>().First();
+        EditorStorage storage = _context.Database.EditorStorage;
         var rows = await storage.ReferencingPlacementBoundsAsync(typeof(ProceduralModel), modelId).ConfigureAwait(false);
         return rows.Count;
     }

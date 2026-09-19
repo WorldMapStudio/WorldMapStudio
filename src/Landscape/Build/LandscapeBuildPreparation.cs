@@ -77,11 +77,12 @@ internal static class LandscapeBuildPreparation
         EditorContext context, LandscapeBuildRequest request)
     {
         var tables = new Dictionary<PaintImage, ImageChunkTable>();
-        if (request.WantedImageChunks.Count == 0
-            || context.Database.Storages.OfType<EditorStorage>().FirstOrDefault() is not { } storage)
+        if (request.WantedImageChunks.Count == 0)
         {
             return tables;
         }
+
+        EditorStorage storage = context.Database.EditorStorage;
 
         Dictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>> wanted = request.WantedImageChunks
             .ToDictionary(pair => pair.Key, pair => (IReadOnlyCollection<ImageChunkCoord>)pair.Value);
