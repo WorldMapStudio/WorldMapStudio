@@ -46,7 +46,7 @@ internal sealed class ImGuiRenderer : IDisposable
         _renderingDevice = RenderingServer.GetRenderingDevice()
             ?? throw new InvalidOperationException("RenderingDevice is unavailable. Use a Forward+/Mobile renderer, not Compatibility.");
 
-        RDShaderFile shaderFile = ResourceLoader.Load<RDShaderFile>("res://src/Utilities/ImGui/ImGuiShader.glsl");
+        RDShaderFile shaderFile = ResourceLoader.Load<RDShaderFile>("res://src/Utilities/ImGuiBackend/ImGuiShader.glsl");
         _shader = _renderingDevice.ShaderCreateFromSpirV(shaderFile.GetSpirV());
         if (!_shader.IsValid)
         {
