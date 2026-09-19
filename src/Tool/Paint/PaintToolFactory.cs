@@ -1,6 +1,7 @@
 namespace WorldMapStudio;
 
-/// <summary>Registers the landscape paint tool with the tool system.</summary>
+/// <summary>Registers the landscape paint tool with the tool system, and owns the brush its tool
+/// instances share.</summary>
 [Subsystem(nameof(ToolSystem))]
 public sealed class PaintToolFactory : IToolFactory
 {
@@ -10,6 +11,8 @@ public sealed class PaintToolFactory : IToolFactory
 
     public string Name => "Paint";
 
+    public PaintBrush Brush { get; } = new();
+
     public PaintToolFactory(ToolSystem tools)
     {
         _context = tools.Context.Editor;
@@ -17,5 +20,5 @@ public sealed class PaintToolFactory : IToolFactory
 
     public bool CanActivate() => _context.Landscape.IsEnabled;
 
-    public ITool Create(ToolContext context) => new PaintTool(context);
+    public ITool Create(ToolContext context) => new PaintTool(context, Brush);
 }
