@@ -147,6 +147,8 @@ public sealed class LandscapeSettingsRecord
 
     public int HeightEncoding { get; set; }
 
+    public int HeightVertexLayout { get; set; }
+
     public double HeightOffset { get; set; }
 
     public double HeightScale { get; set; }
