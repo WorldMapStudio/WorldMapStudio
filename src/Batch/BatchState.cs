@@ -52,11 +52,7 @@ public sealed class BatchOperationState
 
     public async Task<string?> GetAsync(string key)
     {
-        if (Storage() is not { } storage)
-        {
-            return null;
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         return await storage.LoadBatchStateAsync(OperationId, key).ConfigureAwait(false);
     }
 
@@ -70,10 +66,8 @@ public sealed class BatchOperationState
 
     private async Task SetCoreAsync(string key, string value)
     {
-        if (Storage() is { } storage)
-        {
-            await storage.UpsertBatchStateAsync(OperationId, key, value).ConfigureAwait(false);
-        }
+        EditorStorage storage = _context.Database.EditorStorage;
+        await storage.UpsertBatchStateAsync(OperationId, key, value).ConfigureAwait(false);
     }
 
     public Task RemoveAsync(string key)
@@ -84,19 +78,13 @@ public sealed class BatchOperationState
 
     private async Task RemoveCoreAsync(string key)
     {
-        if (Storage() is { } storage)
-        {
-            await storage.RemoveBatchStateAsync(OperationId, key).ConfigureAwait(false);
-        }
+        EditorStorage storage = _context.Database.EditorStorage;
+        await storage.RemoveBatchStateAsync(OperationId, key).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyDictionary<string, string>> AllAsync()
     {
-        if (Storage() is not { } storage)
-        {
-            return new Dictionary<string, string>();
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         return await storage.LoadAllBatchStateAsync(OperationId).ConfigureAwait(false);
     }
 
@@ -107,6 +95,4 @@ public sealed class BatchOperationState
             throw new ArgumentException($"'{key}' is reserved.", nameof(key));
         }
     }
-
-    private EditorStorage? Storage() => _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
 }

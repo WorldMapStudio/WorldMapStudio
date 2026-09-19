@@ -224,16 +224,10 @@ public sealed class MapSystem : IWorldParticipant
         return null;
     }
 
-    /// <summary>The "Editor" storage — the only one <see cref="IMapScopedData"/> and
-    /// <see cref="IMapOwnableResourceFactory"/> ever register into. Null only if a project somehow has
-    /// none, in which case a delete removes just the map row, as it always used to.</summary>
-    private EditorStorage? EditorContentsStorage => _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
-
     /// <summary>Every registered <see cref="IMapOwnableResourceFactory"/>'s type and label — what
     /// <see cref="MapScriptApi"/> matches a script's resource name strings against.</summary>
     public IReadOnlyList<(Type ResourceType, string Label)> ResourceKinds() =>
-        EditorContentsStorage?.MapOwnableResourceFactories.Select(factory => (factory.ResourceType, factory.Label)).ToList()
-        ?? [];
+        _context.Database.EditorStorage.MapOwnableResourceFactories.Select(factory => (factory.ResourceType, factory.Label)).ToList();
 
     /// <summary>
     /// What deleting <paramref name="map"/> would remove: one row per non-empty <see cref="IMapScopedData"/>
@@ -242,11 +236,7 @@ public sealed class MapSystem : IWorldParticipant
     /// </summary>
     public async Task<MapContents> DescribeContentsAsync(MapId map)
     {
-        if (EditorContentsStorage is not { } storage)
-        {
-            return new MapContents([], []);
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = storage.CreateContext();
 
@@ -295,9 +285,9 @@ public sealed class MapSystem : IWorldParticipant
 
         WorkHandle? handle = _context.Operations.TryRun($"Delete map {mapLabel}", async ctx =>
         {
-            if (options.DeleteContents && EditorContentsStorage is { } storage)
+            if (options.DeleteContents)
             {
-                await DeleteContentsAsync(storage, map.Id, options.DeleteResources).ConfigureAwait(false);
+                await DeleteContentsAsync(_context.Database.EditorStorage, map.Id, options.DeleteResources).ConfigureAwait(false);
             }
 
             await source.DeleteAsync(map).ConfigureAwait(false);
@@ -367,11 +357,7 @@ public sealed class MapSystem : IWorldParticipant
     /// </summary>
     public async Task<IReadOnlyList<int>> FindStrayMapIdsAsync()
     {
-        if (EditorContentsStorage is not { } storage)
-        {
-            return [];
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         using IDisposable read = await storage.Lock.ReaderAsync().ConfigureAwait(false);
         await using EditorDbContext context = storage.CreateContext();
 
@@ -396,12 +382,7 @@ public sealed class MapSystem : IWorldParticipant
             return null;
         }
 
-        if (EditorContentsStorage is not { } storage)
-        {
-            error = "No storage hosts map-scoped data.";
-            return null;
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         var map = new MapId(id);
         return _context.Operations.TryRun($"Clean up map {id}", async _ =>
         {

@@ -50,7 +50,7 @@ public sealed class ProceduralScriptApi : IScriptModule
     [ScriptFunction]
     public async Task<int> UsageCount(int id)
     {
-        EditorStorage storage = _context.Database.Storages.OfType<EditorStorage>().First();
+        EditorStorage storage = _context.Database.EditorStorage;
         var rows = await storage.ReferencingPlacementBoundsAsync(typeof(ProceduralModel), id).ConfigureAwait(false);
         return rows.Count;
     }

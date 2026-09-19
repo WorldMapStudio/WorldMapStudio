@@ -308,12 +308,7 @@ public sealed class ImageResidencySystem
         await Task.Yield();
 
         using IDisposable scope = DiagnosticLog.Scope($"image chunks x{toLoad.Count}");
-        EditorStorage? storage = _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
-        if (storage == null)
-        {
-            return [];
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         var wanted = new Dictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>>();
         foreach (IGrouping<PaintImage, (PaintImage Image, ImageChunkCoord Coord)> group in toLoad.GroupBy(entry => entry.Image))
         {

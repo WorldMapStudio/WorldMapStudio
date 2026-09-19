@@ -484,7 +484,7 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant
         try
         {
             BlockingWork.Run(() =>
-                _context.Database.Storages.OfType<EditorStorage>().First().CommitAsync(created, []));
+                _context.Database.EditorStorage.CommitAsync(created, []));
         }
         catch (Exception e)
         {

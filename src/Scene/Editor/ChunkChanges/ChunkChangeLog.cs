@@ -48,11 +48,7 @@ public sealed class ChunkChangeLog
     /// </summary>
     public void RecordCommit(EditSession session, Func<IEntity, bool> wasCommitted)
     {
-        if (EditorStorage() is not { } storage)
-        {
-            return;
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         foreach ((MapId map, (HashSet<ChunkCoord> touched, Aabb region)) in TouchedByMap(session, wasCommitted))
         {
             HashSet<ChunkCoord> occupied = OccupiedChunks(map, region);
@@ -150,11 +146,7 @@ public sealed class ChunkChangeLog
     /// </summary>
     public void MarkMapChanged(MapId map)
     {
-        if (EditorStorage() is not { } storage)
-        {
-            return;
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
     }
 
@@ -170,11 +162,12 @@ public sealed class ChunkChangeLog
     /// </summary>
     public Task MarkChunksBuiltAsync(MapId map, IReadOnlyCollection<ChunkCoord> chunks)
     {
-        if (EditorStorage() is not { } storage || chunks.Count == 0)
+        if (chunks.Count == 0)
         {
             return Task.CompletedTask;
         }
 
+        EditorStorage storage = _context.Database.EditorStorage;
         return storage.UpsertChunkChangesAsync(chunks.Select(coord => (map.Value, coord.X, coord.Y)).ToList());
     }
 
@@ -183,11 +176,12 @@ public sealed class ChunkChangeLog
     /// bulk run and for the chunks a re-run no longer produces.</summary>
     public Task MarkChunksVacatedAsync(MapId map, IReadOnlyCollection<ChunkCoord> chunks)
     {
-        if (EditorStorage() is not { } storage || chunks.Count == 0)
+        if (chunks.Count == 0)
         {
             return Task.CompletedTask;
         }
 
+        EditorStorage storage = _context.Database.EditorStorage;
         return storage.RemoveChunkChangesAsync(chunks.Select(coord => (map.Value, coord.X, coord.Y)).ToList());
     }
 
@@ -195,11 +189,7 @@ public sealed class ChunkChangeLog
     /// The one query the whole caching model is built on.</summary>
     public async Task<IReadOnlyList<ChunkChange>> ChangedSinceAsync(DateTime since, MapId? map = null)
     {
-        if (EditorStorage() is not { } storage)
-        {
-            return [];
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         return await storage.LoadChangedSinceAsync(since, map?.Value).ConfigureAwait(false);
     }
 
@@ -211,11 +201,7 @@ public sealed class ChunkChangeLog
     /// <summary>Every chunk in a coordinate rectangle that the map still has.</summary>
     public async Task<IReadOnlyList<ChunkChange>> InRangeAsync(ChunkRange range)
     {
-        if (EditorStorage() is not { } storage)
-        {
-            return [];
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         return await storage.LoadChunksInRangeAsync(range.Map, range.Min, range.Max).ConfigureAwait(false);
     }
 
@@ -223,11 +209,7 @@ public sealed class ChunkChangeLog
     /// move its watermark forward. Null when nothing has ever been edited.</summary>
     public async Task<DateTime?> LatestEditUtcAsync(MapId? map = null)
     {
-        if (EditorStorage() is not { } storage)
-        {
-            return null;
-        }
-
+        EditorStorage storage = _context.Database.EditorStorage;
         return await storage.LoadLatestEditUtcAsync(map?.Value).ConfigureAwait(false);
     }
 
@@ -369,6 +351,4 @@ public sealed class ChunkChangeLog
 
         byMap[snapshot.Map] = (entry.Chunks, entry.Region.Merge(snapshot.Bounds));
     }
-
-    private EditorStorage? EditorStorage() => _context.Database.Storages.OfType<EditorStorage>().FirstOrDefault();
 }
