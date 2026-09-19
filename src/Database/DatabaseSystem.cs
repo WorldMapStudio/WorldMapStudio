@@ -16,6 +16,7 @@ namespace WorldMapStudio;
 /// On <see cref="Startup"/> it launches a managed <c>dolt sql-server</c> for each storage configured
 /// to launch one, then ensures each storage's database exists.
 /// </summary>
+[SubsystemHost(typeof(Storage))]
 public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, IWorldParticipant
 {
     private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
@@ -26,7 +27,7 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
     private readonly EditorContext _context;
     private readonly List<DoltServer> _servers = [];
 
-    public IEnumerable<Storage> Storages => Subsystems.Cast<Storage>();
+    public IEnumerable<Storage> Storages => Subsystems;
 
     public DatabaseSystem(EditorContext context)
     {
