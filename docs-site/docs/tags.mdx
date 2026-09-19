@@ -1,0 +1,108 @@
+---
+sidebar_position: 5
+---
+
+# Tags and Entity Identity
+
+A **tag** is a named, project-wide label. Any scene entity can carry any number of tags, and the Object
+tool can be told to target only entities that carry (or don't carry) certain ones. Tags are how you make
+"only click the lights I marked `town`" possible in a scene with thousands of objects.
+
+There is no entity parenting. Entities are a flat set; tags are how you group them.
+
+## Using tags
+
+- **Inspector.** Select one or more entities. Under the entity's own fields, the **Tags** field shows a
+  chip for every tag the selection carries, and an **Add tag** combo for the rest. With several entities
+  selected, a tag carried by only some of them draws as a faded chip with a count (`town 2/5`); click it
+  to give the tag to all of them. Click a full chip to take the tag off all of them. **New tag...** in
+  the combo creates a tag and puts it on the selection in one undo step.
+- **Tags window** (Window → Tags). Lists every tag with how many loaded entities carry it. Double-click a
+  name to rename it, click the swatch to recolour it. **Select loaded** selects the loaded entities that
+  carry the tag; **Add to selection** and **Remove from selection** apply it to the current selection.
+  **Delete** removes the tag from every loaded entity as one undo step; entities that aren't loaded lose
+  it when the change is committed.
+- **Outline.** Each row shows a coloured dot per tag. Typing `tag:<name>` in the filter box shows only
+  entities carrying that tag; add more `tag:` words to require several, and plain words to filter by name
+  as before.
+
+Tag names can't contain spaces or `:`, so they stay searchable as `tag:<name>`, and they are unique
+regardless of case.
+
+### Restricting the Object tool
+
+The Object tool's toolbar has a **Tags: All** button. Its popup lists every tag with a small state
+button that cycles between *ignore*, *include* (`+`) and *exclude* (`-`):
+
+- With any tag included, only entities carrying at least one included tag can be clicked,
+  box-selected or moved. **Include untagged** additionally admits entities with no tags at all.
+- Entities carrying an excluded tag can never be targeted.
+- While any include or exclude is set, terrain chunks aren't targetable either, since they can't carry
+  tags. That is what stops the ground from answering every click that misses a tagged object.
+
+The button summarises the state, for example `Tags: +town -wip`. Changing the filter drops anything
+selected that is no longer targetable. Targeting only affects what the tool can pick — nothing is hidden
+or dimmed.
+
+## Where entities are stored
+
+Two kinds of scene entity exist:
+
+- **Editor entities** are authored in the editor and stored in the editor's own tables, owned by one
+  editor map. Everything created from the Scene menu, by scripts, by prefabs, by the clipboard and by the
+  ADT importer is one.
+- **Bridged entities** live in some other table — a creature spawn in `tc_creature`, a graveyard, a game
+  tele — and the editor maps them onto scene entities when they stream in.
+
+Tags and attached components have to be stored somewhere, and only the editor's own tables are the
+editor's to write. So every entity that carries editor-side data has a row in `wms_entities`. For an
+editor entity it is created with the entity. For a bridged entity it is created **lazily**, the first
+time the entity is committed with a tag or an attached component, and it names the other table's row by
+`(source, key)`, for example `("wow.creature", 12345)`. It is removed again when the entity has neither,
+or is deleted, so the table holds one row per entity that carries data and not one per spawn.
+
+Consequences worth knowing:
+
+- A bridged entity's tags follow it into every editor map bound to the same game map, because the bridge
+  isn't keyed on the editor map.
+- **Renumbering or deleting rows outside the editor** (for example a SQL update that reassigns creature
+  guids) leaves editor data attached to whatever row now has that key, or orphaned if none does. The key
+  is the whole contract, so a factory only bridges entities whose key is a real stored value. Taxi paths
+  are not bridged: their key is a position within the path's nodes.
+- Committing writes the game table first and the tag and component rows second, as two transactions. If
+  the second fails, the entity is saved and its tags are not, and the error is reported.
+- Bridged entities can't be copied or saved into a prefab; only editor entities can.
+
+### Intrinsic and attached components
+
+A component is either **intrinsic** — built by the entity's own factory from its source row every time
+it loads, like the model on a creature spawn or the marker on a graveyard — or **attached**, added by a
+user or a script. Only attached components are stored in the editor's tables. Intrinsic components
+can't be removed in the inspector or by script.
+
+Not every component kind can be attached to a bridged entity. Kinds whose storage or evaluation is
+scoped to an editor map's entities (stamps, drawing targets, terrain values, material binds, procedural
+meshes, ADT tiles) are refused; markers and model renderers are allowed.
+
+## Prefabs
+
+A prefab is a set of entities, not a tree. **Save as Prefab** takes the whole selection; only editor
+entities are saved. Spawning places the set so the bottom-centre of its combined bounds — the prefab's
+anchor — lands on the spawn point, keeping the layout between the entities. Tags are saved with the
+entities and come back on the spawned copies.
+
+## Scripting
+
+Everything above is scriptable through `wms.tags`, and a tag can be given by name or by id anywhere:
+
+```js
+const id = wms.tags.Create("town", 0xE0B341);
+wms.tags.Add(wms.selection.Get(), "town");        // undoable; returns how many gained it
+wms.tags.Find("town");                            // loaded entities in view carrying it
+wms.tags.SetObjectFilter(["town"], ["wip"], true); // include town, exclude wip, allow untagged
+wms.scene.All(null, "town");                      // scene query filtered by tag
+wms.scene.IsBridged(entity);                      // true for a creature spawn, false for an editor entity
+wms.scene.Source(entity);                         // { Source: "wow.creature", Key: 12345 } or null
+```
+
+`wms.prefabs.Save` takes a list of entities.
