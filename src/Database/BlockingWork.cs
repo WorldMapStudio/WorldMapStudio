@@ -10,25 +10,17 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Runs an async database call to completion synchronously, stalling the caller until it finishes.
+/// The work runs on the thread pool via <see cref="Task.Run(Func{Task})"/>, so it cannot deadlock on a
+/// thread that carries a <see cref="System.Threading.SynchronizationContext"/> (the Godot main thread).
 ///
-/// <b>Why <c>Task.Run</c> rather than awaiting directly:</b> blocking on an async call from a thread
-/// that carries a <see cref="System.Threading.SynchronizationContext"/> — the Godot main thread does —
-/// deadlocks, because a continuation tries to resume on the very thread that is blocked. Wrapping in
-/// <see cref="Task.Run(Func{Task})"/> keeps the whole chain on the thread pool, where nothing needs
-/// the blocked thread back. The block is what is left over after dodging the deadlock, not the point.
+/// Called from the main thread this drops a frame for as long as the query takes: fine for discrete
+/// acts (opening a project, switching map, committing a session), not for anything per-frame — use
+/// <see cref="WorkQueue"/> for that. Every main-thread database stall goes through here, so this is the
+/// one place to grep, count, or replace.
 ///
-/// <b>What it costs:</b> called from the main thread, this is a dropped frame for as long as the query
-/// takes. That is tolerable for the discrete acts it is used for — opening a project, switching map,
-/// creating a map, committing a session — and not for anything per-frame. Use <see cref="WorkQueue"/>
-/// for work that should not be felt.
-///
-/// Deliberately one shared helper: every main-thread database stall in the editor goes through here,
-/// so this is the one place to grep, count, or replace.
-///
-/// <b>Watchdog:</b> a stall here shows up as a frozen window with nothing in the log. Each call arms
-/// an off-thread timer that names the calling site and how long it has been blocked, first after
-/// <see cref="WarnAfter"/> and then every <see cref="WarnInterval"/>, so an indefinite freeze
-/// (a lock that never comes back) leaves a trail pointing at which act stalled and for how long.
+/// Each call arms an off-thread watchdog that names the calling site and how long it has been blocked,
+/// first after <see cref="WarnAfter"/> and then every <see cref="WarnInterval"/>, so an indefinite
+/// freeze leaves a trail.
 /// </summary>
 public static class BlockingWork
 {

@@ -11,28 +11,26 @@ namespace WorldMapStudio;
 /// <summary>
 /// A named, saved raster — width, height, and a painted grayscale buffer — backed by a sparse grid of
 /// fixed-size <see cref="ImageChunk"/>s rather than one flat byte array. Catalog-backed like
-/// <see cref="ProceduralModel"/>, so an <see cref="ImageComponent"/> merely references one by id instead
-/// of owning the data: many placements can share one image, and painting it from any of them updates
+/// <see cref="ProceduralModel"/>, so an <see cref="ImageComponent"/> references one by id instead of
+/// owning the data: many placements can share one image, and painting it from any of them updates
 /// every placement.
 ///
 /// A chunk holding nothing but zeros is never allocated in memory and never gets a row in
-/// <see cref="PaintImageFactory"/>'s storage; only what a streamed-in placement's footprint actually needs is
-/// ever loaded (<see cref="ImageResidencySystem"/>), which is what lets <see cref="Width"/> and
-/// <see cref="Height"/> reach up to <see cref="MaxDimension"/> without every image needing that much memory
-/// at once; and a stroke crossing a chunk boundary evaluates its falloff from global pixel coordinates rather
-/// than chunk-local ones, so there is nothing to seam.
+/// <see cref="PaintImageFactory"/>'s storage; only what a streamed-in placement's footprint needs is
+/// ever loaded (<see cref="ImageResidencySystem"/>), so <see cref="Width"/> and <see cref="Height"/> can
+/// reach <see cref="MaxDimension"/> without every image needing that much memory at once. A stroke
+/// crossing a chunk boundary evaluates its falloff from global pixel coordinates, so there is nothing
+/// to seam.
 ///
-/// A handful of members — <see cref="CopyPixels"/>, <see cref="Resize"/>, <see cref="ReplacePixels"/>,
-/// <see cref="LoadPixels"/> — are the exception: they work over one dense buffer sized to the whole
-/// canvas, for callers that genuinely need that shape (tests, an external import). They scale with
-/// <see cref="Width"/> × <see cref="Height"/> regardless of how much is actually painted, so they are
-/// only safe on a modestly sized image; nothing in the editor itself calls them. Width, height, and
-/// chunk size are all fixed for an image's whole lifetime, chosen once at creation via
-/// <see cref="ConfigureNew"/> — see that method for why changing them later is not offered.
+/// <see cref="CopyPixels"/>, <see cref="Resize"/>, <see cref="ReplacePixels"/> and
+/// <see cref="LoadPixels"/> are the exception: they work over one dense buffer sized to the whole
+/// canvas, for callers that need that shape (tests, an external import). They scale with
+/// <see cref="Width"/> × <see cref="Height"/>, so they are only safe on a modestly sized image. Width,
+/// height, and chunk size are fixed for an image's lifetime, chosen once via
+/// <see cref="ConfigureNew"/>.
 ///
-/// Named <c>PaintImage</c> rather than the more obvious <c>Image</c> because this type lives in the
-/// same namespace as, and every file here brings in with <c>using Godot;</c>, Godot's own
-/// <see cref="Godot.Image"/> — a bare <c>Image</c> here would silently shadow it everywhere.
+/// Named <c>PaintImage</c> rather than <c>Image</c> because a bare <c>Image</c> would shadow Godot's
+/// <see cref="Godot.Image"/> in every file that has <c>using Godot;</c>.
 /// </summary>
 public sealed class PaintImage : CatalogEntity, IKeyedCatalogEntity
 {
