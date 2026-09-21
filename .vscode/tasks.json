@@ -22,12 +22,18 @@
             "label": "prepare debug",
             "hide": true,
             "type": "shell",
-            "command": "dotnet build; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
+            "command": "dotnet build && godot-mono --headless --import --quit-after 1000",
             "options": {
-                "cwd": "${workspaceFolder}",
-                "shell": {
-                    "executable": "powershell.exe",
-                    "args": ["-NoProfile", "-Command"]
+                "cwd": "${workspaceFolder}"
+            },
+            "windows": {
+                "command": "dotnet build; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
+                "options": {
+                    "cwd": "${workspaceFolder}",
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-Command"]
+                    }
                 }
             },
             "problemMatcher": "$msCompile",
@@ -40,12 +46,18 @@
             "label": "prepare release",
             "hide": true,
             "type": "shell",
-            "command": "dotnet build -p:Optimized=true; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
+            "command": "dotnet build -p:Optimized=true && godot-mono --headless --import --quit-after 1000",
             "options": {
-                "cwd": "${workspaceFolder}",
-                "shell": {
-                    "executable": "powershell.exe",
-                    "args": ["-NoProfile", "-Command"]
+                "cwd": "${workspaceFolder}"
+            },
+            "windows": {
+                "command": "dotnet build -p:Optimized=true; if ($LASTEXITCODE -eq 0) { godot --headless --import --quit-after 1000 }",
+                "options": {
+                    "cwd": "${workspaceFolder}",
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": ["-NoProfile", "-Command"]
+                    }
                 }
             },
             "problemMatcher": "$msCompile",
@@ -57,15 +69,22 @@
         {
             "label": "export",
             "hide": true,
-            "type": "process",
-            "command": "powershell.exe",
-            "args": [
-                "-NoProfile",
-                "-Command",
-                "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release 'Windows Desktop' build/release/WorldMapStudio.exe | Out-Host; exit $LASTEXITCODE"
-            ],
+            "type": "shell",
+            "command": "mkdir -p build/release && godot-mono --headless --export-release Linux build/release/WorldMapStudio.x86_64",
             "options": {
                 "cwd": "${workspaceFolder}"
+            },
+            "windows": {
+                "type": "process",
+                "command": "powershell.exe",
+                "args": [
+                    "-NoProfile",
+                    "-Command",
+                    "New-Item -ItemType Directory -Force -Path build/release | Out-Null; godot --headless --export-release 'Windows Desktop' build/release/WorldMapStudio.exe | Out-Host; exit $LASTEXITCODE"
+                ],
+                "options": {
+                    "cwd": "${workspaceFolder}"
+                }
             },
             "problemMatcher": []
         },
@@ -74,7 +93,10 @@
             "label": "Debug",
             "detail": "Editor engine, unoptimized managed code. Use this when you need to step through code.",
             "type": "process",
-            "command": "godot",
+            "command": "godot-mono",
+            "windows": {
+                "command": "godot"
+            },
             "args": [
                 "."
             ],
@@ -88,7 +110,10 @@
             "label": "Release (fast)",
             "detail": "Editor engine, optimized managed code. No export, a couple of seconds. Use this for day-to-day profiling.",
             "type": "process",
-            "command": "godot",
+            "command": "godot-mono",
+            "windows": {
+                "command": "godot"
+            },
             "args": [
                 "."
             ],
@@ -102,7 +127,10 @@
             "label": "Release (exported)",
             "detail": "Release engine, optimized managed code. Full export, around twenty seconds. The only mode without the engine's debug-only checks.",
             "type": "process",
-            "command": "${workspaceFolder}/build/release/WorldMapStudio.exe",
+            "command": "${workspaceFolder}/build/release/WorldMapStudio.x86_64",
+            "windows": {
+                "command": "${workspaceFolder}/build/release/WorldMapStudio.exe"
+            },
             "args": [],
             "options": {
                 "cwd": "${workspaceFolder}"
