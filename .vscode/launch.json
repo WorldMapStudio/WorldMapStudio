@@ -6,7 +6,10 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "prepare debug",
-            "program": "godot",
+            "program": "godot-mono",
+            "windows": {
+                "program": "godot"
+            },
             "args": [
                 "."
             ],
@@ -19,7 +22,10 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "prepare release",
-            "program": "godot",
+            "program": "godot-mono",
+            "windows": {
+                "program": "godot"
+            },
             "args": [
                 "."
             ],
@@ -32,7 +38,10 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "export",
-            "program": "${workspaceFolder}/build/release/WorldMapStudio.exe",
+            "program": "${workspaceFolder}/build/release/WorldMapStudio.x86_64",
+            "windows": {
+                "program": "${workspaceFolder}/build/release/WorldMapStudio.exe"
+            },
             "args": [],
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal",
