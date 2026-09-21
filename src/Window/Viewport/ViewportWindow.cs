@@ -147,6 +147,7 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
         _viewport.AddChild(_grid);
         _viewport.AddChild(_upAxisLine);
         owner.AddChild(_viewport);
+        context.Surface.Node = _viewport;
 
         _environmentRenderer = new EnvironmentRenderer(_viewport, _camera, context.Assets, context.MeshMaterials, _environments, _viewCategories);
         _camera.Environment = _environmentRenderer.Environment;
