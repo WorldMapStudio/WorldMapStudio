@@ -374,25 +374,17 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
         _header.Draw(new ViewportHeaderContext(_camera, _flyCamera.IsFlying), continueRow: tool is not null);
 
         NVector2 region = ImGui.GetContentRegionAvail();
-        int width = Math.Max(1, (int)region.X);
-        int height = Math.Max(1, (int)region.Y);
-        if (_viewport.Size.X != width || _viewport.Size.Y != height)
-        {
-            _viewport.Size = new Vector2I(width, height);
-        }
-
-        IntPtr textureId = (IntPtr)_viewport.GetTexture().GetRid().Id;
-        ImGui.Image(textureId, new NVector2(width, height));
+        NVector2 imageSize = new(Math.Max(1, (int)region.X), Math.Max(1, (int)region.Y));
+        SubViewportImage.Draw(_viewport, imageSize);
 
         bool hovered = ImGui.IsItemHovered();
         NVector2 imageMin = ImGui.GetItemRectMin();
-        NVector2 imageSize = new(width, height);
 
         // The active tool owns the mouse buttons while interacting, so the fly camera
         // (right mouse) only starts when the tool isn't capturing.
         _flyCamera.Update(hovered && !(tool?.CapturesMouse ?? false));
         _flyCamera.ApplyTo(_camera);
-        FramePick pick = UpdatePointer(hovered, imageMin);
+        FramePick pick = UpdatePointer(hovered, imageMin, imageSize);
 
         _grid.Visible = _view.ShowGrid;
         _upAxisLine.Visible = _view.ShowGrid;
@@ -446,7 +438,7 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
     // Casts a ray from the mouse into the world (terrain, falling back to the Y=0 ground plane) so
     // anything that places something under the cursor — paste, so far — knows where that is without
     // needing its own camera/viewport-rect plumbing.
-    private FramePick UpdatePointer(bool hovered, NVector2 imageMin)
+    private FramePick UpdatePointer(bool hovered, NVector2 imageMin, NVector2 imageSize)
     {
         _pointer.Hovered = hovered;
         if (!hovered)
@@ -466,7 +458,10 @@ public sealed partial class ViewportWindow : Window, IWorldParticipant, ILayoutP
         _pointerCamera = camera;
         _pointerSceneVersion = _scene.Version;
 
-        GVector2 local = new(mouse.X - imageMin.X, mouse.Y - imageMin.Y);
+        // On a resize frame the image is stretched while the camera still has the old viewport size.
+        GVector2 local = new(
+            (mouse.X - imageMin.X) * _viewport.Size.X / imageSize.X,
+            (mouse.Y - imageMin.Y) * _viewport.Size.Y / imageSize.Y);
         GVector3 origin = _camera.ProjectRayOrigin(local);
         GVector3 dir = _camera.ProjectRayNormal(local);
 

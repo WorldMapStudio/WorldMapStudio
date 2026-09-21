@@ -63,8 +63,6 @@ public sealed class ModelPreviewRenderer : IDisposable
 
     public void Draw(string path, NVector2 size)
     {
-        ResizeViewport(size);
-
         if (_key != path)
         {
             _key = path;
@@ -78,7 +76,7 @@ public sealed class ModelPreviewRenderer : IDisposable
             _loadedKey = _key;
         }
 
-        DrawViewportImage(size);
+        SubViewportImage.Draw(_viewport, size);
         if (_load == null)
         {
             Overlay(size, "No model");
@@ -102,8 +100,6 @@ public sealed class ModelPreviewRenderer : IDisposable
     /// the path as what tells the renderer "still the same thing, do not re-instantiate".</summary>
     public void DrawAsset(string cacheKey, ModelAsset? model, NVector2 size)
     {
-        ResizeViewport(size);
-
         if (_key != cacheKey)
         {
             _key = cacheKey;
@@ -117,7 +113,7 @@ public sealed class ModelPreviewRenderer : IDisposable
             _loadedKey = _key;
         }
 
-        DrawViewportImage(size);
+        SubViewportImage.Draw(_viewport, size);
         if (model == null)
         {
             Overlay(size, "No preview");
@@ -129,17 +125,6 @@ public sealed class ModelPreviewRenderer : IDisposable
         ClearModel();
         _viewport.QueueFree();
     }
-
-    private void ResizeViewport(NVector2 size)
-    {
-        if (_viewport.Size.X != (int)size.X || _viewport.Size.Y != (int)size.Y)
-        {
-            _viewport.Size = new Vector2I(Math.Max(1, (int)size.X), Math.Max(1, (int)size.Y));
-        }
-    }
-
-    private void DrawViewportImage(NVector2 size) =>
-        ImGui.Image((IntPtr)_viewport.GetTexture().GetRid().Id, size);
 
     private void ShowModel(ModelAsset model)
     {
