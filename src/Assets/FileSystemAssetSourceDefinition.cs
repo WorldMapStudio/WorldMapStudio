@@ -26,5 +26,16 @@ public sealed class FileSystemAssetSourceDefinition : IAssetSourceDefinition
         {
             source.RootPath = root;
         }
+
+        bool lowercase = source.GetFlag(FileSystemAssetProvider.LowercasePathsKey);
+        if (ImGui.Checkbox("Lowercase paths", ref lowercase))
+        {
+            source.SetFlag(FileSystemAssetProvider.LowercasePathsKey, lowercase);
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip("The tree is stored lowercase; requested relative paths are folded before resolving.");
+        }
     }
 }

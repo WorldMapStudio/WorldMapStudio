@@ -9,6 +9,9 @@ namespace WorldMapStudio;
 [Subsystem(nameof(AssetSystem))]
 public sealed class FileSystemAssetProvider : IAssetProvider
 {
+    /// <summary>Source property: the tree is stored lowercase; requested relative paths are folded before resolving.</summary>
+    public const string LowercasePathsKey = "lowercasePaths";
+
     public FileSystemAssetProvider(AssetSystem assets)
     {
     }
@@ -57,9 +60,16 @@ public sealed class FileSystemAssetProvider : IAssetProvider
             return false;
         }
 
-        string candidate = Path.IsPathRooted(path)
-            ? Path.GetFullPath(path)
-            : Path.GetFullPath(Path.Combine(source.RootPath, path));
+        string candidate;
+        if (Path.IsPathRooted(path))
+        {
+            candidate = Path.GetFullPath(path);
+        }
+        else
+        {
+            string relativePath = source.GetFlag(LowercasePathsKey) ? path.ToLowerInvariant() : path;
+            candidate = Path.GetFullPath(Path.Combine(source.RootPath, relativePath));
+        }
 
         string root = Path.GetFullPath(source.RootPath);
         string relative;

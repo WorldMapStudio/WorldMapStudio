@@ -22,13 +22,31 @@ public sealed class AssetSourceSettings
 
     public Dictionary<string, string> Properties { get; set; } = new();
 
-    public string GetProperty(string key) =>
-        Properties.TryGetValue(key, out string? value) ? value :
-        ExtensionData.TryGetValue(key, out JsonElement element) && element.ValueKind == JsonValueKind.String ? element.GetString() ?? "" :
-        "";
+    /// <summary>A property from <see cref="Properties"/>, or a top-level string or boolean in the source's JSON.</summary>
+    public string GetProperty(string key)
+    {
+        if (Properties.TryGetValue(key, out string? value))
+        {
+            return value;
+        }
+
+        if (!ExtensionData.TryGetValue(key, out JsonElement element))
+        {
+            return "";
+        }
+
+        return element.ValueKind switch
+        {
+            JsonValueKind.String => element.GetString() ?? "",
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => "",
+        };
+    }
 
     public void SetProperty(string key, string value)
     {
+        ExtensionData.Remove(key);
         if (value.Length == 0)
         {
             Properties.Remove(key);
@@ -37,6 +55,10 @@ public sealed class AssetSourceSettings
 
         Properties[key] = value;
     }
+
+    public bool GetFlag(string key) => GetProperty(key) == "true";
+
+    public void SetFlag(string key, bool value) => SetProperty(key, value ? "true" : "");
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtensionData { get; set; } = new();
