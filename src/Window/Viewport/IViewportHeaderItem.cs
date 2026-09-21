@@ -8,6 +8,10 @@ namespace WorldMapStudio;
 /// </summary>
 public interface IViewportHeaderItem : ISubsystem
 {
+    /// <summary>False when <see cref="Draw"/> would emit nothing this frame, so the header skips both
+    /// the item and its separator instead of leaving a dangling one.</summary>
+    bool IsVisible(in ViewportHeaderContext context) => true;
+
     /// <summary>Draws this entry inline on the header row. The caller has already placed the cursor
     /// and pushed a unique ID scope, so the item just emits its own widgets.</summary>
     void Draw(in ViewportHeaderContext context);

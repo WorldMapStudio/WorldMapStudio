@@ -29,6 +29,11 @@ public sealed partial class ViewportHeader : ISubsystemHost
         bool started = continueRow;
         foreach (IViewportHeaderItem item in Subsystems)
         {
+            if (!item.IsVisible(context))
+            {
+                continue;
+            }
+
             if (started)
             {
                 ImGui.SameLine();
