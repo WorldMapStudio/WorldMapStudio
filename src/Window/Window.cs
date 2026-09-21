@@ -23,7 +23,7 @@ public abstract class Window : ISubsystem
     private readonly Vector2? _defaultSize;
     private readonly Vector2? _defaultPosition;
 
-    protected Window(string title, bool startOpen = true, Vector2? defaultSize = null, Vector2? defaultPosition = null)
+    protected Window(string title, bool startOpen = false, Vector2? defaultSize = null, Vector2? defaultPosition = null)
     {
         Title = title;
         IsOpen = startOpen;
