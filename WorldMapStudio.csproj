@@ -15,7 +15,7 @@
   -->
   <PropertyGroup Condition=" '$(Optimized)' == 'true' ">
     <Optimize>true</Optimize>
-    <IntermediateOutputPath>$(GodotProjectDir).godot\mono\temp\obj\DebugOptimized\</IntermediateOutputPath>
+    <IntermediateOutputPath>$(GodotProjectDir).godot/mono/temp/obj/DebugOptimized/</IntermediateOutputPath>
   </PropertyGroup>
 
   <!--
@@ -24,8 +24,8 @@
   always loads the Debug bin slot, so a core-only build must not overwrite it.
   -->
   <PropertyGroup Condition=" '$(WmsCoreOnly)' == 'true' ">
-    <IntermediateOutputPath>$(GodotProjectDir).godot\mono\temp\obj\CoreOnly\</IntermediateOutputPath>
-    <OutputPath>$(GodotProjectDir).godot\mono\temp\bin\CoreOnly\</OutputPath>
+    <IntermediateOutputPath>$(GodotProjectDir).godot/mono/temp/obj/CoreOnly/</IntermediateOutputPath>
+    <OutputPath>$(GodotProjectDir).godot/mono/temp/bin/CoreOnly/</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,16 +36,16 @@
     <PackageReference Include="Pomelo.EntityFrameworkCore.MySql" Version="8.0.3" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="analyzer\WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
-    <Compile Remove="analyzer\**" />
+    <ProjectReference Include="analyzer/WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <Compile Remove="analyzer/**" />
   </ItemGroup>
   <ItemGroup Condition=" '$(WmsCoreOnly)' != 'true' ">
-    <Compile Include="..\WorldMapStudioPlugins\**\*.cs" />
+    <Compile Include="../WorldMapStudioPlugins/**/*.cs" />
   </ItemGroup>
   <ItemGroup Condition=" '$(WmsCoreOnly)' != 'true' ">
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>WorldMapStudio.PluginsDirectory</_Parameter1>
-      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)\..\WorldMapStudioPlugins'))</_Parameter2>
+      <_Parameter2>$([System.IO.Path]::GetFullPath('$(MSBuildProjectDirectory)/../WorldMapStudioPlugins'))</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 </Project>
