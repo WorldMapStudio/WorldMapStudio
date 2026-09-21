@@ -59,6 +59,9 @@ public sealed partial class EditorContext : ISubsystemHost
     /// <summary>Lets any window ask the viewport to look somewhere.</summary>
     public ViewportFocus Focus { get; }
 
+    /// <summary>Where to parent anything that should be drawn in the 3D viewport but is not a scene entity.</summary>
+    public ViewportSurface Surface { get; }
+
     /// <summary>Owns the active editor tool.</summary>
     public ToolSystem Tools { get; }
 
@@ -207,6 +210,7 @@ public sealed partial class EditorContext : ISubsystemHost
         Problems = Add(new ProblemSystem());
         ChunkChanges = Add(new ChunkChangeLog(this));
         Focus = Add(new ViewportFocus());
+        Surface = Add(new ViewportSurface());
         Tools = Add(new ToolSystem(this));
         Maps = Add(new MapSystem(this));
         MapProperties = Add(new MapPropertiesRegistry(this));
