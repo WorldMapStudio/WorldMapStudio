@@ -67,7 +67,13 @@ public sealed class FileSystemAssetProvider : IAssetProvider
         }
         else
         {
-            string relativePath = source.GetFlag(LowercasePathsKey) ? path.ToLowerInvariant() : path;
+            // Requested names may use either separator; on Linux a backslash is otherwise a file name character.
+            string relativePath = AssetPath.Normalize(path);
+            if (source.GetFlag(LowercasePathsKey))
+            {
+                relativePath = relativePath.ToLowerInvariant();
+            }
+
             candidate = Path.GetFullPath(Path.Combine(source.RootPath, relativePath));
         }
 
