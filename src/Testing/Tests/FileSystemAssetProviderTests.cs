@@ -20,10 +20,13 @@ public static class FileSystemAssetProviderTests
             source.SetFlag(FileSystemAssetProvider.LowercasePathsKey, true);
             var provider = new FileSystemAssetProvider(null!);
 
-            byte[]? bytes = provider.ReadBytesAsync(source, "Sub\\File.TXT".Replace('\\', Path.DirectorySeparatorChar)).GetAwaiter().GetResult();
+            byte[]? bytes = provider.ReadBytesAsync(source, "Sub/File.TXT").GetAwaiter().GetResult();
 
             Assert.IsNotNull(bytes, "a mixed-case request resolves in a lowercase tree");
             Assert.AreEqual("content", Encoding.UTF8.GetString(bytes!));
+
+            byte[]? backslashed = provider.ReadBytesAsync(source, "Sub\\File.TXT").GetAwaiter().GetResult();
+            Assert.IsNotNull(backslashed, "a backslash-separated request resolves on every platform");
         }
         finally
         {
