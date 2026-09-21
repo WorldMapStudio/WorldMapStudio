@@ -32,6 +32,7 @@ public sealed partial class GodotImGui : Node
 
     private static readonly IntPtr BackendName = Marshal.StringToCoTaskMemAnsi("godot_imgui_csharp");
     private static readonly IntPtr RendererName = Marshal.StringToCoTaskMemAnsi("godot_imgui_rd");
+    private static readonly List<Action> PostRender = [];
     private readonly List<Action> _layouts = [];
     private ImGuiLayer _layer = null!;
     private ImGuiInput _input = null!;
@@ -43,6 +44,12 @@ public sealed partial class GodotImGui : Node
     public void AddLayout(Action layout)
     {
         _layouts.Add(layout);
+    }
+
+    /// <summary>Runs after this frame's ImGui draw has been recorded, before Godot renders viewports.</summary>
+    public static void AfterRender(Action action)
+    {
+        PostRender.Add(action);
     }
 
     public override void _EnterTree()
@@ -148,6 +155,13 @@ public sealed partial class GodotImGui : Node
         ImGui.Render();
         _renderer.Render(_layer.SubViewportRid, ImGui.GetDrawData());
         _frameBegun = false;
+
+        foreach (Action action in PostRender)
+        {
+            action();
+        }
+
+        PostRender.Clear();
     }
 
     private void BeginFrame(double delta)
