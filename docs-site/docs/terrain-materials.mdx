@@ -4,293 +4,185 @@ sidebar_position: 2
 
 # Terrain Materials
 
-WorldMapStudio's terrain system is more indirect than a typical map editor. In many editors, a brush
-directly changes the terrain chunk: it paints a texture into the chunk's alpha map, or writes numbers
-into the chunk's heightmap.
+Most editors let a brush write straight to the terrain chunk: paint an alpha map, edit a heightmap.
+WorldMapStudio doesn't. Chunk data is output, rebuilt from scene entities and catalog entries whenever
+terrain needs to show or export.
 
-WorldMapStudio does not treat chunk data as the authored source of truth. Chunk data is output. The
-authored data is made of scene entities and catalog entries. When terrain needs to be shown or
-exported, the editor rebuilds chunk output from those inputs.
+That indirection is what keeps terrain non-destructive. Moving a stamp moves the hill it made. Editing
+a road reshapes the ground under it. Changing a material rebuilds every chunk that used it, without
+touching the entities that authored it.
 
-That extra machinery exists so terrain can stay procedural and non-destructive. Moving a stamp moves
-the hill it creates. Editing a road entity can repaint and reshape the ground underneath it. Changing a
-material can rebuild every chunk that used it without erasing the entities that authored the terrain.
+## One edit, walked through
 
-## Start With One Edit
-
-Imagine a stamp that creates a dirt mound.
-
-The stamp itself does not say, "write dirt alpha into slot 2 and add 4.0 to these height vertices."
-Instead, the stamp says a few more reusable things:
+A stamp that makes a dirt mound doesn't say "write dirt alpha into slot 2, raise these vertices by 4."
+It says two things:
 
 1. It has a shape in the world: center, radius, falloff, strength.
 2. It writes that shape into a named grayscale mask.
 
-A separate material bind component on the same entity says which material belongs on which logical
-terrain layer wherever the entity spans the chunk grid.
+A material bind component on the same entity says which material goes on which layer.
 
-The named grayscale mask exists only for the current rebuild. White means "the stamp is
-strong here"; black means "the stamp is absent here"; values in between are falloff.
+The mask only exists for the current rebuild. White means the stamp is strong there, black means it's
+absent, values between are falloff. The material decides what the mask means: one might read it as
+texture coverage and paint dirt, another as a height offset that raises the ground, a third as both.
 
-The material decides what that mask means. One material might read the mask as texture coverage and
-paint dirt. Another material might read the same kind of mask as height offset and raise the ground.
-A third material might do both.
+Scene entities describe where influence exists. Materials describe what that influence does.
 
-That is the core idea:
-
-> Scene entities describe where influence exists. Materials describe what that influence does.
-
-## The Basic Primitives
-
-The terrain system has five basic primitives. They make more sense in this order.
+## The five primitives
 
 ### Deformers
 
-A **deformer** is any scene entity that can influence terrain.
+A deformer is any entity that can influence terrain:
 
-Current examples:
+- **Landscape Stamp**: a circular influence with radius and falloff.
+- **Drawing Target**: a paintable rectangle projected into the world.
+- **Landscape Material Bind**: layer/material pairs claimed over the entity's bounds.
+- **Procedural Mesh** bound to the built-in `Road` function: a vertex/edge network splined into centre
+  and shoulder masks (see [Roads](#roads)). It pairs with a Landscape Material Bind like any other
+  deformer.
 
-- `Landscape Stamp`: a circular world-space influence with radius and falloff.
-- `Drawing Target`: a paintable rectangle whose pixels are projected into the world.
-- `Landscape Material Bind`: a list of layer/material pairs claimed over the entity's full bounds.
-- **Procedural Mesh**, bound to the built-in `Road` function: a vertex/edge network splined into a
-  centre and shoulder mask along its length. See [Roads](#roads) below for how its shape works; for
-  claiming layers and materials it pairs with a `Landscape Material Bind` exactly like a stamp or
-  drawing target does. A procedural mesh is a deformer whenever its bound function paints channels —
-  the same entity kind that renders authored geometry, not a separate component.
-
-A deformer can do one or both jobs during a chunk build:
-
-1. It claims which terrain layers and materials it wants to use.
-2. It writes its shape into one or more working masks.
-
-The code contract for this is `ILandscapeDeformer`.
+A deformer can claim layers and materials, write a shape into masks, or both. The contract is
+`ILandscapeDeformer`.
 
 ### Masks
 
-A mask is a grid of values from 0 to 1. It says how much some authored shape affects each point.
-
-For example:
-
-- a stamp writes a radial mask;
-- a painted drawing target writes a brush-painted mask;
-- a road writes a centre mask and a shoulder mask along its spline.
-
-Masks are not the final terrain. They are intermediate evidence that functions can read later.
+A grid of values from 0 to 1 describing how much an authored shape affects each point. A stamp writes
+a radial mask, a painted drawing target writes a brush mask, a road writes a centre mask and a shoulder
+mask. Masks aren't final terrain, they're evidence a function reads later.
 
 ### Channels
 
-A **channel** is a named place for one kind of mask.
+A channel is a named slot for one kind of mask (`LandscapeChannel`). Its catalog entry sets a name,
+a texel resolution per chunk, and a storage bit depth. The entry is persistent; the pixels aren't,
+they're scratch data rebuilt on every pass.
 
-This is what `LandscapeChannel` represents. The channel catalog entry says:
+Example channel names: `road_mask`, `hill_mask`, `paint_mask`. Stamps and drawing targets pick which
+channel to write; materials pick which to read. The name is the handshake between them.
 
-- what the channel is called;
-- how many texels it has per chunk;
-- what bit depth it expects for storage/export purposes.
-
-The important thing is that the channel entry is persistent, but the pixels are not. The pixels are
-temporary scratch data created during a rebuild.
-
-For example, a project might have channels named:
-
-- `road_mask`
-- `hill_mask`
-- `paint_mask`
-
-A stamp or drawing target chooses which channel it writes. A material function chooses which channel
-it reads. The channel name is the handshake between them.
-
-During a build, `LandscapeChannelPool` allocates float buffers for the channels needed by the current
-block of chunks plus its halo. Deformers write into these buffers during rasterization, and functions
-sample them during evaluation.
-
-Important details:
-
-- channel names are how materials and entities bind to a channel;
-- channel pixels are rebuilt and thrown away;
-- buffers are sampled in world space, so adjacent chunks agree on shared edges;
-- declared bit depth is a storage/export concern, while build buffers are floats.
+During a build, `LandscapeChannelPool` allocates float buffers for the channels a block needs, plus its
+halo. Deformers write into them, functions sample them. Buffers are sampled in world space, so
+adjacent chunks agree at shared edges.
 
 ### Layers
 
-A **layer** is a named terrain responsibility plus ordering information.
+A layer is a named responsibility plus ordering, like a slot in the project's terrain logic: ground
+base, road bed, road surface, cliff detail, painted highlight. What it actually does depends on the
+material bound to it in a given chunk.
 
-This is the part that differs from many editors. A layer is not inherently "a texture layer" or "a
-height layer." A layer is more like a slot in the project's terrain logic:
+Fields:
 
-- ground base;
-- road bed;
-- road surface;
-- cliff detail;
-- painted highlight.
-
-The layer answers questions like:
-
-- Is this the opaque base layer?
-- What draw/evaluation order does this layer have?
-- How important is this layer when a chunk runs out of texture slots?
-
-What the layer actually does depends on the material bound to it by a material bind component in a
-particular chunk.
-
-Layer fields:
-
-- `IsBase`: this layer is the opaque bottom of a chunk and writes no alpha.
-- `Priority`: higher priority survives when the texture budget overflows.
-- `DrawOrder`: texture compositing order and height evaluation order.
-
-Draw orders must be unique. The resolver relies on that uniqueness when it decides whether adjacent
-layers with the same material can merge into one texture slot.
+- `IsBase`: the opaque bottom layer, writes no alpha.
+- `Priority`: higher wins when the texture budget overflows.
+- `DrawOrder`: compositing and height-evaluation order. Must be unique, since the resolver uses it to
+  decide whether adjacent layers sharing a material can merge into one texture slot.
 
 ### Materials
 
-A **material** is the behavior assigned to a layer claim.
+A material is the behavior assigned to a layer claim. Beyond a texture, `LandscapeMaterial` can carry:
 
-In a simple editor, "material" often means "the texture." In WorldMapStudio, a material can also carry
-the rules for where that texture appears and how the terrain height changes.
+- `TexturePath`: the image for a texture slot.
+- `AlphaFunction` / `AlphaParameters`: how to compute texture coverage.
+- `HeightFunction` / `HeightParameters`: how to change the heightmap.
 
-`LandscapeMaterial` can carry:
+`PaintsTexture` is true when it has a texture path or alpha function; `DeformsHeight` is true when it
+has a height function. A material can be texture-only, height-only, or both; the builder flags it if a
+chunk needs the half it doesn't have.
 
-- `TexturePath`: the image used by a texture slot;
-- `AlphaFunction` and `AlphaParameters`: how to compute texture coverage;
-- `HeightFunction` and `HeightParameters`: how to change the heightmap.
-
-The helpers summarize the two halves:
-
-- `PaintsTexture` is true when the material has a texture path or alpha function.
-- `DeformsHeight` is true when it has a height function.
-
-A material can be texture-only, height-only, or both. The builder reports problems when a material is
-missing the half needed by the way it resolved in a chunk.
-
-For example:
-
-- a grass material might only provide a texture for the base;
-- a dirt material might provide a texture and an alpha function;
-- a hill material might provide only a height function;
-- a road material might provide a gravel texture, an alpha function, and a flatten height function.
+Examples: grass (texture only), dirt (texture + alpha function), hill (height function only), road
+(gravel texture, alpha function, flatten height function).
 
 ### Functions
 
-A **function** is code that turns channel data into output.
+Code that turns channel data into output: an alpha function fills a texture slot's coverage, a height
+function rewrites the heightmap. Functions are reusable and don't know their caller. The built-in
+`Channel Mask` alpha function doesn't care whether it's dirt, moss, road, or snow, the material tells
+it which channel to read and what threshold and softness to use.
 
-There are two kinds:
+## Putting it together
 
-- an alpha function fills a texture slot's coverage map;
-- a height function rewrites the chunk heightmap.
-
-Functions are deliberately reusable. The built-in `Channel Mask` alpha function does not know or care
-whether it is being used for dirt, moss, road, or snow. The material tells it which channel to read
-and what threshold/softness values to use.
-
-## How The Pieces Fit
-
-Here is the same stamp example with the real primitive names:
+The same stamp example with real names:
 
 1. `Landscape Stamp` writes a radial mask.
-2. It writes its radial mask into a `LandscapeChannel`, such as `hill_mask`.
-3. `Landscape Material Bind` claims a `LandscapeLayer`, such as `small_hill`.
-4. It binds a `LandscapeMaterial`, such as `soft_dirt_mound`, to that layer.
+2. It writes that mask into a `LandscapeChannel`, say `hill_mask`.
+3. `Landscape Material Bind` claims a `LandscapeLayer`, say `small_hill`.
+4. It binds a `LandscapeMaterial`, say `soft_dirt_mound`, to that layer.
 5. The material's alpha function reads `hill_mask` and produces dirt coverage.
-6. The material's height function reads `hill_mask` and raises the heightmap.
+6. Its height function reads `hill_mask` and raises the heightmap.
 
-The reason this is split up is reuse. The same stamp shape can drive different materials. The same
-material can be used by stamps, painted drawing targets, or future road entities. The same channel can
-feed both alpha and height behavior.
+This split is what lets the same stamp drive different materials, the same material serve stamps,
+drawing targets, or roads, and the same channel feed both alpha and height behavior.
 
 ## Roads
 
-A road is a Procedural Mesh entity bound to the built-in `Road` function. Its authored shape is a
-vertex/edge network, edited in the viewport with the same tool
-(select, marquee, `G`/`R`/`S` modal move/rotate/scale, `E` extrude, `F` connect, `Ctrl+S` split, `M`
-merge, `Ctrl`+click to add) used for procedural meshes. The network is a graph, not a single path — it
-can branch, fork, and close into loops, and every case is handled the same way at build time.
+A road is a Procedural Mesh bound to the built-in `Road` function. It's authored as a vertex/edge
+network in the viewport, with the same tool used for procedural meshes: select, marquee, `G`/`R`/`S`
+move/rotate/scale, `E` extrude, `F` connect, `Ctrl+S` split, `M` merge, `Ctrl`+click to add. The
+network is a graph, not a single path, so it can branch, fork, and close into loops.
 
-What makes a road different from the other deformers is how it is authored: it is authored **flat**.
-A vertex's stored position carries no meaningful height; only its X/Z position matters. Placing a
-vertex drops it onto the terrain under the cursor, and every vertex is drawn projected onto the
-terrain, but the network itself never stores a height. This is what lets a road follow whatever the
-terrain under it already does without needing its own height data to stay in sync as the terrain
-changes.
+Roads are authored flat: a vertex's stored position only matters in X/Z. Placing a vertex drops it onto
+the terrain under the cursor, and vertices render projected onto the terrain, but no height is stored.
+That's what lets a road follow terrain changes without needing its own height data to stay in sync.
 
-At build time, the network is decomposed into chains — runs of edges between junctions (vertices
-where more than two, or fewer than two, edges meet) — and each chain becomes one centripetal
-Catmull-Rom spline. Coverage at any point is simply the profile of the *nearest* spline segment across
-every chain, so a fork or a crossing blends smoothly without anything having to special-case a
-junction.
+At build time, the network splits into chains (runs of edges between junctions) and each chain becomes
+a centripetal Catmull-Rom spline. Coverage at any point comes from the nearest spline segment across
+all chains, so forks and crossings blend without special-casing junctions.
 
-The road itself knows nothing about layers or materials — like a stamp or drawing target, it only
-picks which channels it writes. It writes two masks along the spline: a centre channel (full width the
-centre texture should show) and a shoulder channel (the full centre-plus-shoulder width, so the
-shoulder shows as an unbroken band under the centre rather than a ring with a seam where the two fades
-meet). Turning those channels into terrain is a `Landscape Material Bind`'s job — add one bound to the
-centre layer/material and one to the shoulder layer/material, with materials whose alpha functions
-read the road's channels, and give the centre layer the higher draw order so the shoulder doesn't
-paint over it.
+A road only picks which channels it writes: a centre channel (full width the centre texture should
+show) and a shoulder channel (centre plus shoulder width, so the shoulder reads as one band instead of
+a ring with a seam). Turning those into terrain is a Landscape Material Bind's job: bind one
+layer/material to the centre channel and one to the shoulder channel, with the centre layer's draw
+order higher so the shoulder doesn't paint over it.
 
-## Authoring Flow
+## Authoring flow
 
-Use the **Landscape** window to configure the terrain catalog:
+In the **Landscape** window:
 
 1. Create or edit channels on the **Channels** tab.
-2. Create layers on the **Layers** tab and set base, priority, and draw order.
+2. Create layers on the **Layers** tab (base, priority, draw order).
 3. Create materials on the **Materials** tab.
-4. Bind alpha and height functions on each material.
-5. Bind function parameters, especially channel parameters, to channel names.
+4. Bind alpha and height functions to each material.
+5. Bind function parameters, especially channels, to channel names.
 6. Check the **Problems** tab for catalog errors.
 
-Then use deformer components and material bind components to bind authored geometry to the catalog:
+Then, on entities: stamps, drawing targets, and roads pick which channels they write; material binds
+add layer/material pairs and set priority.
 
-- on stamps, drawing targets, and roads, pick the channel(s) they write;
-- on landscape material binds, add layer/material pairs;
-- set the bind priority.
+**Landscape Debug** shows what the builder produced near the camera: height preview, alpha previews per
+slot, slot count, and any problems.
 
-The **Landscape Debug** window shows what the builder actually produced for the chunk near the
-camera: height preview, alpha previews per slot, slot count, and any reported problems.
+## Code model
 
-## Code Model
+Anything implementing `ILandscapeDeformer` takes part in a build through two calls:
 
-Once the basic concepts are clear, the code model is compact. Anything implementing
-`ILandscapeDeformer` participates in the build with two separate calls:
+- `Claim(...)`: cheap, side-effect free. Returns the layer/material claims this entity wants.
+- `Rasterize(...)`: writes this entity's contribution into channel buffers after the resolver decides
+  what survived.
 
-- `Claim(...)`: cheap and side-effect free. It returns the layer/material claims this entity wants in
-  the chunk.
-- `Rasterize(...)`: writes this entity's contribution into channel buffers after the resolver has
-  decided what survived.
+Paint components can rasterize with no claims; material bind components can claim with no raster
+output.
 
-Paint components can return no claims and only rasterize. Material bind components can claim layers
-and return no raster output.
+## Claims and resolution
 
-## Claims And Resolution
+Deformers emit `LandscapeClaimGroup` objects, each with a stable `Key`, a display `Label`, a
+`Priority`, one or more `LandscapeClaim` entries, and an optional source entity id for problem
+reporting.
 
-For each chunk, deformers emit `LandscapeClaimGroup` objects. A group has:
+Resolution is deterministic and greedy, favoring predictable terrain over an optimal slot packing that
+might vary between chunks:
 
-- a stable `Key`;
-- a display `Label`;
-- a `Priority`;
-- one or more `LandscapeClaim` entries;
-- an optional source entity id for problem reporting.
-
-Resolution is deterministic and greedy. It is designed to prefer predictable terrain over an optimal
-slot packing that might vary between adjacent chunks.
-
-The resolver does this:
-
-1. Sort claim groups by stable key.
+1. Sort claim groups by key.
 2. Drop materialless claims and report them.
-3. Resolve layer conflicts: if two groups bind different materials to the same layer, the higher
-   priority group wins.
-4. Resolve base conflicts: a chunk can have only one base layer.
-5. Build texture slots in layer draw order.
-6. Add a fallback base material if no base layer was claimed.
-7. Merge adjacent surviving alpha layers that use the same material.
-8. If the used slot count exceeds `TextureLimit`, drop the lowest-priority group holding a texture
-   slot and try again.
-9. Keep height claims independently of the texture slot budget.
+3. Resolve layer conflicts (higher priority wins).
+4. Resolve base conflicts (only one base layer per chunk).
+5. Build texture slots in draw order.
+6. Add a fallback base material if none was claimed.
+7. Merge adjacent surviving alpha layers using the same material.
+8. If the texture limit is exceeded, drop the lowest-priority group holding a slot and retry.
+9. Keep height claims independent of the texture budget.
 
-Texture budget counts the base slot. A height-only material costs no texture slot.
+The base slot counts against the texture budget; a height-only material costs no slot.
 
-## Build Pipeline
+## Build pipeline
 
 `LandscapeBuilder` builds a block of chunks in five stages:
 
@@ -300,77 +192,68 @@ Texture budget counts the base slot. A height-only material costs no texture slo
 4. Evaluate height and alpha for interior chunks.
 5. Emit `LandscapeChunkOutput`.
 
-The important invariant is:
+Rasterization only writes channels; evaluation only reads them. That split lets the builder rasterize a
+whole neighbourhood before anything samples it, and keeps chunk borders continuous since functions
+sample by world position.
 
-- rasterization writes channels and never reads them;
-- evaluation reads channels and never writes them.
+## Function details
 
-That separation lets the builder rasterize a whole neighbourhood before any function samples it. It
-also keeps chunk borders continuous because functions sample channel data by world position.
+Functions are discovered by reflection at startup. Materials store function ids, not type names, so an
+implementation can move as long as its id stays stable.
 
-## Function Details
+Rules: functions must be stateless, all input comes from `LandscapeEvalContext`, `Version` should
+change when output behavior changes, `MaxSampleRadius` declares how far outside the chunk the function
+samples, and channel parameters declare whether they read or write.
 
-Landscape functions are discovered by reflection at startup. Materials store function ids, not type
-names or instances, so a function implementation can move as long as its id stays stable.
+Built-ins:
 
-Function rules:
-
-- functions must be stateless;
-- all input comes from `LandscapeEvalContext`;
-- `Version` should change when output behavior changes;
-- `MaxSampleRadius` declares how far outside the chunk the function samples;
-- channel parameters declare whether they read or write a channel.
-
-Current built-ins:
-
-- `builtin.alpha.channel_mask`: reads a channel as coverage, with threshold, softness, and invert.
+- `builtin.alpha.channel_mask`: reads a channel as coverage, with threshold, softness, invert.
 - `builtin.height.channel_offset`: adds a scaled channel value to accumulated height.
 - `builtin.height.channel_flatten`: pulls accumulated height toward a target where a channel is set.
 
-Height functions run in layer draw order and rewrite the height buffer in place. This is deliberate:
-a flatten function can run after a hill function and cut a flat bed into the hill.
+Height functions run in draw order and rewrite the height buffer in place, so a flatten function can
+run after a hill function and cut a flat bed into it.
 
-## Settings That Matter
+## Settings that matter
 
-`LandscapeSettings` belongs to one map. Key settings include:
+`LandscapeSettings` belongs to one map:
 
-- `ChunkWorldSize`: world units covered by one chunk.
+- `ChunkWorldSize`: world units per chunk.
 - `ChunkHeightResolution`: height vertices per chunk edge.
-- `HeightVertexLayout`: `Grid` for corner vertices only, or `GridWithCellCentres` for a vertex at the centre of every cell as well.
+- `HeightVertexLayout`: `Grid` (corners only) or `GridWithCellCentres` (also a vertex at each cell
+  centre).
 - `ChunkAlphaResolution`: alpha texels per chunk edge.
 - `TextureLimit`: texture slots per chunk, including the base.
-- `FallbackMaterialId`: material used as the base when nothing claims one.
+- `FallbackMaterialId`: base material used when nothing claims one.
 - `AlphaNormalized`: whether output alphas should sum to 1.
 - `HeightEncoding`, `HeightOffset`, `HeightScale`: export-oriented height representation.
 
-Changing representation settings causes a rebuild. Lowering the texture limit or changing fallback
-material can force re-resolution, which may make layers appear or disappear.
+Changing representation settings triggers a rebuild. Lowering the texture limit or changing the
+fallback material can force re-resolution, so layers may appear or disappear.
 
 ### Cell-centre vertices
 
-Under `GridWithCellCentres`, height, vertex colour and vertex light functions run twice per chunk: once over the
-corner grid and once over the grid of cell centres. A function only asks the context for world positions
-through `WorldAt`, so the same function and material work for both without knowing which one it is writing.
-Each cell then renders and samples as a four-triangle fan around its centre vertex.
+Under `GridWithCellCentres`, height, vertex colour, and vertex light functions run twice per chunk:
+once over the corner grid, once over the cell-centre grid. A function only asks for world positions
+through `WorldAt`, so the same function and material work for both without knowing which one it's
+writing. Each cell renders as a four-triangle fan around its centre vertex.
 
-## Common Problems
+## Common problems
 
-- **Missing base**: no base layer was claimed and the map has no fallback material.
-- **Layer conflict**: two groups claimed the same layer with different materials; priority chooses the
-  winner.
-- **Multiple base layers**: more than one base layer was claimed; priority chooses the winner.
-- **Budget overflow**: the chunk needed more texture slots than allowed, so lower-priority groups were
-  dropped.
-- **Below base**: a painting layer sorts below the base and would never be visible.
-- **Missing alpha function**: a non-base texture slot has no function deciding where it shows.
-- **Missing height function**: a height claim uses a material that binds no available height function.
-- **Dangling channel binding**: a material parameter points at a channel name that no longer exists.
+- **Missing base**: no base layer claimed and no fallback material.
+- **Layer conflict**: two groups claimed the same layer with different materials; priority decides.
+- **Multiple base layers**: more than one claimed; priority decides.
+- **Budget overflow**: more texture slots needed than allowed; lower-priority groups dropped.
+- **Below base**: a painting layer sorts below the base and is never visible.
+- **Missing alpha function**: a non-base slot has nothing deciding where it shows.
+- **Missing height function**: a height claim's material has no available height function.
+- **Dangling channel binding**: a parameter points at a channel that no longer exists.
 
-When terrain looks wrong, check in this order:
+When terrain looks wrong, check in order:
 
 1. Is the catalog valid in **Landscape > Problems**?
 2. Does the entity have channel, layer, and material bindings?
-3. Does the material bind the expected alpha or height function?
-4. Are the function's channel parameters bound to existing channels?
-5. Did the chunk drop the claim because of a conflict or texture budget overflow?
-6. Does **Landscape Debug** show non-empty alpha or height output?
+3. Does the material bind the right alpha or height function?
+4. Are the function's channel parameters bound to real channels?
+5. Was the claim dropped by a conflict or budget overflow?
+6. Does **Landscape Debug** show non-empty output?
