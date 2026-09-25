@@ -1,8 +1,8 @@
 # WorldMapStudio
 
-![WorldMapStudio screenshot](docs-site/static/img/screenshot/main.png)
+WorldMapStudio is a non-destructive 3D world editor and framework for procedural workflows.
 
-WorldMapStudio is a procedural, non-destructive map editor built on Godot 4 with C#.
+![WorldMapStudio screenshot](docs-site/static/img/screenshot/main.png)
 
 ## Requirements
 
