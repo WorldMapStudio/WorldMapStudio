@@ -3,9 +3,9 @@ name: docs-site
 on:
   push:
     branches: [main]
-    paths: [docs-site/**]
+    paths: [docs-site/**, .github/workflows/docs-site.yml]
   pull_request:
-    paths: [docs-site/**]
+    paths: [docs-site/**, .github/workflows/docs-site.yml]
   workflow_dispatch:
 
 concurrency:
