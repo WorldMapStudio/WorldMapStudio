@@ -3,3 +3,29 @@ sidebar_position: 1
 ---
 
 # WorldMapStudio
+
+WorldMapStudio is a procedural, non-destructive map editor built on Godot 4 with C#.
+
+## Requirements
+
+- [Godot 4.7](https://godotengine.org/download) with .NET/C# support (the `godot` binary on your `PATH`)
+- [.NET SDK 8.0](https://dotnet.microsoft.com/download)
+
+## Getting started
+
+```sh
+git clone <repo-url>
+cd WorldMapStudio
+dotnet build
+godot --headless --import --quit-after 1000
+godot .
+```
+
+Re-run the import step after every build, before running headless or exporting.
+
+## Where to go next
+
+- [Terrain Materials](./terrain-materials) - how stamps, channels, layers, and materials combine to build terrain
+- [Editor Style](./editor-style) - theming the editor's look
+- [Running Tests From Scripts](./running-tests) - driving the test runner from `wms.tests`
+- [Tags and Entity Identity](./tags) - grouping and filtering scene entities
