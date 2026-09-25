@@ -1,5 +1,7 @@
 # WorldMapStudio
 
+WorldMapStudio is a procedural, non-destructive map editor built on Godot 4 with C#.
+
 ## Requirements
 
 - [Godot 4.7](https://godotengine.org/download) with .NET/C# support (the `godot` binary on your `PATH`, referred to below as `godot`; on some installs it may be `godot-mono`)
