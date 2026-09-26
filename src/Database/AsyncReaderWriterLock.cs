@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
@@ -21,6 +24,10 @@ public sealed class AsyncReaderWriterLock
     private static readonly TimeSpan WarnAfter = TimeSpan.FromSeconds(4.0);
     private static readonly TimeSpan WarnInterval = TimeSpan.FromSeconds(5.0);
 
+    // A site that has already been warned about is not warned again — one line per offender is enough
+    // to find it, and a hot path (a per-frame poll, say) would otherwise spam the log every call.
+    private static readonly HashSet<string> WarnedSites = new();
+
     private readonly SemaphoreSlim _writeLock = new(1, 1);
     private readonly object _gate = new();
     private int _readerCount;
@@ -29,8 +36,13 @@ public sealed class AsyncReaderWriterLock
     /// <summary>How many readers hold the lock right now. For diagnostics only — inherently racy.</summary>
     public int ReaderCount => Volatile.Read(ref _readerCount);
 
-    public async Task<IDisposable> ReaderAsync(CancellationToken cancellationToken = default)
+    public async Task<IDisposable> ReaderAsync(
+        CancellationToken cancellationToken = default,
+        [CallerMemberName] string caller = "",
+        [CallerFilePath] string file = "")
     {
+        WarnIfMainThread(caller, file);
+
         // Briefly take the write lock so no reader can register while a writer holds it, then register.
         await WaitLogged(_writeLock.WaitAsync(cancellationToken), "reader").ConfigureAwait(false);
         lock (_gate)
@@ -42,8 +54,13 @@ public sealed class AsyncReaderWriterLock
         return new Releaser(this, writer: false);
     }
 
-    public async Task<IDisposable> WriterAsync(CancellationToken cancellationToken = default)
+    public async Task<IDisposable> WriterAsync(
+        CancellationToken cancellationToken = default,
+        [CallerMemberName] string caller = "",
+        [CallerFilePath] string file = "")
     {
+        WarnIfMainThread(caller, file);
+
         await WaitLogged(_writeLock.WaitAsync(cancellationToken), "writer").ConfigureAwait(false);
 
         // Holding the write lock blocks new readers; now wait for existing readers to drain.
@@ -63,6 +80,30 @@ public sealed class AsyncReaderWriterLock
 
             await WaitLogged(drained, "writer draining readers").ConfigureAwait(false);
         }
+    }
+
+    // Every affected call site should have hopped to the pool (BackgroundWork) or already be running
+    // there (BlockingWork's own Task.Run) before it ever reaches the lock. Task.Run guarantees that hop
+    // lands on a different real thread, so a lock request that is still on the main thread is a missed
+    // one — see the async-db-plan for the inventory of sites this caught.
+    [Conditional("DEBUG")]
+    private static void WarnIfMainThread(string caller, string file)
+    {
+        if (!MainThread.IsCurrent)
+        {
+            return;
+        }
+
+        string site = $"{Path.GetFileNameWithoutExtension(file)}.{caller}";
+        lock (WarnedSites)
+        {
+            if (!WarnedSites.Add(site))
+            {
+                return;
+            }
+        }
+
+        GD.PushWarning($"[Lock] '{site}' acquired the lock on the main thread; it is missing a BackgroundWork hop.");
     }
 
     // Awaits an acquire, logging while it drags on. A leaked reader turns this from "a slow frame"

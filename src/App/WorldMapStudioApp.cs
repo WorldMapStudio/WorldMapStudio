@@ -15,6 +15,7 @@ public partial class WorldMapStudioApp : Node3D
 
 	public override void _Ready()
 	{
+		MainThread.Mark();
 		AddChild(new GodotImGui());
 
 		_currentScene = ProjectAutostart.Resolve(this) ?? new MainMenu(this);
