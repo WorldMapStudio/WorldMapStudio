@@ -17,6 +17,12 @@ public sealed class StorageLocation
     /// <summary>Branch to open (<c>file@branch</c>). Empty opens the file's default branch.</summary>
     public string Branch { get; set; } = string.Empty;
 
+    // Now that background reads really run concurrently with a main-thread write (see the async-db
+    // migration), a reader can land mid-write and hit SQLITE_BUSY. Explicit rather than relying on the
+    // provider's own default of the same value, so this stays true regardless of what that default
+    // does later: a busy file retries for up to this long before giving up.
+    private const int DefaultTimeoutSeconds = 30;
+
     /// <summary>Builds a SQLite connection string pointed at <see cref="DatabasePath"/>, on <see cref="Branch"/> if set.</summary>
     public string BuildConnectionString()
     {
@@ -26,6 +32,7 @@ public sealed class StorageLocation
             DataSource = dataSource,
             Pooling = true,
             ForeignKeys = true,
+            DefaultTimeout = DefaultTimeoutSeconds,
         }.ConnectionString;
     }
 }
