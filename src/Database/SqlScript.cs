@@ -5,8 +5,9 @@ namespace WorldMapStudio;
 
 /// <summary>Splits a multi-statement SQL script into individual statements on ';', the way a client
 /// tool would rather than a naive <c>string.Split</c> — a semicolon inside a quoted string or
-/// backtick-quoted identifier (e.g. a COMMENT clause containing punctuation) does not end the
-/// statement early.</summary>
+/// quoted identifier does not end the statement early. SQLite has no backslash escape inside a string
+/// literal (unlike MySQL); a literal quote is doubled instead, which the quote-doubling check below
+/// already covers.</summary>
 public static class SqlScript
 {
     public static IReadOnlyList<string> SplitStatements(string sql)
@@ -22,12 +23,6 @@ public static class SqlScript
             if (quote != null)
             {
                 current.Append(c);
-
-                if (c == '\\' && quote != '`' && i + 1 < sql.Length)
-                {
-                    current.Append(sql[++i]);
-                    continue;
-                }
 
                 if (c == quote)
                 {

@@ -39,8 +39,6 @@ public sealed class BatchStateTableConfiguration : ITableConfiguration
             entity.ToTable("wms_batch_state");
             entity.HasKey(record => new { record.OperationId, record.Key });
             entity.Property(record => record.OperationId).HasMaxLength(128);
-
-            // Both halves of the key live under utf8mb4's 767-byte index limit; 128 + 191 fits.
             entity.Property(record => record.Key).HasMaxLength(191);
         });
     }

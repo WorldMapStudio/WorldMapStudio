@@ -43,17 +43,11 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     /// <summary>Loads and stages the tags and components an entity carries, whichever table owns it.</summary>
     public EntityAttachments Attachments { get; }
 
-    // Default to an editor-managed dolt instance so a new project works out of the box. Exposed
-    // statically so project settings (created before any Storage instance exists) can seed the same
-    // defaults.
-    public static StorageConnection DefaultConnection() => new()
-    {
-        LaunchServer = true,
-        Port = 3312,
-        Database = "editor",
-    };
+    // Exposed statically so project settings (created before any Storage instance exists) can seed
+    // the same defaults.
+    public static StorageLocation DefaultLocation() => new();
 
-    public override StorageConnection CreateDefaultConnection() => DefaultConnection();
+    public override StorageLocation CreateDefaultLocation() => DefaultLocation();
 
     /// <summary>Registered scene-component persisters, so a plugin's component is stored the same way
     /// a built-in one is. See <see cref="ISceneComponentPersistence"/>.</summary>
@@ -116,8 +110,8 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public Task CommitEntitiesWithinTransactionAsync(EditorDbContext context, IReadOnlyList<IEntity> saves, IReadOnlyList<IEntity> deletes) =>
         StageAndSaveAsync(context, saves, deletes);
 
-    // How many rows go into one INSERT … ON DUPLICATE KEY UPDATE. A whole-map commit stamps tens of
-    // thousands of chunks; at three parameters a row this stays far under the wire-protocol limit.
+    // How many rows go into one INSERT … ON CONFLICT DO UPDATE. A whole-map commit stamps tens of
+    // thousands of chunks; at three parameters a row this stays far under the SQLite variable limit.
     private const int ChunkChangeRowsPerStatement = 1000;
 
     /// <summary>
@@ -150,6 +144,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         var clock = Stopwatch.StartNew();
         (string tableName, string mapColumn, string xColumn, string yColumn, string timeColumn) =
             ChunkChangeColumns(context);
+        string conflictTarget = string.Join(", ", PrimaryKeyColumns<ChunkChangeRecord>(context).Select(c => $"\"{c}\""));
 
         DbConnection connection = context.Database.GetDbConnection();
 
@@ -164,7 +159,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             command.Transaction = transaction;
 
             var sql = new StringBuilder(
-                $"INSERT INTO `{tableName}` (`{mapColumn}`, `{xColumn}`, `{yColumn}`, `{timeColumn}`) VALUES ");
+                $"INSERT INTO \"{tableName}\" (\"{mapColumn}\", \"{xColumn}\", \"{yColumn}\", \"{timeColumn}\") VALUES ");
             for (int i = 0; i < count; i++)
             {
                 (int map, int x, int y) = all[start + i];
@@ -175,7 +170,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             }
 
             AddParameter(command, "@t", now);
-            sql.Append($" ON DUPLICATE KEY UPDATE `{timeColumn}` = VALUES(`{timeColumn}`)");
+            sql.Append($" ON CONFLICT({conflictTarget}) DO UPDATE SET \"{timeColumn}\" = excluded.\"{timeColumn}\"");
             command.CommandText = sql.ToString();
             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
@@ -217,7 +212,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             command.CommandTimeout = 60;
 
             var sql = new StringBuilder(
-                $"DELETE FROM `{tableName}` WHERE (`{mapColumn}`, `{xColumn}`, `{yColumn}`) IN (");
+                $"DELETE FROM \"{tableName}\" WHERE (\"{mapColumn}\", \"{xColumn}\", \"{yColumn}\") IN (");
             for (int i = 0; i < count; i++)
             {
                 (int map, int x, int y) = all[start + i];
@@ -254,7 +249,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
         await using DbCommand command = connection.CreateCommand();
         command.CommandTimeout = 60;
-        command.CommandText = $"UPDATE `{tableName}` SET `{timeColumn}` = @t WHERE `{mapColumn}` = @m";
+        command.CommandText = $"UPDATE \"{tableName}\" SET \"{timeColumn}\" = @t WHERE \"{mapColumn}\" = @m";
         AddParameter(command, "@t", DateTime.UtcNow);
         AddParameter(command, "@m", mapId);
         int touched = await command.ExecuteNonQueryAsync().ConfigureAwait(false);
@@ -301,6 +296,16 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return (type.GetTableName()!, type.FindProperty(propertyName)!.GetColumnName(table)!);
     }
 
+    /// <summary>This record's primary-key column names, in key order — the <c>ON CONFLICT</c> target
+    /// for a batched upsert, resolved off the EF model so it can never desync from a hand-written one.</summary>
+    private static IReadOnlyList<string> PrimaryKeyColumns<TRecord>(EditorDbContext context)
+        where TRecord : class
+    {
+        IEntityType type = context.Model.FindEntityType(typeof(TRecord))!;
+        var table = StoreObjectIdentifier.Table(type.GetTableName()!, type.GetSchema());
+        return type.FindPrimaryKey()!.Properties.Select(property => property.GetColumnName(table)!).ToList();
+    }
+
     /// <summary>The table and id/map column names of <see cref="MapEntityRecord"/> — what a
     /// component's map-scoped delete joins against to find the map's entity ids.</summary>
     private static (string Table, string Id, string Map) SceneEntityColumns(EditorDbContext context)
@@ -339,7 +344,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             command.CommandTimeout = MapScopedCommandTimeoutSeconds;
             command.Transaction = transaction;
 
-            var sql = new StringBuilder($"DELETE FROM `{table}` WHERE `{column}` IN (");
+            var sql = new StringBuilder($"DELETE FROM \"{table}\" WHERE \"{column}\" IN (");
             for (int i = 0; i < count; i++)
             {
                 sql.Append(i == 0 ? "@i0" : $",@i{i}");
@@ -366,7 +371,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
         command.CommandTimeout = MapScopedCommandTimeoutSeconds;
         command.Transaction = transaction;
-        command.CommandText = $"DELETE FROM `{table}` WHERE `{column}` = @m";
+        command.CommandText = $"DELETE FROM \"{table}\" WHERE \"{column}\" = @m";
         AddParameter(command, "@m", map.Value);
         return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
@@ -385,7 +390,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
         await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
         command.CommandTimeout = MapScopedCommandTimeoutSeconds;
-        command.CommandText = $"SELECT COUNT(*) FROM `{table}` WHERE `{column}` = @m";
+        command.CommandText = $"SELECT COUNT(*) FROM \"{table}\" WHERE \"{column}\" = @m";
         AddParameter(command, "@m", map.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync().ConfigureAwait(false));
     }
@@ -407,7 +412,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         command.CommandTimeout = MapScopedCommandTimeoutSeconds;
         command.Transaction = transaction;
         command.CommandText =
-            $"DELETE FROM `{table}` WHERE `{column}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+            $"DELETE FROM \"{table}\" WHERE \"{column}\" IN (SELECT \"{entityIdColumn}\" FROM \"{entityTable}\" WHERE \"{entityMapColumn}\" = @m)";
         AddParameter(command, "@m", map.Value);
         return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
@@ -426,7 +431,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         command.CommandTimeout = MapScopedCommandTimeoutSeconds;
         command.Transaction = transaction;
         command.CommandText =
-            $"DELETE FROM `{identityTable}` WHERE `{identityId}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+            $"DELETE FROM \"{identityTable}\" WHERE \"{identityId}\" IN (SELECT \"{entityIdColumn}\" FROM \"{entityTable}\" WHERE \"{entityMapColumn}\" = @m)";
         AddParameter(command, "@m", map.Value);
         return await command.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
@@ -447,7 +452,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         await using DbCommand command = context.Database.GetDbConnection().CreateCommand();
         command.CommandTimeout = MapScopedCommandTimeoutSeconds;
         command.CommandText =
-            $"SELECT COUNT(*) FROM `{table}` WHERE `{column}` IN (SELECT `{entityIdColumn}` FROM `{entityTable}` WHERE `{entityMapColumn}` = @m)";
+            $"SELECT COUNT(*) FROM \"{table}\" WHERE \"{column}\" IN (SELECT \"{entityIdColumn}\" FROM \"{entityTable}\" WHERE \"{entityMapColumn}\" = @m)";
         AddParameter(command, "@m", map.Value);
         return Convert.ToInt32(await command.ExecuteScalarAsync().ConfigureAwait(false));
     }
@@ -527,14 +532,14 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             Column(nameof(ChunkChangeRecord.LastEditedUtc)));
     }
 
-    // How many rows go into one INSERT … ON DUPLICATE KEY UPDATE here. Two bigint columns, so this
-    // sits above the chunk-change batch size and well under the wire-protocol limit.
+    // How many rows go into one INSERT … ON CONFLICT DO UPDATE here. Two bigint columns, so this
+    // sits above the chunk-change batch size and well under the SQLite variable limit.
     private const int LongPairRowsPerStatement = 2000;
 
     /// <summary>
     /// Batched upsert for a table keyed on one <see langword="long"/> column with one
     /// <see langword="long"/> value column — the shape a caller-owned ledger record takes when all it
-    /// needs is "assign this value to this key". One INSERT … ON DUPLICATE KEY UPDATE per
+    /// needs is "assign this value to this key". One INSERT … ON CONFLICT DO UPDATE per
     /// <see cref="LongPairRowsPerStatement"/> rows instead of a read-then-write round trip per pair.
     /// <typeparamref name="TRecord"/> stays whatever the caller's own entity type is — this storage
     /// only needs its table and column names, read off <paramref name="context"/>'s model so a naming
@@ -557,6 +562,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
 
         (string table, string keyColumn, string valueColumn) =
             LongPairColumns<TRecord>(context, keyPropertyName, valuePropertyName);
+        string conflictTarget = string.Join(", ", PrimaryKeyColumns<TRecord>(context).Select(c => $"\"{c}\""));
 
         DbConnection connection = context.Database.GetDbConnection();
         await context.Database.OpenConnectionAsync().ConfigureAwait(false);
@@ -569,7 +575,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             await using DbCommand command = connection.CreateCommand();
             command.CommandTimeout = 60;
 
-            var sql = new StringBuilder($"INSERT INTO `{table}` (`{keyColumn}`, `{valueColumn}`) VALUES ");
+            var sql = new StringBuilder($"INSERT INTO \"{table}\" (\"{keyColumn}\", \"{valueColumn}\") VALUES ");
             for (int i = 0; i < count; i++)
             {
                 (long key, long value) = all[start + i];
@@ -578,7 +584,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
                 AddParameter(command, $"@v{i}", value);
             }
 
-            sql.Append($" ON DUPLICATE KEY UPDATE `{valueColumn}` = VALUES(`{valueColumn}`)");
+            sql.Append($" ON CONFLICT({conflictTarget}) DO UPDATE SET \"{valueColumn}\" = excluded.\"{valueColumn}\"");
             command.CommandText = sql.ToString();
             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
@@ -744,7 +750,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return result;
     }
 
-    // How many chunk rows go into one INSERT … ON DUPLICATE KEY UPDATE here. Each row carries a whole
+    // How many chunk rows go into one INSERT … ON CONFLICT DO UPDATE here. Each row carries a whole
     // pixel blob, so this is far smaller than the chunk-change batch — it keeps one statement's total
     // byte size sane rather than the parameter count.
     private const int ImageChunkRowsPerStatement = 64;
@@ -833,6 +839,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     {
         (string table, string idColumn, string xColumn, string yColumn, string formatColumn, string pixelsColumn) =
             ImageChunkColumns(context);
+        string conflictTarget = string.Join(", ", PrimaryKeyColumns<ImageChunkRecord>(context).Select(c => $"\"{c}\""));
 
         DbConnection connection = context.Database.GetDbConnection();
 
@@ -850,7 +857,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
                 command.Transaction = transaction;
 
                 var sql = new StringBuilder(
-                    $"INSERT INTO `{table}` (`{idColumn}`, `{xColumn}`, `{yColumn}`, `{formatColumn}`, `{pixelsColumn}`) VALUES ");
+                    $"INSERT INTO \"{table}\" (\"{idColumn}\", \"{xColumn}\", \"{yColumn}\", \"{formatColumn}\", \"{pixelsColumn}\") VALUES ");
                 for (int i = 0; i < count; i++)
                 {
                     (ImageChunkCoord coord, byte[] pixels) = chunks[start + i];
@@ -863,7 +870,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
                     AddParameter(command, $"@p{i}", bytes);
                 }
 
-                sql.Append($" ON DUPLICATE KEY UPDATE `{formatColumn}` = VALUES(`{formatColumn}`), `{pixelsColumn}` = VALUES(`{pixelsColumn}`)");
+                sql.Append($" ON CONFLICT({conflictTarget}) DO UPDATE SET \"{formatColumn}\" = excluded.\"{formatColumn}\", \"{pixelsColumn}\" = excluded.\"{pixelsColumn}\"");
                 command.CommandText = sql.ToString();
                 await command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }

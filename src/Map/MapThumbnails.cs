@@ -8,7 +8,7 @@ namespace WorldMapStudio;
 /// <summary>
 /// The preview image shown for each map in the map picker: a downscaled snapshot of the 3D viewport,
 /// taken when the user opens the picker. Stored as a PNG beside the project's data rather than in the
-/// database, so previews never turn into a schema change or a dolt diff.
+/// database, so previews never turn into a schema change.
 /// </summary>
 public sealed class MapThumbnails
 {
