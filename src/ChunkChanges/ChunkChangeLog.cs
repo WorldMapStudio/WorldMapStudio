@@ -43,100 +43,65 @@ public sealed class ChunkChangeLog
     /// Occupancy comes from <see cref="SceneEntity.WorldChunkBounds"/>, so a map-spanning component
     /// bumps every chunk that already exists inside its reach without ever bringing one into being.
     ///
-    /// Blocking rather than async because it runs inside the commit path on the main thread, and the
-    /// rest of that path is synchronous.
+    /// Everything read here is main-thread state (live landscape settings, the loaded scene), captured
+    /// into a <see cref="ChunkChangeReconcilePlan"/> before the reconcile itself runs as one
+    /// <see cref="BlockingWork"/> stall instead of the three-to-N separate ones this used to be.
     /// </summary>
     public void RecordCommit(EditSession session, Func<IEntity, bool> wasCommitted)
     {
         EditorStorage storage = _context.Database.EditorStorage;
-        foreach ((MapId map, (HashSet<ChunkCoord> touched, Aabb region)) in TouchedByMap(session, wasCommitted))
-        {
-            HashSet<ChunkCoord> occupied = OccupiedChunks(map, region);
+        var grids = new Dictionary<MapId, LandscapeGrid?>();
 
-            List<(int Map, int X, int Y)> present = [];
-            List<(int Map, int X, int Y)> vacated = [];
-            foreach (ChunkCoord coord in touched)
+        LandscapeGrid? GridFor(MapId map)
+        {
+            if (!grids.TryGetValue(map, out LandscapeGrid? grid))
             {
-                (occupied.Contains(coord) ? present : vacated).Add((map.Value, coord.X, coord.Y));
+                grid = _context.Landscape.LoadSettingsFor(map) is { } settings ? new LandscapeGrid(settings) : null;
+                grids[map] = grid;
             }
 
-            BlockingWork.Run(() => storage.UpsertChunkChangesAsync(present));
-            BlockingWork.Run(() => storage.RemoveChunkChangesAsync(vacated));
+            return grid;
         }
 
-        // Placements of an edited shared resource that the scene never loaded: the command could only
-        // snapshot the ones near the camera, so the rest are stamped here from their stored footprint.
-        StampUnloadedResourcePlacements(storage, session.History.UndoStack, wasCommitted);
+        Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> touchedByMap = TouchedByMap(session, wasCommitted, GridFor);
+        HashSet<int> loadedEntityIds = _context.Scene.Entities.Select(entity => entity.RecordId).OfType<int>().ToHashSet();
 
-        // A catalog edit shapes chunks through a reference, not a bounds, so no snapshot above sees it.
-        foreach (MapId map in CatalogChangedMaps(session.History.UndoStack, wasCommitted))
-        {
-            BlockingWork.Run(() => storage.TouchAllChunkChangesAsync(map.Value));
-        }
+        var plan = new ChunkChangeReconcilePlan(
+            TouchedByMap: touchedByMap.ToDictionary(
+                entry => entry.Key,
+                entry => ((IReadOnlyCollection<ChunkCoord>)entry.Value.Chunks, entry.Value.Region)),
+            Grids: grids,
+            LoadedEntityIds: loadedEntityIds,
+            EditedSharedResources: EditedSharedResources(session.History.UndoStack, wasCommitted),
+            CatalogChangedMaps: CatalogChangedMaps(session.History.UndoStack, wasCommitted));
+
+        BlockingWork.Run(() => storage.ReconcileChunkChangesAsync(plan));
     }
 
     /// <summary>
-    /// Stamps every stored, not-currently-loaded placement of a just-committed shared resource
-    /// (<see cref="ISharedResourceChunkCommand"/>). Loaded placements are left to the snapshot pass
-    /// above, which measures them against the live edited resource; these are stamped from their
-    /// last-saved <see cref="SceneEntity.WorldBounds"/>, so a resource edit that grew the geometry can
-    /// still miss chunks an unloaded placement newly reaches — acceptable at tile granularity, and the
-    /// alternative is loading every placement of the resource on every edit.
+    /// Distinct (resource type, id) pairs a just-committed <see cref="ISharedResourceChunkCommand"/>
+    /// touched. Their stored, not-currently-loaded placements are stamped from the resource's last-saved
+    /// footprint (see <see cref="EditorStorage.ReconcileChunkChangesAsync"/>); a loaded placement is left
+    /// to the snapshot pass in <see cref="TouchedByMap"/>, which measures it against the live edited
+    /// resource instead.
     /// </summary>
-    private void StampUnloadedResourcePlacements(
-        EditorStorage storage,
-        IEnumerable<IEditCommand> commands,
-        Func<IEntity, bool> wasCommitted)
+    private static List<(Type Type, int Id)> EditedSharedResources(
+        IEnumerable<IEditCommand> commands, Func<IEntity, bool> wasCommitted)
     {
-        HashSet<int> loaded = _context.Scene.Entities
-            .Select(entity => entity.RecordId)
-            .OfType<int>()
-            .ToHashSet();
-
         var resolved = new HashSet<(Type, int)>();
-        var gridByMap = new Dictionary<MapId, LandscapeGrid?>();
-        var present = new List<(int Map, int X, int Y)>();
-
+        var edited = new List<(Type, int)>();
         foreach (IEditCommand command in commands)
         {
-            if (command is not ISharedResourceChunkCommand shared
-                || shared.SharedResource is not (Type type, int id)
-                || !command.Targets.Any(wasCommitted)
-                || !resolved.Add((type, id)))
+            if (command is ISharedResourceChunkCommand shared
+                && shared.SharedResource is (Type type, int id)
+                && command.Targets.Any(wasCommitted)
+                && resolved.Add((type, id)))
             {
-                continue;
-            }
-
-            foreach ((int entityId, MapId map, Aabb bounds) in
-                BlockingWork.Run(() => storage.ReferencingPlacementBoundsAsync(type, id)))
-            {
-                if (loaded.Contains(entityId))
-                {
-                    continue;
-                }
-
-                if (!gridByMap.TryGetValue(map, out LandscapeGrid? cached))
-                {
-                    cached = _context.Landscape.LoadSettingsFor(map) is { } settings ? new LandscapeGrid(settings) : null;
-                    gridByMap[map] = cached;
-                }
-
-                if (cached is not { } grid)
-                {
-                    continue;
-                }
-
-                foreach (ChunkCoord coord in grid.Overlapping(bounds))
-                {
-                    present.Add((map.Value, coord.X, coord.Y));
-                }
+                edited.Add((type, id));
             }
         }
 
-        if (present.Count > 0)
-        {
-            BlockingWork.Run(() => storage.UpsertChunkChangesAsync(present));
-        }
+        return edited;
     }
 
     /// <summary>
@@ -243,51 +208,19 @@ public sealed class ChunkChangeLog
     /// the snapshots' full bounds, not their chunk footprint: a map-spanning edit has to reach every
     /// chunk it might have changed, even though it owns none of them.
     /// </summary>
-    private Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> TouchedByMap(
+    private static Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> TouchedByMap(
         EditSession session,
-        Func<IEntity, bool> wasCommitted)
+        Func<IEntity, bool> wasCommitted,
+        Func<MapId, LandscapeGrid?> gridFor)
     {
         var byMap = new Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)>();
         foreach ((_, ChunkChangeSnapshot? before, ChunkChangeSnapshot? after) in ReduceImpacts(session.History.UndoStack, wasCommitted))
         {
-            Touch(before, byMap);
-            Touch(after, byMap);
+            Touch(before, byMap, gridFor);
+            Touch(after, byMap, gridFor);
         }
 
         return byMap;
-    }
-
-    /// <summary>
-    /// Which chunks in <paramref name="region"/> something still sits on, read back from storage after
-    /// the commit has landed. Entities are scanned by their full bounds — that is what the database
-    /// indexes — and then filtered by <see cref="SceneEntity.WorldChunkBounds"/>, so a global light is
-    /// returned by the scan and still claims nothing.
-    /// </summary>
-    private HashSet<ChunkCoord> OccupiedChunks(MapId map, Aabb region)
-    {
-        var occupied = new HashSet<ChunkCoord>();
-        if (_context.Landscape.LoadSettingsFor(map) is not { } settings)
-        {
-            return occupied;
-        }
-
-        var grid = new LandscapeGrid(settings);
-        IReadOnlyList<SceneEntity> entities = BlockingWork.Run(() => _context.Database.ScanSceneAsync(map, region));
-
-        foreach (SceneEntity entity in entities)
-        {
-            if (entity.WorldChunkBounds is not { } bounds)
-            {
-                continue;
-            }
-
-            foreach (ChunkCoord coord in grid.Overlapping(bounds))
-            {
-                occupied.Add(coord);
-            }
-        }
-
-        return occupied;
     }
 
     /// <summary>
@@ -331,9 +264,12 @@ public sealed class ChunkChangeLog
             .ToList();
     }
 
-    private void Touch(ChunkChangeSnapshot? snapshot, Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> byMap)
+    private static void Touch(
+        ChunkChangeSnapshot? snapshot,
+        Dictionary<MapId, (HashSet<ChunkCoord> Chunks, Aabb Region)> byMap,
+        Func<MapId, LandscapeGrid?> gridFor)
     {
-        if (snapshot == null || _context.Landscape.LoadSettingsFor(snapshot.Map) is not { } settings)
+        if (snapshot == null || gridFor(snapshot.Map) is not { } grid)
         {
             return;
         }
@@ -343,7 +279,6 @@ public sealed class ChunkChangeLog
             entry = ([], snapshot.Bounds);
         }
 
-        var grid = new LandscapeGrid(settings);
         foreach (ChunkCoord coord in grid.Overlapping(snapshot.Bounds))
         {
             entry.Chunks.Add(coord);

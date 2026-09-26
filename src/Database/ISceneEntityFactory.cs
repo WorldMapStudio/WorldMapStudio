@@ -48,4 +48,15 @@ public interface ISceneEntityFactory : IEntityFactory
     /// <see cref="SceneEntityScanCatalog.Publishing"/> for what that changes.
     /// </summary>
     Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded, bool publishing);
+
+    /// <summary>
+    /// <see cref="SceneEntity.WorldChunkBounds"/> of every one of this factory's stored entities
+    /// overlapping <paramref name="region"/>, read straight from storage without building any of them —
+    /// what decides whether a chunk still has content, without paying a full <see cref="ScanAsync"/> for
+    /// it. Returns null (not an empty list) when this factory has no such projection, so the caller
+    /// falls back to <see cref="ScanAsync"/> and reads <see cref="SceneEntity.WorldChunkBounds"/> off
+    /// the built result instead.
+    /// </summary>
+    Task<IReadOnlyList<Aabb>?> OccupiedChunkBoundsAsync(MapId map, Aabb region) =>
+        Task.FromResult<IReadOnlyList<Aabb>?>(null);
 }

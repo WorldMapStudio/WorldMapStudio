@@ -194,14 +194,24 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             return;
         }
 
-        var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
-
-        (string tableName, string mapColumn, string xColumn, string yColumn, _) = ChunkChangeColumns(context);
-
-        DbConnection connection = context.Database.GetDbConnection();
         await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        await RemoveChunkChangesCoreAsync(context, null, chunks).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs within an already-open context and transaction — see <see cref="CommitTransactionAsync"/>.
+    /// Does not take the write lock or open the connection itself.</summary>
+    public Task RemoveChunkChangesWithinTransactionAsync(
+        EditorDbContext context, DbTransaction transaction, IReadOnlyCollection<(int Map, int X, int Y)> chunks) =>
+        chunks.Count == 0 ? Task.CompletedTask : RemoveChunkChangesCoreAsync(context, transaction, chunks);
+
+    private async Task RemoveChunkChangesCoreAsync(
+        EditorDbContext context, DbTransaction? transaction, IReadOnlyCollection<(int Map, int X, int Y)> chunks)
+    {
+        var clock = Stopwatch.StartNew();
+        (string tableName, string mapColumn, string xColumn, string yColumn, _) = ChunkChangeColumns(context);
+        DbConnection connection = context.Database.GetDbConnection();
 
         List<(int Map, int X, int Y)> all = chunks.ToList();
 
@@ -210,6 +220,7 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
             int count = Math.Min(ChunkChangeRowsPerStatement, all.Count - start);
             await using DbCommand command = connection.CreateCommand();
             command.CommandTimeout = 60;
+            command.Transaction = transaction;
 
             var sql = new StringBuilder(
                 $"DELETE FROM \"{tableName}\" WHERE (\"{mapColumn}\", \"{xColumn}\", \"{yColumn}\") IN (");
@@ -238,17 +249,26 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     /// </summary>
     public async Task TouchAllChunkChangesAsync(int mapId)
     {
-        var clock = Stopwatch.StartNew();
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
         await using EditorDbContext context = CreateContext();
-
-        (string tableName, string mapColumn, _, _, string timeColumn) = ChunkChangeColumns(context);
-
-        DbConnection connection = context.Database.GetDbConnection();
         await context.Database.OpenConnectionAsync().ConfigureAwait(false);
+        await TouchAllChunkChangesCoreAsync(context, null, mapId).ConfigureAwait(false);
+    }
+
+    /// <summary>Runs within an already-open context and transaction — see <see cref="CommitTransactionAsync"/>.
+    /// Does not take the write lock or open the connection itself.</summary>
+    public Task TouchAllChunkChangesWithinTransactionAsync(EditorDbContext context, DbTransaction transaction, int mapId) =>
+        TouchAllChunkChangesCoreAsync(context, transaction, mapId);
+
+    private async Task TouchAllChunkChangesCoreAsync(EditorDbContext context, DbTransaction? transaction, int mapId)
+    {
+        var clock = Stopwatch.StartNew();
+        (string tableName, string mapColumn, _, _, string timeColumn) = ChunkChangeColumns(context);
+        DbConnection connection = context.Database.GetDbConnection();
 
         await using DbCommand command = connection.CreateCommand();
         command.CommandTimeout = 60;
+        command.Transaction = transaction;
         command.CommandText = $"UPDATE \"{tableName}\" SET \"{timeColumn}\" = @t WHERE \"{mapColumn}\" = @m";
         AddParameter(command, "@t", DateTime.UtcNow);
         AddParameter(command, "@m", mapId);

@@ -1,12 +1,153 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
+using Microsoft.Data.Sqlite;
 
 namespace WorldMapStudio;
 
 public static class ChunkChangeLogTests
 {
+    private sealed class Scratch : IDisposable
+    {
+        private readonly string _databasePath;
+
+        private Scratch(EditorContext context, string databasePath)
+        {
+            Context = context;
+            _databasePath = databasePath;
+        }
+
+        public EditorContext Context { get; }
+
+        public EditorStorage Storage => Context.Database.EditorStorage;
+
+        public static Scratch Open()
+        {
+            string databasePath = Path.Combine(Path.GetTempPath(), $"__wms_chunk_change_reconcile_test_{Guid.NewGuid():N}.doltlite");
+            var context = new EditorContext(new Node3D(), new Project { Name = "__wms_chunk_change_reconcile_test__" });
+            context.Database.EditorStorage.Location.DatabasePath = databasePath;
+            context.Database.EditorStorage.EnsureSchema();
+            return new Scratch(context, databasePath);
+        }
+
+        public void Dispose()
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(_databasePath))
+            {
+                File.Delete(_databasePath);
+            }
+        }
+    }
+
+    private static LandscapeGrid TestGrid() => new(new LandscapeSettings());
+
+    /// <summary>
+    /// Exercises <see cref="EditorStorage.ReconcileChunkChangesAsync"/> end to end against a real
+    /// database across two maps at once: a chunk something still occupies is upserted, and a chunk the
+    /// commit touched but nothing occupies any more is removed — the same outcome the old per-map,
+    /// per-step <c>ChunkChangeLog.RecordCommit</c> produced, now from one reconcile call.
+    /// </summary>
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static async Task A_reconcile_upserts_occupied_chunks_and_removes_vacated_ones_across_two_maps()
+    {
+        using Scratch scratch = Scratch.Open();
+        EditorStorage storage = scratch.Storage;
+        LandscapeGrid grid = TestGrid();
+
+        var mapA = new MapId(1);
+        var mapB = new MapId(2);
+        var occupied = new ChunkCoord(0, 0);
+        var stale = new ChunkCoord(5, 5);
+
+        var entityA = new MapSceneEntity { Map = mapA, Transform = new Transform3D(Basis.Identity, grid.BoundsOf(occupied).GetCenter()) };
+        entityA.AddComponent(new MarkerComponent());
+        var entityB = new MapSceneEntity { Map = mapB, Transform = new Transform3D(Basis.Identity, grid.BoundsOf(occupied).GetCenter()) };
+        entityB.AddComponent(new MarkerComponent());
+        await storage.CommitAsync([entityA, entityB], []).ConfigureAwait(false);
+
+        // Stamped ahead of time so the reconcile's removal of a chunk nothing occupies is observable.
+        await storage.UpsertChunkChangesAsync([(mapA.Value, stale.X, stale.Y), (mapB.Value, stale.X, stale.Y)]).ConfigureAwait(false);
+
+        Aabb region = grid.BoundsOf(occupied).Merge(grid.BoundsOf(stale));
+        var plan = new ChunkChangeReconcilePlan(
+            TouchedByMap: new Dictionary<MapId, (IReadOnlyCollection<ChunkCoord> Chunks, Aabb Region)>
+            {
+                [mapA] = ([occupied, stale], region),
+                [mapB] = ([occupied, stale], region),
+            },
+            Grids: new Dictionary<MapId, LandscapeGrid?> { [mapA] = grid, [mapB] = grid },
+            LoadedEntityIds: [],
+            EditedSharedResources: [],
+            CatalogChangedMaps: []);
+
+        await storage.ReconcileChunkChangesAsync(plan).ConfigureAwait(false);
+
+        IReadOnlyList<ChunkChange> rowsA = await storage.LoadChangedSinceAsync(DateTime.MinValue, mapA.Value).ConfigureAwait(false);
+        IReadOnlyList<ChunkChange> rowsB = await storage.LoadChangedSinceAsync(DateTime.MinValue, mapB.Value).ConfigureAwait(false);
+
+        Assert.AreEqual(1, rowsA.Count, "map A keeps only the occupied chunk");
+        Assert.AreEqual(occupied, rowsA[0].Coord);
+        Assert.AreEqual(1, rowsB.Count, "map B keeps only the occupied chunk");
+        Assert.AreEqual(occupied, rowsB[0].Coord);
+    }
+
+    /// <summary>
+    /// A shared resource's stored, not-currently-loaded placement is stamped from its persisted bounds,
+    /// and a catalog-changed map's whole chunk set is restamped — in the same reconcile call that also
+    /// handles the touched-chunk occupancy split above.
+    /// </summary>
+    [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
+    public static async Task A_reconcile_stamps_unloaded_resource_placements_and_touches_catalog_changed_maps()
+    {
+        using Scratch scratch = Scratch.Open();
+        EditorStorage storage = scratch.Storage;
+        LandscapeGrid grid = TestGrid();
+
+        var map = new MapId(1);
+        var otherMap = new MapId(2);
+        var placementChunk = new ChunkCoord(2, 2);
+
+        var placement = new MapSceneEntity { Map = map, Transform = new Transform3D(Basis.Identity, grid.BoundsOf(placementChunk).GetCenter()) };
+        placement.AddComponent(new MarkerComponent());
+        await storage.CommitAsync([placement], []).ConfigureAwait(false);
+
+        // A procedural-mesh reference row on that same entity, inserted directly rather than through a
+        // built ProceduralComponent — this test is about the reconcile's storage query, not the
+        // procedural build pipeline.
+        await using (EditorDbContext write = storage.CreateContext())
+        {
+            write.Set<SceneProceduralComponentRecord>().Add(new SceneProceduralComponentRecord
+            {
+                EntityId = placement.RecordId!.Value,
+                ModelId = 42,
+            });
+            await write.SaveChangesAsync().ConfigureAwait(false);
+        }
+
+        await storage.UpsertChunkChangesAsync([(otherMap.Value, 1, 1)]).ConfigureAwait(false);
+        DateTime before = (await storage.LoadChangedSinceAsync(DateTime.MinValue, otherMap.Value).ConfigureAwait(false)).Single().LastEditedUtc;
+
+        var plan = new ChunkChangeReconcilePlan(
+            TouchedByMap: new Dictionary<MapId, (IReadOnlyCollection<ChunkCoord> Chunks, Aabb Region)>(),
+            Grids: new Dictionary<MapId, LandscapeGrid?> { [map] = grid },
+            LoadedEntityIds: [], // the placement is not currently loaded
+            EditedSharedResources: [(typeof(ProceduralModel), 42)],
+            CatalogChangedMaps: [otherMap]);
+
+        await storage.ReconcileChunkChangesAsync(plan).ConfigureAwait(false);
+
+        IReadOnlyList<ChunkChange> stamped = await storage.LoadChangedSinceAsync(DateTime.MinValue, map.Value).ConfigureAwait(false);
+        Assert.AreEqual(1, stamped.Count, "the unloaded placement's chunk is stamped from its stored bounds");
+        Assert.AreEqual(placementChunk, stamped[0].Coord);
+
+        ChunkChange touched = (await storage.LoadChangedSinceAsync(DateTime.MinValue, otherMap.Value).ConfigureAwait(false)).Single();
+        Assert.IsTrue(touched.LastEditedUtc > before, "the catalog-changed map's existing chunk is restamped");
+    }
+
     [EditorTest(Category = "ChunkChanges", Thread = TestThread.Background)]
     public static void Chunk_range_enumerates_every_coordinate_in_the_rectangle()
     {

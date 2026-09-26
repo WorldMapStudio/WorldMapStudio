@@ -100,6 +100,34 @@ public sealed class MapSceneEntityFactory : ISceneEntityFactory, IMapScopedData
 
     public long? PersistentKey(SceneEntity entity) => entity.RecordId;
 
+    /// <summary>
+    /// The persisted Min/Max columns are <see cref="SceneEntity.WorldBounds"/> (see <see cref="WriteRecord"/>),
+    /// not <see cref="SceneEntity.WorldChunkBounds"/> — but the two agree for every
+    /// <see cref="SceneComponent"/> this codebase ships, since none currently sets
+    /// <see cref="ISceneBoundsProvider.ContributesChunkOwnership"/> to false. If one ever does for an
+    /// entity kind this factory stores, this projection must go back through <see cref="ScanAsync"/> for
+    /// that kind instead of trusting the stored bounds.
+    /// </summary>
+    public async Task<IReadOnlyList<Aabb>?> OccupiedChunkBoundsAsync(MapId map, Aabb region)
+    {
+        Vector3 min = region.Position;
+        Vector3 max = region.End;
+
+        await using EditorDbContext context = _storage.CreateContext();
+        var rows = await context.MapEntities.AsNoTracking()
+            .Where(record => record.MapId == map.Value
+                && record.MinX <= max.X && record.MaxX >= min.X
+                && record.MinY <= max.Y && record.MaxY >= min.Y
+                && record.MinZ <= max.Z && record.MaxZ >= min.Z)
+            .Select(record => new { record.MinX, record.MinY, record.MinZ, record.MaxX, record.MaxY, record.MaxZ })
+            .ToListAsync()
+            .ConfigureAwait(false);
+
+        return rows.ConvertAll(row => new Aabb(
+            new Vector3((float)row.MinX, (float)row.MinY, (float)row.MinZ),
+            new Vector3((float)(row.MaxX - row.MinX), (float)(row.MaxY - row.MinY), (float)(row.MaxZ - row.MinZ))));
+    }
+
     public async Task<SceneEntityScan> ScanAsync(MapId map, Aabb region, IReadOnlySet<long> loaded, bool publishing)
     {
         Vector3 min = region.Position;
