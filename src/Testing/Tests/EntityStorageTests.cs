@@ -218,4 +218,41 @@ public static class EntityStorageTests
         Assert.AreEqual(1, await CountAsync<SceneMarkerComponentRecord>(storage).ConfigureAwait(false), "and its component");
         Assert.AreEqual(1, await CountAsync<EntityTagRecord>(storage).ConfigureAwait(false), "and its tag");
     }
+
+    [EditorTest(Category = "Entity Storage", Thread = TestThread.Background)]
+    public static async Task Chunk_change_upsert_updates_the_same_row_on_conflict_instead_of_inserting_a_duplicate()
+    {
+        using Scratch scratch = Scratch.Open();
+        EditorStorage storage = scratch.Storage;
+        var map = new MapId(1);
+        var coord = new ChunkCoord(2, 3);
+
+        await storage.UpsertChunkChangesAsync([(map.Value, coord.X, coord.Y)]).ConfigureAwait(false);
+        IReadOnlyList<ChunkChange> first = await storage.LoadChunksInRangeAsync(map, coord, coord).ConfigureAwait(false);
+        Assert.AreEqual(1, first.Count);
+
+        await Task.Delay(10).ConfigureAwait(false);
+        await storage.UpsertChunkChangesAsync([(map.Value, coord.X, coord.Y)]).ConfigureAwait(false);
+        IReadOnlyList<ChunkChange> second = await storage.LoadChunksInRangeAsync(map, coord, coord).ConfigureAwait(false);
+
+        Assert.AreEqual(1, second.Count, "the ON CONFLICT target must update the existing row, not insert a duplicate");
+        Assert.IsTrue(second[0].LastEditedUtc > first[0].LastEditedUtc, "the second upsert should move the timestamp forward");
+    }
+
+    [EditorTest(Category = "Entity Storage", Thread = TestThread.Background)]
+    public static async Task Chunk_change_timestamp_written_by_raw_sql_round_trips_through_an_ef_query()
+    {
+        using Scratch scratch = Scratch.Open();
+        EditorStorage storage = scratch.Storage;
+        DateTime before = DateTime.UtcNow.AddSeconds(-1);
+
+        await storage.UpsertChunkChangesAsync([(1, 5, 5)]).ConfigureAwait(false);
+
+        DateTime? latest = await storage.LoadLatestEditUtcAsync(1).ConfigureAwait(false);
+        Assert.IsNotNull(latest);
+        Assert.IsTrue(latest > before, "a raw-SQL-written timestamp must compare correctly against an EF-side filter");
+
+        IReadOnlyList<ChunkChange> since = await storage.LoadChangedSinceAsync(before, 1).ConfigureAwait(false);
+        Assert.AreEqual(1, since.Count);
+    }
 }
