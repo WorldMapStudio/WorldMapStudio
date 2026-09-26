@@ -291,17 +291,13 @@ public sealed class ImageResidencySystem
             return;
         }
 
-        _pendingLoad = LoadAsync(toLoad);
+        _pendingLoad = BackgroundWork.Run(() => LoadAsync(toLoad));
     }
 
     // The query itself lives on EditorStorage so the offline build preparation can run the same one.
-    // The Task.Yield stays here: an uncontended reader lock can complete synchronously and leave the
-    // whole query on the calling thread otherwise (see LandscapeBatchLoader for the same note).
     private async Task<List<(PaintImage Image, ImageChunkCoord Coord, byte[] Pixels)>> LoadAsync(
         List<(PaintImage Image, ImageChunkCoord Coord)> toLoad)
     {
-        await Task.Yield();
-
         using IDisposable scope = DiagnosticLog.Scope($"image chunks x{toLoad.Count}");
         EditorStorage storage = _context.Database.EditorStorage;
         var wanted = new Dictionary<PaintImage, IReadOnlyCollection<ImageChunkCoord>>();

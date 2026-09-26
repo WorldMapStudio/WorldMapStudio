@@ -135,7 +135,9 @@ public sealed class ProceduralModelSelectionDialog : IModalDialog<ProceduralMode
         }
 
         _queriedFilter = trimmed;
-        _searchTask = context.System.ModelFactory.SearchAsync(trimmed);
+        ProceduralModelFactory factory = context.System.ModelFactory;
+        string filter = trimmed;
+        _searchTask = BackgroundWork.Run(() => factory.SearchAsync(filter));
     }
 
     // A discrete, user-driven act (selecting a row to preview) rather than a per-frame cost — the same

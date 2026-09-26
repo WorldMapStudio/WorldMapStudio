@@ -47,7 +47,7 @@ public sealed class MapDeleteConfirmPopup
         _deleteContents = true;
         _deleteResources.Clear();
         _error = null;
-        _contentsTask = maps.DescribeContentsAsync(target);
+        _contentsTask = BackgroundWork.Run(() => maps.DescribeContentsAsync(target));
         _delete = options => delete(options, out _error);
         _open = true;
         ImGui.OpenPopup(_popupId);

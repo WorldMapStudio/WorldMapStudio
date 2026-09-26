@@ -24,14 +24,14 @@ public sealed class StrayMapCleanupDialog : IModalDialog<MapSystem>
 
     public ModalDialogState Draw(MapSystem maps)
     {
-        _idsTask ??= maps.FindStrayMapIdsAsync();
+        _idsTask ??= BackgroundWork.Run(() => maps.FindStrayMapIdsAsync());
 
         // A finished purge leaves the list stale — refetch so the id it cleared (or its remainder)
         // drops out.
         if (_pendingPurge is { } purge && purge.State is WorkState.Completed or WorkState.Faulted or WorkState.Cancelled)
         {
             _pendingPurge = null;
-            _idsTask = maps.FindStrayMapIdsAsync();
+            _idsTask = BackgroundWork.Run(() => maps.FindStrayMapIdsAsync());
         }
 
         ImGui.TextUnformatted("Clean Up Deleted Maps' Data");

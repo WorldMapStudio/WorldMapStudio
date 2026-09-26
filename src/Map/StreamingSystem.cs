@@ -261,7 +261,10 @@ public sealed class StreamingSystem : IWorldParticipant
         float range = _context.View.ViewDistanceChunks * ChunkWorldSize();
         var extent = new Vector3(range, VerticalRange, range);
         _scanView = new Aabb(focus - extent, extent * 2.0f);
-        _pendingScan = ScanAsync(map, _scanView, Grow(_scanView, LoadMargin()), loadedKeys, _context.Bridge.Snapshot);
+        Aabb view = _scanView;
+        Aabb load = Grow(_scanView, LoadMargin());
+        FrozenDictionary<(string Source, long Key), int> bridge = _context.Bridge.Snapshot;
+        _pendingScan = BackgroundWork.Run(() => ScanAsync(map, view, load, loadedKeys, bridge));
     }
 
     private void ApplyCompletedScan()

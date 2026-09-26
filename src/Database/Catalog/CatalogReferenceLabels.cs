@@ -152,7 +152,8 @@ public sealed class CatalogReferenceLabels : IFrameParticipant
 
             cache.InFlightKeys = cache.Queued;
             cache.Queued = new HashSet<string>();
-            cache.InFlight = browser.DescribeAsync(_context, cache.InFlightKeys);
+            HashSet<string> keys = cache.InFlightKeys;
+            cache.InFlight = BackgroundWork.Run(() => browser.DescribeAsync(_context, keys));
         }
     }
 

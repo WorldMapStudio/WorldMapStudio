@@ -348,7 +348,8 @@ public sealed partial class ProceduralSystem : ISubsystemHost, IWorldParticipant
         if (_pendingLoad == null && _pendingLoadIds.Count > 0)
         {
             _pendingLoadBatch = _pendingLoadIds.ToList();
-            _pendingLoad = LoadPendingBatchAsync(_pendingLoadBatch);
+            List<int> batch = _pendingLoadBatch;
+            _pendingLoad = BackgroundWork.Run(() => LoadPendingBatchAsync(batch));
         }
     }
 
