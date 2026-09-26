@@ -43,13 +43,9 @@ public sealed class ProceduralScriptApi : IScriptModule
     }
 
     /// <summary>Every stored placement referencing this model, regardless of whether it is currently
-    /// loaded — the count Delete safety uses (see <see cref="EditorStorage.ReferencingPlacementBoundsAsync"/>),
+    /// loaded — the count Delete safety uses (see <see cref="EditorStorage.CountReferencingPlacementsAsync"/>),
     /// not <see cref="ProceduralSystem.UsageCount"/>'s loaded-only one.</summary>
     [ScriptFunction]
-    public async Task<int> UsageCount(int id)
-    {
-        EditorStorage storage = _context.Database.EditorStorage;
-        var rows = await storage.ReferencingPlacementBoundsAsync(typeof(ProceduralModel), id).ConfigureAwait(false);
-        return rows.Count;
-    }
+    public Task<int> UsageCount(int id) =>
+        _context.Database.EditorStorage.CountReferencingPlacementsAsync(typeof(ProceduralModel), id);
 }
