@@ -158,6 +158,10 @@ public sealed class ProceduralComponentPersistence : ISceneComponentPersistence,
         return rows.ConvertAll(EditorComponentPersistenceHelpers.ToMapBounds);
     }
 
+    public Task<int> CountReferencingAsync(EditorDbContext context, int resourceRecordId) =>
+        context.Set<SceneProceduralComponentRecord>().AsNoTracking()
+            .CountAsync(record => record.ModelId == resourceRecordId);
+
     public async Task<IReadOnlyList<(int ResourceId, MapId Map)>> ReferencesAsync(EditorDbContext context)
     {
         List<(int, int)> rows = await context.Set<SceneProceduralComponentRecord>().AsNoTracking()

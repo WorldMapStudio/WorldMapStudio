@@ -29,6 +29,11 @@ public interface IResourceReferencingPersistence
         EditorDbContext context,
         int resourceRecordId);
 
+    /// <summary>How many stored scene entities reference <paramref name="resourceRecordId"/> — the
+    /// same rows <see cref="ReferencingBoundsAsync"/> would return, without loading their bounds. What
+    /// a "how many placements use this?" count uses instead.</summary>
+    Task<int> CountReferencingAsync(EditorDbContext context, int resourceRecordId);
+
     /// <summary>Every distinct (resource id, map) pair stored rows of this kind reference, across every
     /// map — no map filter. What <see cref="EditorStorage.FindMapOnlyResourcesAsync"/> uses to tell a
     /// resource used only by the map being deleted from one still referenced elsewhere.</summary>

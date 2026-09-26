@@ -281,6 +281,25 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
         return await persistence.ReferencingBoundsAsync(context, resourceRecordId).ConfigureAwait(false);
     }
 
+    /// <summary>How many stored scene entities reference the shared resource <paramref name="resourceRecordId"/>
+    /// of type <paramref name="resourceType"/> — the count behind "how many placements use this?", without
+    /// loading each one's bounds the way <see cref="ReferencingPlacementBoundsAsync"/> does. Zero when no
+    /// <see cref="IResourceReferencingPersistence"/> owns the type.</summary>
+    public async Task<int> CountReferencingPlacementsAsync(Type resourceType, int resourceRecordId)
+    {
+        IResourceReferencingPersistence? persistence = ComponentPersistence
+            .OfType<IResourceReferencingPersistence>()
+            .FirstOrDefault(candidate => candidate.ReferencedResourceType == resourceType);
+        if (persistence == null)
+        {
+            return 0;
+        }
+
+        using IDisposable read = await Lock.ReaderAsync().ConfigureAwait(false);
+        await using EditorDbContext context = CreateContext();
+        return await persistence.CountReferencingAsync(context, resourceRecordId).ConfigureAwait(false);
+    }
+
     // How long a map-scoped bulk statement is allowed to run — a map can carry hundreds of thousands
     // of entities, and this covers both the delete and the read-only count run for the popup preview.
     private const int MapScopedCommandTimeoutSeconds = 300;

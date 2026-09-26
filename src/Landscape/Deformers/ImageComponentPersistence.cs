@@ -146,6 +146,10 @@ public sealed class ImageComponentPersistence : ISceneComponentPersistence, IRes
         return rows.ConvertAll(EditorComponentPersistenceHelpers.ToMapBounds);
     }
 
+    public Task<int> CountReferencingAsync(EditorDbContext context, int resourceRecordId) =>
+        context.Set<SceneImageComponentRecord>().AsNoTracking()
+            .CountAsync(record => record.ImageId == resourceRecordId);
+
     public async Task<IReadOnlyList<(int ResourceId, MapId Map)>> ReferencesAsync(EditorDbContext context)
     {
         List<(int, int)> rows = await context.Set<SceneImageComponentRecord>().AsNoTracking()

@@ -28,6 +28,11 @@ public sealed class EditSessionManager : IWorldParticipant
 
     public EditSession Active { get; private set; } = new();
 
+    /// <summary>How many commits have landed this run. Stored placements only change on commit, unlike
+    /// <see cref="SceneEntityRegistry.Version"/>, which streaming bumps on every scan — a cache keyed on
+    /// this instead invalidates only when it actually could have gone stale.</summary>
+    public int CommitCount { get; private set; }
+
     /// <exception cref="InvalidOperationException">An exclusive world operation (see
     /// <see cref="WorldOperations"/>) is currently running. Loud on purpose, the same way recording a
     /// derived-entity target already is: a tool or a script sneaking an edit into a world a batch
@@ -53,6 +58,7 @@ public sealed class EditSessionManager : IWorldParticipant
         _bindings.Store()?.Persist(Active);
         Active.Commit();
         Active = new EditSession();
+        CommitCount++;
 
         // Entities that stayed loaded only because this session pinned them are now free to unload.
         // Judged here and now rather than at the next scan: scans are asynchronous and gated on the

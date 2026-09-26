@@ -30,16 +30,19 @@ public sealed class ProceduralModelsWindow : Window
     private string _query = string.Empty;
     private string _fieldFilter = string.Empty;
     private IReadOnlyList<CatalogSearchResult> _results = [];
+    private Task<IReadOnlyList<CatalogSearchResult>>? _searchTask;
     private string? _status;
     private CatalogEntity? _openEntity;
 
     // Stored placements — not loaded ones — are what makes Delete safe: a model whose only placements
     // are streamed out has zero loaded uses but still has rows referencing it in storage. Queried once
-    // per open model, not every frame, and invalidated whenever the catalog or scene changes (a create,
-    // delete, or commit can all move this count).
+    // per open model per (catalog, commit) pair and cached: stored placements only change on commit, so
+    // streaming (which bumps Scene.Version on every scan) must not invalidate it. Null while a query is
+    // in flight or hasn't started yet — the footer shows "…" and keeps Delete disabled for that.
     private int? _storedPlacementCountFor;
-    private int _storedPlacementCount;
-    private (int Catalog, int Scene) _storedPlacementCountVersion = (-1, -1);
+    private (int Catalog, int Commits) _storedPlacementCountVersion = (-1, -1);
+    private int? _storedPlacementCount;
+    private Task<int>? _storedPlacementCountTask;
 
     public ProceduralModelsWindow(WindowManager manager)
         : base("Procedural Models", startOpen: false, defaultSize: new Vector2(560.0f, 560.0f))
@@ -71,6 +74,8 @@ public sealed class ProceduralModelsWindow : Window
         {
             Search();
         }
+
+        PumpSearch();
 
         _catalog.DrawCreate(_context, Open);
 
@@ -146,10 +151,11 @@ public sealed class ProceduralModelsWindow : Window
         }
 
         int loaded = _context.Procedural.UsageCount(model.RecordId ?? -1);
-        int stored = StoredPlacementCount(model);
+        int? stored = StoredPlacementCount(model);
 
         ImGui.SameLine();
-        if (stored > 0)
+        bool blocked = stored is not 0;
+        if (blocked)
         {
             ImGui.BeginDisabled();
         }
@@ -159,13 +165,15 @@ public sealed class ProceduralModelsWindow : Window
             Delete(model);
         }
 
-        if (stored > 0)
+        if (blocked)
         {
             ImGui.EndDisabled();
             ImGui.SameLine();
-            ImGui.TextDisabled(loaded == stored
-                ? $"in use by {stored} placements"
-                : $"in use by {stored} placements ({loaded} loaded)");
+            ImGui.TextDisabled(stored is not int count
+                ? "…"
+                : loaded == count
+                    ? $"in use by {count} placements"
+                    : $"in use by {count} placements ({loaded} loaded)");
         }
     }
 
@@ -176,8 +184,30 @@ public sealed class ProceduralModelsWindow : Window
 
     private void Search()
     {
-        _results = BlockingWork.Run(() => _catalog.SearchAsync(_query));
-        _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
+        string query = _query;
+        _searchTask = BackgroundWork.Run(() => _catalog.SearchAsync(query));
+        _status = "Searching…";
+    }
+
+    // A later Search() simply overwrites _searchTask, so a stale in-flight one is never applied — its
+    // result lands, if ever, on a field nothing reads any more.
+    private void PumpSearch()
+    {
+        if (_searchTask is not { IsCompleted: true } completed)
+        {
+            return;
+        }
+
+        _searchTask = null;
+        if (completed.IsCompletedSuccessfully)
+        {
+            _results = completed.Result;
+            _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
+        }
+        else
+        {
+            _status = $"Search failed: {completed.Exception?.GetBaseException().Message}";
+        }
     }
 
     private void OpenByKey(string key)
@@ -199,33 +229,35 @@ public sealed class ProceduralModelsWindow : Window
     }
 
     /// <summary>Every stored placement referencing this model, regardless of whether it is currently
-    /// loaded — what actually makes deleting the model safe. Queried once per open model per
-    /// catalog/scene version and cached.</summary>
-    private int StoredPlacementCount(ProceduralModel model)
+    /// loaded — what actually makes deleting the model safe. Null while unknown: not yet queried for
+    /// this model/version, or the query is still in flight.</summary>
+    private int? StoredPlacementCount(ProceduralModel model)
     {
         if (model.RecordId is not int id)
         {
             return 0;
         }
 
-        var versions = (_context.Catalog.Version, _context.Scene.Version);
-        if (_storedPlacementCountFor == id && _storedPlacementCountVersion == versions)
+        var versions = (_context.Catalog.Version, _context.EditSessions.CommitCount);
+        if (_storedPlacementCountFor != id || _storedPlacementCountVersion != versions)
         {
-            return _storedPlacementCount;
+            _storedPlacementCountFor = id;
+            _storedPlacementCountVersion = versions;
+            _storedPlacementCount = null;
+            _storedPlacementCountTask = BackgroundWork.Run(() => CountStoredPlacementsAsync(id));
         }
 
-        _storedPlacementCountFor = id;
-        _storedPlacementCountVersion = versions;
-        _storedPlacementCount = BlockingWork.Run(() => CountStoredPlacementsAsync(id));
+        if (_storedPlacementCountTask is { IsCompleted: true } completed)
+        {
+            _storedPlacementCountTask = null;
+            _storedPlacementCount = completed.IsCompletedSuccessfully ? completed.Result : 0;
+        }
+
         return _storedPlacementCount;
     }
 
-    private async Task<int> CountStoredPlacementsAsync(int modelId)
-    {
-        EditorStorage storage = _context.Database.EditorStorage;
-        var rows = await storage.ReferencingPlacementBoundsAsync(typeof(ProceduralModel), modelId).ConfigureAwait(false);
-        return rows.Count;
-    }
+    private Task<int> CountStoredPlacementsAsync(int modelId) =>
+        _context.Database.EditorStorage.CountReferencingPlacementsAsync(typeof(ProceduralModel), modelId);
 
     private void Duplicate(ProceduralModel model)
     {

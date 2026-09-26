@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 
@@ -33,10 +34,16 @@ public sealed class CatalogListSearchView : ICatalogSearchView
 
     private sealed class Session : ICatalogSearchViewSession
     {
+        // Never a real filter, so the first pump always fires a search — same sentinel
+        // ProceduralModelSelectionDialog uses for the same reason.
+        private const string NeverQueried = "￿";
+
         private readonly CatalogSearchViewHost _host;
         private IReadOnlyList<CatalogSearchResult> _results = [];
         private string? _status;
         private bool _searched;
+        private string _queriedFilter = NeverQueried;
+        private Task<IReadOnlyList<CatalogSearchResult>>? _searchTask;
 
         public Session(CatalogSearchViewHost host)
         {
@@ -72,10 +79,12 @@ public sealed class CatalogListSearchView : ICatalogSearchView
             ImGui.SameLine();
             searched |= ImGui.Button("Search");
 
-            if (!_searched || searched)
+            if (searched)
             {
-                RunSearch();
+                _queriedFilter = NeverQueried;
             }
+
+            PumpSearch();
 
             if (_status is not null)
             {
@@ -132,13 +141,9 @@ public sealed class CatalogListSearchView : ICatalogSearchView
             if (ImGui.InputTextWithHint("##filter", "Search...", ref filter, 128))
             {
                 Filter = filter;
-                RunSearch();
             }
 
-            if (!_searched)
-            {
-                RunSearch();
-            }
+            PumpSearch();
 
             float listHeight = MathF.Max(80.0f, available.Y - (ImGui.GetCursorPosY() - startY));
             ImGui.BeginChild("CatalogSearchPickList", new Vector2(available.X, listHeight), true, ImGuiWindowFlags.None);
@@ -171,14 +176,32 @@ public sealed class CatalogListSearchView : ICatalogSearchView
             ImGui.EndChild();
         }
 
-        private void RunSearch()
+        // Called every frame. No debounce: off the main thread, a query per keystroke costs nothing the
+        // user notices, and a result is dropped rather than shown if the filter moved on while it ran.
+        private void PumpSearch()
         {
-            _searched = true;
-            _results = BlockingWork.Run(() => _host.Catalog.SearchAsync(Filter));
-            if (_host.Purpose == CatalogSearchPurpose.Browse)
+            if (_searchTask is { IsCompleted: true } completed)
             {
-                _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
+                _searchTask = null;
+                _searched = true;
+                if (completed.IsCompletedSuccessfully && _queriedFilter == Filter)
+                {
+                    _results = completed.Result;
+                    if (_host.Purpose == CatalogSearchPurpose.Browse)
+                    {
+                        _status = _results.Count == 0 ? "No matches." : $"{_results.Count} match(es).";
+                    }
+                }
             }
+
+            if (_searchTask != null || Filter == _queriedFilter)
+            {
+                return;
+            }
+
+            _queriedFilter = Filter;
+            string filter = Filter;
+            _searchTask = BackgroundWork.Run(() => _host.Catalog.SearchAsync(filter));
         }
 
         public void Dispose()
