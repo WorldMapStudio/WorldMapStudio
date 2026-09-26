@@ -1,17 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.Data.Common;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using MySqlConnector;
 
 namespace WorldMapStudio;
 
 /// <summary>
-/// A named data backend: a dolt repository reached through short-lived EF Core connections. Concrete
+/// A named data backend: a DoltLite file reached through short-lived EF Core connections. Concrete
 /// storages self-register with [Subsystem(nameof(DatabaseSystem))] and host their entity factories
-/// (which name the concrete storage type). Dolt speaks the MySQL 8 wire protocol, so contexts are
-/// built with the Pomelo MySQL provider against <see cref="Connection"/>.
+/// (which name the concrete storage type). DoltLite speaks the SQLite dialect, so contexts are built
+/// with the EF Core Sqlite provider against <see cref="Location"/>.
 /// </summary>
 public abstract class Storage : ISubsystem
 {
@@ -19,26 +20,25 @@ public abstract class Storage : ISubsystem
 
     public virtual float Priority => 0f;
 
-    /// <summary>How this storage reaches its database. Bound from project settings at startup.</summary>
-    public virtual StorageConnection Connection { get; private set; } = new();
+    /// <summary>Where this storage's data lives. Bound from project settings at startup.</summary>
+    public virtual StorageLocation Location { get; private set; } = new();
 
     /// <summary>
-    /// Whether this storage's <see cref="Connection"/> is its own, persisted per-project setting.
-    /// A storage that shares another's connection instead (overriding <see cref="Connection"/> to
-    /// proxy it, so both point at one physical database) returns false, so
-    /// <see cref="DatabaseSystem.BindConnections"/> does not seed a redundant, unused project entry
-    /// for it and <see cref="DatabaseSystem.Startup"/> does not try to launch a second server for the
-    /// same repository.
+    /// Whether this storage's <see cref="Location"/> is its own, persisted per-project setting.
+    /// A storage that shares another's location instead (overriding <see cref="Location"/> to
+    /// proxy it, so both point at one physical file) returns false, so
+    /// <see cref="DatabaseSystem.BindLocations"/> does not seed a redundant, unused project entry
+    /// for it.
     /// </summary>
-    public virtual bool OwnsConnection => true;
+    public virtual bool OwnsLocation => true;
 
     /// <summary>Guards this storage's database: concurrent scans (readers), exclusive commit (writer).</summary>
     public AsyncReaderWriterLock Lock { get; } = new();
 
-    /// <summary>The connection a brand-new project gets for this storage, before the user edits it.</summary>
-    public virtual StorageConnection CreateDefaultConnection() => new();
+    /// <summary>The location a brand-new project gets for this storage, before the user edits it.</summary>
+    public virtual StorageLocation CreateDefaultLocation() => new();
 
-    internal void BindConnection(StorageConnection connection) => Connection = connection;
+    internal void BindLocation(StorageLocation location) => Location = location;
 
     /// <summary>This storage's own subsystem tree: the <see cref="ISubsystemHost.Subsystems"/> of a concrete storage that hosts subsystems.</summary>
     protected virtual IEnumerable<ISubsystem> HostedSubsystems => this is ISubsystemHost host ? host.Subsystems : [];
@@ -118,23 +118,30 @@ public abstract class Storage : ISubsystem
     public virtual Schema? ExpectedSchema() => null;
 
     /// <summary>Reads the storage database's actual schema.</summary>
-    public Task<Schema> ReadLiveSchemaAsync() =>
-        LiveSchema.ReadAsync(Connection.BuildConnectionString(), Connection.Database);
+    public Task<Schema> ReadLiveSchemaAsync() => LiveSchema.ReadAsync(Location.BuildConnectionString());
 
-    /// <summary>Runs the given migration SQL (see <see cref="SqlScript.SplitStatements"/>) under the write lock.</summary>
+    /// <summary>Opens a new, unopened connection to this storage's database. Raw-SQL callers use this
+    /// instead of constructing <see cref="SqliteConnection"/> directly.</summary>
+    protected DbConnection OpenConnection() => new SqliteConnection(Location.BuildConnectionString());
+
+    /// <summary>Runs the given migration SQL (see <see cref="SqlScript.SplitStatements"/>) under the write
+    /// lock, in one transaction — SQLite DDL is transactional, so a failed migration never leaves the
+    /// database half-migrated.</summary>
     public async Task ApplySqlAsync(string sql)
     {
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using var connection = new MySqlConnection(Connection.BuildConnectionString());
+        await using DbConnection connection = OpenConnection();
         await connection.OpenAsync().ConfigureAwait(false);
-        await RunStatementsAsync(connection, sql).ConfigureAwait(false);
+        await using DbTransaction transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+        await RunStatementsAsync(connection, transaction, sql).ConfigureAwait(false);
+        await transaction.CommitAsync().ConfigureAwait(false);
     }
 
     /// <summary>
     /// Runs every registered <see cref="ISeedSql"/> not already recorded in this storage database's
-    /// seed-history table, under the write lock — each seed's statements, then a row recording it
-    /// done, so a seed that fails partway through is retried whole next startup rather than left
-    /// half-applied and marked complete.
+    /// seed-history table, under the write lock — each seed's statements plus a row recording it done,
+    /// in one transaction, so a seed that fails partway through is retried whole next startup rather
+    /// than left half-applied and marked complete.
     /// </summary>
     public async Task ApplySeedsAsync()
     {
@@ -145,21 +152,21 @@ public abstract class Storage : ISubsystem
         }
 
         using IDisposable write = await Lock.WriterAsync().ConfigureAwait(false);
-        await using var connection = new MySqlConnection(Connection.BuildConnectionString());
+        await using DbConnection connection = OpenConnection();
         await connection.OpenAsync().ConfigureAwait(false);
 
-        await using (MySqlCommand create = connection.CreateCommand())
+        await using (DbCommand create = connection.CreateCommand())
         {
             create.CommandText =
-                $"CREATE TABLE IF NOT EXISTS `{SeedHistoryTableName}` (`name` VARCHAR(255) NOT NULL PRIMARY KEY, `applied_at` DATETIME NOT NULL);";
+                $"CREATE TABLE IF NOT EXISTS \"{SeedHistoryTableName}\" (\"name\" TEXT NOT NULL PRIMARY KEY, \"applied_at\" TEXT NOT NULL);";
             await create.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
 
         var applied = new HashSet<string>(StringComparer.Ordinal);
-        await using (MySqlCommand select = connection.CreateCommand())
+        await using (DbCommand select = connection.CreateCommand())
         {
-            select.CommandText = $"SELECT `name` FROM `{SeedHistoryTableName}`;";
-            await using MySqlDataReader reader = await select.ExecuteReaderAsync().ConfigureAwait(false);
+            select.CommandText = $"SELECT \"name\" FROM \"{SeedHistoryTableName}\";";
+            await using DbDataReader reader = await select.ExecuteReaderAsync().ConfigureAwait(false);
             while (await reader.ReadAsync().ConfigureAwait(false))
             {
                 applied.Add(reader.GetString(0));
@@ -168,23 +175,39 @@ public abstract class Storage : ISubsystem
 
         foreach (ISeedSql seed in seeds.Where(seed => !applied.Contains(seed.Name)))
         {
-            await RunStatementsAsync(connection, seed.Sql).ConfigureAwait(false);
+            await using DbTransaction transaction = await connection.BeginTransactionAsync().ConfigureAwait(false);
+            await RunStatementsAsync(connection, transaction, seed.Sql).ConfigureAwait(false);
 
-            await using MySqlCommand record = connection.CreateCommand();
-            record.CommandText = $"INSERT INTO `{SeedHistoryTableName}` (`name`, `applied_at`) VALUES (@name, UTC_TIMESTAMP());";
-            record.Parameters.AddWithValue("@name", seed.Name);
-            await record.ExecuteNonQueryAsync().ConfigureAwait(false);
+            await using (DbCommand record = connection.CreateCommand())
+            {
+                record.Transaction = transaction;
+                record.CommandText = $"INSERT INTO \"{SeedHistoryTableName}\" (\"name\", \"applied_at\") VALUES (@name, @appliedAt);";
+                AddParameter(record, "@name", seed.Name);
+                AddParameter(record, "@appliedAt", DateTime.UtcNow);
+                await record.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+
+            await transaction.CommitAsync().ConfigureAwait(false);
         }
     }
 
-    private static async Task RunStatementsAsync(MySqlConnection connection, string sql)
+    private static async Task RunStatementsAsync(DbConnection connection, DbTransaction transaction, string sql)
     {
         foreach (string statement in SqlScript.SplitStatements(sql))
         {
-            await using MySqlCommand command = connection.CreateCommand();
+            await using DbCommand command = connection.CreateCommand();
+            command.Transaction = transaction;
             command.CommandText = statement;
             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     /// <summary>
@@ -248,13 +271,13 @@ public abstract class Storage : ISubsystem
     protected IEntityFactory? FactoryFor(IEntity entity) =>
         EntityFactories.FirstOrDefault(factory => factory.Handles(entity));
 
-    /// <summary>Builds Pomelo MySQL options for one of this storage's contexts. The diagnostic
+    /// <summary>Builds EF Core Sqlite options for one of this storage's contexts. The diagnostic
     /// interceptors are always registered and gate themselves on <see cref="DiagnosticLog.Enabled"/>:
     /// registering them conditionally would change the options shape mid-session and rebuild EF's
     /// cached internal service provider on the next context.</summary>
     protected DbContextOptions<TContext> BuildOptions<TContext>() where TContext : DbContext =>
         new DbContextOptionsBuilder<TContext>()
-            .UseMySql(Connection.BuildConnectionString(), new MySqlServerVersion(new Version(8, 0, 0)))
+            .UseSqlite(Location.BuildConnectionString())
             .AddInterceptors(SqlCommandLog.Instance, SqlConnectionLog.Instance)
             .Options;
 }

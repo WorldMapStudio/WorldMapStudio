@@ -1,6 +1,5 @@
 #nullable enable
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Godot;
 using ImGuiNET;
@@ -14,7 +13,7 @@ namespace WorldMapStudio;
 ///
 /// Used twice, because opening a project has two blocking phases with the migration gate between them:
 /// <list type="number">
-/// <item><see cref="EditorContext.Startup"/> — launch dolt, ensure databases and schemas, check for
+/// <item><see cref="EditorContext.Startup"/> — open the DoltLite files, ensure schemas, check for
 /// drift. Followed by <see cref="Migration"/> if there is any.</item>
 /// <item><see cref="EditorContext.LoadContent"/> — read the maps and the landscape, which the migration
 /// gate has to run before, since their tables may not exist until it has.</item>
@@ -23,32 +22,20 @@ namespace WorldMapStudio;
 /// </summary>
 public sealed class LoadingScreen : IScene
 {
-    // A confirm prompt raised by the background phase, waiting for the main thread to resolve it.
-    // The background thread blocks on Signal, not on anything Godot — Update() is the only thing that
-    // ever sets it, so there's no risk of the main-thread-async deadlock this pattern would otherwise invite.
-    private sealed class PendingConfirm
-    {
-        public required ModalConfirm Modal;
-        public readonly ManualResetEventSlim Signal = new(false);
-        public bool Result;
-    }
-
     private readonly Node3D _root;
     private readonly string _caption;
-    private readonly Action<Action<string>, Func<string, bool>> _work;
+    private readonly Action<Action<string>> _work;
     private readonly Func<IScene> _next;
 
     private volatile string _step = "Preparing";
     private volatile bool _ready;
     private volatile string? _error;
-    private volatile PendingConfirm? _confirm;
 
     /// <param name="caption">Headline shown above the bar, e.g. "Opening project".</param>
     /// <param name="work">The blocking phase. Runs on a background thread; reports progress by calling
-    /// its first argument with a step name, and can block on its second argument to ask the user a
-    /// yes/no question (see <see cref="Confirm"/>).</param>
+    /// its argument with a step name.</param>
     /// <param name="next">The scene to move to once the phase succeeds.</param>
-    public LoadingScreen(Node3D root, string caption, Action<Action<string>, Func<string, bool>> work, Func<IScene> next)
+    public LoadingScreen(Node3D root, string caption, Action<Action<string>> work, Func<IScene> next)
     {
         _root = root;
         _caption = caption;
@@ -67,7 +54,7 @@ public sealed class LoadingScreen : IScene
         return new LoadingScreen(
             root,
             $"Opening {project.Name}",
-            (step, confirm) => context.Startup(step, confirm),
+            step => context.Startup(step),
             () => context.Migrations.HasPending
                 ? new Migration(root, context)
                 : LoadContent(root, context));
@@ -77,7 +64,7 @@ public sealed class LoadingScreen : IScene
     public static LoadingScreen LoadContent(Node3D root, EditorContext context) =>
         new(root,
             $"Opening {context.Project.Name}",
-            (step, _) => context.LoadContent(step),
+            step => context.LoadContent(step),
             () => new Editor(context));
 
     public void Start()
@@ -86,7 +73,7 @@ public sealed class LoadingScreen : IScene
         {
             try
             {
-                _work(step => _step = step, Confirm);
+                _work(step => _step = step);
                 _ready = true;
             }
             catch (Exception e)
@@ -95,19 +82,6 @@ public sealed class LoadingScreen : IScene
                 GD.PushError($"[Loading] {_caption} failed: {e}");
             }
         });
-    }
-
-    /// <summary>
-    /// Called from the background phase to ask the user a yes/no question. Blocks that thread until
-    /// <see cref="Update"/> (main thread) draws the modal and the user picks an answer.
-    /// </summary>
-    private bool Confirm(string message)
-    {
-        var pending = new PendingConfirm { Modal = new ModalConfirm("Confirm", message, "Kill and Retry", "Cancel") };
-        pending.Modal.Show();
-        _confirm = pending;
-        pending.Signal.Wait();
-        return pending.Result;
     }
 
     public IScene? Update()
@@ -138,18 +112,6 @@ public sealed class LoadingScreen : IScene
                 }
             });
         });
-
-        PendingConfirm? confirm = _confirm;
-        if (confirm != null)
-        {
-            ModalDialogState state = confirm.Modal.Draw(true);
-            if (state is ModalDialogState.Confirmed or ModalDialogState.Cancelled)
-            {
-                confirm.Result = state == ModalDialogState.Confirmed;
-                _confirm = null;
-                confirm.Signal.Set();
-            }
-        }
 
         return scene;
     }

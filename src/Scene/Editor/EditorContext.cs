@@ -255,16 +255,14 @@ public sealed partial class EditorContext : ISubsystemHost
     }
 
     /// <summary>
-    /// Runs the blocking startup work: launching the dolt servers, ensuring databases and schemas,
-    /// and checking for schema drift. Kept out of the constructor so it can run off the main thread
-    /// (see <see cref="LoadingScreen"/>) rather than freezing the UI while the editor opens.
-    /// <paramref name="confirmKillStray"/> is forwarded to <see cref="DatabaseSystem.Startup"/> — see
-    /// there for why a dolt launch can need it.
+    /// Runs the blocking startup work: opening each storage's DoltLite file, ensuring schemas, and
+    /// checking for schema drift. Kept out of the constructor so it can run off the main thread (see
+    /// <see cref="LoadingScreen"/>) rather than freezing the UI while the editor opens.
     /// </summary>
-    public void Startup(Action<string>? onStep = null, Func<string, bool>? confirmKillStray = null)
+    public void Startup(Action<string>? onStep = null)
     {
-        onStep?.Invoke("Starting database");
-        Database.Startup(confirmKillStray);
+        onStep?.Invoke("Opening databases");
+        Database.Startup();
 
         // Persist the project now that storages have seeded their default connections into it.
         ProjectStore.Save(Project);

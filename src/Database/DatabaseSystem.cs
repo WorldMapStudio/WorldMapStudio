@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
-using MySqlConnector;
+using Microsoft.Data.Sqlite;
 
 namespace WorldMapStudio;
 
@@ -13,16 +13,12 @@ namespace WorldMapStudio;
 /// and are constructed by the generated InitializeSubsystems(), so the built-in "Editor" storage and
 /// any plugin storages register without touching this class. A plain member of
 /// <see cref="EditorContext"/> (the core spine, not an extension point), but itself a host.
-/// On <see cref="Startup"/> it launches a managed <c>dolt sql-server</c> for each storage configured
-/// to launch one, then ensures each storage's database exists.
+/// On <see cref="Startup"/> it ensures each storage's DoltLite file exists and its schema is created.
 /// </summary>
 [SubsystemHost(typeof(Storage))]
 public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, IWorldParticipant
 {
-    private static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(15);
-
     private readonly EditorContext _context;
-    private readonly List<DoltServer> _servers = [];
 
     public IEnumerable<Storage> Storages => Subsystems;
 
@@ -31,64 +27,43 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 
     public DatabaseSystem(EditorContext context)
     {
+        DoltliteRuntime.EnsureInitialized();
         _context = context;
         SceneSources = new SceneEntitySources(this);
         InitializeSubsystems();
-        BindConnections();
+        BindLocations();
     }
 
     public EditorContext Context => _context;
 
-    // Each storage reads its connection from the project's settings, which are seeded with the
+    // Each storage reads its location from the project's settings, which are seeded with the
     // storage's defaults the first time a project uses it.
-    private void BindConnections()
+    private void BindLocations()
     {
         foreach (Storage storage in Storages)
         {
-            if (!storage.OwnsConnection)
+            if (!storage.OwnsLocation)
             {
                 continue;
             }
 
-            StorageConnection connection = _context.Project.GetOrAddStorageConnection(storage.Name, storage.CreateDefaultConnection());
-            storage.BindConnection(connection);
+            StorageLocation location = _context.Project.GetOrAddStorageLocation(storage.Name, storage.CreateDefaultLocation());
+            storage.BindLocation(location);
         }
     }
 
-    /// <summary>
-    /// Launches managed dolt servers and ensures each storage's database exists.
-    /// <paramref name="confirmKillStray"/> is forwarded to <see cref="DoltServer.Start"/> so a caller on
-    /// the main thread can prompt the user before killing a leftover server from a previous session.
-    /// </summary>
-    public void Startup(Func<string, bool>? confirmKillStray = null)
+    /// <summary>Ensures each storage's DoltLite file exists (creating its directory on first use) and
+    /// its schema is created.</summary>
+    public void Startup()
     {
         foreach (Storage storage in Storages)
         {
-            // A storage that shares another's connection (see Storage.OwnsConnection) neither launches
-            // its own server nor creates its own database — the owning storage already did both — but
-            // it still gets its own EnsureSchema() call, since it owns a disjoint set of tables within
-            // that shared database.
-            if (storage.OwnsConnection)
+            // A storage that shares another's location (see Storage.OwnsLocation) doesn't create its
+            // own file — the owning storage already did — but it still gets its own EnsureSchema()
+            // call, since it owns a disjoint set of tables within that shared file.
+            if (storage.OwnsLocation)
             {
-                StorageConnection connection = storage.Connection;
-                if (connection.LaunchServer)
-                {
-                    if (connection.RepositoryPath.Length == 0)
-                    {
-                        connection.RepositoryPath = DefaultDataDirectory();
-                    }
-
-                    var server = new DoltServer(connection.RepositoryPath, connection.Host, connection.Port);
-                    if (!server.Start(StartTimeout, confirmKillStray))
-                    {
-                        GD.PushError($"[Database] Storage '{storage.Name}' server failed to start.");
-                        continue;
-                    }
-
-                    _servers.Add(server);
-                }
-
-                EnsureDatabase(storage);
+                EnsureDatabaseFile(storage);
             }
 
             try
@@ -355,12 +330,16 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
 
     public void Shutdown()
     {
-        foreach (DoltServer server in _servers)
+        foreach (FileStream lockFile in _lockFiles.Values)
         {
-            server.Stop();
+            lockFile.Dispose();
         }
 
-        _servers.Clear();
+        _lockFiles.Clear();
+
+        // Releases the file handles DoltLite/SQLite pooling kept open, so the file is free for another
+        // process (or export) to use immediately rather than whenever finalizers happen to run.
+        SqliteConnection.ClearAllPools();
     }
 
     // Whether the entity is still loaded, which is what separates a save from a delete.
@@ -379,29 +358,36 @@ public sealed partial class DatabaseSystem : ISubsystemHost, IEditSessionStore, 
             return await read().ConfigureAwait(false);
         });
 
-    private static void EnsureDatabase(Storage storage)
+    private readonly Dictionary<Storage, FileStream> _lockFiles = new();
+
+    // The file itself is created lazily by SQLite/DoltLite on first open; this only has to make sure
+    // the directory exists and warn if another instance already holds the file.
+    private void EnsureDatabaseFile(Storage storage)
     {
-        StorageConnection connection = storage.Connection;
-        if (connection.Database.Length == 0)
+        StorageLocation location = storage.Location;
+        if (location.DatabasePath.Length == 0)
         {
-            return;
+            location.DatabasePath = DefaultDatabasePath(storage.Name);
         }
 
         try
         {
-            using var conn = new MySqlConnection(connection.BuildConnectionString(includeDatabase: false));
-            conn.Open();
-            using MySqlCommand cmd = conn.CreateCommand();
-            cmd.CommandText = $"CREATE DATABASE IF NOT EXISTS `{connection.Database}`;";
-            cmd.ExecuteNonQuery();
-            GD.Print($"[Database] Storage '{storage.Name}' ready ({connection.Host}:{connection.Port}/{connection.Database}).");
+            string? directory = Path.GetDirectoryName(location.DatabasePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            string lockPath = location.DatabasePath + ".wms-lock";
+            _lockFiles[storage] = new FileStream(lockPath, FileMode.OpenOrCreate, System.IO.FileAccess.ReadWrite, FileShare.None);
+            GD.Print($"[Database] Storage '{storage.Name}' ready ({location.DatabasePath}).");
         }
-        catch (Exception e)
+        catch (IOException e)
         {
-            GD.PushError($"[Database] Storage '{storage.Name}' database check failed: {e.Message}");
+            GD.PushError($"[Database] Storage '{storage.Name}': '{location.DatabasePath}' looks like it's open in another instance ({e.Message}).");
         }
     }
 
-    private string DefaultDataDirectory() =>
-        Path.Combine(ProjectStore.ProjectFolder(_context.Project.Name), "dolt");
+    private string DefaultDatabasePath(string storageName) =>
+        Path.Combine(ProjectStore.ProjectFolder(_context.Project.Name), "data", $"{storageName.ToLowerInvariant()}.doltlite");
 }
