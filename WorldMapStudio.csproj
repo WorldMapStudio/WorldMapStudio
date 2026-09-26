@@ -35,6 +35,20 @@
     <PackageReference Include="Microsoft.Diagnostics.NETCore.Client" Version="0.2.661903" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite.Core" Version="8.0.3" />
   </ItemGroup>
+
+  <!--
+  DoltHub.Doltlite's win-x64 native library is a cgo build that dynamically links two MinGW-w64
+  runtime DLLs (libgcc_s_seh-1.dll, libwinpthread-1.dll) the NuGet package does not ship. Without
+  them next to doltlite.dll, LoadLibrary fails with "module not found" the moment nothing on the
+  process's PATH happens to supply them (as Godot.exe launched normally does not) — confirmed by
+  reproducing and fixing the exact failure outside Godot before adding this. Windows' default DLL
+  search order checks the loading module's own directory, so copying them alongside doltlite.dll
+  in every output slot is enough; no code-side loader change is needed.
+  -->
+  <ItemGroup>
+    <None Include="native/win-x64/libgcc_s_seh-1.dll" Link="runtimes/win-x64/native/libgcc_s_seh-1.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="native/win-x64/libwinpthread-1.dll" Link="runtimes/win-x64/native/libwinpthread-1.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="analyzer/WorldMapStudio.Analyzer.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <Compile Remove="analyzer/**" />
