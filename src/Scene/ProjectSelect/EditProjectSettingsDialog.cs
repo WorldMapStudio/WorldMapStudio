@@ -5,7 +5,7 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Modal for editing an existing project's settings in place: its coordinate convention, its
-/// database connection, its asset sources and its named paths.
+/// database location, its asset sources and its named paths.
 /// </summary>
 public sealed class EditProjectSettingsDialog : IModalDialog<Project>
 {
@@ -23,8 +23,8 @@ public sealed class EditProjectSettingsDialog : IModalDialog<Project>
 
         ImGui.Spacing();
         ImGui.TextDisabled("Database");
-        StorageConnection connection = context.GetOrAddStorageConnection(EditorStorage.StorageName, EditorStorage.DefaultConnection());
-        StorageConnectionEditor.Draw(connection);
+        StorageLocation location = context.GetOrAddStorageLocation(EditorStorage.StorageName, EditorStorage.DefaultLocation());
+        StorageLocationEditor.Draw(location);
 
         ImGui.Spacing();
         ImGui.TextDisabled("Assets");

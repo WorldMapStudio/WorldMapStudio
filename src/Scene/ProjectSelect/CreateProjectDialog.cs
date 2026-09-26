@@ -9,14 +9,14 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Modal for creating a new project: a name, its initial coordinate convention, and its database
-/// connection. On confirm it exposes the built <see cref="Project"/> via <see cref="CreatedProject"/>.
+/// location. On confirm it exposes the built <see cref="Project"/> via <see cref="CreatedProject"/>.
 /// </summary>
 public sealed class CreateProjectDialog : IModalDialog<IReadOnlyList<Project>>
 {
     private string _name = "";
     private string? _error;
     private readonly AxisConvention _axes = AxisConvention.GodotDefault;
-    private readonly StorageConnection _database = EditorStorage.DefaultConnection();
+    private readonly StorageLocation _database = EditorStorage.DefaultLocation();
     private readonly List<AssetSourceSettings> _assetSources = [];
     private readonly AssetSourceEditor _assetSourceEditor = new();
 
@@ -37,7 +37,7 @@ public sealed class CreateProjectDialog : IModalDialog<IReadOnlyList<Project>>
         ImGui.Spacing();
         ImGui.TextDisabled("Database");
         ImGui.Separator();
-        StorageConnectionEditor.Draw(_database);
+        StorageLocationEditor.Draw(_database);
 
         ImGui.Spacing();
         ImGui.TextDisabled("Assets");
@@ -96,7 +96,7 @@ public sealed class CreateProjectDialog : IModalDialog<IReadOnlyList<Project>>
             Name = name,
             AxisConvention = _axes,
         };
-        CreatedProject.StorageConnections[EditorStorage.StorageName] = _database;
+        CreatedProject.StorageLocations[EditorStorage.StorageName] = _database;
         foreach (AssetSourceSettings source in _assetSources)
         {
             CreatedProject.AssetSources.Add(source);

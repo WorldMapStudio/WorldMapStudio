@@ -10,8 +10,8 @@ namespace WorldMapStudio;
 
 /// <summary>
 /// Persists projects as self-contained folders under %LocalAppData%\WorldMapStudio\projects\&lt;name&gt;\,
-/// each with a project.json (name, axis convention, per-storage database connections) alongside its
-/// managed dolt data. This is the "project settings" migrations and streaming rely on.
+/// each with a project.json (name, axis convention, per-storage database locations) alongside its
+/// DoltLite data files. This is the "project settings" migrations and streaming rely on.
 ///
 /// The same document shape is what <see cref="Read"/> loads from an arbitrary path, so a checkout can
 /// keep a source-controlled project config and have the editor open straight into it (see
@@ -69,7 +69,7 @@ public static class ProjectStore
     }
 
     /// <summary>
-    /// Loads a project from an explicit file, resolving any relative <see cref="StorageConnection.RepositoryPath"/>
+    /// Loads a project from an explicit file, resolving any relative <see cref="StorageLocation.DatabasePath"/>,
     /// <see cref="AssetSourceSettings.RootPath"/> and <see cref="Project.Paths"/> value against the file's own
     /// directory so the config travels with the checkout. Throws on a missing file or malformed document.
     /// </summary>
@@ -121,9 +121,9 @@ public static class ProjectStore
 
     private static void ResolvePaths(Project project, string baseDir)
     {
-        foreach (StorageConnection connection in project.StorageConnections.Values)
+        foreach (StorageLocation location in project.StorageLocations.Values)
         {
-            connection.RepositoryPath = Resolve(connection.RepositoryPath, baseDir);
+            location.DatabasePath = Resolve(location.DatabasePath, baseDir);
         }
 
         foreach (AssetSourceSettings source in project.AssetSources)
@@ -146,19 +146,30 @@ public static class ProjectStore
         AxisX = project.AxisConvention.X,
         AxisY = project.AxisConvention.Y,
         AxisZ = project.AxisConvention.Z,
-        StorageConnections = new Dictionary<string, StorageConnection>(project.StorageConnections),
+        StorageLocations = new Dictionary<string, StorageLocation>(project.StorageLocations),
         AssetSources = project.AssetSources.Select(CloneAssetSource).ToList(),
         Paths = new Dictionary<string, string>(project.Paths),
     };
 
-    private static Project FromDocument(ProjectDocument doc) => new()
+    private static Project FromDocument(ProjectDocument doc)
     {
-        Name = doc.Name,
-        AxisConvention = AxisConvention.Create(doc.AxisX, doc.AxisY, doc.AxisZ),
-        StorageConnections = new Dictionary<string, StorageConnection>(doc.StorageConnections),
-        AssetSources = (doc.AssetSources ?? []).Select(CloneAssetSource).ToList(),
-        Paths = new Dictionary<string, string>(doc.Paths ?? new Dictionary<string, string>()),
-    };
+        // Pre-DoltLite project files keyed this by "StorageConnections" with a host/port/etc shape that
+        // no longer deserializes into StorageLocation. Rather than fail to load, log once and start that
+        // storage fresh — see the DoltLite migration's "Existing data" note.
+        if (doc.ExtensionData?.ContainsKey("StorageConnections") == true)
+        {
+            GD.Print($"[Project] '{doc.Name}' has an old StorageConnections entry from a pre-DoltLite project; ignoring it, storages will use fresh defaults.");
+        }
+
+        return new Project
+        {
+            Name = doc.Name,
+            AxisConvention = AxisConvention.Create(doc.AxisX, doc.AxisY, doc.AxisZ),
+            StorageLocations = new Dictionary<string, StorageLocation>(doc.StorageLocations),
+            AssetSources = (doc.AssetSources ?? []).Select(CloneAssetSource).ToList(),
+            Paths = new Dictionary<string, string>(doc.Paths ?? new Dictionary<string, string>()),
+        };
+    }
 
     private static AssetSourceSettings CloneAssetSource(AssetSourceSettings source) => new()
     {
@@ -187,8 +198,11 @@ public static class ProjectStore
         public SignedAxis AxisX { get; set; } = SignedAxis.PosX;
         public SignedAxis AxisY { get; set; } = SignedAxis.PosY;
         public SignedAxis AxisZ { get; set; } = SignedAxis.PosZ;
-        public Dictionary<string, StorageConnection> StorageConnections { get; set; } = new();
+        public Dictionary<string, StorageLocation> StorageLocations { get; set; } = new();
         public List<AssetSourceSettings> AssetSources { get; set; } = [];
         public Dictionary<string, string>? Paths { get; set; }
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
 }
