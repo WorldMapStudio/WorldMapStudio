@@ -17,7 +17,7 @@ public static class ProjectTests
             Name = "__wms_test_roundtrip__",
             AxisConvention = AxisConvention.Create(SignedAxis.PosZ, SignedAxis.PosX, SignedAxis.NegY),
         };
-        project.GetOrAddStorageConnection("Editor", new StorageConnection { Database = "editor", Port = 3399, LaunchServer = true });
+        project.GetOrAddStorageLocation("Editor", new StorageLocation { DatabasePath = "editor.doltlite", Branch = "work" });
         project.AssetSources.Add(new AssetSourceSettings
         {
             Id = "loose",
@@ -44,9 +44,9 @@ public static class ProjectTests
             Assert.IsNotNull(loaded, "saved project should load back");
             Assert.AreEqual(SignedAxis.PosZ, loaded!.AxisConvention.X);
             Assert.AreEqual(SignedAxis.NegY, loaded.AxisConvention.Z);
-            Assert.IsTrue(loaded.StorageConnections.ContainsKey("Editor"));
-            Assert.AreEqual(3399, loaded.StorageConnections["Editor"].Port);
-            Assert.IsTrue(loaded.StorageConnections["Editor"].LaunchServer);
+            Assert.IsTrue(loaded.StorageLocations.ContainsKey("Editor"));
+            Assert.AreEqual("editor.doltlite", loaded.StorageLocations["Editor"].DatabasePath);
+            Assert.AreEqual("work", loaded.StorageLocations["Editor"].Branch);
             Assert.AreEqual(2, loaded.AssetSources.Count);
             Assert.AreEqual("loose", loaded.AssetSources[0].Id);
             Assert.AreEqual("Loose Textures", loaded.AssetSources[0].Name);
@@ -85,17 +85,17 @@ public static class ProjectTests
     }
 
     [EditorTest(Category = "Project")]
-    public static void Storage_connection_is_added_once_and_reused()
+    public static void Storage_location_is_added_once_and_reused()
     {
         var project = new Project { Name = "Test" };
 
-        StorageConnection first = project.GetOrAddStorageConnection("Editor", new StorageConnection { Database = "editor" });
-        Assert.AreEqual("editor", first.Database);
+        StorageLocation first = project.GetOrAddStorageLocation("Editor", new StorageLocation { DatabasePath = "editor.doltlite" });
+        Assert.AreEqual("editor.doltlite", first.DatabasePath);
 
-        // A later call must return the stored connection, not overwrite a user's edits with defaults.
-        first.Port = 3399;
-        StorageConnection second = project.GetOrAddStorageConnection("Editor", new StorageConnection { Port = 3312 });
-        Assert.AreEqual(3399, second.Port);
+        // A later call must return the stored location, not overwrite a user's edits with defaults.
+        first.Branch = "work";
+        StorageLocation second = project.GetOrAddStorageLocation("Editor", new StorageLocation { Branch = "other" });
+        Assert.AreEqual("work", second.Branch);
         Assert.IsTrue(ReferenceEquals(first, second));
     }
 

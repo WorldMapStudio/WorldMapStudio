@@ -17,7 +17,7 @@ public static class SchemaTests
         // AssetSystem or ProceduralSystem to construct, which this schema-only test has no reason to
         // spin up); proving the self-registered-config wiring works generically for a couple is enough.
         var options = new DbContextOptionsBuilder<EditorDbContext>()
-            .UseMySql("Server=localhost;Database=x;Uid=root", new MySqlServerVersion(new Version(8, 0, 0)))
+            .UseSqlite("Data Source=x.doltlite")
             .Options;
         var persistence = new ISceneComponentPersistence[]
         {
@@ -38,7 +38,7 @@ public static class SchemaTests
         Assert.IsNotNull(entities.Column("MapId"));
         Assert.IsTrue(entities.PrimaryKey.Contains("Id"));
         // Id is ValueGeneratedNever(): MapSceneEntityFactory assigns it client-side (a MAX(Id)-seeded
-        // high-water mark) so Pomelo can batch inserts, even though the live column stays AUTO_INCREMENT.
+        // high-water mark) so inserts can be batched, even though the live column stays AUTOINCREMENT.
         Assert.IsFalse(entities.Column("Id")!.AutoIncrement, "Id is client-assigned, not database-generated");
         Assert.IsTrue(
             entities.Indexes.Any(index => index.Columns.SequenceEqual(["MapId", "MinX", "MaxX", "MinY", "MaxY"])),
@@ -58,27 +58,62 @@ public static class SchemaTests
     [EditorTest(Category = "Schema")]
     public static void Migration_sql_covers_common_changes()
     {
+        SchemaTable liveA = new("a", [Col("id"), Col("old")], ["id"], []);
         var changes = new List<SchemaChange>
         {
             new(SchemaChangeKind.CreateTable, "things")
             {
                 Definition = new SchemaTable("things",
-                    [new SchemaColumn("Id", "int", false, true), new SchemaColumn("Name", "varchar(64)", true)],
+                    [new SchemaColumn("Id", "INTEGER", false, true), new SchemaColumn("Name", "TEXT", true)],
                     ["Id"], []),
             },
-            new(SchemaChangeKind.AddColumn, "a") { Column = new SchemaColumn("MapId", "int", false) },
-            new(SchemaChangeKind.DropColumn, "a") { Column = new SchemaColumn("old", "int", true) },
+            new(SchemaChangeKind.AddColumn, "a") { Column = new SchemaColumn("MapId", "INTEGER", false) },
+            new(SchemaChangeKind.DropColumn, "a") { Column = new SchemaColumn("old", "INTEGER", true), LiveTable = liveA },
             new(SchemaChangeKind.DropTable, "stray"),
         };
 
         string sql = MigrationSql.Generate(changes);
 
-        Assert.IsTrue(sql.Contains("CREATE TABLE `things`"));
-        Assert.IsTrue(sql.Contains("`Id` int NOT NULL AUTO_INCREMENT"));
-        Assert.IsTrue(sql.Contains("PRIMARY KEY (`Id`)"));
-        Assert.IsTrue(sql.Contains("ALTER TABLE `a` ADD COLUMN `MapId` int NOT NULL"));
-        Assert.IsTrue(sql.Contains("ALTER TABLE `a` DROP COLUMN `old`"));
-        Assert.IsTrue(sql.Contains("DROP TABLE `stray`"));
+        Assert.IsTrue(sql.Contains("CREATE TABLE \"things\""));
+        Assert.IsTrue(sql.Contains("\"Id\" INTEGER PRIMARY KEY AUTOINCREMENT"));
+        Assert.IsTrue(sql.Contains("ALTER TABLE \"a\" ADD COLUMN \"MapId\" INTEGER NOT NULL DEFAULT 0"));
+        Assert.IsTrue(sql.Contains("ALTER TABLE \"a\" DROP COLUMN \"old\""));
+        Assert.IsTrue(sql.Contains("DROP TABLE \"stray\""));
+    }
+
+    [EditorTest(Category = "Schema")]
+    public static void Migration_sql_rebuilds_the_table_for_a_primary_key_change()
+    {
+        SchemaTable live = new("a", [Col("id"), Col("x")], ["id"], [new SchemaIndex("ix_a_x", ["x"], false)]);
+        var changes = new List<SchemaChange>
+        {
+            new(SchemaChangeKind.ChangePrimaryKey, "a") { PrimaryKey = ["id", "x"], LiveTable = live },
+        };
+
+        string sql = MigrationSql.Generate(changes);
+
+        Assert.IsTrue(sql.Contains("CREATE TABLE \"a__new\""));
+        Assert.IsTrue(sql.Contains("PRIMARY KEY (\"id\", \"x\")"));
+        Assert.IsTrue(sql.Contains("INSERT INTO \"a__new\" (\"id\", \"x\") SELECT \"id\", \"x\" FROM \"a\""));
+        Assert.IsTrue(sql.Contains("DROP TABLE \"a\""));
+        Assert.IsTrue(sql.Contains("ALTER TABLE \"a__new\" RENAME TO \"a\""));
+        Assert.IsTrue(sql.Contains("CREATE INDEX \"ix_a_x\" ON \"a\" (\"x\")"));
+    }
+
+    [EditorTest(Category = "Schema")]
+    public static void Migration_sql_rebuilds_the_table_to_drop_an_indexed_column()
+    {
+        SchemaTable live = new("a", [Col("id"), Col("x")], ["id"], [new SchemaIndex("ix_a_x", ["x"], false)]);
+        var changes = new List<SchemaChange>
+        {
+            new(SchemaChangeKind.DropColumn, "a") { Column = Col("x"), LiveTable = live },
+        };
+
+        string sql = MigrationSql.Generate(changes);
+
+        Assert.IsTrue(sql.Contains("CREATE TABLE \"a__new\""));
+        Assert.IsFalse(sql.Contains("\"x\" INTEGER"), "the dropped column should not reappear in the rebuilt table");
+        Assert.IsFalse(sql.Contains("CREATE INDEX \"ix_a_x\""), "an index on the dropped column should not be recreated");
     }
 
     [EditorTest(Category = "Schema")]
@@ -104,5 +139,5 @@ public static class SchemaTests
         Assert.IsTrue(changes.Any(c => c.Kind == SchemaChangeKind.DropColumn && c.Table == "a" && c.Column!.Name == "old"));
     }
 
-    private static SchemaColumn Col(string name) => new(name, "int", false);
+    private static SchemaColumn Col(string name) => new(name, "INTEGER", false);
 }

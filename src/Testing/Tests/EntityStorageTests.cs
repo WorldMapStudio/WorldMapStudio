@@ -1,23 +1,23 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Godot;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
-using MySqlConnector;
 
 namespace WorldMapStudio;
 
 /// <summary>
 /// Round trips through the editor's entity tables: native entities with tags and components, the
 /// attachment rows of an entity stored elsewhere, and what a map delete takes with it. Each test runs
-/// against a scratch database on the server the editor's storage connects to and drops it afterwards, so
-/// no project's data is touched; without a reachable server they are skipped.
+/// against a fresh temp-file DoltLite database and deletes it afterwards, so no project's data is
+/// touched.
 /// </summary>
 public static class EntityStorageTests
 {
-    private const string ScratchDatabase = "__wms_entity_storage_test";
     private const string BridgeSource = "test.source";
 
     private static readonly Aabb Everywhere = new(new Vector3(-1.0e6f, -1.0e6f, -1.0e6f), new Vector3(2.0e6f, 2.0e6f, 2.0e6f));
@@ -29,48 +29,34 @@ public static class EntityStorageTests
 
     private sealed class Scratch : IDisposable
     {
-        private readonly StorageConnection _connection;
+        private readonly string _databasePath;
 
-        private Scratch(EditorStorage storage, StorageConnection connection)
+        private Scratch(EditorStorage storage, string databasePath)
         {
             Storage = storage;
-            _connection = connection;
+            _databasePath = databasePath;
         }
 
         public EditorStorage Storage { get; }
 
         public static Scratch Open()
         {
+            string databasePath = Path.Combine(Path.GetTempPath(), $"__wms_entity_storage_test_{Guid.NewGuid():N}.doltlite");
+
             var context = new EditorContext(new Node3D(), new Project { Name = "__wms_entity_storage_test__" });
             EditorStorage storage = context.Database.EditorStorage;
-            StorageConnection connection = storage.Connection;
-            connection.LaunchServer = false;
-            connection.Database = ScratchDatabase;
-
-            try
-            {
-                Run(connection, $"DROP DATABASE IF EXISTS `{ScratchDatabase}`; CREATE DATABASE `{ScratchDatabase}`;");
-            }
-            catch (Exception e)
-            {
-                Assert.Skip($"no database server to run against: {e.Message}");
-            }
+            storage.Location.DatabasePath = databasePath;
 
             storage.EnsureSchema();
-            return new Scratch(storage, connection);
+            return new Scratch(storage, databasePath);
         }
 
-        public void Dispose() => Run(_connection, $"DROP DATABASE IF EXISTS `{ScratchDatabase}`;");
-
-        private static void Run(StorageConnection connection, string sql)
+        public void Dispose()
         {
-            using var conn = new MySqlConnection(connection.BuildConnectionString(includeDatabase: false));
-            conn.Open();
-            foreach (string statement in sql.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(_databasePath))
             {
-                using MySqlCommand command = conn.CreateCommand();
-                command.CommandText = statement;
-                command.ExecuteNonQuery();
+                File.Delete(_databasePath);
             }
         }
     }
