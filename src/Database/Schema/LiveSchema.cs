@@ -2,106 +2,91 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using MySqlConnector;
+using Microsoft.Data.Sqlite;
 
 namespace WorldMapStudio;
 
-/// <summary>Reads the actual structure of a live database from its <c>information_schema</c>.</summary>
+/// <summary>Reads the actual structure of a live DoltLite/SQLite database from its pragmas.</summary>
 public static class LiveSchema
 {
-    public static async Task<Schema> ReadAsync(string connectionString, string database)
+    public static async Task<Schema> ReadAsync(string connectionString)
     {
-        await using var connection = new MySqlConnection(connectionString);
+        await using var connection = new SqliteConnection(connectionString);
         await connection.OpenAsync().ConfigureAwait(false);
 
-        var columns = new Dictionary<string, List<SchemaColumn>>(StringComparer.OrdinalIgnoreCase);
-
-        // Seed table names so empty tables still appear.
+        var tableNames = new List<string>();
         await Query(connection,
-            "SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=@db AND TABLE_TYPE='BASE TABLE';",
-            database,
-            reader => columns[reader.GetString(0)] = []);
+            "SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'dolt_%';",
+            reader => tableNames.Add(reader.GetString(0)));
 
-        await Query(connection,
-            "SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE FROM information_schema.COLUMNS " +
-            "WHERE TABLE_SCHEMA=@db ORDER BY TABLE_NAME, ORDINAL_POSITION;",
-            database,
-            reader =>
-            {
-                string table = reader.GetString(0);
-                if (!columns.TryGetValue(table, out List<SchemaColumn>? list))
-                {
-                    columns[table] = list = [];
-                }
-
-                list.Add(new SchemaColumn(reader.GetString(1), reader.GetString(2), reader.GetString(3) == "YES"));
-            });
-
-        var primaryKeys = new Dictionary<string, List<(int Seq, string Column)>>(StringComparer.OrdinalIgnoreCase);
-        var indexes = new Dictionary<string, Dictionary<string, (bool Unique, List<(int Seq, string Column)> Columns)>>(StringComparer.OrdinalIgnoreCase);
-
-        await Query(connection,
-            "SELECT TABLE_NAME, INDEX_NAME, COLUMN_NAME, NON_UNIQUE, SEQ_IN_INDEX FROM information_schema.STATISTICS " +
-            "WHERE TABLE_SCHEMA=@db ORDER BY TABLE_NAME, INDEX_NAME, SEQ_IN_INDEX;",
-            database,
-            reader =>
-            {
-                string table = reader.GetString(0);
-                string index = reader.GetString(1);
-                string column = reader.GetString(2);
-                bool unique = reader.GetInt32(3) == 0;
-                int seq = reader.GetInt32(4);
-
-                if (string.Equals(index, "PRIMARY", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!primaryKeys.TryGetValue(table, out var pk))
-                    {
-                        primaryKeys[table] = pk = [];
-                    }
-
-                    pk.Add((seq, column));
-                }
-                else
-                {
-                    if (!indexes.TryGetValue(table, out var byName))
-                    {
-                        indexes[table] = byName = new(StringComparer.OrdinalIgnoreCase);
-                    }
-
-                    if (!byName.TryGetValue(index, out var entry))
-                    {
-                        byName[index] = entry = (unique, []);
-                    }
-
-                    entry.Columns.Add((seq, column));
-                }
-            });
-
-        var tables = columns.Select(pair =>
+        var tables = new List<SchemaTable>();
+        foreach (string table in tableNames)
         {
-            List<string> pk = primaryKeys.TryGetValue(pair.Key, out var pkCols)
-                ? pkCols.OrderBy(c => c.Seq).Select(c => c.Column).ToList()
-                : [];
+            var columns = new List<SchemaColumn>();
+            await Query(connection,
+                $"SELECT name, type, \"notnull\" FROM pragma_table_info('{Escape(table)}');",
+                reader => columns.Add(new SchemaColumn(reader.GetString(0), reader.GetString(1), reader.GetInt64(2) == 0)));
 
-            List<SchemaIndex> tableIndexes = indexes.TryGetValue(pair.Key, out var byName)
-                ? byName.Select(i => new SchemaIndex(i.Key, i.Value.Columns.OrderBy(c => c.Seq).Select(c => c.Column).ToList(), i.Value.Unique)).ToList()
-                : [];
+            var primaryKey = new List<(int Seq, string Column)>();
+            await Query(connection,
+                $"SELECT name, pk FROM pragma_table_info('{Escape(table)}') WHERE pk > 0;",
+                reader => primaryKey.Add((reader.GetInt32(1), reader.GetString(0))));
 
-            return new SchemaTable(pair.Key, pair.Value, pk, tableIndexes);
-        });
+            var indexes = new List<SchemaIndex>();
+            await Query(connection,
+                $"SELECT name, \"unique\", origin FROM pragma_index_list('{Escape(table)}');",
+                reader =>
+                {
+                    string indexName = reader.GetString(0);
+                    bool unique = reader.GetInt64(1) != 0;
+                    string origin = reader.GetString(2);
+                    if (origin == "pk")
+                    {
+                        // Backs the primary key (e.g. sqlite_autoindex_*); already covered above.
+                        return;
+                    }
+
+                    var indexColumns = new List<(int Seq, string Column)>();
+                    QuerySync(connection,
+                        $"SELECT seqno, name FROM pragma_index_info('{Escape(indexName)}');",
+                        indexReader => indexColumns.Add((indexReader.GetInt32(0), indexReader.GetString(1))));
+
+                    indexes.Add(new SchemaIndex(indexName, indexColumns.OrderBy(c => c.Seq).Select(c => c.Column).ToList(), unique));
+                });
+
+            tables.Add(new SchemaTable(
+                table,
+                columns,
+                primaryKey.OrderBy(c => c.Seq).Select(c => c.Column).ToList(),
+                indexes));
+        }
 
         return new Schema(tables);
     }
 
-    private static async Task Query(MySqlConnection connection, string sql, string database, Action<MySqlDataReader> onRow)
+    private static async Task Query(SqliteConnection connection, string sql, Action<SqliteDataReader> onRow)
     {
-        await using MySqlCommand command = connection.CreateCommand();
+        using SqliteCommand command = connection.CreateCommand();
         command.CommandText = sql;
-        command.Parameters.AddWithValue("@db", database);
-        await using MySqlDataReader reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
+        using SqliteDataReader reader = await command.ExecuteReaderAsync().ConfigureAwait(false);
         while (await reader.ReadAsync().ConfigureAwait(false))
         {
             onRow(reader);
         }
     }
+
+    // A pragma table-valued function can't be queried while another reader on the same connection is
+    // open, but this one only ever nests inside the (synchronous, buffered) callback above.
+    private static void QuerySync(SqliteConnection connection, string sql, Action<SqliteDataReader> onRow)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        using SqliteDataReader reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            onRow(reader);
+        }
+    }
+
+    private static string Escape(string identifier) => identifier.Replace("'", "''");
 }

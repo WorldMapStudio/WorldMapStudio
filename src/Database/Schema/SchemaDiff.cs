@@ -28,8 +28,10 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
     /// <summary>The desired primary-key columns for <see cref="SchemaChangeKind.ChangePrimaryKey"/> (empty = drop only).</summary>
     public IReadOnlyList<string>? PrimaryKey { get; init; }
 
-    /// <summary>Whether the live table already has a primary key (so it must be dropped first).</summary>
-    public bool HadPrimaryKey { get; init; }
+    /// <summary>The live table's current shape, for <see cref="SchemaChangeKind.ChangePrimaryKey"/> and
+    /// <see cref="SchemaChangeKind.DropColumn"/> — SQLite can only apply either through a table rebuild,
+    /// which needs the full set of columns and indexes to carry over.</summary>
+    public SchemaTable? LiveTable { get; init; }
 
     /// <summary>The index for create/drop-index changes.</summary>
     public SchemaIndex? Index { get; init; }
@@ -76,7 +78,7 @@ public static class SchemaDiff
 
             foreach (SchemaColumn column in liveTable.Columns.Where(c => table.Column(c.Name) == null))
             {
-                changes.Add(new SchemaChange(SchemaChangeKind.DropColumn, table.Name) { Column = column });
+                changes.Add(new SchemaChange(SchemaChangeKind.DropColumn, table.Name) { Column = column, LiveTable = liveTable });
             }
 
             if (!table.PrimaryKey.SequenceEqual(liveTable.PrimaryKey, StringComparer.OrdinalIgnoreCase))
@@ -84,7 +86,7 @@ public static class SchemaDiff
                 changes.Add(new SchemaChange(SchemaChangeKind.ChangePrimaryKey, table.Name)
                 {
                     PrimaryKey = table.PrimaryKey,
-                    HadPrimaryKey = liveTable.PrimaryKey.Count > 0,
+                    LiveTable = liveTable,
                 });
             }
 
@@ -97,7 +99,7 @@ public static class SchemaDiff
             }
         }
 
-        // A table another storage sharing this database owns (see Storage.OwnsConnection) is not this
+        // A table another storage sharing this database owns (see Storage.OwnsLocation) is not this
         // storage's "extra" table to propose dropping.
         foreach (SchemaTable table in live.Tables.Values
                      .Where(t => !expected.Tables.ContainsKey(t.Name) && !(ignoreExtraTables?.Contains(t.Name) ?? false)))

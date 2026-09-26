@@ -35,8 +35,8 @@ public static class ModelSchema
         return new Schema(tables);
     }
 
-    // An integer column whose value EF generates on insert is an AUTO_INCREMENT identity column.
+    // An INTEGER column whose value EF generates on insert is an AUTOINCREMENT identity column.
     private static bool IsAutoIncrement(IColumn column) =>
-        column.StoreType.Contains("int", StringComparison.OrdinalIgnoreCase)
+        string.Equals(column.StoreType, "INTEGER", StringComparison.OrdinalIgnoreCase)
         && column.PropertyMappings.Any(mapping => mapping.Property.ValueGenerated == ValueGenerated.OnAdd);
 }

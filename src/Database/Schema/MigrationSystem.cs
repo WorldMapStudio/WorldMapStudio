@@ -109,14 +109,14 @@ public sealed class MigrationSystem
         }
     }
 
-    // Tables owned by another storage that shares this one's connection (see Storage.OwnsConnection) —
-    // e.g. a storage sharing another's database — aren't this storage's tables to propose
+    // Tables owned by another storage that shares this one's location (see Storage.OwnsLocation) —
+    // e.g. a storage sharing another's database file — aren't this storage's tables to propose
     // dropping just because its own EF model doesn't declare them. Storage.SeedHistoryTableName is
     // WorldMapStudio's own bookkeeping, not something any EF model declares either, so it gets the
-    // same exemption regardless of connection sharing.
+    // same exemption regardless of location sharing.
     private static IReadOnlySet<string> SiblingTables(Storage storage, IReadOnlyList<Storage> storages) =>
         storages
-            .Where(other => other != storage && ReferenceEquals(other.Connection, storage.Connection))
+            .Where(other => other != storage && ReferenceEquals(other.Location, storage.Location))
             .SelectMany(other => other.ExpectedSchema()?.Tables.Keys ?? Enumerable.Empty<string>())
             .Append(Storage.SeedHistoryTableName)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
