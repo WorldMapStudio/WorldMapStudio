@@ -118,6 +118,10 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant,
     /// reaches maps nothing has loaded. The open map answers from <see cref="Settings"/> without a
     /// query, which is what keeps a build loop off the database. Always a clone, since callers mutate
     /// what they get.
+    ///
+    /// Main-thread only: the open-map shortcut reads <see cref="Settings"/>, live editor state, and a
+    /// miss stalls through <see cref="BlockingWork"/>. A worker calls <see cref="LoadSettingsForAsync"/>
+    /// instead.
     /// </summary>
     public LandscapeSettings? LoadSettingsFor(MapId map)
     {
@@ -126,11 +130,24 @@ public sealed partial class LandscapeSystem : ISubsystemHost, IWorldParticipant,
             return loaded.Clone();
         }
 
+        return BlockingWork.Run(() => LoadSettingsFromSourcesAsync(map));
+    }
+
+    /// <summary>
+    /// <see cref="LoadSettingsFor"/> for a caller already off the main thread: skips the open-map
+    /// shortcut (main-thread-only state) and awaits the sources directly instead of stalling through
+    /// <see cref="BlockingWork"/>. A caller that needs the open map's live settings takes a snapshot of
+    /// them on the main thread first (see <see cref="TakeOfflineSnapshotAsync"/>).
+    /// </summary>
+    public Task<LandscapeSettings?> LoadSettingsForAsync(MapId map) => LoadSettingsFromSourcesAsync(map);
+
+    private async Task<LandscapeSettings?> LoadSettingsFromSourcesAsync(MapId map)
+    {
         foreach (ILandscapeSettingsSource source in Sources)
         {
             try
             {
-                if (BlockingWork.Run(() => source.LoadAsync(map)) is { } settings)
+                if (await source.LoadAsync(map).ConfigureAwait(false) is { } settings)
                 {
                     return settings.Clone();
                 }

@@ -50,12 +50,14 @@ public static class BlockingWork
     private sealed class Watchdog : IDisposable
     {
         private readonly string _site;
+        private readonly bool _onMainThread;
         private readonly long _start;
         private readonly Timer _timer;
 
         public Watchdog(string caller, string file)
         {
             _site = $"{Path.GetFileNameWithoutExtension(file)}.{caller}";
+            _onMainThread = MainThread.IsCurrent;
             _start = Stopwatch.GetTimestamp();
             _timer = new Timer(_ => Warn(), null, WarnAfter, WarnInterval);
         }
@@ -63,7 +65,8 @@ public static class BlockingWork
         private double Elapsed => Stopwatch.GetElapsedTime(_start).TotalSeconds;
 
         private void Warn() =>
-            GD.PushWarning($"[BlockingWork] '{_site}' has stalled the main thread for {Elapsed:F1}s.");
+            GD.PushWarning(
+                $"[BlockingWork] '{_site}' has stalled the {(_onMainThread ? "main" : "calling")} thread for {Elapsed:F1}s.");
 
         public void Dispose()
         {

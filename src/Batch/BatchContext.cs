@@ -59,7 +59,7 @@ public sealed class BatchContext
 
     /// <summary>A map's landscape settings — the chunk sizing and resolution a batch needs to build a
     /// <see cref="LandscapeGrid"/> of its own.</summary>
-    public LandscapeSettings? LoadLandscapeSettings(MapId map) => Editor.Landscape.LoadSettingsFor(map);
+    public Task<LandscapeSettings?> LoadLandscapeSettingsAsync(MapId map) => Editor.Landscape.LoadSettingsForAsync(map);
 
     /// <summary>Builds any number of chunks with one scene scan. See
     /// <see cref="LandscapeSystem.BuildFromStorageAsync"/>.</summary>
