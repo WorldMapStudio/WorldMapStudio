@@ -25,6 +25,9 @@ public sealed class StorageMigration
 
     public bool HasChanges => Changes.Count > 0;
 
+    /// <summary>Whether any change can be applied as SQL (mismatches cannot).</summary>
+    public bool CanApply => Changes.Any(change => !change.IsMismatch);
+
     public void Set(List<SchemaChange> changes)
     {
         Changes = changes;
@@ -68,7 +71,7 @@ public sealed class MigrationSystem
             try
             {
                 Schema live = BlockingWork.Run(storage.ReadLiveSchemaAsync);
-                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(storage, storages)));
+                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(storage, storages), storage.OwnsTable));
             }
             catch (Exception e)
             {
@@ -100,7 +103,7 @@ public sealed class MigrationSystem
             {
                 List<Storage> storages = _context.Database.Storages.ToList();
                 Schema live = BlockingWork.Run(migration.Storage.ReadLiveSchemaAsync);
-                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(migration.Storage, storages)));
+                migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(migration.Storage, storages), migration.Storage.OwnsTable));
             }
         }
         catch (Exception e)

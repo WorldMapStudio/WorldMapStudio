@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data.Common;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text;
 using System.Threading.Tasks;
 using Godot;
@@ -65,11 +66,34 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public EditorDbContext CreateContext() =>
         new(BuildOptions<EditorDbContext>(), ComponentPersistence.ToList(), EntityFactories.ToList(), TableConfigurations.ToList());
 
+    public override bool OwnsTable(string table) => table.StartsWith("wms_", StringComparison.OrdinalIgnoreCase);
+
+    // EnsureCreated() does nothing in a file that already has tables (a shared world database), so the
+    // missing tables are created from EF's own script instead, leaving every other table alone.
     public override void EnsureSchema()
     {
         using EditorDbContext context = CreateContext();
-        context.Database.EnsureCreated();
+        Schema live = BlockingWork.Run(ReadLiveSchemaAsync);
+
+        var statements = new List<string>();
+        foreach (string statement in SqlScript.SplitStatements(context.Database.GenerateCreateScript()))
+        {
+            Match match = CreateStatement.Match(statement);
+            if (match.Success && !live.Tables.ContainsKey(match.Groups["table"].Value))
+            {
+                statements.Add(statement);
+            }
+        }
+
+        if (statements.Count > 0)
+        {
+            BlockingWork.Run(() => ApplySqlAsync(string.Join(";\n", statements) + ";"));
+        }
     }
+
+    private static readonly Regex CreateStatement = new(
+        "^\\s*CREATE\\s+(?:UNIQUE\\s+)?(?:TABLE\\s+\"(?<table>[^\"]+)\"|INDEX\\s+\"[^\"]+\"\\s+ON\\s+\"(?<table>[^\"]+)\")",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public override Schema? ExpectedSchema()
     {

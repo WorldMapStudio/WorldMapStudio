@@ -1,4 +1,5 @@
 #nullable enable
+using System.Linq;
 using Godot;
 using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
@@ -106,7 +107,7 @@ public sealed class Migration : IScene
         foreach (SchemaChange change in migration.Changes)
         {
             string line = change.Describe();
-            if (change.IsDestructive)
+            if (change.IsDestructive || change.IsMismatch)
             {
                 ImGui.TextColored(Destructive, line);
             }
@@ -117,12 +118,20 @@ public sealed class Migration : IScene
         }
 
         ImGui.Spacing();
-        ImGui.TextDisabled("SQL (editable):");
-        ImGui.InputTextMultiline("##sql", ref migration.Sql, 8192, new Vector2(-1, 180));
-
-        if (ImGui.Button("Apply"))
+        if (migration.Changes.Any(change => change.IsMismatch))
         {
-            migrations.Apply(migration);
+            ImGui.TextWrapped("Mismatched tables belong to the world database and are not changed here. Regenerate the editor's world models with database_tool, or recreate the world database.");
+        }
+
+        if (migration.CanApply)
+        {
+            ImGui.TextDisabled("SQL (editable):");
+            ImGui.InputTextMultiline("##sql", ref migration.Sql, 8192, new Vector2(-1, 180));
+
+            if (ImGui.Button("Apply"))
+            {
+                migrations.Apply(migration);
+            }
         }
 
         if (migration.Error != null)

@@ -13,6 +13,8 @@ public enum SchemaChangeKind
     ChangePrimaryKey,
     CreateIndex,
     DropIndex,
+    /// <summary>A difference in a table the storage does not own. Never turned into SQL.</summary>
+    Mismatch,
 }
 
 /// <summary>One difference between the expected (model) and actual (live) schema, with the payload
@@ -36,11 +38,17 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
     /// <summary>The index for create/drop-index changes.</summary>
     public SchemaIndex? Index { get; init; }
 
+    /// <summary>What is wrong, for <see cref="SchemaChangeKind.Mismatch"/>.</summary>
+    public string? Message { get; init; }
+
+    /// <summary>True for changes the editor reports but cannot fix with SQL of its own.</summary>
+    public bool IsMismatch => Kind == SchemaChangeKind.Mismatch;
+
     /// <summary>True for changes that drop data (dropping a table or column). Surfaced for confirmation.</summary>
     public bool IsDestructive => Kind is SchemaChangeKind.DropTable or SchemaChangeKind.DropColumn;
 
     /// <summary>One line naming the change, e.g. <c>AddColumn tc_item.Name</c>.</summary>
-    public string Describe() => $"{Kind} {Table}{Detail()}";
+    public string Describe() => IsMismatch ? $"Mismatch {Table}: {Message}" : $"{Kind} {Table}{Detail()}";
 
     private string Detail()
     {
@@ -59,12 +67,19 @@ public sealed record SchemaChange(SchemaChangeKind Kind, string Table)
 /// only in the live database is left alone rather than proposed for dropping.</summary>
 public static class SchemaDiff
 {
-    public static List<SchemaChange> Compute(Schema expected, Schema live, IReadOnlySet<string>? ignoreExtraTables = null)
+    public static List<SchemaChange> Compute(
+        Schema expected, Schema live, IReadOnlySet<string>? ignoreExtraTables = null, Func<string, bool>? owns = null)
     {
         var changes = new List<SchemaChange>();
 
         foreach (SchemaTable table in expected.Tables.Values)
         {
+            if (owns != null && !owns(table.Name))
+            {
+                CompareForeign(table, live, changes);
+                continue;
+            }
+
             if (!live.Tables.TryGetValue(table.Name, out SchemaTable? liveTable))
             {
                 changes.Add(new SchemaChange(SchemaChangeKind.CreateTable, table.Name) { Definition = table });
@@ -102,12 +117,34 @@ public static class SchemaDiff
         // A table another storage sharing this database owns (see Storage.OwnsLocation) is not this
         // storage's "extra" table to propose dropping.
         foreach (SchemaTable table in live.Tables.Values
-                     .Where(t => !expected.Tables.ContainsKey(t.Name) && !(ignoreExtraTables?.Contains(t.Name) ?? false)))
+                     .Where(t => !expected.Tables.ContainsKey(t.Name) && !(ignoreExtraTables?.Contains(t.Name) ?? false)
+                              && (owns?.Invoke(t.Name) ?? true)))
         {
             changes.Add(new SchemaChange(SchemaChangeKind.DropTable, table.Name));
         }
 
         return changes;
+    }
+
+    // A table the storage does not own is only validated: its absence or a column difference is
+    // reported, never fixed.
+    private static void CompareForeign(SchemaTable table, Schema live, List<SchemaChange> changes)
+    {
+        if (!live.Tables.TryGetValue(table.Name, out SchemaTable? liveTable))
+        {
+            changes.Add(new SchemaChange(SchemaChangeKind.Mismatch, table.Name) { Message = "table is missing" });
+            return;
+        }
+
+        foreach (SchemaColumn column in table.Columns.Where(c => liveTable.Column(c.Name) == null))
+        {
+            changes.Add(new SchemaChange(SchemaChangeKind.Mismatch, table.Name) { Column = column, Message = $"column '{column.Name}' is missing" });
+        }
+
+        foreach (SchemaColumn column in liveTable.Columns.Where(c => table.Column(c.Name) == null))
+        {
+            changes.Add(new SchemaChange(SchemaChangeKind.Mismatch, table.Name) { Column = column, Message = $"unexpected column '{column.Name}'" });
+        }
     }
 
     // Two indexes are "the same" if they cover the same columns in order with the same uniqueness,

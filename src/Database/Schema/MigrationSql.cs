@@ -13,7 +13,7 @@ public static class MigrationSql
     public static string Generate(IEnumerable<SchemaChange> changes)
     {
         var builder = new StringBuilder();
-        foreach (SchemaChange change in changes.OrderBy(Rank))
+        foreach (SchemaChange change in changes.Where(c => !c.IsMismatch).OrderBy(Rank))
         {
             builder.AppendLine(Statement(change));
         }

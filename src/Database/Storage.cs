@@ -111,6 +111,10 @@ public abstract class Storage : ISubsystem
     /// from <see cref="MigrationSystem"/>'s drop-table proposals, since no EF model ever declares it.</summary>
     public const string SeedHistoryTableName = "wms_seed_history";
 
+    /// <summary>Whether this storage creates and migrates <paramref name="table"/>. A table it does not
+    /// own is only validated against <see cref="ExpectedSchema"/> and never created, altered or dropped.</summary>
+    public virtual bool OwnsTable(string table) => true;
+
     /// <summary>Creates the storage's tables when the database is empty. Drift is handled by migrations.</summary>
     public virtual void EnsureSchema() { }
 
