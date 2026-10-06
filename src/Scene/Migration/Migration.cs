@@ -49,7 +49,7 @@ public sealed class Migration : IScene
 
             ImGuiEx.Child("MigrationList", new Vector2(0, -40), true, ImGuiWindowFlags.None, () =>
             {
-                if (!migrations.HasPending)
+                if (!migrations.Migrations.Any(migration => migration.HasChanges))
                 {
                     ImGui.TextDisabled("All storage schemas are up to date.");
                     return;

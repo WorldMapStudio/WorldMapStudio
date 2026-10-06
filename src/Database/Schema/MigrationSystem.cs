@@ -52,7 +52,9 @@ public sealed class MigrationSystem
 
     public List<StorageMigration> Migrations { get; } = [];
 
-    public bool HasPending => Migrations.Any(migration => migration.HasChanges);
+    /// <summary>Whether any storage has changes it can apply. Mismatches on tables a storage does not own are only
+    /// reported: nothing here can fix them, so they must not hold the editor at the migration gate.</summary>
+    public bool HasPending => Migrations.Any(migration => migration.CanApply);
 
     /// <summary>Recomputes the diff for every storage.</summary>
     public void Check()
@@ -72,6 +74,10 @@ public sealed class MigrationSystem
             {
                 Schema live = BlockingWork.Run(storage.ReadLiveSchemaAsync);
                 migration.Set(SchemaDiff.Compute(expected, live, SiblingTables(storage, storages), storage.OwnsTable));
+                foreach (SchemaChange change in migration.Changes.Where(change => change.IsMismatch))
+                {
+                    GD.PushWarning($"[Migration] {storage.Name}: {change.Describe()}");
+                }
             }
             catch (Exception e)
             {
