@@ -52,6 +52,15 @@ public sealed class EditorScriptApi : IScriptModule
         }
     }
 
+    /// <summary>The whole editor window (windows and menus included) as a base64-encoded PNG;
+    /// <c>wms.viewport.Screenshot</c> captures only the 3D view.</summary>
+    [ScriptFunction]
+    public string? Screenshot()
+    {
+        Godot.Image? image = _context.Root.GetViewport()?.GetTexture()?.GetImage();
+        return image is null ? null : Convert.ToBase64String(image.SavePngToBuffer());
+    }
+
     /// <summary>
     /// Closes the editor the way File &gt; Exit does — saving the window layout first — and ends the
     /// process with <paramref name="exitCode"/>. Returns at once; the editor goes down a frame later,

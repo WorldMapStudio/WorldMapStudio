@@ -7,8 +7,8 @@ namespace WorldMapStudio;
 /// <summary>
 /// Queries over whatever catalog entities are currently loaded, exposed to JS as <c>wms.catalog</c>.
 /// Catalog entities aren't streamed like scene entities — load the catalog through whatever system
-/// owns it first (see <see cref="DatabaseSystem.LoadCatalog{TEntity}"/>). Create/delete aren't
-/// exposed yet.
+/// owns it first (see <see cref="DatabaseSystem.LoadCatalog{TEntity}"/>), or open single rows of a
+/// lazy catalog with <see cref="Open"/>. Create/delete aren't exposed yet.
 /// </summary>
 [Subsystem(nameof(ScriptingSystem))]
 public sealed class CatalogScriptApi : IScriptModule
@@ -69,6 +69,24 @@ public sealed class CatalogScriptApi : IScriptModule
 
         _context.CatalogSearchViews.SetPreferred(catalog, view);
     }
+
+    /// <summary>Search hits of a browsable catalog as "key: text" labels, the same page its browser shows.</summary>
+    [ScriptFunction]
+    public string[] Search(string catalogName, string filter = "") =>
+        BlockingWork.Run(() => Browser(catalogName).SearchAsync(filter)).Select(result => result.Label).ToArray();
+
+    /// <summary>Loads one row of a browsable catalog (lazy ones included) into the registry, so its
+    /// handle can be read and edited like any other entity; null if the key doesn't exist.</summary>
+    [ScriptFunction]
+    public ScriptEntityHandle? Open(string catalogName, string key)
+    {
+        CatalogEntity? entity = BlockingWork.Run(() => Browser(catalogName).OpenAsync(_context, key));
+        return entity is null ? null : new ScriptEntityHandle(_context.Scene, _context.Catalog, _context.EditSessions, entity);
+    }
+
+    /// <summary>Opens and focuses the Catalog Browser window on a row, as following a reference link would.</summary>
+    [ScriptFunction]
+    public bool Browse(string catalogName, string key) => _context.WindowManager.OpenCatalogEntry(catalogName, key);
 
     private ICatalogBrowser Browser(string catalogName) =>
         _context.Database.Storages.SelectMany(storage => storage.CatalogBrowsers)
