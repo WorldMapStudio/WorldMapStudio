@@ -66,7 +66,27 @@ public sealed partial class EditorStorage : Storage, ISubsystemHost
     public EditorDbContext CreateContext() =>
         new(BuildOptions<EditorDbContext>(), ComponentPersistence.ToList(), EntityFactories.ToList(), TableConfigurations.ToList());
 
-    public override bool OwnsTable(string table) => table.StartsWith("wms_", StringComparison.OrdinalIgnoreCase);
+    private HashSet<string>? _modelTables;
+
+    public override bool OwnsTable(string table)
+    {
+        if (table.StartsWith("wms_", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Plugin tables mapped by this storage's own entities migrate like the built-in ones.
+        if (_modelTables == null)
+        {
+            using EditorDbContext context = CreateContext();
+            _modelTables = context.Model.GetEntityTypes()
+                .Select(entity => entity.GetTableName())
+                .OfType<string>()
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return _modelTables.Contains(table);
+    }
 
     // EnsureCreated() does nothing in a file that already has tables (a shared world database), so the
     // missing tables are created from EF's own script instead, leaving every other table alone.
