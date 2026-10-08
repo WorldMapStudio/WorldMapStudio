@@ -16,18 +16,25 @@ internal sealed class ImGuiInput
         _owner = owner;
     }
 
+    /// <summary>Window-space pointer position that replaces the OS mouse while set; used by scripted input.</summary>
+    public static Vector2? SyntheticMouse { get; set; }
+
     public void Update(ImGuiIOPtr io)
     {
-        if (!_hasMouse)
+        if (SyntheticMouse is { } synthetic)
+        {
+            io.AddMousePosEvent(synthetic.X, synthetic.Y);
+        }
+        else if (!_hasMouse)
         {
             return;
         }
 
-        if (io.WantSetMousePos)
+        if (io.WantSetMousePos && SyntheticMouse is null)
         {
             Godot.Input.WarpMouse(new Vector2(io.MousePos.X, io.MousePos.Y));
         }
-        else
+        else if (SyntheticMouse is null)
         {
             Vector2I mousePos = DisplayServer.MouseGetPosition() - _owner.GetWindow().Position;
             io.AddMousePosEvent(mousePos.X, mousePos.Y);
@@ -101,7 +108,7 @@ internal sealed class ImGuiInput
 
         if (inputEvent is InputEventKey key)
         {
-            UpdateKeyModifiers(io);
+            UpdateKeyModifiers(io, key);
             ImGuiKey imguiKey = ConvertKey(key.Keycode);
             if (imguiKey != ImGuiKey.None)
             {
@@ -125,12 +132,12 @@ internal sealed class ImGuiInput
         return false;
     }
 
-    private static void UpdateKeyModifiers(ImGuiIOPtr io)
+    private static void UpdateKeyModifiers(ImGuiIOPtr io, InputEventKey key)
     {
-        io.AddKeyEvent(ImGuiKey.ModCtrl, Godot.Input.IsKeyPressed(Key.Ctrl));
-        io.AddKeyEvent(ImGuiKey.ModShift, Godot.Input.IsKeyPressed(Key.Shift));
-        io.AddKeyEvent(ImGuiKey.ModAlt, Godot.Input.IsKeyPressed(Key.Alt));
-        io.AddKeyEvent(ImGuiKey.ModSuper, Godot.Input.IsKeyPressed(Key.Meta));
+        io.AddKeyEvent(ImGuiKey.ModCtrl, key.CtrlPressed || Godot.Input.IsKeyPressed(Key.Ctrl));
+        io.AddKeyEvent(ImGuiKey.ModShift, key.ShiftPressed || Godot.Input.IsKeyPressed(Key.Shift));
+        io.AddKeyEvent(ImGuiKey.ModAlt, key.AltPressed || Godot.Input.IsKeyPressed(Key.Alt));
+        io.AddKeyEvent(ImGuiKey.ModSuper, key.MetaPressed || Godot.Input.IsKeyPressed(Key.Meta));
     }
 
     private static DisplayServer.CursorShape ConvertCursorShape(ImGuiMouseCursor cursor) => cursor switch
